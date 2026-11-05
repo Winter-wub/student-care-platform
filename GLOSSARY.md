@@ -24,7 +24,7 @@ _Avoid_: tenant, instance, site
 ### People
 
 **Student** (นักศึกษา):
-A person on the roster, identified by student ID. The only kind of person who talks to the bot.
+A person on the roster, identified by student ID. The only kind of person who talks to the bot. A Student is active while on the roster and left once a roster import no longer lists them; a left Student keeps their records but loses every Link.
 _Avoid_: user, member, end user
 
 **Staff** (เจ้าหน้าที่):
@@ -57,7 +57,7 @@ A set of Students selected by attribute (year, programme, Locale, link status) o
 _Avoid_: target group, segment, recipients
 
 **Tag** (ป้าย):
-A free label Staff attach to a Student so an Audience can select on it.
+A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import) or is attached by Staff by hand (kept across imports).
 
 **Quota** (โควตา):
 The limit per period on one metered thing, such as LINE Push messages per month. Reaching it warns Staff; it never stops sending by itself.
@@ -70,7 +70,7 @@ _Avoid_: authentication, login, registration
 A swappable way of doing Verification, such as email OTP. Chosen per Deployment.
 
 **Consent** (ความยินยอม):
-The record that a Student accepted a given version of the Deployment's privacy notice, when, and through which Channel Account. Collected before Verification and again when the notice version changes.
+The record that a Student accepted a given version of the Deployment's privacy notice, when, and through which Channel Account. The notice is shown before Verification; the acceptance is recorded once Verification identifies the Student, and counts for every Channel. Asked again when the notice version changes.
 
 **Security Event** (เหตุการณ์ความปลอดภัย):
 A record of a suspicious act around Verification or data access, such as an OTP lockout or a request to see another Student's data, shown to Staff.
