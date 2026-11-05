@@ -113,6 +113,9 @@ _Avoid_: rich menu, command list
 What pressing a button means, stored on the server and referenced by a short id. Idempotent, and may expire.
 _Avoid_: postback, callback
 
+**Inbound Message** (ข้อความขาเข้า):
+A text or file a Student sent outside any Action, kept by the Core so Staff tooling can read it later. The first slice stores it and answers with the Menu.
+
 **Attachment** (ไฟล์แนบ):
 A file a Student sent, copied into the Deployment's own file storage as soon as it arrives.
 
