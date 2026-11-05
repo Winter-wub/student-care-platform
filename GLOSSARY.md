@@ -126,6 +126,12 @@ _Avoid_: LIFF, web app, webview
 **App Session** (เซสชันมินิแอป):
 The identity of a Mini App page view, resolved from the Channel's signed token to a Channel Account and, through its Link, to a Student. Students have no separate login.
 
+**Announcement** (ข่าว/ประกาศ):
+A message Staff write once, in one or more Locales, and send to an Audience; it can expire, be edited, re-sent or retracted, and may ask each Student to acknowledge it.
+
+**Acknowledgement** (การรับทราบ):
+A Student's one-time confirmation that they have read an Announcement, counted per Student regardless of how many Channels received it.
+
 ### Staff inbox
 
 **Handoff** (ส่งต่อเจ้าหน้าที่):
