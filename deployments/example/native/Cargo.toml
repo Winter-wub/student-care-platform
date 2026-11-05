@@ -1,5 +1,5 @@
 [package]
-name = "example-native"
+name = "harpseal-example-native"
 version = "0.0.0"
 edition.workspace = true
 rust-version = "1.91"

@@ -24,6 +24,8 @@ pub trait Module: Send + Sync + 'static {
 pub struct BackOfficeState {
     pub services: Services,
     pub catalog: Arc<Catalog>,
+    /// Deployment name, for page chrome.
+    pub org: String,
 }
 pub type AppState = Arc<BackOfficeState>;
 
@@ -91,6 +93,7 @@ pub struct ModuleRegistrar {
     pub(crate) menu: Vec<MenuEntrySpec>,
     pub(crate) actions: Vec<(ActionId, Arc<dyn ActionHandler>)>,
     pub(crate) back_office: Vec<(&'static str, axum::Router<AppState>)>,
+    pub(crate) public: Vec<axum::Router<AppState>>,
     pub(crate) catalog: Vec<CatalogEntry>,
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
     pub(crate) migrations: Vec<Migration>,
@@ -104,6 +107,7 @@ impl ModuleRegistrar {
             menu: Vec::new(),
             actions: Vec::new(),
             back_office: Vec::new(),
+            public: Vec::new(),
             catalog: Vec::new(),
             jobs: Vec::new(),
             migrations: Vec::new(),
@@ -139,6 +143,13 @@ impl ModuleRegistrar {
         r: axum::Router<AppState>,
     ) -> &mut Self {
         self.back_office.push((permission, r));
+        self
+    }
+
+    /// Pages outside `/admin` with no Staff session: Mini App pages (which
+    /// check their own App Session) and public pages such as `/notice`.
+    pub fn public(&mut self, r: axum::Router<AppState>) -> &mut Self {
+        self.public.push(r);
         self
     }
 

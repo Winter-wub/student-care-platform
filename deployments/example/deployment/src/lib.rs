@@ -1,12 +1,15 @@
 //! The fictional "Seal Bay University" Deployment (Design A from issue #4): Thai default Locale, LINE + Telegram + Fake
 //! channels, email-OTP Verification, and a tiny `hello` Module adding one
-//! Menu entry and one back-office page.
+//! Menu entry and one back-office page, plus the issue #5 prototype
+//! [`pages`] (Staff login, Students list, announcement form, Mini App).
 
 use harpseal::config::DeploymentConfig;
 use harpseal::manifest::{CatalogEntry, MenuEntrySpec, Permission};
 use harpseal::message::ActionId;
 use harpseal_channel_line::LineConfig;
 use harpseal_channel_telegram::TelegramConfig;
+
+pub mod pages;
 
 pub const DEPLOYMENT_TOML: &str = include_str!("../deployment.toml");
 const HELLO_SQL: &str = include_str!("../sql/0001_hello.sql");
@@ -115,7 +118,12 @@ pub mod with_design_a {
     }
 
     /// The runtime crate supplies `services`; everything else is here.
-    pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, BuildError> {
+    /// `secure_cookies` is false only for plain-HTTP localhost.
+    pub fn deployment(
+        services: Services,
+        secrets: Secrets,
+        secure_cookies: bool,
+    ) -> Result<Deployment, BuildError> {
         let http = services.http.clone();
         Deployment::builder()
             .config(config())
@@ -131,6 +139,7 @@ pub mod with_design_a {
             .channel(FakeChannel::new(secrets.fake_secret))
             .verification(EmailOtp::default())
             .module(Hello)
+            .module(crate::pages::Pages { secure_cookies })
             .build()
     }
 }

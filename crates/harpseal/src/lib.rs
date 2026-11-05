@@ -10,8 +10,10 @@ pub mod delivery;
 pub mod error;
 pub mod manifest;
 pub mod message;
+pub mod password;
 pub mod port_types;
 pub mod render;
+pub mod ui;
 pub mod verification;
 
 #[cfg(feature = "fixtures")]

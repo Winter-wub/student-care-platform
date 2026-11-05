@@ -36,3 +36,16 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 getrandom = "0.4"
 worker = { version = "0.8", features = ["http", "axum", "d1"] }
+maud = "0.27"
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["phc", "alloc"] }
+sha2 = { version = "0.11", default-features = false }
+calamine = { version = "0.38", default-features = false }
+
+# Measured in docs/prototypes/workers-pages.md (issue #5).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
