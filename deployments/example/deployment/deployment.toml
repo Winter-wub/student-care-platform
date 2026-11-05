@@ -1,0 +1,33 @@
+# Seal Bay University (มหาวิทยาลัยอ่าวแมวน้ำ) — a FICTIONAL customer used as
+# the reference Deployment. Data only; code lives in src/lib.rs.
+
+name = "Seal Bay University"
+default_locale = "th"
+
+# Initial Roles: role -> Permission ids. Every id must be defined by a Module
+# (or the Kernel); build() fails otherwise.
+[roles]
+admin = ["hello.view"]
+student_affairs = ["hello.view"]
+
+[office_hours]
+timezone = "Asia/Bangkok"
+[office_hours.days]
+mon = ["08:30-12:00", "13:00-16:30"]
+tue = ["08:30-12:00", "13:00-16:30"]
+wed = ["08:30-12:00", "13:00-16:30"]
+thu = ["08:30-12:00", "13:00-16:30"]
+fri = ["08:30-12:00", "13:00-16:00"]
+
+# Warn Staff when a metered thing nears its limit; never stops sending.
+[quotas]
+line_push_per_month = 300
+email_per_day = 100
+
+# Overrides of Module default texts, per Locale.
+[texts.th]
+"link.required" = "กรุณายืนยันตัวตนก่อนใช้งาน พิมพ์รหัสนักศึกษาเพื่อเริ่ม"
+"hello.greeting" = "สวัสดีจากมหาวิทยาลัยอ่าวแมวน้ำ"
+
+[texts.en]
+"link.required" = "Please verify first: send your student ID to start."

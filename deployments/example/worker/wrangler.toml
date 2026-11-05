@@ -1,0 +1,7 @@
+# STUB. Workers Paid is the baseline (issue #6 resolution).
+name = "example-seal-bay"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-11-01"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"

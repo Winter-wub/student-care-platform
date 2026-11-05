@@ -1,0 +1,17 @@
+[package]
+name = "example-worker"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+harpseal.workspace = true
+example-deployment.workspace = true
+harpseal-runtime-cloudflare = { path = "../../../crates/harpseal-runtime-cloudflare" }
+worker.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]

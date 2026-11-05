@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/harpseal",
+    "crates/harpseal-channel-line",
+    "crates/harpseal-channel-telegram",
+    "crates/harpseal-channel-fake",
+    "crates/harpseal-runtime-cloudflare",
+    "crates/harpseal-runtime-native",
+    "crates/harpseal-cli",
+    "deployments/example/deployment",
+    "deployments/example/native",
+    "deployments/example/worker",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "Apache-2.0"
+repository = "https://github.com/Winter-wub/student-care-platform"
+
+[workspace.dependencies]
+harpseal = { path = "crates/harpseal" }
+harpseal-channel-line = { path = "crates/harpseal-channel-line" }
+harpseal-channel-telegram = { path = "crates/harpseal-channel-telegram" }
+harpseal-channel-fake = { path = "crates/harpseal-channel-fake" }
+harpseal-runtime-native = { path = "crates/harpseal-runtime-native" }
+example-deployment = { path = "deployments/example/deployment" }
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false }
+http = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+getrandom = "0.4"
+worker = { version = "0.8", features = ["http", "axum", "d1"] }
