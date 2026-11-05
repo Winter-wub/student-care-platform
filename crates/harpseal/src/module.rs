@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::Services;
 use crate::Result;
+use crate::Services;
 use crate::delivery::{ChannelAccountId, StudentId};
 use crate::manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 use crate::message::{ActionId, Locale, Message};
@@ -116,7 +116,11 @@ impl ModuleRegistrar {
     }
 
     /// A Menu entry and the handler for its Action.
-    pub fn menu_entry(&mut self, spec: MenuEntrySpec, h: impl ActionHandler + 'static) -> &mut Self {
+    pub fn menu_entry(
+        &mut self,
+        spec: MenuEntrySpec,
+        h: impl ActionHandler + 'static,
+    ) -> &mut Self {
         self.actions.push((spec.action.clone(), Arc::new(h)));
         self.menu.push(spec);
         self
@@ -129,7 +133,11 @@ impl ModuleRegistrar {
     }
 
     /// Back-office pages, mounted under `/admin`, guarded by `permission`.
-    pub fn back_office(&mut self, permission: &'static str, r: axum::Router<AppState>) -> &mut Self {
+    pub fn back_office(
+        &mut self,
+        permission: &'static str,
+        r: axum::Router<AppState>,
+    ) -> &mut Self {
         self.back_office.push((permission, r));
         self
     }

@@ -1,0 +1,7 @@
+[
+  {
+    "caption": "แผนที่อาคาร.png",
+    "method": "sendPhoto",
+    "photo": "https://files.sealbay.example/s/map.png?sig=x"
+  }
+]

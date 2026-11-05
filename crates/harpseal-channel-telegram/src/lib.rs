@@ -1,15 +1,19 @@
-//! Telegram adapter: type signatures only (prototype). Platform calls are
-//! `todo!()`.
+//! Telegram adapter (prototype). Platform calls are `todo!()`; rendering
+//! (`render`) is real code.
 //!
 //! Capabilities: edit, delete, Mini App (Web App). Every send is free; no
 //! reply token exists, so the Core always selects Push.
 
+use harpseal::Result;
 use harpseal::delivery::{
     ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile, Metering, PlatformMessageId,
     SendReceipt, WebhookRequest,
 };
-use harpseal::message::{Menu, Message};
-use harpseal::Result;
+use harpseal::message::{Locale, Menu, Message};
+use harpseal::render::RenderCx;
+use serde_json::{Value, json};
+
+pub mod render;
 
 pub const KIND: ChannelKind = ChannelKind("telegram");
 /// `callback_data` is 1–64 bytes, which is where `ActionId::MAX_BYTES` comes from.
@@ -27,12 +31,53 @@ pub fn metering(_: &Delivery) -> Metering {
     Metering::Free
 }
 
-use std::sync::Arc;
+/// One Bot API call: method, JSON body, and the FileStore key to upload as
+/// multipart part "file" when the renderer chose `attach://file`.
+pub struct Call {
+    pub method: String,
+    pub body: Value,
+    pub upload: Option<String>,
+}
 
+/// Adds `chat_id` to rendered calls; moves `method` and the upload key out.
+pub fn calls(to: &ChannelAccountId, rendered: Vec<Value>) -> Vec<Call> {
+    rendered
+        .into_iter()
+        .map(|mut v| {
+            let method = v["method"].as_str().unwrap_or("sendMessage").to_string();
+            let mut upload = None;
+            if let Some(o) = v.as_object_mut() {
+                o.remove("method");
+                upload = o
+                    .remove("x_upload_file_key")
+                    .and_then(|k| k.as_str().map(String::from));
+                o.insert("chat_id".into(), json!(to.external_id));
+            }
+            Call {
+                method,
+                body: v,
+                upload,
+            }
+        })
+        .collect()
+}
+
+use std::sync::Arc;
 
 pub struct TelegramChannel {
     pub cfg: TelegramConfig,
     pub http: Arc<dyn harpseal::HttpClient>,
+}
+
+impl TelegramChannel {
+    pub fn render_cx(&self, locale: &Locale) -> RenderCx {
+        let mini_app_base_url =
+            (!self.cfg.web_app_url.is_empty()).then(|| self.cfg.web_app_url.clone());
+        RenderCx {
+            locale: locale.clone(),
+            mini_app_base_url,
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -46,12 +91,23 @@ impl harpseal::Channel for TelegramChannel {
     async fn download(&self, _file: &IncomingFile) -> Result<Vec<u8>> {
         todo!("getFile then GET file path (20 MB bot API ceiling)")
     }
-    async fn send(&self, _to: &ChannelAccountId, d: &Delivery, _m: &Message) -> Result<SendReceipt> {
+    async fn send(
+        &self,
+        to: &ChannelAccountId,
+        d: &Delivery,
+        m: &Message,
+        locale: &Locale,
+    ) -> Result<SendReceipt> {
         let _ = metering(d);
-        todo!("sendMessage with inline_keyboard; Card List -> one message per Card")
+        let calls = calls(to, render::message(m, &self.render_cx(locale)));
+        let _ = calls;
+        todo!(
+            "POST api.telegram.org/bot<token>/<method> per call (≤ 1 msg/s per chat); upload x_upload_file_key as multipart"
+        )
     }
-    async fn set_menu(&self, _to: &ChannelAccountId, _menu: Option<&Menu>) -> Result<()> {
-        todo!("setMyCommands scope=chat + setChatMenuButton")
+    async fn set_menu(&self, _to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
+        let _payloads = menu.map(render::menu);
+        todo!("setMyCommands + setChatMenuButton with chat_id; None: deleteMyCommands scope=chat")
     }
     fn editor(&self) -> Option<&dyn harpseal::EditMessage> {
         Some(self)
@@ -66,7 +122,13 @@ impl harpseal::Channel for TelegramChannel {
 
 #[async_trait::async_trait]
 impl harpseal::EditMessage for TelegramChannel {
-    async fn edit(&self, _: &ChannelAccountId, _: &PlatformMessageId, _: &Message) -> Result<()> {
+    async fn edit(
+        &self,
+        _: &ChannelAccountId,
+        _: &PlatformMessageId,
+        _: &Message,
+        _: &Locale,
+    ) -> Result<()> {
         todo!("editMessageText / editMessageReplyMarkup")
     }
 }
@@ -87,4 +149,3 @@ impl harpseal::MiniApp for TelegramChannel {
         todo!("validate initData HMAC with the bot token")
     }
 }
-

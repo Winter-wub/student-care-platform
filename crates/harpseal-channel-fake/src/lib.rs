@@ -10,7 +10,7 @@ use harpseal::delivery::{
     ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile, Metering, PlatformMessageId,
     SendReceipt, WebhookRequest,
 };
-use harpseal::message::{Menu, Message};
+use harpseal::message::{Locale, Menu, Message};
 use harpseal::{Error, Result};
 
 pub const KIND: ChannelKind = ChannelKind("fake");
@@ -36,7 +36,10 @@ pub struct FakeChannel {
 
 impl FakeChannel {
     pub fn new(secret: impl Into<String>) -> Self {
-        Self { secret: secret.into(), state: Arc::default() }
+        Self {
+            secret: secret.into(),
+            state: Arc::default(),
+        }
     }
 
     /// Queue an event for the next webhook call.
@@ -49,7 +52,10 @@ impl FakeChannel {
     }
 
     fn do_parse(&self, req: &WebhookRequest) -> Result<Vec<Inbound>> {
-        let sig = req.headers.get(SIGNATURE_HEADER).and_then(|v| v.to_str().ok());
+        let sig = req
+            .headers
+            .get(SIGNATURE_HEADER)
+            .and_then(|v| v.to_str().ok());
         if sig != Some(self.secret.as_str()) {
             return Err(Error::BadSignature);
         }
@@ -72,7 +78,10 @@ impl FakeChannel {
             Delivery::Reply(_) => Metering::Free,
             Delivery::Push => Metering::Metered,
         };
-        SendReceipt { message_id: Some(id), metering }
+        SendReceipt {
+            message_id: Some(id),
+            metering,
+        }
     }
 
     fn do_set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) {
@@ -84,7 +93,10 @@ impl FakeChannel {
     }
 
     fn session(token: &str) -> ChannelAccountId {
-        ChannelAccountId { channel: KIND, external_id: token.to_string() }
+        ChannelAccountId {
+            channel: KIND,
+            external_id: token.to_string(),
+        }
     }
 }
 
@@ -103,7 +115,13 @@ mod a {
         async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
             self.do_download(file)
         }
-        async fn send(&self, to: &ChannelAccountId, d: &Delivery, m: &Message) -> Result<SendReceipt> {
+        async fn send(
+            &self,
+            to: &ChannelAccountId,
+            d: &Delivery,
+            m: &Message,
+            _: &Locale,
+        ) -> Result<SendReceipt> {
             Ok(self.do_send(to, d, m))
         }
         async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
@@ -123,7 +141,13 @@ mod a {
 
     #[async_trait::async_trait]
     impl a::EditMessage for FakeChannel {
-        async fn edit(&self, _: &ChannelAccountId, id: &PlatformMessageId, m: &Message) -> Result<()> {
+        async fn edit(
+            &self,
+            _: &ChannelAccountId,
+            id: &PlatformMessageId,
+            m: &Message,
+            _: &Locale,
+        ) -> Result<()> {
             self.lock().edited.push((id.clone(), m.clone()));
             Ok(())
         }
@@ -147,4 +171,3 @@ mod a {
         }
     }
 }
-

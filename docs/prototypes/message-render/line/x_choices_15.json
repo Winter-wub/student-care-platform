@@ -1,0 +1,194 @@
+[
+  {
+    "altText": "เลือกวิชาที่ต้องการดูตารางสอบ",
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "size": "sm",
+            "text": "เลือกวิชาที่ต้องการดูตารางสอบ",
+            "type": "text",
+            "wrap": true
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "md",
+        "type": "box"
+      },
+      "footer": {
+        "contents": [
+          {
+            "action": {
+              "data": "exam.pick.1",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 01",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 01",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "primary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.2",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 02",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 02",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.3",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 03",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 03",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.4",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 04",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 04",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.5",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 05",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 05",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.6",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 06",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 06",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.7",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 07",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 07",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.8",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 08",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 08",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.9",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 09",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 09",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.10",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 10",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 10",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.11",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 11",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 11",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.12",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 12",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 12",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.13",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 13",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 13",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.14",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 14",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 14",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "exam.pick.15",
+              "displayText": "วิชาเลือกเสรีกลุ่มที่ 15",
+              "label": "วิชาเลือกเสรีกลุ่มที่ 15",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "sm",
+        "type": "box"
+      },
+      "type": "bubble"
+    },
+    "type": "flex"
+  }
+]

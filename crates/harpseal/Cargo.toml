@@ -13,3 +13,7 @@ axum.workspace = true
 http.workspace = true
 serde.workspace = true
 toml.workspace = true
+
+[features]
+# Sample first-slice messages for adapter tests (issue #3). Dev-only.
+fixtures = []

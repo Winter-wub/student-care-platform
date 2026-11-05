@@ -1,0 +1,71 @@
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2001",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2001"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>เปิดลงทะเบียนเรียนภาคฤดูร้อน #1</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2002",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2002"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ประกาศผลทุนการศึกษาประจำปี #2</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2003",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2003"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>กำหนดการสอบปลายภาค #3</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  }
+]

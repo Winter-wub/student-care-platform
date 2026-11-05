@@ -1,0 +1,67 @@
+{
+  "areas": [
+    {
+      "action": {
+        "data": "news.latest",
+        "displayText": "ประกาศล่าสุด",
+        "label": "ประกาศล่าสุด",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "action": {
+        "data": "inbox.open",
+        "displayText": "ติดต่อเจ้าหน้าที่",
+        "label": "ติดต่อเจ้าหน้าที่",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 1250,
+        "y": 0
+      }
+    },
+    {
+      "action": {
+        "data": "faq.list",
+        "displayText": "คำถามที่พบบ่อย",
+        "label": "คำถามที่พบบ่อย",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 0,
+        "y": 843
+      }
+    },
+    {
+      "action": {
+        "data": "link.revoke",
+        "displayText": "ยกเลิกการเชื่อมต่อ",
+        "label": "ยกเลิกการเชื่อมต่อ",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 1250,
+        "y": 843
+      }
+    }
+  ],
+  "chatBarText": "เมนู",
+  "name": "harpseal-4",
+  "selected": false,
+  "size": {
+    "height": 1686,
+    "width": 2500
+  }
+}

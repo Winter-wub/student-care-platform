@@ -9,14 +9,17 @@ use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 
+use crate::config::DeploymentConfig;
+use crate::delivery::{
+    ChannelAccountId, Delivery, Inbound, OutboundMessage, PlatformMessageId, ReplyToken,
+    WebhookRequest,
+};
+use crate::manifest::{Catalog, Job, JobSpec, MenuEntrySpec, Migration, Permission};
+use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
 use crate::{
     ActionContext, ActionHandler, BackOfficeState, Channel, JobContext, JobHandler, Module,
     ModuleRegistrar, Services, VerificationMethod,
 };
-use crate::config::DeploymentConfig;
-use crate::delivery::{ChannelAccountId, Delivery, Inbound, OutboundMessage, PlatformMessageId, ReplyToken, WebhookRequest};
-use crate::manifest::{Catalog, Job, JobSpec, MenuEntrySpec, Migration, Permission};
-use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
 use crate::{BuildError, Error, Result, kernel};
 
 pub struct Deployment {
@@ -85,7 +88,8 @@ impl DeploymentBuilder {
             }
         }
         let mut catalog = Catalog::default();
-        let (mut permissions, mut menu, mut migrations, mut back_office) = (vec![], vec![], vec![], vec![]);
+        let (mut permissions, mut menu, mut migrations, mut back_office) =
+            (vec![], vec![], vec![], vec![]);
         let (mut actions, mut jobs) = (HashMap::new(), HashMap::new());
         for m in &self.modules {
             let mut r = ModuleRegistrar::new(m.name());
@@ -106,7 +110,10 @@ impl DeploymentBuilder {
             migrations.extend(r.migrations);
             for (perm, router) in r.back_office {
                 if !permissions.iter().any(|p: &Permission| p.id == perm) {
-                    return Err(BuildError::UnguardedRoute { module: r.module, permission: perm });
+                    return Err(BuildError::UnguardedRoute {
+                        module: r.module,
+                        permission: perm,
+                    });
                 }
                 back_office.push((perm, router));
             }
@@ -154,12 +161,17 @@ impl Deployment {
             label: self.catalog.t(locale, e.label_key),
             action: e.action.clone(),
         });
-        Menu { entries: entries.collect() }
+        Menu {
+            entries: entries.collect(),
+        }
     }
 
     /// Webhooks at `/webhook/{channel}`; Module pages under `/admin`.
     pub fn router(self: Arc<Self>) -> axum::Router {
-        let state = Arc::new(BackOfficeState { services: self.services.clone(), catalog: self.catalog.clone() });
+        let state = Arc::new(BackOfficeState {
+            services: self.services.clone(),
+            catalog: self.catalog.clone(),
+        });
         let mut admin = axum::Router::new();
         for (_permission, r) in &self.back_office {
             // Prototype: the real Core wraps `r` in a layer that checks the
@@ -167,17 +179,22 @@ impl Deployment {
             admin = admin.merge(r.clone());
         }
         let d = self.clone();
-        let webhook = post(move |Path(kind): Path<String>, headers: HeaderMap, body: Bytes| {
-            let d = d.clone();
-            async move {
-                let req = WebhookRequest { headers, body: body.to_vec() };
-                match d.handle_webhook(&kind, req).await {
-                    Ok(()) => StatusCode::OK,
-                    Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
-                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        let webhook = post(
+            move |Path(kind): Path<String>, headers: HeaderMap, body: Bytes| {
+                let d = d.clone();
+                async move {
+                    let req = WebhookRequest {
+                        headers,
+                        body: body.to_vec(),
+                    };
+                    match d.handle_webhook(&kind, req).await {
+                        Ok(()) => StatusCode::OK,
+                        Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
+                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                    }
                 }
-            }
-        });
+            },
+        );
         axum::Router::new()
             .route("/webhook/{kind}", webhook)
             .nest("/admin", admin.with_state(state))
@@ -192,29 +209,53 @@ impl Deployment {
     }
 
     async fn handle_inbound(&self, ev: Inbound) -> Result<()> {
-        let Inbound::Action { from, action, reply } = ev else {
+        let Inbound::Action {
+            from,
+            action,
+            reply,
+        } = ev
+        else {
             return Ok(()); // text -> FAQ / Handoff, file -> Attachment: out of scope
         };
         let rows = self.services.db.query(kernel::find_link(&from)).await?;
         let Some((student, locale)) = kernel::parse_link(&rows) else {
             let _ = &self.verification; // Kernel would start Verification here
-            let msg = Message::text(self.catalog.t(&self.config.default_locale, "link.required"));
-            self.send(&from, reply.as_ref(), &msg).await?;
+            let locale = self.config.default_locale.clone();
+            let msg = Message::text(self.catalog.t(&locale, "link.required"));
+            self.send(&from, reply.as_ref(), &msg, &locale).await?;
             return Ok(());
         };
-        let handler = self.actions.get(&action).ok_or_else(|| Error::Invalid(action.as_str().into()))?;
-        let cx = ActionContext { services: self.services.clone(), catalog: self.catalog.clone(), student, account: from.clone(), locale };
+        let handler = self
+            .actions
+            .get(&action)
+            .ok_or_else(|| Error::Invalid(action.as_str().into()))?;
+        let cx = ActionContext {
+            services: self.services.clone(),
+            catalog: self.catalog.clone(),
+            student,
+            account: from.clone(),
+            locale: locale.clone(),
+        };
         for msg in handler.handle(cx).await? {
-            self.send(&from, reply.as_ref(), &msg).await?;
+            self.send(&from, reply.as_ref(), &msg, &locale).await?;
         }
         Ok(())
     }
 
     /// Picks Reply or Push, sends, records the Outbound Message.
-    pub async fn send(&self, to: &ChannelAccountId, reply: Option<&ReplyToken>, msg: &Message) -> Result<OutboundMessage> {
+    pub async fn send(
+        &self,
+        to: &ChannelAccountId,
+        reply: Option<&ReplyToken>,
+        msg: &Message,
+        locale: &Locale,
+    ) -> Result<OutboundMessage> {
         let now = self.services.clock.now();
         let delivery = Delivery::select(reply, now);
-        let receipt = self.channel(to.channel.0)?.send(to, &delivery, msg).await?;
+        let receipt = self
+            .channel(to.channel.0)?
+            .send(to, &delivery, msg, locale)
+            .await?;
         let out = OutboundMessage {
             to: to.clone(),
             push: matches!(delivery, Delivery::Push),
@@ -222,20 +263,39 @@ impl Deployment {
             message_id: receipt.message_id,
             sent_at: now,
         };
-        self.services.db.execute(kernel::record_outbound(&out)).await?;
+        self.services
+            .db
+            .execute(kernel::record_outbound(&out))
+            .await?;
         Ok(out)
     }
 
     /// Uses the edit Capability when present, otherwise sends a new message.
-    pub async fn update_message(&self, to: &ChannelAccountId, id: &PlatformMessageId, msg: &Message) -> Result<()> {
+    pub async fn update_message(
+        &self,
+        to: &ChannelAccountId,
+        id: &PlatformMessageId,
+        msg: &Message,
+        locale: &Locale,
+    ) -> Result<()> {
         match self.channel(to.channel.0)?.editor() {
-            Some(editor) => editor.edit(to, id, msg).await,
-            None => self.send(to, None, msg).await.map(|_| ()),
+            Some(editor) => editor.edit(to, id, msg, locale).await,
+            None => self.send(to, None, msg, locale).await.map(|_| ()),
         }
     }
 
     pub async fn run_job(&self, job: Job) -> Result<()> {
-        let (_, h) = self.jobs.get(job.kind.as_str()).ok_or_else(|| Error::Invalid(job.kind.clone()))?;
-        h.run(JobContext { services: self.services.clone(), catalog: self.catalog.clone() }, job).await
+        let (_, h) = self
+            .jobs
+            .get(job.kind.as_str())
+            .ok_or_else(|| Error::Invalid(job.kind.clone()))?;
+        h.run(
+            JobContext {
+                services: self.services.clone(),
+                catalog: self.catalog.clone(),
+            },
+            job,
+        )
+        .await
     }
 }

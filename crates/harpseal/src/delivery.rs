@@ -96,9 +96,21 @@ pub struct IncomingFile {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Inbound {
-    Text { from: ChannelAccountId, text: String, reply: Option<ReplyToken> },
-    File { from: ChannelAccountId, file: IncomingFile, reply: Option<ReplyToken> },
-    Action { from: ChannelAccountId, action: ActionId, reply: Option<ReplyToken> },
+    Text {
+        from: ChannelAccountId,
+        text: String,
+        reply: Option<ReplyToken>,
+    },
+    File {
+        from: ChannelAccountId,
+        file: IncomingFile,
+        reply: Option<ReplyToken>,
+    },
+    Action {
+        from: ChannelAccountId,
+        action: ActionId,
+        reply: Option<ReplyToken>,
+    },
     /// The Student blocked the bot: Link becomes unreachable.
     Blocked { from: ChannelAccountId },
 }

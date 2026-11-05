@@ -11,7 +11,11 @@ pub mod error;
 pub mod manifest;
 pub mod message;
 pub mod port_types;
+pub mod render;
 pub mod verification;
+
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
 
 mod channel;
 mod deployment;

@@ -3,10 +3,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use harpseal::delivery::Timestamp;
-use harpseal::{self as a, Services};
-use harpseal::port_types::{Email, ExecResult, Rows, Statement};
 use harpseal::Result;
+use harpseal::delivery::Timestamp;
+use harpseal::port_types::{Email, ExecResult, Rows, Statement};
+use harpseal::{self as a, Services};
 
 use crate::*;
 
@@ -68,8 +68,12 @@ pub fn services(s: &NativeSettings) -> Result<(Services, Arc<SqliteDb>)> {
     let db = Arc::new(SqliteDb::open(&s.sqlite_path)?);
     let services = Services {
         db: db.clone(),
-        files: Arc::new(LocalFiles { root: s.files_root.clone() }),
-        email: Arc::new(Smtp { url: s.smtp_url.clone() }),
+        files: Arc::new(LocalFiles {
+            root: s.files_root.clone(),
+        }),
+        email: Arc::new(Smtp {
+            url: s.smtp_url.clone(),
+        }),
         http: Arc::new(NativeHttp),
         clock: Arc::new(SystemClock),
         random: Arc::new(OsRandom),

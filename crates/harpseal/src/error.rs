@@ -45,7 +45,13 @@ pub enum BuildError {
     DuplicateAction(String),
     DuplicatePermission(&'static str),
     /// A Role in deployment.toml names a Permission no Module defined.
-    UnknownPermission { role: String, permission: String },
+    UnknownPermission {
+        role: String,
+        permission: String,
+    },
     /// A back-office route or Menu entry refers to an undefined Permission.
-    UnguardedRoute { module: &'static str, permission: &'static str },
+    UnguardedRoute {
+        module: &'static str,
+        permission: &'static str,
+    },
 }

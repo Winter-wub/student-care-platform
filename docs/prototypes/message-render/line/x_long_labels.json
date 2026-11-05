@@ -1,0 +1,47 @@
+[
+  {
+    "altText": "แบบสอบถาม",
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "size": "lg",
+            "text": "แบบสอบถาม",
+            "type": "text",
+            "weight": "bold",
+            "wrap": true
+          },
+          {
+            "size": "sm",
+            "text": "กรุณาเลือกหนึ่งข้อ",
+            "type": "text",
+            "wrap": true
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "md",
+        "type": "box"
+      },
+      "footer": {
+        "contents": [
+          {
+            "action": {
+              "data": "consent.accept",
+              "displayText": "ยอมรับเงื่อนไขการใช้ข้อมูลส่วนบุคคลฉบับปรับปรุง ยอมรับเงื่อนไขการใช้ข้อมูลส่วนบุคคลฉบับปรับปรุง ",
+              "label": "ยอมรับเงื่อนไขการใช้ข้อมูลส่วนบุคคลฉบับ…",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "primary",
+            "type": "button"
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "sm",
+        "type": "box"
+      },
+      "type": "bubble"
+    },
+    "type": "flex"
+  }
+]

@@ -1,0 +1,785 @@
+[
+  {
+    "altText": "12 รายการ (1/2): เปิดลงทะเบียนเรียนภาคฤดูร้อน #1, ประกาศผลทุนการศึกษาประจำปี #2, กำหนดการสอบปลายภาค #3, รับสมัครนักศึกษาช่วยงานห้องสมุด #4, ปรับเวลารถรับส่งภายในมหาวิทยาลัย #5, เปิดลงทะเบียนเรียนภาคฤดูร้อน #6, ประกาศผลทุนการศึกษาประจำปี #7, กำหนดการสอบปลายภาค #8, รับสมัครนักศึกษาช่วยงานห้องสมุด #9, ปรับเวลารถรับส่งภายในมหาวิทยาลัย #10, เปิดลงทะเบียนเรียนภาคฤดูร้อน #11, ประกาศผลทุนการศึกษาประจำปี #12",
+    "contents": {
+      "contents": [
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "เปิดลงทะเบียนเรียนภาคฤดูร้อน #1",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2001",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2001"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ประกาศผลทุนการศึกษาประจำปี #2",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2002",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2002"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "กำหนดการสอบปลายภาค #3",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2003",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2003"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "รับสมัครนักศึกษาช่วยงานห้องสมุด #4",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2004",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2004"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ปรับเวลารถรับส่งภายในมหาวิทยาลัย #5",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2005",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2005"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "เปิดลงทะเบียนเรียนภาคฤดูร้อน #6",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2006",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2006"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ประกาศผลทุนการศึกษาประจำปี #7",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2007",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2007"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "กำหนดการสอบปลายภาค #8",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2008",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2008"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "รับสมัครนักศึกษาช่วยงานห้องสมุด #9",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2009",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2009"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ปรับเวลารถรับส่งภายในมหาวิทยาลัย #10",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2010",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2010"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "เปิดลงทะเบียนเรียนภาคฤดูร้อน #11",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2011",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2011"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ประกาศผลทุนการศึกษาประจำปี #12",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2012",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2012"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        }
+      ],
+      "type": "carousel"
+    },
+    "type": "flex"
+  },
+  {
+    "altText": "3 รายการ (2/2): กำหนดการสอบปลายภาค #13, รับสมัครนักศึกษาช่วยงานห้องสมุด #14, ปรับเวลารถรับส่งภายในมหาวิทยาลัย #15",
+    "contents": {
+      "contents": [
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "กำหนดการสอบปลายภาค #13",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2013",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2013"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "รับสมัครนักศึกษาช่วยงานห้องสมุด #14",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2014",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2014"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ปรับเวลารถรับส่งภายในมหาวิทยาลัย #15",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2015",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2015"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        }
+      ],
+      "type": "carousel"
+    },
+    "type": "flex"
+  }
+]

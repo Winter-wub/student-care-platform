@@ -1,0 +1,164 @@
+[
+  {
+    "altText": "3 รายการ: เปิดลงทะเบียนเรียนภาคฤดูร้อน #1, ประกาศผลทุนการศึกษาประจำปี #2, กำหนดการสอบปลายภาค #3",
+    "contents": {
+      "contents": [
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "เปิดลงทะเบียนเรียนภาคฤดูร้อน #1",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2001",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2001"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "ประกาศผลทุนการศึกษาประจำปี #2",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2002",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2002"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        },
+        {
+          "body": {
+            "contents": [
+              {
+                "size": "lg",
+                "text": "กำหนดการสอบปลายภาค #3",
+                "type": "text",
+                "weight": "bold",
+                "wrap": true
+              },
+              {
+                "size": "sm",
+                "text": "รายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง",
+                "type": "text",
+                "wrap": true
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "md",
+            "type": "box"
+          },
+          "footer": {
+            "contents": [
+              {
+                "action": {
+                  "data": "news.ack.2003",
+                  "displayText": "รับทราบ",
+                  "label": "รับทราบ",
+                  "type": "postback"
+                },
+                "height": "sm",
+                "style": "primary",
+                "type": "button"
+              },
+              {
+                "action": {
+                  "label": "เปิดดูรายละเอียด",
+                  "type": "uri",
+                  "uri": "https://liff.line.me/2000000000-SealBay0/news/2003"
+                },
+                "height": "sm",
+                "style": "secondary",
+                "type": "button"
+              }
+            ],
+            "layout": "vertical",
+            "spacing": "sm",
+            "type": "box"
+          },
+          "type": "bubble"
+        }
+      ],
+      "type": "carousel"
+    },
+    "type": "flex"
+  }
+]
