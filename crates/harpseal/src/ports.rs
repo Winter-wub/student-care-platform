@@ -1,20 +1,5 @@
-//! Design A: trait objects + runtime registry.
-//!
-//! Every seam is an object-safe trait stored as `Arc<dyn _>`. A runtime crate
-//! hands the Core a [`Services`] value; Modules call [`ModuleRegistrar`]
-//! methods from [`Module::register`]; the Core keeps the result in maps and
-//! dispatches by id at run time.
-
-mod channel;
-mod deployment;
-mod module;
-
-pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp};
-pub use deployment::{Deployment, DeploymentBuilder};
-pub use module::{
-    ActionContext, ActionHandler, AppState, BackOfficeState, JobContext, JobHandler, Module,
-    ModuleRegistrar,
-};
+//! Runtime ports, `Services` and the Verification Method seam. Every seam is
+//! an object-safe trait held as `Arc<dyn _>`.
 
 use std::sync::Arc;
 

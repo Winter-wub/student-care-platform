@@ -1,12 +1,11 @@
-//! Self-hosted binary for the fictional Deployment. `HARPSEAL_DESIGN=b`
-//! picks the Design B wiring; anything else uses Design A.
+//! Self-hosted binary for the fictional Deployment.
 
 use std::sync::Arc;
 
-use example_deployment::{Secrets, with_design_a, with_design_b};
+use example_deployment::{Secrets, with_design_a};
 use harpseal_channel_line::LineConfig;
 use harpseal_channel_telegram::TelegramConfig;
-use harpseal_runtime_native::{NativeHttp, NativeRuntime, NativeSettings, serve, services};
+use harpseal_runtime_native::{NativeSettings, serve, services};
 
 fn env(k: &str, default: &str) -> String {
     std::env::var(k).unwrap_or_else(|_| default.to_string())
@@ -37,17 +36,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let addr = env("HARPSEAL_ADDR", "127.0.0.1:8080");
 
-    let router = if env("HARPSEAL_DESIGN", "a") == "b" {
-        let d = with_design_b::deployment(NativeRuntime::open(&settings)?, NativeHttp, secrets())
-            .map_err(|e| format!("{e:?}"))?;
-        d.runtime().db.migrate(d.migrations())?;
-        Arc::new(d).router()
-    } else {
-        let (services, db) = services(&settings)?;
-        let d = with_design_a::deployment(services, secrets()).map_err(|e| format!("{e:?}"))?;
-        db.migrate(d.migrations())?;
-        Arc::new(d).router()
-    };
+    let (services, db) = services(&settings)?;
+    let d = with_design_a::deployment(services, secrets()).map_err(|e| format!("{e:?}"))?;
+    db.migrate(d.migrations())?;
+    let router = Arc::new(d).router();
     serve(router, &addr).await?;
     Ok(())
 }

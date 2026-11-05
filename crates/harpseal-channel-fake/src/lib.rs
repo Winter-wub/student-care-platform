@@ -90,7 +90,7 @@ impl FakeChannel {
 
 mod a {
     use super::*;
-    use harpseal::design_a as a;
+    use harpseal as a;
 
     #[async_trait::async_trait]
     impl a::Channel for FakeChannel {
@@ -148,60 +148,3 @@ mod a {
     }
 }
 
-mod b {
-    use super::*;
-    use harpseal::design_b as b;
-
-    impl b::Channel for FakeChannel {
-        const KIND: ChannelKind = KIND;
-        type Editor = Self;
-        type Deleter = Self;
-        type MiniApp = Self;
-
-        async fn parse_webhook(&self, req: WebhookRequest) -> Result<Vec<Inbound>> {
-            self.do_parse(&req)
-        }
-        async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
-            self.do_download(file)
-        }
-        async fn send(&self, to: &ChannelAccountId, d: &Delivery, m: &Message) -> Result<SendReceipt> {
-            Ok(self.do_send(to, d, m))
-        }
-        async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
-            self.do_set_menu(to, menu);
-            Ok(())
-        }
-        fn editor(&self) -> Option<&Self> {
-            Some(self)
-        }
-        fn deleter(&self) -> Option<&Self> {
-            Some(self)
-        }
-        fn mini_app(&self) -> Option<&Self> {
-            Some(self)
-        }
-    }
-
-    impl b::EditMessage for FakeChannel {
-        async fn edit(&self, _: &ChannelAccountId, id: &PlatformMessageId, m: &Message) -> Result<()> {
-            self.lock().edited.push((id.clone(), m.clone()));
-            Ok(())
-        }
-    }
-
-    impl b::DeleteMessage for FakeChannel {
-        async fn delete(&self, _: &ChannelAccountId, id: &PlatformMessageId) -> Result<()> {
-            self.lock().deleted.push(id.clone());
-            Ok(())
-        }
-    }
-
-    impl b::MiniApp for FakeChannel {
-        fn launch_url(&self, path: &str) -> String {
-            FakeChannel::launch(path)
-        }
-        async fn verify_session(&self, token: &str) -> Result<ChannelAccountId> {
-            Ok(FakeChannel::session(token))
-        }
-    }
-}

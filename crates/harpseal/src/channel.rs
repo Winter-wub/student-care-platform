@@ -1,4 +1,4 @@
-//! Design A Channel: one object-safe trait; optional Capabilities are
+//! Channel: one object-safe trait; optional Capabilities are
 //! accessor methods returning `Option<&dyn _>`.
 
 use async_trait::async_trait;
