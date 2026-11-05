@@ -8,7 +8,7 @@ use crate::delivery::{
     Capabilities, ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile,
     PlatformMessageId, SendReceipt, WebhookRequest,
 };
-use crate::message::{Menu, Message};
+use crate::message::{Locale, Menu, Message};
 
 /// A messaging platform adapter. The required minimum:
 /// receive text and files (`parse_webhook` + `download`), send
@@ -27,12 +27,14 @@ pub trait Channel: Send + Sync {
     async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>>;
 
     /// Render and send one message. The adapter degrades what it cannot show
-    /// and reports whether the platform metered it.
+    /// and reports whether the platform metered it. `locale` is the
+    /// Student's, for the adapter's own degrade texts (added for issue #3).
     async fn send(
         &self,
         to: &ChannelAccountId,
         delivery: &Delivery,
         msg: &Message,
+        locale: &Locale,
     ) -> Result<SendReceipt>;
 
     /// Set (or with `None`, reset to the locked pre-Link) Menu for one account.
@@ -63,8 +65,13 @@ pub trait Channel: Send + Sync {
 
 #[async_trait]
 pub trait EditMessage: Send + Sync {
-    async fn edit(&self, to: &ChannelAccountId, id: &PlatformMessageId, msg: &Message)
-    -> Result<()>;
+    async fn edit(
+        &self,
+        to: &ChannelAccountId,
+        id: &PlatformMessageId,
+        msg: &Message,
+        locale: &Locale,
+    ) -> Result<()>;
 }
 
 #[async_trait]

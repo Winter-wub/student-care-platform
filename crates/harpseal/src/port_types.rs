@@ -36,7 +36,10 @@ pub struct Statement {
 
 impl Statement {
     pub fn new(sql: &'static str) -> Self {
-        Self { sql: sql.into(), params: Vec::new() }
+        Self {
+            sql: sql.into(),
+            params: Vec::new(),
+        }
     }
     pub fn bind(mut self, v: impl Into<Value>) -> Self {
         self.params.push(v.into());

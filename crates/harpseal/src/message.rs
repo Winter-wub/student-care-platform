@@ -40,9 +40,15 @@ impl ActionId {
 /// A button: a label and the Action it triggers, or a Mini App path.
 #[derive(Debug, Clone)]
 pub enum Button {
-    Action { label: String, action: ActionId },
+    Action {
+        label: String,
+        action: ActionId,
+    },
     /// Opens a Mini App page; adapters without the capability degrade it.
-    MiniApp { label: String, path: String },
+    MiniApp {
+        label: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +75,11 @@ pub struct Attachment {
     pub file_key: String,
     pub file_name: String,
     pub content_type: String,
+    /// Added for issue #3: adapters pick a message type by size.
+    pub size_bytes: u64,
+    /// Added for issue #3: an HTTPS URL the platform can fetch (the Kernel
+    /// mints a signed, expiring URL from the FileStore before `send`).
+    pub url: String,
 }
 
 /// One outgoing message, channel-neutral. The Channel minimum must render

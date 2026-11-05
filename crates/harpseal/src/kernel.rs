@@ -1,11 +1,11 @@
 //! Kernel pieces both designs share. Not public API (schema is internal).
 
+use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, OutboundMessage, StudentId};
 use crate::error::BuildError;
 use crate::manifest::Permission;
 use crate::message::Locale;
 use crate::port_types::{Rows, Statement, Value};
-use crate::config::DeploymentConfig;
 
 pub(crate) fn find_link(account: &ChannelAccountId) -> Statement {
     Statement::new(
@@ -32,7 +32,12 @@ pub(crate) fn record_outbound(m: &OutboundMessage) -> Statement {
     .bind(m.to.external_id.clone())
     .bind(i64::from(m.push))
     .bind(i64::from(m.metering == crate::delivery::Metering::Metered))
-    .bind(m.message_id.as_ref().map(|i| i.0.clone()).unwrap_or_default())
+    .bind(
+        m.message_id
+            .as_ref()
+            .map(|i| i.0.clone())
+            .unwrap_or_default(),
+    )
     .bind(m.sent_at.0)
 }
 

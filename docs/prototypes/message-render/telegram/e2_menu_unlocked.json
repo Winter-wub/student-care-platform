@@ -1,0 +1,32 @@
+{
+  "setChatMenuButton": {
+    "menu_button": {
+      "type": "commands"
+    },
+    "method": "setChatMenuButton"
+  },
+  "setMyCommands": {
+    "commands": [
+      {
+        "command": "news_latest",
+        "description": "ประกาศล่าสุด"
+      },
+      {
+        "command": "inbox_open",
+        "description": "ติดต่อเจ้าหน้าที่"
+      },
+      {
+        "command": "faq_list",
+        "description": "คำถามที่พบบ่อย"
+      },
+      {
+        "command": "link_revoke",
+        "description": "ยกเลิกการเชื่อมต่อ"
+      }
+    ],
+    "method": "setMyCommands",
+    "scope": {
+      "type": "chat"
+    }
+  }
+}

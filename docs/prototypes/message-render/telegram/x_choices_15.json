@@ -1,0 +1,100 @@
+[
+  {
+    "method": "sendMessage",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "exam.pick.1",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 01"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.2",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 02"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.3",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 03"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.4",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 04"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.5",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 05"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.6",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 06"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.7",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 07"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.8",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 08"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.9",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 09"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.10",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 10"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.11",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 11"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.12",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 12"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.13",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 13"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.14",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 14"
+          }
+        ],
+        [
+          {
+            "callback_data": "exam.pick.15",
+            "text": "วิชาเลือกเสรีกลุ่มที่ 15"
+          }
+        ]
+      ]
+    },
+    "text": "เลือกวิชาที่ต้องการดูตารางสอบ"
+  }
+]

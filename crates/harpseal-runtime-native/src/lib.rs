@@ -44,7 +44,9 @@ fn from_sql(v: SqlValue) -> Value {
 impl SqliteDb {
     pub fn open(path: &str) -> Result<Self> {
         let conn = rusqlite::Connection::open(path).map_err(db_err)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
@@ -56,10 +58,17 @@ impl SqliteDb {
         let mut st = conn.prepare(&s.sql).map_err(db_err)?;
         let columns: Vec<String> = st.column_names().map(|c| c.to_string()).collect();
         let n = columns.len();
-        let mut out = Rows { columns, rows: Vec::new() };
-        let mut rows = st.query(rusqlite::params_from_iter(s.params.iter().map(to_sql))).map_err(db_err)?;
+        let mut out = Rows {
+            columns,
+            rows: Vec::new(),
+        };
+        let mut rows = st
+            .query(rusqlite::params_from_iter(s.params.iter().map(to_sql)))
+            .map_err(db_err)?;
         while let Some(row) = rows.next().map_err(db_err)? {
-            let vals = (0..n).map(|i| row.get::<_, SqlValue>(i).map(from_sql)).collect::<rusqlite::Result<_>>();
+            let vals = (0..n)
+                .map(|i| row.get::<_, SqlValue>(i).map(from_sql))
+                .collect::<rusqlite::Result<_>>();
             out.rows.push(vals.map_err(db_err)?);
         }
         Ok(out)
@@ -67,9 +76,15 @@ impl SqliteDb {
 
     fn exec_on(conn: &rusqlite::Connection, s: &Statement) -> Result<ExecResult> {
         let n = conn
-            .execute(&s.sql, rusqlite::params_from_iter(s.params.iter().map(to_sql)))
+            .execute(
+                &s.sql,
+                rusqlite::params_from_iter(s.params.iter().map(to_sql)),
+            )
             .map_err(db_err)?;
-        Ok(ExecResult { rows_affected: n as u64, last_insert_rowid: Some(conn.last_insert_rowid()) })
+        Ok(ExecResult {
+            rows_affected: n as u64,
+            last_insert_rowid: Some(conn.last_insert_rowid()),
+        })
     }
 
     fn execute_sync(&self, s: &Statement) -> Result<ExecResult> {
@@ -79,7 +94,10 @@ impl SqliteDb {
     fn batch_sync(&self, stmts: &[Statement]) -> Result<Vec<ExecResult>> {
         let mut conn = self.lock();
         let tx = conn.transaction().map_err(db_err)?;
-        let out = stmts.iter().map(|s| Self::exec_on(&tx, s)).collect::<Result<Vec<_>>>()?;
+        let out = stmts
+            .iter()
+            .map(|s| Self::exec_on(&tx, s))
+            .collect::<Result<Vec<_>>>()?;
         tx.commit().map_err(db_err)?;
         Ok(out)
     }
@@ -91,11 +109,16 @@ impl SqliteDb {
             .map_err(db_err)?;
         for m in migrations {
             let done: bool = conn
-                .query_row("SELECT 1 FROM _migration WHERE module = ?1 AND name = ?2", [m.module, m.name], |_| Ok(true))
+                .query_row(
+                    "SELECT 1 FROM _migration WHERE module = ?1 AND name = ?2",
+                    [m.module, m.name],
+                    |_| Ok(true),
+                )
                 .unwrap_or(false);
             if !done {
                 conn.execute_batch(m.sql).map_err(db_err)?;
-                conn.execute("INSERT INTO _migration VALUES (?1, ?2)", [m.module, m.name]).map_err(db_err)?;
+                conn.execute("INSERT INTO _migration VALUES (?1, ?2)", [m.module, m.name])
+                    .map_err(db_err)?;
             }
         }
         Ok(())
@@ -145,7 +168,9 @@ pub struct OsRandom;
 
 impl SystemClock {
     fn now_sync() -> Timestamp {
-        let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        let d = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
         Timestamp(d.as_millis() as i64)
     }
 }

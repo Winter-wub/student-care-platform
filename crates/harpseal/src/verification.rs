@@ -23,6 +23,10 @@ pub struct EmailOtp {
 
 impl Default for EmailOtp {
     fn default() -> Self {
-        Self { code_digits: 6, ttl_secs: 600, max_attempts: 5 }
+        Self {
+            code_digits: 6,
+            ttl_secs: 600,
+            max_attempts: 5,
+        }
     }
 }
