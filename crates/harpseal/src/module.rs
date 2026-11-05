@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use super::Services;
+use crate::Services;
 use crate::Result;
 use crate::delivery::{ChannelAccountId, StudentId};
 use crate::manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};

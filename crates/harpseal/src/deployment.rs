@@ -1,4 +1,4 @@
-//! Design A Deployment: a builder that collects boxed parts, validates them
+//! Deployment: a builder that collects boxed parts, validates them
 //! at `build()`, and a Deployment that dispatches through maps.
 
 use std::collections::HashMap;
@@ -9,7 +9,7 @@ use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 
-use super::{
+use crate::{
     ActionContext, ActionHandler, BackOfficeState, Channel, JobContext, JobHandler, Module,
     ModuleRegistrar, Services, VerificationMethod,
 };
@@ -30,7 +30,7 @@ pub struct Deployment {
     actions: HashMap<ActionId, Arc<dyn ActionHandler>>,
     jobs: HashMap<&'static str, (JobSpec, Arc<dyn JobHandler>)>,
     migrations: Vec<Migration>,
-    back_office: Vec<(&'static str, axum::Router<super::AppState>)>,
+    back_office: Vec<(&'static str, axum::Router<crate::AppState>)>,
 }
 
 #[derive(Default)]

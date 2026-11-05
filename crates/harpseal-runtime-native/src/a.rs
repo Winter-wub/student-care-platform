@@ -1,10 +1,10 @@
-//! Design A wiring: concrete types behind `Arc<dyn _>` in `Services`.
+//! Wiring: concrete types behind `Arc<dyn _>` in `Services`.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use harpseal::delivery::Timestamp;
-use harpseal::design_a::{self as a, Services};
+use harpseal::{self as a, Services};
 use harpseal::port_types::{Email, ExecResult, Rows, Statement};
 use harpseal::Result;
 

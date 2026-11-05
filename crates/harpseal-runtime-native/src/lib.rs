@@ -1,5 +1,5 @@
 //! Native runtime: a single tokio binary on the customer's own server.
-//! Implements the runtime ports for BOTH prototype designs: SQLite file via
+//! Implements the runtime ports : SQLite file via
 //! rusqlite, a local directory as FileStore, the OS clock and RNG. SMTP and
 //! outgoing HTTP are `todo!()` in this prototype.
 
@@ -162,12 +162,10 @@ pub struct NativeSettings {
 }
 
 mod a;
-mod b;
 
 pub use a::services;
-pub use b::NativeRuntime;
 
-/// `axum::serve` on a TCP listener. Works for either design's router.
+/// `axum::serve` on a TCP listener.
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router).await
