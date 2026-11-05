@@ -84,7 +84,7 @@ The language a Student or a piece of content is in. Every Deployment has a defau
 ### Messaging
 
 **Channel Capability** (ความสามารถของช่องทาง):
-Something a Channel can do beyond the required minimum, such as editing a sent message or opening a Mini App. A Channel adapter declares its Capabilities; the Core uses them when present.
+Something a Channel can do beyond the required minimum, such as editing a sent message, sending a file to a Student, or opening a Mini App. The required minimum is receiving text and files, and sending Text, Card, Card List and Choices. A Channel adapter declares its Capabilities; the Core uses them when present.
 
 **Reply** (ตอบกลับ):
 An outgoing message sent in the context of a message the Student just sent, while the Channel still allows it. Free on LINE.
