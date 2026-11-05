@@ -7,8 +7,8 @@ default_locale = "th"
 # Initial Roles: role -> Permission ids. Every id must be defined by a Module
 # (or the Kernel); build() fails otherwise.
 [roles]
-admin = ["hello.view"]
-student_affairs = ["hello.view"]
+admin = ["hello.view", "kernel.student.view", "announcements.send"]
+student_affairs = ["hello.view", "kernel.student.view", "announcements.send"]
 
 [office_hours]
 timezone = "Asia/Bangkok"

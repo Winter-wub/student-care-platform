@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::Path;
-use axum::http::{HeaderMap, StatusCode};
-use axum::routing::post;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::routing::{get, post};
 
 use crate::config::DeploymentConfig;
 use crate::delivery::{
@@ -34,6 +34,7 @@ pub struct Deployment {
     jobs: HashMap<&'static str, (JobSpec, Arc<dyn JobHandler>)>,
     migrations: Vec<Migration>,
     back_office: Vec<(&'static str, axum::Router<crate::AppState>)>,
+    public: Vec<axum::Router<crate::AppState>>,
 }
 
 #[derive(Default)]
@@ -88,8 +89,8 @@ impl DeploymentBuilder {
             }
         }
         let mut catalog = Catalog::default();
-        let (mut permissions, mut menu, mut migrations, mut back_office) =
-            (vec![], vec![], vec![], vec![]);
+        let (mut permissions, mut menu, mut migrations, mut back_office, mut public) =
+            (vec![], vec![], vec![], vec![], vec![]);
         let (mut actions, mut jobs) = (HashMap::new(), HashMap::new());
         for m in &self.modules {
             let mut r = ModuleRegistrar::new(m.name());
@@ -108,6 +109,7 @@ impl DeploymentBuilder {
             permissions.extend(r.permissions);
             menu.extend(r.menu);
             migrations.extend(r.migrations);
+            public.extend(r.public);
             for (perm, router) in r.back_office {
                 if !permissions.iter().any(|p: &Permission| p.id == perm) {
                     return Err(BuildError::UnguardedRoute {
@@ -133,6 +135,7 @@ impl DeploymentBuilder {
             jobs,
             migrations,
             back_office,
+            public,
         })
     }
 }
@@ -166,11 +169,18 @@ impl Deployment {
         }
     }
 
-    /// Webhooks at `/webhook/{channel}`; Module pages under `/admin`.
+    /// The name shown in page chrome.
+    pub fn name(&self) -> &str {
+        &self.config.name
+    }
+
+    /// Webhooks at `/webhook/{channel}`; Module pages under `/admin`;
+    /// public Module pages at the root; the shared stylesheet.
     pub fn router(self: Arc<Self>) -> axum::Router {
         let state = Arc::new(BackOfficeState {
             services: self.services.clone(),
             catalog: self.catalog.clone(),
+            org: self.config.name.clone(),
         });
         let mut admin = axum::Router::new();
         for (_permission, r) in &self.back_office {
@@ -195,9 +205,23 @@ impl Deployment {
                 }
             },
         );
-        axum::Router::new()
-            .route("/webhook/{kind}", webhook)
-            .nest("/admin", admin.with_state(state))
+        let mut root = axum::Router::new();
+        for r in &self.public {
+            root = root.merge(r.clone());
+        }
+        let css = get(|| async {
+            (
+                [
+                    (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+                    (header::CACHE_CONTROL, "public, max-age=86400"),
+                ],
+                crate::ui::CSS,
+            )
+        });
+        root.route("/webhook/{kind}", webhook)
+            .route(crate::ui::CSS_PATH, css)
+            .nest("/admin", admin)
+            .with_state(state)
     }
 
     pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<()> {

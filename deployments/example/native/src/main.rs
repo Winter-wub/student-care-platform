@@ -35,11 +35,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         smtp_url: env("HARPSEAL_SMTP", "smtp://localhost:25"),
     };
     let addr = env("HARPSEAL_ADDR", "127.0.0.1:8080");
+    // Plain HTTP on localhost: browsers drop `Secure` cookies there (Safari).
+    let secure = env("HARPSEAL_SECURE_COOKIES", "0") == "1";
 
     let (services, db) = services(&settings)?;
-    let d = with_design_a::deployment(services, secrets()).map_err(|e| format!("{e:?}"))?;
+    let d = with_design_a::deployment(services, secrets(), secure).map_err(|e| format!("{e:?}"))?;
     db.migrate(d.migrations())?;
     let router = Arc::new(d).router();
+    println!("listening on http://{addr}  (try /admin/login, /app?student=68010001, /notice)");
     serve(router, &addr).await?;
     Ok(())
 }
