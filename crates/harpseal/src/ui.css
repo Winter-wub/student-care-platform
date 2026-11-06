@@ -235,3 +235,32 @@ form.inline { display: inline-flex; margin: 0; }
 .chart .key::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; }
 .chart .key.m::before { background: var(--brand); }
 .chart .key.f::before { background: #c62828; }
+
+/* Mini App pages (#28): one column, 16 px gutters, 48 px tap targets,
+   nothing wider than the viewport at 360 px. */
+.app-who { display: flex; gap: 12px; align-items: center; }
+.app-who h1 { margin: 0; font-size: 1.125rem; }
+.app-who p { margin: 0; }
+.app-consent { margin: 12px 0 0; }
+.app-news { list-style: none; margin: 0; padding: 0; }
+.app-news > li { margin-bottom: 12px; }
+.app-news details { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.app-news summary { display: block; list-style: none; cursor: pointer; padding: var(--gutter); min-height: var(--tap); }
+.app-news summary::-webkit-details-marker { display: none; }
+.app-news h3 { font-size: 1rem; margin: 0 0 4px; }
+.app-news .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  line-clamp: 2; overflow: hidden; margin: 0; color: var(--muted); }
+.app-news details[open] .clamp { display: none; }
+.app-news .more { color: var(--brand); font-size: .875rem; }
+.app-news details[open] .more { display: none; }
+.app-news .full { padding: 0 var(--gutter) var(--gutter); }
+.app-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 8px; margin-top: 8px; font-size: .875rem; color: var(--muted); }
+.app-body { white-space: pre-line; }
+.app-ack { margin: 12px 0 0; }
+.app-ack button { width: 100%; }
+.app-acked { display: flex; align-items: center; justify-content: center; min-height: var(--tap);
+  margin: 12px 0 0; border-radius: 10px; background: var(--ok-bg); color: var(--ok-ink); font-weight: 600; }
+.app-wait { color: #8a5a00; font-weight: 600; }
+.app-center { text-align: center; }
+.app-center .btn { margin-top: 8px; }

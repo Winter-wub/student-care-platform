@@ -37,6 +37,7 @@ mod page_list;
 mod service;
 mod stats;
 mod store;
+mod student;
 mod sweep;
 mod texts;
 mod view;
@@ -46,6 +47,7 @@ use axum::routing::{get, post};
 pub use chat::{AckOutcome, ack, ack_action, detail_path, latest};
 pub use stats::{RoundStats, Stats, stats};
 pub use store::Summary;
+pub use student::{StudentAnnouncement, detail_for_student, list_for_student};
 
 use crate::manifest::{JobSpec, MenuEntrySpec, Permission};
 use crate::message::ActionId;

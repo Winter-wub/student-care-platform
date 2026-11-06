@@ -191,6 +191,25 @@ impl FakeChannel {
     pub fn profile(&self) -> FakeProfile {
         self.profile
     }
+    /// The Mini App token of `external_id` that
+    /// [`MiniApp::verify_session`] accepts (what the platform would hand
+    /// the page): `<external id>.<hex HMAC-SHA256(secret, external id)>`.
+    pub fn mini_app_token(&self, external_id: &str) -> String {
+        format!("{external_id}.{}", self.mini_app_mac(external_id))
+    }
+
+    fn mini_app_mac(&self, external_id: &str) -> String {
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut m = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(self.secret.as_bytes())
+            .expect("HMAC takes any key length");
+        m.update(external_id.as_bytes());
+        m.finalize()
+            .into_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
     /// The secret webhook calls are signed with.
     pub fn secret(&self) -> &str {
         &self.secret
@@ -326,12 +345,15 @@ impl MiniApp for FakeChannel {
     fn launch_url(&self, path: &str) -> String {
         format!("{MINI_APP_BASE}{path}")
     }
-    /// The token is the external id itself: tests open a Mini App page as
-    /// any account by passing its id.
+    /// The token is [`FakeChannel::mini_app_token`]:
+    /// `<external id>.<hex HMAC-SHA256(secret, external id)>`, checked in
+    /// constant time. Anything else is `BadSignature`, so a deployed Fake
+    /// Channel cannot be used to open someone else's Mini App page.
     async fn verify_session(&self, token: &str) -> Result<ChannelAccountId> {
-        if token.is_empty() {
+        let (id, mac) = token.rsplit_once('.').ok_or(Error::BadSignature)?;
+        if id.is_empty() || !wire::same(mac, &self.mini_app_mac(id)) {
             return Err(Error::BadSignature);
         }
-        Ok(Self::account(token))
+        Ok(ChannelAccountId::new(self.kind, id))
     }
 }
