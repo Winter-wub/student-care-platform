@@ -39,6 +39,8 @@ use crate::{Result, Services};
 
 pub(crate) use account::mark_unreachable;
 use account::{Account, FlowData};
+/// The `[student] id_pattern` rule, shared with the roster import (#24).
+pub(crate) use claim::fits;
 pub(crate) use consent::consent_card;
 
 /// Kernel Action ids.

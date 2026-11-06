@@ -111,7 +111,7 @@ impl DeploymentBuilder {
             channels: self.channels,
             verification,
             catalog: Arc::new(catalog),
-            registry: Registry {
+            registry: Arc::new(Registry {
                 permissions: collected.permissions,
                 menu,
                 actions: collected.actions,
@@ -121,7 +121,7 @@ impl DeploymentBuilder {
                 back_office: collected.back_office,
                 public: collected.public,
                 nav,
-            },
+            }),
         })
     }
 }

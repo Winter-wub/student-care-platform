@@ -22,7 +22,8 @@ mod revoke;
 pub use manual::manual_link;
 pub use revoke::revoke_by_staff;
 pub(crate) use revoke::{
-    live_links_of, notify_revoked, revoke_statements, staff_revoke_statements,
+    live_links_of, live_links_of_students, notify_revoked, revoke_statements,
+    staff_revoke_statements,
 };
 
 use crate::audit::Actor;

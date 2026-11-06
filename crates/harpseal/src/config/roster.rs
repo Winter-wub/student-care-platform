@@ -57,6 +57,14 @@ pub struct RosterConfig {
     /// `attributes.<key>`). Shown sorted by [`AttributeSpec::order`],
     /// then key.
     pub attributes: BTreeMap<String, AttributeSpec>,
+    /// `true` when parsed from a `[roster]` section (not a TOML key); see
+    /// [`RosterConfig::is_mapped`].
+    #[serde(skip_deserializing, default = "section_present")]
+    pub(crate) declared: bool,
+}
+
+fn section_present() -> bool {
+    true
 }
 
 impl Default for RosterConfig {
@@ -68,6 +76,7 @@ impl Default for RosterConfig {
             locale: None,
             tags: None,
             attributes: BTreeMap::new(),
+            declared: false,
         }
     }
 }
@@ -253,6 +262,12 @@ pub(crate) fn is_date(s: &str) -> bool {
 }
 
 impl RosterConfig {
+    /// Whether roster files can be imported (#24): a `[roster]` section,
+    /// or a mapping changed in code from the defaults.
+    pub fn is_mapped(&self) -> bool {
+        self.declared || *self != Self::default()
+    }
+
     /// The attributes in display order: `(key, spec)`.
     pub fn attributes_in_order(&self) -> Vec<(&str, &AttributeSpec)> {
         let mut v: Vec<(&str, &AttributeSpec)> = self
