@@ -165,17 +165,12 @@ pub(crate) async fn count_failure(
     if services.db.execute(lock).await?.rows_affected == 0 {
         return Ok((failures, false));
     }
-    let event = Statement::new(
-        "INSERT INTO security_event (id, at, kind, staff_id, details) VALUES \
-         (?, ?, 'staff.lockout', ?, json_object('locked_until', ?, 'ip', ?, 'failures', ?))",
-    )
-    .bind(services.new_id()?)
-    .bind(now)
-    .bind(id)
-    .bind(until)
-    .bind(ctx.ip.clone())
-    .bind(failures);
-    services.db.execute(event).await?;
+    let details = [
+        ("locked_until", until.to_string()),
+        ("ip", ctx.ip.clone().unwrap_or_default()),
+        ("failures", failures.to_string()),
+    ];
+    crate::kernel::security::record_staff(services, "staff.lockout", id, &details).await?;
     Ok((failures, true))
 }
 
