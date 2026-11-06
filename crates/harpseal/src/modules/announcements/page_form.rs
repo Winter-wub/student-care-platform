@@ -143,7 +143,7 @@ pub(super) async fn audience_fragment(
     let counts = audience::count(&s.deployment, &a).await.ok();
     let kinds: Vec<String> = counts
         .iter()
-        .flat_map(|c| c.per_channel.iter().map(|(k, _)| k.to_string()))
+        .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))
         .collect();
     let mut used = Vec::new();
     for kind in kinds {
