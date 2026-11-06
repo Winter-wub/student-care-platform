@@ -57,7 +57,7 @@ impl Deployment {
     }
 
     /// [`Deployment::send_batch`] on behalf of `module` (stored on the rows).
-    pub(super) async fn deliver(
+    pub(crate) async fn deliver(
         &self,
         to: &ChannelAccountId,
         reply: Option<&ReplyToken>,
@@ -82,7 +82,14 @@ impl Deployment {
             // is lost.
             self.services.db.batch(stmts).await?;
         }
-        batch.into_result()
+        let result = batch.into_result();
+        if let Err(Error::Unreachable) = &result {
+            // The account blocked the bot: its Link becomes unreachable and
+            // later sends skip it. The send error is what the caller sees.
+            let stmts = crate::kernel::flow::mark_unreachable(&self.services, to);
+            let _ = self.services.db.batch(stmts).await;
+        }
+        result
     }
 
     /// Ensures the `channel_account` row, then per Message its usage upsert

@@ -22,7 +22,7 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("มหาวิทยาลัยอ่าวแมวน้ำ"), "TOML text wins");
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(3));
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(4));
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn example_has_three_roles_and_the_contact_menu() {
 }
 
 #[tokio::test]
-async fn unlinked_student_pressing_contact_is_asked_to_verify() {
+async fn unlinked_student_pressing_contact_gets_the_consent_card() {
     let h = Harness::new();
     let app = boot(&h).await;
     app.fake_webhook([Inbound::Action {
@@ -51,7 +51,11 @@ async fn unlinked_student_pressing_contact_is_asked_to_verify() {
     }])
     .await;
     let seen = h.fake_channel().sent_to(&FakeChannel::account("u1"));
-    assert!(matches!(&seen[..], [Message::Text(t)] if t == "กรุณายืนยันตัวตนก่อนใช้งาน"));
+    // Modules never see pre-Link Inbounds: the Kernel greets and asks
+    // for Consent first.
+    assert!(
+        matches!(&seen[..], [Message::Text(_), Message::Card(c)] if c.title == "ประกาศความเป็นส่วนตัว")
+    );
 }
 
 #[test]

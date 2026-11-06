@@ -111,13 +111,21 @@ async fn a_signed_postback_is_answered_with_one_free_reply() {
 }
 
 #[tokio::test]
-async fn a_signed_text_is_accepted_and_sends_nothing_yet() {
-    // The Kernel answers free text with #19; until then nothing goes out.
+async fn a_signed_text_is_stored_and_answered_with_one_fallback() {
+    // Free text after Link: stored, answered once per hour with the
+    // fallback Text + Menu Choices in one reply call.
     let (h, app) = linked().await;
     let body = fixture_body("text");
     let resp = post(&app, body.clone(), &sign(SECRET, &body)).await;
     assert_eq!(resp.status, 200);
-    assert!(h.http_requests().is_empty());
+    let calls = h.http().take_requests();
+    assert_eq!(calls.len(), 1, "one reply call");
+    assert!(calls[0].uri.ends_with("/message/reply"), "{}", calls[0].uri);
+    assert_eq!(app.count("SELECT count(*) FROM inbound_message").await, 1);
+    let resp = post(&app, body.clone(), &sign(SECRET, &body)).await;
+    assert_eq!(resp.status, 200);
+    assert!(h.http_requests().is_empty(), "no second fallback this hour");
+    assert_eq!(app.count("SELECT count(*) FROM inbound_message").await, 2);
 }
 
 #[tokio::test]

@@ -103,12 +103,17 @@ fn send_messages(h: &Harness) -> Vec<serde_json::Value> {
 const OUTBOUND: &str = "SELECT count(*) FROM outbound_message";
 
 #[tokio::test]
-async fn a_text_update_is_accepted_and_answers_nothing_yet() {
-    // The Kernel answers free text only with the chat flow (#19).
+async fn a_text_update_is_stored_and_answered_with_the_fallback() {
     let (h, app) = boot(true, true).await;
     assert_eq!(post_text(&app, "สอบถามค่าเทอมครับ").await.status, 200);
-    assert!(h.http_requests().is_empty());
-    assert_eq!(app.count(OUTBOUND).await, 0);
+    let sent = send_messages(&h);
+    assert_eq!(sent.len(), 2, "fallback Text + Menu Choices: {sent:?}");
+    assert!(sent[0]["text"].as_str().unwrap().starts_with("ขออภัย"));
+    let rows = app.query("SELECT kind, text FROM inbound_message").await;
+    assert_eq!(
+        rows.get(0, "text").unwrap().as_text(),
+        Some("สอบถามค่าเทอมครับ")
+    );
 }
 
 #[tokio::test]
@@ -137,18 +142,29 @@ async fn a_menu_command_from_a_linked_student_runs_its_action() {
 async fn a_command_not_on_the_menu_stays_text() {
     let (h, app) = boot(false, true).await;
     assert_eq!(post_text(&app, "/news_latest").await.status, 200);
-    assert!(send_messages(&h).is_empty());
-    assert_eq!(app.count(OUTBOUND).await, 0);
+    let sent = send_messages(&h);
+    assert!(
+        sent[0]["text"].as_str().unwrap().starts_with("ขออภัย"),
+        "{sent:?}"
+    );
+    let rows = app.query("SELECT text FROM inbound_message").await;
+    assert_eq!(rows.get(0, "text").unwrap().as_text(), Some("/news_latest"));
 }
 
 #[tokio::test]
-async fn an_unlinked_student_is_asked_to_link_first() {
+async fn an_unlinked_student_gets_the_welcome_and_consent_card() {
     let (h, app) = boot(true, false).await;
     assert_eq!(post_text(&app, "/news_latest").await.status, 200);
     let sent = send_messages(&h);
-    assert_eq!(sent.len(), 1, "{sent:?}");
-    assert_eq!(sent[0]["text"], "กรุณายืนยันตัวตนก่อนใช้งาน");
-    assert_eq!(app.count(OUTBOUND).await, 1);
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent[0]["text"].as_str().unwrap().starts_with("สวัสดี"));
+    assert!(
+        sent[1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("ประกาศความเป็นส่วนตัว")
+    );
+    assert_eq!(app.count(OUTBOUND).await, 2);
 }
 
 #[tokio::test]
