@@ -21,10 +21,18 @@ pub(crate) fn summary(row: &Row) -> Json {
     })
 }
 
+/// A Job a write enqueues, inserted only if the write's audit row was.
+#[derive(Debug, Clone)]
+pub(crate) struct JobReq {
+    pub(crate) key: String,
+    pub(crate) kind: &'static str,
+    pub(crate) payload: Json,
+    pub(crate) run_at: Option<i64>,
+}
+
 /// One compare-and-set write: the audit row (only while `id` is at
-/// `version` in one of `from`), then `changes(gate)`, then `ungated`
-/// (Job inserts, which harmlessly do nothing when the race was lost:
-/// their handlers check the version).
+/// `version` in one of `from`), then `changes(gate)`, then `jobs`, every
+/// statement gated on that audit row: a lost race writes nothing at all.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn cas(
     d: &Deployment,
@@ -35,7 +43,7 @@ pub(crate) async fn cas(
     actor: &Actor,
     ctx: &RequestCtx,
     changes: impl FnOnce(&str) -> Vec<Statement>,
-    ungated: Vec<Statement>,
+    jobs: Vec<JobReq>,
 ) -> Result<()> {
     if !from.contains(&row.status.as_str()) {
         return Err(Error::Conflict(format!("announcement is {}", row.status)));
@@ -63,7 +71,14 @@ pub(crate) async fn cas(
     )?;
     let mut stmts = vec![entry];
     stmts.extend(changes(&gate));
-    stmts.extend(ungated);
+    for j in jobs {
+        let gated = Statement::new(GATED).bind(gate.as_str());
+        let run_at = j.run_at.map(crate::delivery::Timestamp);
+        let (_, stmt) = d
+            .jobs()
+            .insert_unique_if(&j.key, j.kind, &j.payload, run_at, gated)?;
+        stmts.push(stmt);
+    }
     let results = s.db.batch(stmts).await?;
     if results.first().map(|r| r.rows_affected) != Some(1) {
         return Err(Error::Conflict("announcement changed meanwhile".into()));

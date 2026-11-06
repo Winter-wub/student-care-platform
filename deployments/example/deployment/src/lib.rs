@@ -2,8 +2,9 @@
 //! LINE + Telegram + Fake Channels, email-OTP Verification, the built-in
 //! Announcements Module and one small customer Module ([`Contact`]) adding
 //! a Menu entry. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
-//! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start. Both runtime binaries
-//! (`../native`, `../worker`) call [`deployment`] with their own Services.
+//! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
+//! Both runtime binaries (`../native`, `../worker`) call [`deployment`]
+//! with their own Services.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]

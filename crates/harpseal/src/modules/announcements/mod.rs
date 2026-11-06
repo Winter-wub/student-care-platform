@@ -29,6 +29,7 @@ mod deliver;
 mod form;
 mod gate;
 mod maint;
+mod outcome;
 mod page_actions;
 mod page_detail;
 mod page_form;
@@ -36,6 +37,7 @@ mod page_list;
 mod service;
 mod stats;
 mod store;
+mod sweep;
 mod texts;
 mod view;
 
@@ -62,6 +64,9 @@ pub(crate) const DELIVER: &str = "announcements.deliver";
 pub(crate) const DELIVER_CHANNEL: &str = "announcements.deliver.channel";
 pub(crate) const EDIT: &str = "announcements.edit";
 pub(crate) const RETRACT: &str = "announcements.retract";
+pub(crate) const SWEEP: &str = "announcements.sweep";
+/// How often stuck rounds are looked for.
+const SWEEP_SCHEDULE: &str = "*/10 * * * *";
 
 /// Back-office navigation order (after Roster).
 const NAV_ORDER: u16 = 30;
@@ -109,7 +114,8 @@ impl Module for Announcements {
         .job(JobSpec::new(DELIVER), deliver::parent)
         .job(JobSpec::new(DELIVER_CHANNEL), deliver::child)
         .job(JobSpec::new(EDIT), maint::edit)
-        .job(JobSpec::new(RETRACT), maint::retract);
+        .job(JobSpec::new(RETRACT), maint::retract)
+        .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job);
         pages(r);
     }
 }

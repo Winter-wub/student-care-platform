@@ -6,7 +6,7 @@
 use serde_json::{Value as Json, json};
 
 use super::deliver::{deliver_key, parent_job};
-use super::gate::{GATED, bump, cas, load_err};
+use super::gate::{GATED, JobReq, bump, cas, load_err};
 use super::store;
 use super::{EDIT, NAME, RETRACT};
 use crate::audience::Audience;
@@ -128,21 +128,24 @@ pub(crate) async fn update(
     if full {
         draft.audience.check(&d.config().roster)?;
     }
-    let mut ungated = Vec::new();
+    let mut jobs = Vec::new();
     if row.status == "scheduled" {
         let at = draft
             .send_at
             .filter(|t| *t > now)
             .ok_or_else(|| Error::Invalid("send_at".into()))?;
-        ungated.push(parent_job(d.jobs(), id, row.round, next, Some(at))?);
+        jobs.push(parent_job(id, row.round, next, Some(at)));
     } else if row.status == "sent" {
-        let (_, job) = d.jobs().insert_unique(
-            &format!("{NAME}:{id}:edit:v{next}"),
-            EDIT,
-            &json!({ "id": id }),
-            None,
-        )?;
-        ungated.push(job);
+        // Only Cards whose visible text changed are edited.
+        let locales = changed_locales(&store::texts(s, id).await?, draft);
+        if !locales.is_empty() {
+            jobs.push(JobReq {
+                key: format!("{NAME}:{id}:edit:v{next}"),
+                kind: EDIT,
+                payload: json!({ "id": id, "version": next, "locales": locales }),
+                run_at: None,
+            });
+        }
     }
     let old_key = deliver_key(id, row.round, version);
     let audience = serde_json::to_string(&draft.audience).unwrap_or_else(|_| "{}".into());
@@ -200,7 +203,7 @@ pub(crate) async fn update(
         actor,
         ctx,
         changes,
-        ungated,
+        jobs,
     )
     .await
 }
@@ -224,7 +227,7 @@ pub(crate) async fn confirm(
         Some(_) => ("scheduled", "announcement.schedule"),
         None => ("sending", "announcement.send"),
     };
-    let job = parent_job(d.jobs(), id, row.round, version + 1, later)?;
+    let job = parent_job(id, row.round, version + 1, later);
     let after = json!({ "status": status, "send_at": later });
     let set = format!("status = '{status}'");
     let changes = |gate: &str| vec![bump(&set, &row, now, gate)];
@@ -296,7 +299,7 @@ pub(crate) async fn resend(
     row.version = version;
     let now = s.now_ms();
     let round = row.round + 1;
-    let job = parent_job(d.jobs(), id, round, version + 1, None)?;
+    let job = parent_job(id, round, version + 1, None);
     let set = format!("status = 'sending', round = {round}");
     let changes = |gate: &str| vec![bump(&set, &row, now, gate)];
     let after = json!({ "status": "sending", "round": round });
@@ -328,12 +331,14 @@ pub(crate) async fn retract(
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
     let now = s.now_ms();
-    let (_, job) = d.jobs().insert_unique(
-        &format!("{NAME}:{id}:retract"),
-        RETRACT,
-        &json!({ "id": id }),
-        None,
-    )?;
+    // Keyed per version: a lost race inserts nothing and leaves the key free.
+    let next = version + 1;
+    let job = JobReq {
+        key: format!("{NAME}:{id}:retract:v{next}"),
+        kind: RETRACT,
+        payload: json!({ "id": id, "version": next }),
+        run_at: None,
+    };
     let set = format!("status = 'retracted', retracted_at = {now}");
     let changes = |gate: &str| vec![bump(&set, &row, now, gate)];
     let after = json!({ "status": "retracted" });
@@ -350,4 +355,29 @@ pub(crate) async fn retract(
         vec![job],
     )
     .await
+}
+
+/// Locales whose title or body differs between `old` and `draft` (added
+/// and removed ones included).
+fn changed_locales(old: &store::Texts, draft: &Draft) -> Vec<String> {
+    let new: std::collections::BTreeMap<&str, (&str, &str)> = draft
+        .texts
+        .iter()
+        .map(|(l, t, b)| (l.as_str(), (t.as_str(), b.as_str())))
+        .collect();
+    let mut keys: Vec<&str> = old
+        .0
+        .keys()
+        .map(String::as_str)
+        .chain(new.keys().copied())
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys.into_iter()
+        .filter(|l| {
+            let before = old.0.get(*l).map(|(t, b)| (t.as_str(), b.as_str()));
+            before != new.get(l).copied()
+        })
+        .map(str::to_string)
+        .collect()
 }

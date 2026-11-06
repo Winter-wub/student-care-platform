@@ -36,6 +36,10 @@ pub(super) async fn page(
 ) -> Response {
     let v = View::new(&s, &staff);
     let svc = &s.services;
+    // A round whose Jobs all ended with rows still pending is finished here.
+    if let Err(e) = super::sweep::sweep(svc, Some(&id)).await {
+        return v.error(&e);
+    }
     let row = match store::load(svc, &id).await {
         Ok(Some(r)) => r,
         Ok(None) => return v.not_found(),

@@ -67,7 +67,9 @@ pub enum AckOutcome {
 /// Records Student `student`'s acknowledgement of announcement `id`:
 /// `acked_at = now` on every delivery row of that Student (every Channel,
 /// every round) still without one, in one conditional statement, so it is
-/// idempotent and two taps racing record it once. Expired announcements
+/// idempotent and two taps racing record it once. It is once per Student:
+/// after an acknowledgement (any round), a later tap is
+/// [`AckOutcome::Already`]. Expired announcements
 /// still accept it; retracted ones do not. For the chat Action and the
 /// Mini App's ack endpoint.
 pub async fn ack(d: &Deployment, id: &str, student: &str) -> Result<AckOutcome> {
@@ -81,6 +83,22 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
     if row.status == "retracted" {
         return Ok(AckOutcome::Retracted);
     }
+    let rows =
+        s.db.query(
+            Statement::new(
+                "SELECT count(*) AS n, max(acked_at) AS acked FROM announcement_delivery \
+                 WHERE announcement_id = ? AND student_id = ?",
+            )
+            .bind(id)
+            .bind(student),
+        )
+        .await?;
+    if store::int(&rows, 0, "n").unwrap_or(0) == 0 {
+        return Ok(AckOutcome::Unknown);
+    }
+    // Once per Student: an earlier acknowledgement (any round, any
+    // Channel) stands, and covers rows added since (a resend).
+    let earlier = store::int(&rows, 0, "acked");
     let done =
         s.db.execute(
             Statement::new(
@@ -88,27 +106,14 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
                  AND student_id = ? AND acked_at IS NULL \
                  AND EXISTS (SELECT 1 FROM announcement WHERE id = ? AND status <> 'retracted')",
             )
-            .bind(s.now_ms())
+            .bind(earlier.unwrap_or_else(|| s.now_ms()))
             .bind(id)
             .bind(student)
             .bind(id),
         )
         .await?;
-    if done.rows_affected > 0 {
-        return Ok(AckOutcome::Recorded);
-    }
-    let rows =
-        s.db.query(
-            Statement::new(
-                "SELECT 1 FROM announcement_delivery WHERE announcement_id = ? AND student_id = ? \
-                 LIMIT 1",
-            )
-            .bind(id)
-            .bind(student),
-        )
-        .await?;
-    Ok(if rows.is_empty() {
-        AckOutcome::Unknown
+    Ok(if earlier.is_none() && done.rows_affected > 0 {
+        AckOutcome::Recorded
     } else {
         AckOutcome::Already
     })

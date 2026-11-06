@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value as Json, json};
 
+use super::gate::JobReq;
+use super::outcome::{failed, is_final, kind_of, max_retries, outcome, skipped};
 use super::store::{self, Row};
 use super::{DELIVER, DELIVER_CHANNEL, NAME};
 use crate::delivery::{ChannelAccountId, Timestamp};
@@ -23,9 +25,6 @@ pub(crate) const PACED_CHUNK: usize = 25;
 const PACED_PER_MINUTE: usize = 10;
 /// Rows per `Db::batch` when snapshotting.
 const SNAPSHOT_BATCH: usize = 400;
-/// Retries a Job gets (`job.max_attempts`): a run with `attempt` above it
-/// is the last.
-const MAX_RETRIES: u32 = 3;
 
 /// The parent Job's unique key: per round and version, so a resend or a
 /// schedule confirmed again never reuses an earlier key.
@@ -101,9 +100,10 @@ async fn snapshot(d: &Deployment, row: &Row) -> Result<()> {
         stmts.push(
             Statement::new(
                 "INSERT INTO announcement_delivery (id, announcement_id, round, student_id, \
-                 link_id, channel, channel_account_id, status, error) VALUES \
-                 (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (announcement_id, round, link_id) \
-                 DO NOTHING",
+                 link_id, channel, channel_account_id, status, error, acked_at) VALUES \
+                 (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT max(acked_at) FROM announcement_delivery \
+                 WHERE announcement_id = ? AND student_id = ?)) \
+                 ON CONFLICT (announcement_id, round, link_id) DO NOTHING",
             )
             .bind(s.new_id()?)
             .bind(row.id.as_str())
@@ -113,7 +113,10 @@ async fn snapshot(d: &Deployment, row: &Row) -> Result<()> {
             .bind(r.account.channel.as_str())
             .bind(r.channel_account_id.as_str())
             .bind(status)
-            .bind(error),
+            .bind(error)
+            // An acknowledgement is once per Student: a resent round keeps it.
+            .bind(row.id.as_str())
+            .bind(r.student_id.as_str()),
         );
     }
     for chunk in stmts.chunks(SNAPSHOT_BATCH) {
@@ -204,9 +207,9 @@ pub(crate) async fn finish_if_done(s: &Services, id: &str, round: i64) -> Result
 }
 
 /// One pending delivery of a chunk.
-struct Pending {
-    id: String,
-    account: ChannelAccountId,
+pub(super) struct Pending {
+    pub(super) id: String,
+    pub(super) account: ChannelAccountId,
 }
 
 /// `announcements.deliver.channel`: sends one chunk, a Card per Locale
@@ -233,7 +236,8 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
     let rows =
         s.db.query(
             Statement::new(
-                "SELECT x.id, x.status, ca.external_id, s.locale FROM (SELECT * FROM \
+                "SELECT x.id, x.status, x.acked_at, ca.external_id, ca.blocked_at, s.locale \
+                 FROM (SELECT * FROM \
                  announcement_delivery WHERE announcement_id = ? AND round = ? AND channel = ? \
                  ORDER BY id LIMIT ? OFFSET ?) x JOIN channel_account ca \
                  ON ca.id = x.channel_account_id JOIN student s ON s.id = x.student_id \
@@ -247,20 +251,38 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
         )
         .await?;
     let texts = store::texts(s, &id).await?;
-    let mut groups: BTreeMap<Locale, Vec<Pending>> = BTreeMap::new();
+    // One Card per (Locale, already acknowledged): no [รับทราบ] for those.
+    let mut groups: BTreeMap<(Locale, bool), Vec<Pending>> = BTreeMap::new();
+    let mut blocked = Vec::new();
     for i in 0..rows.len() {
+        let delivery = store::text(&rows, i, "id");
+        if store::int(&rows, i, "blocked_at").is_some() {
+            // Blocked since the snapshot: never sent, never metered.
+            blocked.push(skipped(&delivery));
+            continue;
+        }
         let locale = texts.locale_for(&Locale::new(store::text(&rows, i, "locale")));
-        groups.entry(locale).or_default().push(Pending {
-            id: store::text(&rows, i, "id"),
+        let acked = store::int(&rows, i, "acked_at").is_some();
+        groups.entry((locale, acked)).or_default().push(Pending {
+            id: delivery,
             account: ChannelAccountId::new(kind, store::text(&rows, i, "external_id")),
         });
     }
-    let last = job.attempt > MAX_RETRIES;
+    if !blocked.is_empty() {
+        s.db.batch(blocked).await?;
+    }
+    let last = job.attempt > max_retries(s, &job.id).await?;
     let mut again: Option<Error> = None;
-    for (locale, group) in groups {
-        let card = super::chat::card(d.catalog(), &locale, &id, &texts, row.require_ack)?;
+    for ((locale, acked), group) in groups {
+        let ack = row.require_ack && !acked;
+        let card = super::chat::card(d.catalog(), &locale, &id, &texts, ack)?;
         let to: Vec<ChannelAccountId> = group.iter().map(|g| g.account.clone()).collect();
-        let key = format!("{}/{channel}/{offset}/{}", job.id, locale.as_str());
+        let key = format!(
+            "{}/{channel}/{offset}/{}/{}",
+            job.id,
+            locale.as_str(),
+            u8::from(acked)
+        );
         let msgs = [crate::message::Message::Card(card)];
         let sent = d
             .send_many_with_key(&channel, &to, &msgs, &locale, Some(NAME), &key)
@@ -296,81 +318,13 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
     }
 }
 
-/// Unreachable never gets better by retrying.
-fn is_final(e: &Error) -> bool {
-    matches!(e.root(), Error::Unreachable)
-}
-
-/// A short error kind for `announcement_delivery.error` (never platform
-/// text, which may quote a request).
-fn kind_of(e: &Error) -> &'static str {
-    match e.root() {
-        Error::Unreachable => "unreachable",
-        Error::RateLimited { .. } => "rate_limited",
-        Error::Unsupported(_) => "unsupported",
-        Error::Db(_) => "db",
-        _ => "platform",
+/// The parent Job of round `round` at `version` (inserted by
+/// [`super::gate::cas`], gated on the write's audit row).
+pub(crate) fn parent_job(id: &str, round: i64, version: i64, run_at: Option<i64>) -> JobReq {
+    JobReq {
+        key: deliver_key(id, round, version),
+        kind: DELIVER,
+        payload: payload(id, round, version),
+        run_at,
     }
-}
-
-fn failed(id: &str, kind: &str) -> Statement {
-    Statement::new(
-        "UPDATE announcement_delivery SET status = 'failed', error = ? WHERE id = ? \
-         AND status = 'pending'",
-    )
-    .bind(kind.to_string())
-    .bind(id.to_string())
-}
-
-/// The row update for one recipient's result.
-fn outcome(
-    g: &Pending,
-    result: &Result<Vec<crate::delivery::SendReceipt>>,
-    now: i64,
-    last: bool,
-) -> Statement {
-    match result {
-        Ok(receipts) => Statement::new(
-            "UPDATE announcement_delivery SET status = 'sent', sent_at = ?, \
-             platform_message_id = ?, error = NULL WHERE id = ? AND status = 'pending'",
-        )
-        .bind(now)
-        .bind(
-            receipts
-                .first()
-                .and_then(|r| r.message_id.as_ref())
-                .map(|m| m.0.clone()),
-        )
-        .bind(g.id.clone()),
-        Err(e) if is_final(e) => Statement::new(
-            "UPDATE announcement_delivery SET status = 'skipped', error = 'unreachable' \
-             WHERE id = ? AND status = 'pending'",
-        )
-        .bind(g.id.clone()),
-        Err(e) if last => failed(&g.id, kind_of(e)),
-        // Stays pending for the retry; the kind is kept for the page.
-        Err(e) => Statement::new(
-            "UPDATE announcement_delivery SET error = ? WHERE id = ? AND status = 'pending'",
-        )
-        .bind(kind_of(e))
-        .bind(g.id.clone()),
-    }
-}
-
-/// Inserts the parent Job of `row`'s current round (a Statement for the
-/// caller's batch).
-pub(crate) fn parent_job(
-    jobs: &crate::Jobs,
-    id: &str,
-    round: i64,
-    version: i64,
-    run_at: Option<i64>,
-) -> Result<Statement> {
-    let (_, stmt) = jobs.insert_unique(
-        &deliver_key(id, round, version),
-        DELIVER,
-        &payload(id, round, version),
-        run_at.map(Timestamp),
-    )?;
-    Ok(stmt)
 }

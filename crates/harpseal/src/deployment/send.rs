@@ -13,7 +13,7 @@ use crate::port_types::Statement;
 use crate::{Error, Result};
 
 /// The Capability a Message needs beyond the Channel minimum.
-fn required(msg: &Message) -> Option<Capability> {
+pub(super) fn required(msg: &Message) -> Option<Capability> {
     match msg {
         Message::Attachment(_) => Some(Capability::SendAttachment),
         _ => None,

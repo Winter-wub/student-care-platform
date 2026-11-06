@@ -46,7 +46,11 @@ impl Deployment {
     /// (`module` stored on it) and the metered units count in
     /// `usage_daily`, written in one `Db::batch` for a multicast.
     /// `Err` only when nothing could be tried (unknown Channel, an
-    /// account on another Channel) or the write failed after a multicast.
+    /// account on another Channel, a Message needing a Capability the
+    /// Channel lacks: `Error::Unsupported`) or the write failed after a
+    /// multicast. A multicast does not look at `blocked_at`: callers leave
+    /// out accounts that blocked the bot (the Announcements child Job marks
+    /// them `skipped`).
     pub async fn send_many_with_key(
         &self,
         channel: &str,
@@ -67,6 +71,14 @@ impl Deployment {
                 results: to.iter().map(|_| Ok(Vec::new())).collect(),
                 stopped: None,
             });
+        }
+        let caps = ch.capabilities();
+        if let Some(c) = msgs
+            .iter()
+            .filter_map(super::send::required)
+            .find(|c| !caps.has(*c))
+        {
+            return Err(Error::Unsupported(c));
         }
         let Some(multi) = ch.multicast() else {
             return Ok(self.one_by_one(to, msgs, locale, module, key).await);
