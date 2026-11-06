@@ -101,6 +101,19 @@ impl Deployment {
             .await
     }
 
+    /// A keyed Push on behalf of `module` ([`Deployment::send_many_with_key`]).
+    pub(super) async fn deliver_with(
+        &self,
+        to: &ChannelAccountId,
+        msgs: &[Message],
+        locale: &Locale,
+        module: Option<&str>,
+        key: &str,
+    ) -> Result<Vec<SendReceipt>> {
+        self.deliver_keyed(to, None, msgs, locale, module, Some(key))
+            .await
+    }
+
     async fn deliver_keyed(
         &self,
         to: &ChannelAccountId,

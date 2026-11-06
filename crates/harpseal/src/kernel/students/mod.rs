@@ -34,6 +34,7 @@ use serde_json::{Map, Value as Json};
 
 pub use service::{StatusChange, clear_override, record_view, set_status, update};
 pub use tags::{add_manual_tag, remove_manual_tag};
+pub(crate) use view::{channel_label, format_ms, is_htmx};
 
 use crate::message::Locale;
 use crate::module::ModuleRegistrar;

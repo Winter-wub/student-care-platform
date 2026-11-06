@@ -206,7 +206,9 @@ needs a C compiler, plus NASM on Windows x86-64.
 The Deployment's secrets: `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`,
 `LINE_LIFF_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
 `TELEGRAM_WEB_APP_URL`, `FAKE_SECRET` (required, non-empty: the Fake Channel
-refuses an empty secret). A timer calls `Deployment::tick` every minute, each
+refuses an empty secret). With the Announcements Module on (the example has
+it), `LINE_LIFF_ID` and `TELEGRAM_WEB_APP_URL` are required too: its Cards
+carry Mini App buttons, and `build()` refuses a Channel without a Mini App. A timer calls `Deployment::tick` every minute, each
 tick in its own task: a panicking Job handler is recorded as a failed run of
 that Job, and any other panic in a tick is logged and the next tick still
 runs. The plain `release` profile keeps panic unwinding for this binary;
@@ -264,6 +266,23 @@ returning / kept by manual edits, and Confirm runs the Job
 `kernel.roster.import` in 500-row chunks (the page polls its progress). One
 import at a time; the file stays in the FileStore under `roster/<import id>/`.
 Try it with `crates/harpseal/tests/fixtures/roster/seal_bay_50.csv`.
+
+`/admin/announcements` is the built-in Announcements Module
+(`harpseal::modules::announcements::Announcements`; `announcements.view` to
+see, `.send` to create, edit, send and resend, `.retract` to withdraw). The
+create page takes a Thai title and body (English optional), an Audience
+(roster attributes, any of several values each, AND Tags, AND Link status) with
+a live count and the metered Push estimate, an expiry, "ask for an
+acknowledgement", and send now or at a set time. Sending runs the Job
+`announcements.deliver` (one delivery row per live Link, unreachable ones
+skipped) and one `announcements.deliver.channel` Job per multicast group of
+500 (LINE) or per 25 accounts (Telegram, paced); each Card carries "รับทราบ"
+(Action `announcements.ack.<id>`) and a Mini App button to
+`/app/announcements/<id>`. Students also get the Menu entry "ข่าวล่าสุด". The
+detail page shows acknowledged / in Audience, per-Channel counts per round and
+every delivery; edits of a sent announcement are applied with `EditMessage`
+where the Channel has it (Telegram), "ส่งซ้ำ" is a new counted round, and a
+retract hides it and deletes it where the Channel can (Telegram, within 48 h).
 
 Administrators also get `/admin/security` (Security Events, `kernel.security.view`)
 and `/admin/audit` (the audit log with a before/after diff, `kernel.audit.view`);

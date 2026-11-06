@@ -50,8 +50,12 @@ pub struct Call {
     pub reply_token: Option<String>,
     /// Objects in the request.
     pub objects: usize,
-    /// Whether the request counted against the Quota.
+    /// Whether the request counted against the Quota (once per recipient
+    /// on a multicast).
     pub metering: Metering,
+    /// Accounts the request went to: 1, or the group of a multicast
+    /// (`to` is then the group's first account).
+    pub recipients: usize,
 }
 
 #[derive(Debug, Default)]
@@ -69,7 +73,7 @@ pub(crate) struct State {
     pub(crate) fail_at: Option<usize>,
     /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).
     pub(crate) keys: Vec<String>,
-    next_id: u64,
+    pub(crate) next_id: u64,
 }
 
 impl FakeChannel {
@@ -138,6 +142,7 @@ impl FakeChannel {
                                 reply_token: Some(t.clone()),
                                 objects: 0,
                                 metering: Metering::Free,
+                                recipients: 1,
                             });
                         }
                         let last = s.calls.len() - 1;
@@ -162,6 +167,7 @@ impl FakeChannel {
                                 reply_token: None,
                                 objects: 0,
                                 metering,
+                                recipients: 1,
                             });
                             open_push = Some(s.calls.len() - 1);
                             metering
@@ -210,7 +216,9 @@ impl FakeChannel {
     /// `Error::RateLimited` (retry after [`FAILURE_RETRY_AFTER_SECS`]): the
     /// objects before it go out and are reported as a partial
     /// [`BatchReceipt`]. Shorter batches go out whole and leave the failure
-    /// armed; it fires once.
+    /// armed; it fires once. On a multicast `part` counts groups of
+    /// recipients instead: group `part` fails and the groups before it go
+    /// out.
     pub fn fail_next_batch_at(&self, part: usize) {
         self.lock().fail_at = Some(part);
     }

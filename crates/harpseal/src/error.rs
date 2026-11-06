@@ -115,7 +115,9 @@ pub enum BuildError {
     Missing(Part),
     /// Two Channels report the same kind.
     DuplicateChannel(ChannelKind),
-    /// Two handlers registered for one Action id.
+    /// Two handlers registered for one Action id, or an Action prefix
+    /// (`ModuleRegistrar::action_prefix`) that does not end with `.`,
+    /// overlaps another prefix or covers an exact Action id.
     DuplicateAction(ActionId),
     /// Two Modules (or one twice) declared the same Permission id.
     DuplicatePermission(String),

@@ -98,6 +98,7 @@ pub(super) async fn act(t: &mut Turn<'_>, link: &LinkRow, action: ActionId) -> R
                     student: StudentId(link.student.clone()),
                     account: t.from.clone(),
                     locale: link.locale.clone(),
+                    action: action.clone(),
                 };
                 let msgs = handler.handle(cx).await?;
                 t.module = module;

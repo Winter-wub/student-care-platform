@@ -1,6 +1,9 @@
 # Seal Bay University (มหาวิทยาลัยอ่าวแมวน้ำ): a FICTIONAL customer used as
 # the reference Deployment. Data only; code lives in src/lib.rs. Secrets
-# never go here: they come from the environment or Worker secrets.
+# never go here: they come from the environment or Worker secrets. The
+# Announcements Module sends Mini App buttons, so LINE_LIFF_ID and
+# TELEGRAM_WEB_APP_URL are required: without them the Deployment refuses
+# to start.
 
 name = "Seal Bay University"
 default_locale = "th"
@@ -17,12 +20,14 @@ Administrator = [
     "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
     "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
     "kernel.staff.manage", "kernel.setting.edit",
+    "announcements.view", "announcements.send", "announcements.retract",
 ]
 Officer = [
     "kernel.student.view", "kernel.student.edit", "kernel.link.manage",
     "kernel.roster.view", "kernel.roster.import", "kernel.usage.view",
+    "announcements.view", "announcements.send", "announcements.retract",
 ]
-Viewer = ["kernel.student.view", "kernel.usage.view"]
+Viewer = ["kernel.student.view", "kernel.usage.view", "announcements.view"]
 
 # Warn Staff at 80% and 100% of metered pushes per month; never stops sending.
 [quotas.line]
