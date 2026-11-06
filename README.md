@@ -55,11 +55,54 @@ d.tick(now).await?;                          // once a minute: claims and runs d
 ```
 
 `build()` refuses: a missing config, runtime, Verification Method or Channel;
-two Channels of one kind; two handlers for one Action id or Job kind; a
-Permission declared twice; a Role naming an undeclared Permission; a
-back-office route guarded by an undeclared Permission; a Module that sends
-Mini App buttons when a Channel has no Mini App URL; a Menu label key with no
-text in the default Locale.
+two Channels of one kind; two handlers for one Action id or Job kind; a Job
+`schedule` outside the supported cron subset; a Permission declared twice; a
+Role naming an undeclared Permission; a back-office route guarded by an
+undeclared Permission; a Module that sends Mini App buttons when a Channel has
+no Mini App URL; a Menu label key with no text in the default Locale.
+
+### Jobs
+
+A Module registers Job kinds (`r.job(JobSpec::new("news.send"), handler)`, or
+`JobSpec::scheduled("news.digest", "0 7 * * 1-5")` for a recurring one) and
+enqueues them with `d.enqueue(kind, payload, run_at)`, `enqueue_unique(key,
+…)` (nothing inserted while a Job with that key exists), or
+`jobs.insert(kind, &payload, run_at)` for a `Statement` to put in its own
+`batch`; `PageState::jobs` and `JobContext::jobs` give pages and handlers the
+same handle. An unregistered kind is `Error::Invalid`. Once a minute
+`Deployment::tick`:
+
+1. enqueues the scheduled Jobs due in this minute or the one before (cron
+   subset: five fields, each a list of `*`, `*/n`, `a`, `a-b`, evaluated in
+   `utc_offset`, day of week 0-7 with 0 and 7 = Sunday, the two day fields
+   OR-ed when neither starts with `*`; key `cron:<kind>@<epoch minute>`, so
+   several ticks in one minute run it once; a minute missed by two ticks in a
+   row is skipped);
+2. marks `failed` (`lock expired`) every `running` Job whose 15-minute lock
+   passed with no retries left;
+3. claims up to 25 due Jobs with one `UPDATE … RETURNING` (queued with
+   `run_at <= now`, or running with an expired lock and retries left; a new
+   lock token, `attempts + 1`), so concurrent ticks never share a Job;
+4. runs each handler and writes the outcome only if the lock token still
+   matches: `done`; `queued` again 1, 5 then 30 minutes later
+   (`max_attempts` counts retries, default 3, so up to 4 runs); or `failed`
+   with `last_error` (cut to 500 characters). A handler panic on native is a
+   failed run of that Job only;
+5. deletes `done` rows after `[retention] job_days` (30) and `failed` rows
+   after 90 days (or `job_days`, if longer), at most 500 of each per tick.
+
+On Workers (`panic = "abort"`) a handler panic aborts the whole tick: every
+other Job that tick claimed has used an attempt and waits out its 15-minute
+lock before it is re-claimed. A unique key (`enqueue_unique`, never starting
+with `cron:`, which the scheduler reserves) is held until its row is pruned,
+30 days after `done` or 90 after `failed`: it dedupes, it does not lock, so
+a resend or a deliberate retry needs a fresh key (for announcements, not a
+stable per-announcement key).
+
+Handlers must be idempotent: a Cron Trigger can fire twice and an expired lock
+re-runs a Job. `JobContext::progress(note)` saves a note while the run holds
+its lock. `GET /admin/jobs.json` (Permission `kernel.audit.view`) returns the
+counts per state and the 50 newest running and failed Jobs, without payloads.
 
 Storage follows ADR-0007: `Services::new_id()` makes UUIDv7 text ids from the
 Clock and Random ports, `Services::now_ms()` gives integer milliseconds UTC,
@@ -125,8 +168,9 @@ The Deployment's secrets: `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`,
 `LINE_LIFF_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
 `TELEGRAM_WEB_APP_URL`, `FAKE_SECRET` (required, non-empty: the Fake Channel
 refuses an empty secret). A timer calls `Deployment::tick` every minute, each
-tick in its own task, so a panicking Job handler is logged and the next tick
-still runs. The plain `release` profile keeps panic unwinding for this binary;
+tick in its own task: a panicking Job handler is recorded as a failed run of
+that Job, and any other panic in a tick is logged and the next tick still
+runs. The plain `release` profile keeps panic unwinding for this binary;
 the Worker builds with `wasm-release` (release + `panic = "abort"`).
 
 ### Back office and the `harpseal` CLI

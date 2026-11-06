@@ -22,7 +22,7 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("มหาวิทยาลัยอ่าวแมวน้ำ"), "TOML text wins");
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(4));
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(5));
 }
 
 #[test]

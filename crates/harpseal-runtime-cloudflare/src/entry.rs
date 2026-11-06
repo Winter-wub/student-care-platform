@@ -90,14 +90,7 @@ pub async fn scheduled(
     let now = Timestamp(event.schedule() as i64);
     match app.deployment.tick(now).await {
         Ok(r) => {
-            worker::console_log!(
-                "tick {}: claimed {}, done {}, retried {}, failed {}",
-                event.cron(),
-                r.claimed,
-                r.done,
-                r.retried,
-                r.failed
-            );
+            worker::console_log!("tick {}: {r}", event.cron());
             for e in &r.errors {
                 worker::console_error!("tick: {e}");
             }

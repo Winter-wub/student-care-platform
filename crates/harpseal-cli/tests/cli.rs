@@ -82,7 +82,7 @@ async fn run_migrates_and_reads_the_password_from_stdin() {
     run(&d, &args("migrate"), &mut &b""[..], &mut out)
         .await
         .unwrap();
-    assert!(String::from_utf8_lossy(&out).contains("migrations: 4 applied"));
+    assert!(String::from_utf8_lossy(&out).contains("migrations: 5 applied"));
 
     let mut out = Vec::new();
     let line = "kelp forest at dawn\n";

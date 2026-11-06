@@ -38,6 +38,7 @@ impl Deployment {
             services: self.services.clone(),
             catalog: self.catalog.clone(),
             config: self.config.clone(),
+            jobs: self.queue.clone(),
         });
         let cx = Arc::new(AdminCx {
             state: state.clone(),

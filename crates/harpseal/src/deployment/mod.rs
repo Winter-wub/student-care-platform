@@ -29,6 +29,7 @@ use crate::{
 pub struct Deployment {
     config: Arc<DeploymentConfig>,
     services: Services,
+    queue: crate::jobs::Jobs,
     channels: Vec<Arc<dyn Channel>>,
     verification: Arc<dyn VerificationMethod>,
     catalog: Arc<Catalog>,
@@ -41,6 +42,8 @@ struct Registry {
     menu: Vec<MenuEntrySpec>,
     actions: HashMap<ActionId, (&'static str, Arc<dyn ActionHandler>)>,
     jobs: HashMap<&'static str, (JobSpec, Arc<dyn JobHandler>)>,
+    /// Parsed `JobSpec::schedule`s, in registration order (#23).
+    schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
     migrations: Vec<Migration>,
     /// (module, permission, path under `/admin`, handler).
     back_office: Vec<(&'static str, &'static str, &'static str, Route)>,
@@ -233,8 +236,14 @@ impl Deployment {
         }
     }
 
-    /// Runs one Job with its registered handler.
+    /// Runs one Job with its registered handler, outside any tick (no lock:
+    /// `JobContext::progress` is a no-op). A panicking handler is an
+    /// `Err` where unwinding is on (native).
     pub async fn run_job(&self, job: Job) -> Result<()> {
+        self.run_claimed(job, None).await
+    }
+
+    pub(crate) async fn run_claimed(&self, job: Job, token: Option<&str>) -> Result<()> {
         let (_, h) = self
             .registry
             .jobs
@@ -243,8 +252,11 @@ impl Deployment {
         let cx = JobContext {
             services: self.services.clone(),
             catalog: self.catalog.clone(),
+            config: self.config.clone(),
+            jobs: self.queue.clone(),
+            run: token.map(|t| (job.id.clone(), t.to_string())),
         };
-        h.run(cx, job).await
+        crate::jobs::catch::CatchPanic(h.run(cx, job)).await
     }
 }
 

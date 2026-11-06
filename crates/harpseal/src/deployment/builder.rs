@@ -98,8 +98,11 @@ impl DeploymentBuilder {
         let nav = nav_items(collected.nav);
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
         menu.sort_by_key(|e| e.order);
+        let queue =
+            crate::jobs::Jobs::new(collected.jobs.keys().copied().collect(), services.clone());
         Ok(Deployment {
             config: Arc::new(config),
+            queue,
             services,
             channels: self.channels,
             verification,
@@ -109,6 +112,7 @@ impl DeploymentBuilder {
                 menu,
                 actions: collected.actions,
                 jobs: collected.jobs,
+                schedules: collected.schedules,
                 migrations: collected.migrations,
                 back_office: collected.back_office,
                 public: collected.public,
@@ -127,6 +131,7 @@ struct Collected {
     menu: Vec<(&'static str, MenuEntrySpec)>,
     actions: Actions,
     jobs: HashMap<&'static str, (crate::JobSpec, Arc<dyn crate::JobHandler>)>,
+    schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
     migrations: Vec<crate::Migration>,
     back_office: BackOffice,
     public: Vec<(&'static str, &'static str, Route)>,
@@ -143,6 +148,7 @@ impl Default for Collected {
             menu: Vec::new(),
             actions: HashMap::new(),
             jobs: HashMap::new(),
+            schedules: Vec::new(),
             migrations: Vec::new(),
             back_office: Vec::new(),
             public: Vec::new(),
@@ -172,6 +178,16 @@ impl Collected {
             self.back_office.push((module, permission, path, route));
         }
         for (spec, h) in r.jobs {
+            if let Some(cron) = spec.schedule {
+                let s = crate::jobs::cron::parse(cron).map_err(|reason| {
+                    BuildError::InvalidSchedule {
+                        kind: spec.kind.into(),
+                        schedule: cron.into(),
+                        reason,
+                    }
+                })?;
+                self.schedules.push((spec.kind, s));
+            }
             if self.jobs.insert(spec.kind, (spec, h)).is_some() {
                 return Err(BuildError::DuplicateJob(spec.kind.into()));
             }
