@@ -35,6 +35,11 @@ pub(crate) fn job_key(id: &str, offset: i64) -> String {
     }
 }
 
+/// The unique key of left batch `n` of import `id`.
+pub(crate) fn left_key(id: &str, n: i64) -> String {
+    format!("roster:{id}:left:{n}")
+}
+
 fn previewed(id: &str) -> Statement {
     Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND state = 'previewed')")
         .bind(id.to_string())

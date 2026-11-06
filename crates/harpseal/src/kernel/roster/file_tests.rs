@@ -102,3 +102,40 @@ fn xlsx_cells_render_as_text() {
     let at_noon = ExcelDateTime::new(46331.5, ExcelDateTimeType::DateTime, false);
     assert_eq!(cell_text(&Data::DateTime(at_noon)), "2026-11-05 12:00:00");
 }
+
+#[test]
+fn a_sparse_sheet_is_refused_before_anything_is_allocated() {
+    let c = test_config();
+    let sparse = include_bytes!("../../../tests/fixtures/roster/sparse.xlsx");
+    let t = std::time::Instant::now();
+    let got = parse(sparse, "sparse.xlsx", &c.roster);
+    assert!(
+        matches!(got, Err(FileError::TooManyRows | FileError::TooManyColumns)),
+        "{got:?}"
+    );
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(2),
+        "refused quickly"
+    );
+}
+
+#[test]
+fn an_empty_first_sheet_is_an_empty_file() {
+    let c = test_config();
+    let empty = include_bytes!("../../../tests/fixtures/roster/empty_sheet.xlsx");
+    assert_eq!(parse(empty, "e.xlsx", &c.roster), Err(FileError::Empty));
+}
+
+#[test]
+fn formula_cells_read_their_cached_value_and_error_cells_their_code() {
+    let c = test_config();
+    let book = include_bytes!("../../../tests/fixtures/roster/formula_error.xlsx");
+    let rows = parse(book, "f.xlsx", &c.roster).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("รหัสนักศึกษา"), Some("68010001"));
+    assert_eq!(rows[0].get("ชั้นปี"), Some("2"));
+    assert_eq!(rows[0].get("เกรดเฉลี่ย"), Some("#DIV/0!"));
+    // The error code then fails the number check like any bad cell.
+    let problems = crate::kernel::roster::validate::validate(&rows, &c).unwrap_err();
+    assert_eq!(problems[0].reason, "not_number");
+}

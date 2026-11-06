@@ -89,11 +89,19 @@ pub(crate) fn records(text: &str, delim: char) -> Result<Vec<Vec<String>>, CsvEr
 }
 
 /// One CSV line (CRLF-terminated, `,`-separated) of `fields`, quoting a
-/// field that holds `,`, `;`, `"`, a line break or edge spaces.
+/// field that holds `,`, `;`, `"`, a line break or edge spaces. A field
+/// starting with `=`, `+`, `-`, `@`, a tab or a CR gets a leading `'`, so a
+/// spreadsheet never runs it as a formula.
 pub(crate) fn line(fields: &[&str]) -> String {
     let quoted: Vec<String> = fields
         .iter()
         .map(|f| {
+            let safe = if f.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+                format!("'{f}")
+            } else {
+                (*f).to_string()
+            };
+            let f = &safe.as_str();
             let needs = f.contains([',', ';', '"', '\n', '\r']) || f.trim() != *f;
             if needs {
                 format!("\"{}\"", f.replace('"', "\"\""))
@@ -154,6 +162,7 @@ mod tests {
             line(&["a", "b c", "x,y", "say \"hi\"", " pad"]),
             "a,b c,\"x,y\",\"say \"\"hi\"\"\",\" pad\"\r\n"
         );
+        assert_eq!(line(&["=1+2", "@x", "-3", "a=b"]), "'=1+2,'@x,'-3,a=b\r\n");
         let back = rows(&line(&["1", "x;y", "z"]));
         assert_eq!(back, vec![vec!["1", "x;y", "z"]]);
     }

@@ -130,3 +130,26 @@ fn file_errors_become_reports() {
         vec![Problem::new(0, "", "unsupported")]
     );
 }
+
+#[test]
+fn more_than_20_tags_are_refused() {
+    let tags: Vec<String> = (0..21).map(|i| format!("g{i}")).collect();
+    let line = format!("68010001,นก,,,\"{}\",DDS,1,\n", tags.join(";"));
+    assert_eq!(reasons(&line), one(2, "กลุ่ม", "too_many_tags"));
+    let ok = format!("68010001,นก,,,\"{}\",DDS,1,\n", tags[..20].join(";"));
+    assert!(check(&ok).is_ok());
+}
+
+#[test]
+fn without_a_pattern_codes_follow_the_chat_flow_default() {
+    let mut c = test_config();
+    c.student.id_pattern = None;
+    let rows = |codes: &str| {
+        let body = format!("{HEAD}{codes}");
+        parse(body.as_bytes(), "r.csv", &c.roster).unwrap()
+    };
+    let bad = validate(&rows("abc,นก,,,,DDS,1,\nab cd,ปลา,,,,DDS,1,\n"), &c).unwrap_err();
+    assert_eq!(bad.len(), 2, "{bad:?}");
+    assert!(bad.iter().all(|p| p.reason == "bad_code"));
+    assert!(validate(&rows("SBU-2026-01,นก,,,,DDS,1,\n"), &c).is_ok());
+}

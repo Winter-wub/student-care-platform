@@ -21,15 +21,16 @@
 //! | `GET /admin/roster/template.csv` | `kernel.roster.view` |
 //! | `POST /admin/roster/upload` (multipart) | `kernel.roster.import` |
 //! | `GET /admin/roster/{id}` (preview, progress, result) | `kernel.roster.view` |
-//! | `POST /admin/roster/{id}/confirm`, `…/cancel` | `kernel.roster.import` |
+//! | `POST /admin/roster/{id}/confirm`, `…/cancel`, `…/fail` (stuck) | `kernel.roster.import` |
 //! | `GET /admin/roster/{id}/report.csv` | `kernel.roster.view` |
 //! | `GET /admin/roster/{id}/file` (audited `roster.file.download`) | `kernel.roster.view` |
 //!
 //! Audit: `roster.import.upload` (each upload), `roster.import` (confirm:
 //! counts, file hash, mode, file name), `roster.import.cancel`,
-//! `roster.file.download`; the Job writes `student.status` per Student it
+//! `roster.import.fail`, `roster.file.download`; the Job writes `student.status` per Student it
 //! marks left and `link.revoke` per Link.
 
+mod chunk;
 pub(crate) mod csv;
 pub(crate) mod file;
 mod finish;
@@ -39,6 +40,7 @@ mod page_list;
 pub(crate) mod preview;
 mod service;
 mod store;
+mod stuck;
 mod texts;
 pub(crate) mod validate;
 mod view;
@@ -72,6 +74,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .back_office(VIEW, "/roster/{id}", get(page_import::page))
         .back_office(IMPORT, "/roster/{id}/confirm", post(page_import::confirm))
         .back_office(IMPORT, "/roster/{id}/cancel", post(page_import::cancel))
+        .back_office(IMPORT, "/roster/{id}/fail", post(page_import::fail))
         .back_office(VIEW, "/roster/{id}/report.csv", get(page_import::report))
         .back_office(VIEW, "/roster/{id}/file", get(page_import::file))
         .job(JobSpec::new(service::JOB_KIND), job::run);

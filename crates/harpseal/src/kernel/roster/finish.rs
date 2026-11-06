@@ -1,23 +1,30 @@
-//! After the last chunk: in `full` mode, every active Student the file did
-//! not list (`roster_imported_at` before the import's `started_at`)
-//! becomes `left`, 100 per batch, unless Staff set the status by hand (an
-//! override). Each one gets a `student.status` audit row by the Job, which
-//! gates the change and the revoke of every live Link (each with its own
-//! `link.revoke` row). After each batch the revoked notice is Pushed per
-//! Link; a notice that fails is counted, never an error. Then the import
-//! is `done`. A re-run after a crash continues where it stopped.
+//! The left phase of a `full` import, one batch per Job run (payload
+//! `{import_id, chunk, left: n}`, key `roster:<id>:left:<n>`): up to 100
+//! active Students the file did not list (`roster_imported_at` before the
+//! import's `started_at`, status not set by hand) become `left`.
+//!
+//! The batch claims its turn with a compare-and-set on
+//! `counts.left_batches` (n → n + 1) and a per-run token in `counts.run`;
+//! every other statement is gated on both, so a repeated or concurrent
+//! run writes nothing. Per Student, a `student.status` audit row by the
+//! Job gates the status change and the revoke of each live Link (its own
+//! `link.revoke` row). The same batch adds the rows it wrote to `left` /
+//! `links_revoked` and queues batch n + 1, or, when fewer than 100 were
+//! left to do, sets the import `done`. The revoked notices are Pushed after
+//! the commit; a failed one is counted, never an error.
 
 use serde_json::json;
 
+use super::service::{JOB_KIND, left_key};
 use super::store::Import;
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::manifest::Job;
 use crate::module::JobContext;
 use crate::port_types::{Statement, Value};
-use crate::{Result, Services, links};
+use crate::{Error, Result, links};
 
-/// Students marked left per batch.
-const LEFT_BATCH: i64 = 100;
+/// Students marked left per Job run.
+pub(crate) const LEFT_BATCH: usize = 100;
 
 /// Students the import will mark left, as an SQL condition with one
 /// parameter (`started_at`).
@@ -25,29 +32,36 @@ const NOT_LISTED: &str = "status = 'active' \
     AND (roster_imported_at IS NULL OR roster_imported_at < ?) \
     AND NOT EXISTS (SELECT 1 FROM json_each(manual_overrides) WHERE value = 'status')";
 
-pub(super) async fn finish(cx: &JobContext, job: &Job, imp: &Import) -> Result<()> {
-    let s = &cx.services;
-    if imp.mode == "full" {
-        let started = imp.started_at.unwrap_or_else(|| s.now_ms());
-        while leave_batch(cx, job, imp, started).await? > 0 {}
-    }
-    let done = Statement::new(
-        "UPDATE roster_import SET state = 'done', finished_at = ? WHERE id = ? AND state = 'running'",
-    )
-    .bind(s.now_ms())
-    .bind(imp.id.as_str());
-    s.db.execute(done).await?;
-    Ok(())
-}
+/// The gate: this run's compare-and-set went through.
+const GATE: &str = "EXISTS (SELECT 1 FROM roster_import WHERE id = ? \
+    AND json_extract(counts, '$.left_batches') = ? AND json_extract(counts, '$.run') = ?)";
 
-/// Marks up to 100 Students left; returns how many changed.
-async fn leave_batch(cx: &JobContext, job: &Job, imp: &Import, started: i64) -> Result<u64> {
+/// Runs left batch `n` of `imp`.
+pub(super) async fn left_batch(cx: &JobContext, job: &Job, imp: &Import, n: i64) -> Result<()> {
     let s = &cx.services;
+    if imp.state != "running" || imp.applied_rows < imp.total_rows {
+        return Ok(());
+    }
+    let done = imp.counts.left_batches;
+    if done > n {
+        // Batch n is applied; make sure the next one is queued.
+        let payload = json!({ "import_id": imp.id, "chunk": imp.total_rows, "left": done });
+        cx.jobs
+            .enqueue_unique(&left_key(&imp.id, done), JOB_KIND, payload, None)
+            .await?;
+        return Ok(());
+    }
+    if done < n {
+        return Err(Error::Invalid(
+            "roster left batch ahead of the applied ones".into(),
+        ));
+    }
+    let started = imp.started_at.unwrap_or_else(|| s.now_ms());
     let pick = Statement::new(format!(
         "SELECT id FROM student WHERE {NOT_LISTED} ORDER BY id LIMIT ?"
     ))
     .bind(started)
-    .bind(LEFT_BATCH);
+    .bind(LEFT_BATCH as i64);
     let rows = s.db.query(pick).await?;
     let ids: Vec<String> = (0..rows.len())
         .filter_map(|i| {
@@ -56,17 +70,33 @@ async fn leave_batch(cx: &JobContext, job: &Job, imp: &Import, started: i64) -> 
                 .map(str::to_string)
         })
         .collect();
-    if ids.is_empty() {
-        return Ok(0);
-    }
+    let mut live = links::live_links_of_students(s, &ids, &cx.config.default_locale).await?;
+
+    let token = s.random_hex(8)?;
+    let gate = |st: Statement| st.bind(imp.id.as_str()).bind(n + 1).bind(token.as_str());
     let actor = Actor::Job(job.id.clone());
     let ctx = RequestCtx::default();
-    let default = &cx.config.default_locale;
-    let mut stmts = Vec::new();
-    // (index of the student update, Links with the index of their update)
-    let mut plan = Vec::new();
+    let batch_start = s.now_ms();
+    let mut stmts = vec![
+        Statement::new(
+            "UPDATE roster_import SET counts = json_set(counts, '$.left_batches', ?, '$.run', ?) \
+             WHERE id = ? AND state = 'running' AND applied_rows = total_rows \
+             AND COALESCE(json_extract(counts, '$.left_batches'), 0) = ?",
+        )
+        .bind(n + 1)
+        .bind(token.as_str())
+        .bind(imp.id.as_str())
+        .bind(n),
+    ];
+    // Indexes of the Link updates, with the Link, to notify after commit.
+    let mut revokes = Vec::new();
     for id in &ids {
-        let (audit_row, gate) = audit::entry_if(
+        let cond = gate(Statement::new(format!(
+            "{GATE} AND EXISTS (SELECT 1 FROM student WHERE id = ? AND {NOT_LISTED})"
+        )))
+        .bind(id.as_str())
+        .bind(started);
+        let (audit_row, row_id) = audit::entry_if(
             s,
             &actor,
             "student.status",
@@ -74,11 +104,7 @@ async fn leave_batch(cx: &JobContext, job: &Job, imp: &Import, started: i64) -> 
             Some(json!({ "status": "active" })),
             Some(json!({ "status": "left", "roster_import": imp.id })),
             &ctx,
-            Statement::new(format!(
-                "EXISTS (SELECT 1 FROM student WHERE id = ? AND {NOT_LISTED})"
-            ))
-            .bind(id.as_str())
-            .bind(started),
+            cond,
         )?;
         stmts.push(audit_row);
         stmts.push(
@@ -88,48 +114,69 @@ async fn leave_batch(cx: &JobContext, job: &Job, imp: &Import, started: i64) -> 
             )
             .bind(s.now_ms())
             .bind(id.as_str())
-            .bind(gate.as_str()),
+            .bind(row_id.as_str()),
         );
-        let at = stmts.len() - 1;
-        let mut revokes = Vec::new();
-        for link in links::live_links_of(s, id, default).await? {
-            let more = links::staff_revoke_statements(s, &link, &actor, &ctx, Some(&gate))?;
+        let mine: Vec<_> = live.extract_if(.., |(sid, _)| sid == id).collect();
+        for (_, link) in mine {
+            let more = links::staff_revoke_statements(s, &link, &actor, &ctx, Some(&row_id))?;
             revokes.push((stmts.len() + 1, link));
             stmts.extend(more);
         }
-        plan.push((at, revokes));
     }
-    let done = s.db.batch(stmts).await?;
-    let hit = |i: usize| done.get(i).map_or(0, |r| r.rows_affected);
-    let (mut left, mut revoked, mut failed) = (0u64, 0u64, 0u64);
-    for (at, revokes) in plan {
-        left += hit(at);
-        for (i, link) in revokes {
-            if hit(i) == 0 {
-                continue;
-            }
-            revoked += 1;
-            if !matches!(links::notify_revoked(&cx.deployment, link).await, Ok(true)) {
-                failed += 1;
-            }
+    let written = |action: &str| {
+        format!(
+            "(SELECT count(*) FROM audit_log WHERE at >= {batch_start} AND action = '{action}' \
+             AND actor_kind = 'job' AND actor_id = ?)"
+        )
+    };
+    stmts.push(gate(
+        Statement::new(format!(
+            "UPDATE roster_import SET counts = json_set(counts, \
+             '$.left', COALESCE(json_extract(counts, '$.left'), 0) + {}, \
+             '$.links_revoked', COALESCE(json_extract(counts, '$.links_revoked'), 0) + {}) \
+             WHERE id = ? AND {GATE}",
+            written("student.status"),
+            written("link.revoke")
+        ))
+        .bind(job.id.as_str())
+        .bind(job.id.as_str())
+        .bind(imp.id.as_str()),
+    ));
+    if ids.len() == LEFT_BATCH {
+        let payload = json!({ "import_id": imp.id, "chunk": imp.total_rows, "left": n + 1 });
+        let key = left_key(&imp.id, n + 1);
+        stmts.push(cx.jobs.insert_unique(&key, JOB_KIND, &payload, None)?.1);
+    } else {
+        stmts.push(gate(
+            Statement::new(format!(
+                "UPDATE roster_import SET state = 'done', finished_at = ? \
+                 WHERE id = ? AND state = 'running' AND {GATE}"
+            ))
+            .bind(s.now_ms())
+            .bind(imp.id.as_str()),
+        ));
+    }
+    let results = s.db.batch(stmts).await?;
+    if results.first().map(|r| r.rows_affected) != Some(1) {
+        return Ok(());
+    }
+    let mut failed = 0i64;
+    for (i, link) in revokes {
+        if results.get(i).map_or(0, |r| r.rows_affected) == 0 {
+            continue;
+        }
+        if !matches!(links::notify_revoked(&cx.deployment, link).await, Ok(true)) {
+            failed += 1;
         }
     }
-    add_counts(s, &imp.id, left, revoked, failed).await?;
-    Ok(left)
-}
-
-async fn add_counts(s: &Services, id: &str, left: u64, revoked: u64, failed: u64) -> Result<()> {
-    let n = |v: u64| i64::try_from(v).unwrap_or(i64::MAX);
-    let stmt = Statement::new(
-        "UPDATE roster_import SET counts = json_set(counts, \
-         '$.left', COALESCE(json_extract(counts, '$.left'), 0) + ?, \
-         '$.links_revoked', COALESCE(json_extract(counts, '$.links_revoked'), 0) + ?, \
-         '$.notices_failed', COALESCE(json_extract(counts, '$.notices_failed'), 0) + ?) \
-         WHERE id = ?",
-    )
-    .bind(n(left))
-    .bind(n(revoked))
-    .bind(n(failed))
-    .bind(id);
-    s.db.execute(stmt).await.map(|_| ())
+    if failed > 0 {
+        let add = Statement::new(
+            "UPDATE roster_import SET counts = json_set(counts, '$.notices_failed', \
+             COALESCE(json_extract(counts, '$.notices_failed'), 0) + ?) WHERE id = ?",
+        )
+        .bind(failed)
+        .bind(imp.id.as_str());
+        s.db.execute(add).await?;
+    }
+    Ok(())
 }

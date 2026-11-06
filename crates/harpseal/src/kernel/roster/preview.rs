@@ -56,6 +56,7 @@ pub(crate) async fn upload(
     }
     let s = d.services();
     let now = s.now_ms();
+    super::stuck::reap_busy(s).await?;
     if let Some(b) = store::busy(s, now - PREVIEW_HOLD_MS).await? {
         return Ok(Uploaded::Busy(Box::new(b)));
     }
@@ -65,16 +66,20 @@ pub(crate) async fn upload(
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
     let read = if bytes.len() > MAX_FILE_BYTES {
-        Err(vec![Problem {
-            row: 0,
-            column: String::new(),
-            reason: "too_large".into(),
-        }])
+        Err(vec![problem("too_large")])
     } else {
         let config = d.config();
         file::parse(&bytes, &name, &config.roster)
             .map_err(|e: FileError| validate::file_problems(&e))
             .and_then(|rows| validate::validate(&rows, config))
+            .and_then(|v| {
+                // A full file with no rows would mark everyone left.
+                if mode == "full" && v.records.is_empty() {
+                    Err(vec![problem("empty_full")])
+                } else {
+                    Ok(v)
+                }
+            })
     };
     let content_type = if file::is_xlsx(&bytes, &name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -110,17 +115,11 @@ pub(crate) async fn upload(
     counts.preview = preview(s, &valid, mode == "full").await?;
     let total = valid.records.len() as i64;
     let stale = now - PREVIEW_HOLD_MS;
-    let mut stmts = vec![
-        Statement::new(
-            "UPDATE roster_import SET state = 'cancelled', finished_at = ? \
-             WHERE state = 'previewed' AND created_at < ?",
-        )
-        .bind(now)
-        .bind(stale),
-    ];
+    let mut stmts = replace_stale(s, stale).await?;
     stmts.extend(row.statements(s, &counts, None, total, ctx, Some(stale))?);
+    let insert_at = stmts.len() - 2;
     let done = s.db.batch(stmts).await?;
-    if done.get(1).map(|r| r.rows_affected) != Some(1) {
+    if done.get(insert_at).map(|r| r.rows_affected) != Some(1) {
         // Another upload took the slot between the check and the write.
         let _ = s.files.delete(&key).await;
         return match store::busy(s, stale).await? {
@@ -129,6 +128,52 @@ pub(crate) async fn upload(
         };
     }
     Ok(Uploaded::Previewed(id))
+}
+
+/// Cancels the previews older than `stale` (they give the slot up), each
+/// with an audit row `roster.import.cancel` by the system that gates it.
+async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
+    let rows =
+        s.db.query(
+            Statement::new(
+                "SELECT id FROM roster_import WHERE state = 'previewed' AND created_at < ?",
+            )
+            .bind(stale),
+        )
+        .await?;
+    let mut stmts = Vec::new();
+    for i in 0..rows.len() {
+        let Some(id) = rows.get(i, "id").and_then(crate::Value::as_text) else {
+            continue;
+        };
+        let cond = Statement::new(
+            "EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND state = 'previewed' \
+             AND created_at < ?)",
+        )
+        .bind(id)
+        .bind(stale);
+        let (audit, gate) = audit::entry_if(
+            s,
+            &Actor::System,
+            "roster.import.cancel",
+            Some(&Target::new("roster_import", id)),
+            Some(json!({ "state": "previewed" })),
+            Some(json!({ "state": "cancelled", "reason": "replaced after an hour" })),
+            &RequestCtx::default(),
+            cond,
+        )?;
+        stmts.push(audit);
+        stmts.push(
+            Statement::new(
+                "UPDATE roster_import SET state = 'cancelled', finished_at = ? WHERE id = ? \
+                 AND state = 'previewed' AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+            )
+            .bind(s.now_ms())
+            .bind(id)
+            .bind(gate),
+        );
+    }
+    Ok(stmts)
 }
 
 /// The new `roster_import` row.
@@ -206,6 +251,15 @@ impl NewRow<'_> {
             Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ?)").bind(self.id),
         )?;
         Ok(vec![insert, audit])
+    }
+}
+
+/// A problem of the file as a whole.
+fn problem(reason: &str) -> Problem {
+    Problem {
+        row: 0,
+        column: String::new(),
+        reason: reason.into(),
     }
 }
 

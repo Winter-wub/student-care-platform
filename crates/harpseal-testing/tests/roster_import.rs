@@ -33,7 +33,11 @@ async fn happy_path(name: &str, bytes: &[u8]) {
     assert_eq!(r.status, 303);
     assert_eq!(flash(&b), "ok:kernel.roster.confirmed");
     assert_eq!(import_text(&h, &id, "state").await, "queued");
-    assert_eq!(run_jobs(&h, &app).await, 1);
+    assert_eq!(
+        run_jobs(&h, &app).await,
+        2,
+        "the chunk, then one left batch"
+    );
     assert_eq!(import_text(&h, &id, "state").await, "done");
     assert_eq!(int(&h, STUDENTS, &[]).await, 50);
     let c = counts(&h, &id).await;

@@ -92,19 +92,31 @@ pub async fn upload_with(
     mode: &str,
     csrf: Option<&str>,
 ) -> TestResponse {
+    upload_ordered(b, name, bytes, mode, csrf, false).await
+}
+
+/// [`upload_with`], with the `_csrf` part after the file when
+/// `csrf_last`. `Some("")` sends no `_csrf` part at all.
+pub async fn upload_ordered(
+    b: &Browser<'_>,
+    name: &str,
+    bytes: &[u8],
+    mode: &str,
+    csrf: Option<&str>,
+    csrf_last: bool,
+) -> TestResponse {
     let boundary = "----sealbay-boundary";
     let mut body = Vec::new();
     let token = b.csrf().unwrap_or_default();
+    let token = csrf.unwrap_or(token.as_str()).to_string();
     let mut part = |head: String, value: &[u8]| {
         body.extend_from_slice(format!("--{boundary}\r\n{head}\r\n\r\n").as_bytes());
         body.extend_from_slice(value);
         body.extend_from_slice(b"\r\n");
     };
-    if let Some(t) = csrf.or(Some(token.as_str())).filter(|t| !t.is_empty()) {
-        part(
-            "Content-Disposition: form-data; name=\"_csrf\"".into(),
-            t.as_bytes(),
-        );
+    let csrf_head = || "Content-Disposition: form-data; name=\"_csrf\"".to_string();
+    if !csrf_last && !token.is_empty() {
+        part(csrf_head(), token.as_bytes());
     }
     part(
         "Content-Disposition: form-data; name=\"mode\"".into(),
@@ -117,6 +129,9 @@ pub async fn upload_with(
         ),
         bytes,
     );
+    if csrf_last && !token.is_empty() {
+        part(csrf_head(), token.as_bytes());
+    }
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
     let req = Request::post("/admin/roster/upload")
         .header(

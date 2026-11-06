@@ -74,6 +74,8 @@ pub(crate) struct Counts {
     pub(crate) left: u64,
     pub(crate) links_revoked: u64,
     pub(crate) notices_failed: u64,
+    /// Left batches applied so far (the left phase's compare-and-set).
+    pub(crate) left_batches: i64,
     /// The chunk run that last advanced `applied_rows` (its batch gate).
     pub(crate) run: String,
 }

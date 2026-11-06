@@ -47,8 +47,30 @@ parts = {
  "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
  "xl/worksheets/sheet1.xml": sheet,
 }
-with zipfile.ZipFile(f"{out}/seal_bay_50.xlsx", "w", zipfile.ZIP_DEFLATED) as z:
-    for name, data in parts.items():
-        zi = zipfile.ZipInfo(name, date_time=(2026, 11, 1, 0, 0, 0))
-        zi.compress_type = zipfile.ZIP_DEFLATED
-        z.writestr(zi, data)
+def write_xlsx(path, sheet_xml):
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in {**parts, "xl/worksheets/sheet1.xml": sheet_xml}.items():
+            zi = zipfile.ZipInfo(name, date_time=(2026, 11, 1, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(zi, data)
+
+def sheet_of(rows_xml):
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+        + rows_xml + '</sheetData></worksheet>')
+
+write_xlsx(f"{out}/seal_bay_50.xlsx", sheet)
+# Two cells far apart: a dense range would be ~17e9 cells.
+write_xlsx(f"{out}/sparse.xlsx", sheet_of(
+    '<row r="1"><c r="A1" t="inlineStr"><is><t>x</t></is></c></row>'
+    '<row r="1048576"><c r="XFD1048576"><v>1</v></c></row>'))
+# A first sheet with no cells at all.
+write_xlsx(f"{out}/empty_sheet.xlsx", sheet_of(""))
+# The headers, then one row whose year is a formula (cached 2) and whose
+# GPA is an error cell.
+header = "".join(cell(f"{col(ci)}1", v, False) for ci, v in enumerate(H))
+data = (cell("A2", "68010001", True) + cell("B2", "นกน้อย ทะเลใส", False)
+    + cell("F2", "DDS", False) + '<c r="G2"><f>1+1</f><v>2</v></c>'
+    + '<c r="H2" t="e"><v>#DIV/0!</v></c>')
+write_xlsx(f"{out}/formula_error.xlsx", sheet_of(
+    f'<row r="1">{header}</row><row r="2">{data}</row>'))

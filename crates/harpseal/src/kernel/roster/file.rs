@@ -14,6 +14,8 @@ use crate::config::RosterConfig;
 
 /// Most data rows a file may hold.
 pub(crate) const MAX_ROWS: usize = 20_000;
+/// Most columns an XLSX sheet may use (cells further right are refused).
+pub(crate) const MAX_COLUMNS: usize = 64;
 
 /// One data row: its row number in the file (the header row is 1) and its
 /// non-empty cells by header.
@@ -43,8 +45,11 @@ pub(crate) enum FileError {
     Xlsx,
     /// No header row.
     Empty,
-    /// More than [`MAX_ROWS`] data rows.
+    /// More than [`MAX_ROWS`] data rows (or an XLSX cell below row
+    /// `MAX_ROWS + 1`).
     TooManyRows,
+    /// An XLSX cell right of column [`MAX_COLUMNS`].
+    TooManyColumns,
     /// Headers that differ from the `[roster]` columns.
     Headers {
         missing: Vec<String>,
@@ -152,24 +157,37 @@ fn check_headers(header: &[String], roster: &RosterConfig) -> Result<(), FileErr
     }
 }
 
+/// Reads the first sheet cell by cell, never as calamine's dense range: a
+/// sheet with one cell in A1 and one in XFD1048576 would ask for ~17e9
+/// cells. A cell beyond row `MAX_ROWS + 1` or column [`MAX_COLUMNS`] refuses
+/// the file before anything is allocated for it.
 fn xlsx_grid(bytes: &[u8]) -> Result<Grid, FileError> {
     let mut book: Xlsx<_> =
         calamine::open_workbook_from_rs(Cursor::new(bytes)).map_err(|_| FileError::Xlsx)?;
-    let range = book
-        .worksheet_range_at(0)
-        .ok_or(FileError::Xlsx)?
+    let first = book.sheet_names().first().cloned().ok_or(FileError::Xlsx)?;
+    let mut cells = book
+        .worksheet_cells_reader(&first)
         .map_err(|_| FileError::Xlsx)?;
-    let first = range.start().map_or(0, |(r, _)| r as usize);
-    let skip_cols = range.start().map_or(0, |(_, c)| c as usize);
-    Ok(range
-        .rows()
-        .enumerate()
-        .map(|(i, cells)| {
-            let mut v = vec![String::new(); skip_cols];
-            v.extend(cells.iter().map(cell_text));
-            (first + i + 1, v)
-        })
-        .collect())
+    let mut rows: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+    while let Some(cell) = cells.next_cell().map_err(|_| FileError::Xlsx)? {
+        let (r, c) = cell.get_position();
+        if r as usize > MAX_ROWS {
+            return Err(FileError::TooManyRows);
+        }
+        if c as usize >= MAX_COLUMNS {
+            return Err(FileError::TooManyColumns);
+        }
+        let text = cell_text(&Data::from(cell.get_value().clone()));
+        if text.is_empty() {
+            continue;
+        }
+        let row = rows.entry(r).or_default();
+        if row.len() <= c as usize {
+            row.resize(c as usize + 1, String::new());
+        }
+        row[c as usize] = text;
+    }
+    Ok(rows.into_iter().map(|(r, v)| (r as usize + 1, v)).collect())
 }
 
 /// A cell as text: integers without `.0`, dates as `YYYY-MM-DD` (with

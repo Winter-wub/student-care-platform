@@ -32,6 +32,16 @@ pub(super) async fn page(
         Ok(None) => return v.not_found(),
         Err(e) => return v.error(&e),
     };
+    // An import whose Job died gives the slot up here (see `stuck.rs`).
+    let imp = match super::stuck::reap(&s.services, &imp).await {
+        Ok(true) => match store::load(&s.services, &id).await {
+            Ok(Some(i)) => i,
+            Ok(None) => return v.not_found(),
+            Err(e) => return v.error(&e),
+        },
+        Ok(false) => imp,
+        Err(e) => return v.error(&e),
+    };
     let mut resp = if is_fragment(&headers) {
         (StatusCode::OK, Html(progress(&v, &imp).into_string())).into_response()
     } else {
@@ -64,6 +74,13 @@ fn full(v: &View<'_>, imp: &Import) -> Response {
             "previewed" => (preview(v, imp)),
             "failed" => (failed(v, imp)),
             _ => (progress(v, imp)),
+        }
+        @if v.staff.can(IMPORT) && super::stuck::may_mark_failed(imp, v.s.services.now_ms()) {
+            form method="post" action=(format!("{BASE}/{}/fail", imp.id)) {
+                (v.staff.csrf_field())
+                p class="muted" { (v.t("kernel.roster.stuck_help")) }
+                button class="secondary" type="submit" { (v.t("kernel.roster.mark_failed")) }
+            }
         }
     };
     v.page(StatusCode::OK, &title, body)
@@ -126,6 +143,9 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
         div id="roster-progress" class="card" data-state=(imp.state)
             hx-get=[live.then_some(url.as_str())] hx-trigger=[live.then_some("every 2s")]
             hx-swap=[live.then_some("outerHTML")] {
+            @if let Some(job) = imp.failure.as_ref().and_then(|f| f.job.as_ref()) {
+                div class="warn" role="alert" { (v.t("kernel.roster.job_failed")) ": " (job) }
+            }
             @if live {
                 label for="roster-bar" { (v.t("kernel.roster.progress")) " "
                     span data-applied { (imp.applied_rows) } " / " (imp.total_rows) }
@@ -149,11 +169,8 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
 
 fn failed(v: &View<'_>, imp: &Import) -> Markup {
     let f = imp.failure.clone().unwrap_or_default();
-    if let Some(job) = &f.job {
-        return html! {
-            div class="warn" role="alert" { (v.t("kernel.roster.job_failed")) ": " (job) }
-            (progress(v, imp))
-        };
+    if f.job.is_some() {
+        return progress(v, imp);
     }
     html! {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
@@ -217,6 +234,24 @@ pub(super) async fn cancel(
     }
 }
 
+/// Staff mark a stuck import failed (see `stuck.rs`).
+pub(super) async fn fail(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    ctx: RequestCtx,
+    Path(id): Path<String>,
+) -> Response {
+    let v = View::new(&s, &staff);
+    let back = format!("{BASE}/{id}");
+    let actor = Actor::staff(&staff);
+    match super::stuck::mark_failed(&s.services, &id, &actor, &ctx).await {
+        Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.marked_failed"),
+        Ok(Outcome::NotPreviewed(_)) => v.redirect(&back, false, "kernel.roster.not_stuck"),
+        Ok(Outcome::Missing) => v.not_found(),
+        Err(e) => v.error(&e),
+    }
+}
+
 /// The validation report as CSV (row, column, problem in the Staff
 /// member's Locale), read from `roster_import.error`.
 pub(super) async fn report(
@@ -230,17 +265,25 @@ pub(super) async fn report(
         Ok(None) => return v.not_found(),
         Err(e) => return v.error(&e),
     };
-    let problems = imp.failure.map(|f| f.problems).unwrap_or_default();
+    let failure = imp.failure.unwrap_or_default();
+    let problems = &failure.problems;
     let head = [
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
         v.t("kernel.roster.report_reason"),
     ];
     let mut lines = vec![super::csv::line(&head.each_ref().map(String::as_str))];
-    for p in &problems {
+    for p in problems {
         let row = p.row.to_string();
         let reason = v.t(&format!("kernel.roster.reason_{}", p.reason));
         lines.push(super::csv::line(&[&row, &p.column, &reason]));
+    }
+    if (problems.len() as u64) < failure.total {
+        let note = v
+            .t("kernel.roster.report_truncated")
+            .replace("{shown}", &problems.len().to_string())
+            .replace("{total}", &failure.total.to_string());
+        lines.push(super::csv::line(&[&note]));
     }
     let name = format!("roster-{id}-report.csv");
     download("text/csv; charset=utf-8", &name, &name, csv_body(lines))

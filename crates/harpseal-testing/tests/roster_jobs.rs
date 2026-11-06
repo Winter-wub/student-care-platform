@@ -34,13 +34,24 @@ async fn twelve_hundred_rows_run_as_three_chunk_jobs() {
         );
     }
     assert_eq!(applied, vec![500, 1000, 1200]);
+    assert_eq!(
+        import_text(&h, &id, "state").await,
+        "running",
+        "the left phase is next"
+    );
+    let r = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(r.claimed, 1, "one left batch");
     assert_eq!(import_text(&h, &id, "state").await, "done");
     let keys = "SELECT group_concat(unique_key, ' ') FROM (SELECT unique_key FROM job \
                 WHERE kind = 'kernel.roster.import' ORDER BY created_at, id)";
     let rows = h.db().query(harpseal::Statement::new(keys)).await.unwrap();
     assert_eq!(
         rows.rows[0][0].as_text().unwrap(),
-        format!("roster:{id} roster:{id}:500 roster:{id}:1000")
+        format!("roster:{id} roster:{id}:500 roster:{id}:1000 roster:{id}:left:0")
     );
     assert_eq!(int(&h, ACTIVE, &[]).await, 1200);
     assert_eq!(counts(&h, &id).await["result"]["new"], 1200);

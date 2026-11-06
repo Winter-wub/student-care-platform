@@ -145,6 +145,31 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "The import stopped part-way"
     ),
     (
+        "kernel.roster.stuck_help",
+        "ถ้าการนำเข้านี้ค้างนานเกินไป ทำเครื่องหมายว่าไม่สำเร็จแล้วอัปโหลดใหม่ได้",
+        "If this import is stuck, mark it failed and upload again"
+    ),
+    (
+        "kernel.roster.mark_failed",
+        "ทำเครื่องหมายว่าไม่สำเร็จ",
+        "Mark as failed"
+    ),
+    (
+        "kernel.roster.marked_failed",
+        "ทำเครื่องหมายว่าไม่สำเร็จแล้ว",
+        "Marked as failed"
+    ),
+    (
+        "kernel.roster.not_stuck",
+        "การนำเข้านี้เสร็จไปแล้ว หรือยังไม่ค้างนานพอ",
+        "This import has finished, or has not been stuck long enough"
+    ),
+    (
+        "kernel.roster.report_truncated",
+        "แสดง {shown} จาก {total} ปัญหา",
+        "{shown} of {total} problems shown"
+    ),
+    (
         "kernel.roster.back",
         "กลับไปหน้านำเข้า",
         "Back to roster import"
@@ -234,6 +259,21 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.roster.reason_too_many_rows",
         "ไฟล์มีเกิน 20,000 แถว",
         "More than 20,000 rows"
+    ),
+    (
+        "kernel.roster.reason_too_many_columns",
+        "ไฟล์ XLSX ใช้คอลัมน์เกิน 64 คอลัมน์",
+        "The XLSX sheet uses more than 64 columns"
+    ),
+    (
+        "kernel.roster.reason_too_many_tags",
+        "กลุ่มเกิน 20 กลุ่มต่อคน",
+        "More than 20 Tags for one Student"
+    ),
+    (
+        "kernel.roster.reason_empty_full",
+        "ไฟล์ไม่มีนักศึกษาเลย ถ้านำเข้าแบบทั้งทะเบียนทุกคนจะพ้นสภาพ จึงไม่นำเข้า (แบบเพิ่ม/แก้ไขใช้ได้)",
+        "The file lists no Students: a whole-roster import would mark everyone left, so it is refused (add/update is allowed)"
     ),
     (
         "kernel.roster.reason_too_large",

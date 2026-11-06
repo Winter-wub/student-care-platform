@@ -1,6 +1,8 @@
 //! Row validation (#8): the whole file is refused on any error, and the
 //! report lists every problem as `{row, column, reason}`. Pure: the
 //! `[roster]` mapping and `[student] id_pattern` come in as arguments.
+//! Student codes follow the chat flow's rule (`id_pattern`, or 4 to 20
+//! letters, digits or `-` when unset), so every imported Student can Link.
 
 use std::collections::BTreeMap;
 
@@ -17,6 +19,9 @@ pub(crate) const MAX_PROBLEMS: usize = 1000;
 /// Longest display name and Tag name, in characters.
 const MAX_NAME_CHARS: usize = 200;
 const MAX_TAG_CHARS: usize = 64;
+/// Most roster Tags per Student (each is one bound parameter when the
+/// Tags are attached; D1 allows 100 per statement).
+pub(crate) const MAX_TAGS: usize = 20;
 /// Characters that separate Tags in other files; refused in a Tags cell
 /// unless they are the configured separator.
 const TAG_SEPARATORS: [char; 3] = [',', ';', '|'];
@@ -72,6 +77,7 @@ pub(crate) fn file_problems(e: &FileError) -> Vec<Problem> {
         FileError::Xlsx => whole("bad_xlsx"),
         FileError::Empty => whole("empty"),
         FileError::TooManyRows => whole("too_many_rows"),
+        FileError::TooManyColumns => whole("too_many_columns"),
         FileError::Headers {
             missing,
             unexpected,
@@ -106,7 +112,7 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
         let code = row.get(&roster.student_code).unwrap_or_default();
         if code.is_empty() {
             bad(&roster.student_code, "required");
-        } else if pattern.is_some_and(|p| !crate::kernel::flow::fits(code, Some(p))) {
+        } else if !crate::kernel::flow::fits(code, pattern) {
             bad(&roster.student_code, "bad_code");
         } else if seen.insert(code.to_string(), n).is_some() {
             bad(&roster.student_code, "duplicate_code");
@@ -151,6 +157,9 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
                     bad(&t.column, "bad_tag");
                 }
                 tags.push(name.to_string());
+            }
+            if tags.len() > MAX_TAGS {
+                bad(&t.column, "too_many_tags");
             }
         }
         let mut attributes = Map::new();
