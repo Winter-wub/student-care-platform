@@ -72,6 +72,8 @@ pub fn fake(profile: FakeProfile) -> Target {
     let follow = one(Inbound::Follow {
         from: to.clone(),
         reply: reply(),
+        event_id: None,
+        redelivery: false,
     });
     let wrong = |mut req: WebhookRequest| {
         req.headers.insert(
@@ -88,6 +90,8 @@ pub fn fake(profile: FakeProfile) -> Target {
             from: to.clone(),
             text: "สวัสดีครับ".into(),
             reply: reply(),
+            event_id: None,
+            redelivery: false,
         }))
         .file(one(Inbound::File {
             from: to.clone(),
@@ -98,19 +102,29 @@ pub fn fake(profile: FakeProfile) -> Target {
                 size_bytes: Some(2048),
             },
             reply: reply(),
+            event_id: None,
+            redelivery: false,
         }))
         .action(
             one(Inbound::Action {
                 from: to.clone(),
                 action: action_id.clone(),
                 reply: reply(),
+                event_id: None,
+                redelivery: false,
             }),
             action_id,
         )
-        .blocked(one(Inbound::Blocked { from: to.clone() }))
+        .blocked(one(Inbound::Blocked {
+            from: to.clone(),
+            event_id: None,
+            redelivery: false,
+        }))
         .unblocked(one(Inbound::Unblocked {
             from: to.clone(),
             reply: reply(),
+            event_id: None,
+            redelivery: false,
         }))
         .bad_signature(wrong(ch.signed(b"{not json".to_vec())))
         .bad_signature_valid_body(wrong(follow))

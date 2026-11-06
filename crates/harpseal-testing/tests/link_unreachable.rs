@@ -57,6 +57,8 @@ async fn a_blocked_account_is_skipped_by_pushes_until_it_writes_again() {
     let d = app.deployment();
     c.send(Inbound::Blocked {
         from: c.who.clone(),
+        event_id: None,
+        redelivery: false,
     })
     .await;
     let r = d
@@ -80,6 +82,8 @@ async fn staff_can_revoke_an_unreachable_link() {
     c.link("68010001").await;
     c.send(Inbound::Blocked {
         from: c.who.clone(),
+        event_id: None,
+        redelivery: false,
     })
     .await;
     let id = live_link(&h, "u1").await;
@@ -113,6 +117,8 @@ async fn a_manual_link_to_a_blocked_account_is_unreachable_until_it_writes() {
     c.follow().await;
     c.send(Inbound::Blocked {
         from: c.who.clone(),
+        event_id: None,
+        redelivery: false,
     })
     .await;
     let done = links::manual_link(

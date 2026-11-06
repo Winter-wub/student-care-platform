@@ -44,7 +44,8 @@ fn reply() -> Delivery {
 
 /// The requests of one send are consistent with its receipts: at most
 /// one reply call, only with the given token and within the reply limit;
-/// exactly one metered receipt per metered Push request.
+/// exactly one metered unit per metered Push request, summed over the
+/// receipts, and `metering` set exactly on receipts with units.
 fn check_calls(t: &Target, delivery: &Delivery, receipts: &[SendReceipt], what: &str) {
     let kind = t.channel.kind();
     let log = t.wire.take();
@@ -73,15 +74,19 @@ fn check_calls(t: &Target, delivery: &Delivery, receipts: &[SendReceipt], what: 
     }
     let pushes = log.calls.iter().filter(|c| c.reply_token.is_none()).count();
     let per_push = usize::from(t.wire.metering(&Delivery::Push) == Metering::Metered);
-    let metered = receipts
-        .iter()
-        .filter(|r| r.metering == Metering::Metered)
-        .count();
+    let units: u32 = receipts.iter().map(|r| r.metered_units).sum();
     assert_eq!(
-        metered,
+        units as usize,
         pushes * per_push,
         "{kind}: {what}: one metered unit per Push request"
     );
+    for r in receipts {
+        assert_eq!(
+            r.metering == Metering::Metered,
+            r.metered_units > 0,
+            "{kind}: {what}: `metering` agrees with `metered_units`"
+        );
+    }
     let any_pushed = receipts.iter().any(|r| r.pushed);
     assert_eq!(
         any_pushed,
@@ -205,6 +210,49 @@ pub async fn sends_the_minimum(t: &Target) {
     assert_eq!(receipts.len(), 7, "{kind}: one receipt per Message");
     check_calls(t, &delivery, &receipts, "a batch of 7 sent as Reply");
     t.wire.take();
+}
+
+/// One Message the adapter spreads over several Push requests (a long
+/// text, a list of 61 Cards) costs one metered unit per request: on LINE
+/// 7 objects go in 2 Push requests, so the single receipt carries 2 units.
+pub async fn metering_counts_push_requests(t: &Target) {
+    let kind = t.channel.kind();
+    let to = &t.fixtures.to;
+    let cases = [
+        Message::text("มหาวิทยาลัยอ่าวแมวน้ำ ".repeat(1_500)),
+        Message::CardList(CardList((0..61).map(card).collect())),
+    ];
+    let per_push = usize::from(t.wire.metering(&Delivery::Push) == Metering::Metered);
+    for msg in cases {
+        let r = t
+            .channel
+            .send(to, &Delivery::Push, &msg, &Locale::th())
+            .await
+            .unwrap_or_else(|e| panic!("{kind}: sending a long {} failed: {e}", msg.kind()));
+        let pushes = t
+            .wire
+            .take()
+            .calls
+            .iter()
+            .filter(|c| c.reply_token.is_none())
+            .count();
+        // A Channel with a reply limit packs a few objects per request
+        // (LINE: 5), and both cases render to more than that (7 text
+        // objects, 6 carousels), so they need at least 2 Push requests;
+        // otherwise a rendering change could make this check trivial.
+        let least = if t.wire.reply_limit().is_some() { 2 } else { 1 };
+        assert!(
+            pushes >= least,
+            "{kind}: a long {} went out in {pushes} Push requests",
+            msg.kind()
+        );
+        assert_eq!(
+            r.metered_units as usize,
+            pushes * per_push,
+            "{kind}: a long {} over {pushes} Push requests",
+            msg.kind()
+        );
+    }
 }
 
 /// The Menu can be set and reset to the locked Menu.

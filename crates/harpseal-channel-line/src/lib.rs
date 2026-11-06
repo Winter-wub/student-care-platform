@@ -24,7 +24,9 @@
 
 mod api;
 pub mod liff;
+pub mod multicast;
 pub mod render;
+pub mod retry_key;
 pub mod richmenu;
 pub mod send;
 pub mod signature;
@@ -40,7 +42,7 @@ use harpseal::{
 };
 use http::Method;
 
-pub use api::{API, API_DATA, DEFAULT_RETRY_AFTER_SECS};
+pub use api::{API, API_DATA, DEFAULT_RETRY_AFTER_SECS, RETRY_KEY_HEADER};
 pub use send::metering;
 pub use signature::{SIGNATURE_HEADER, sign};
 
@@ -194,7 +196,7 @@ impl Channel for LineChannel {
         locale: &Locale,
     ) -> Result<SendReceipt> {
         let mut receipts = self
-            .batch(to, d, std::slice::from_ref(m), locale)
+            .batch(to, d, std::slice::from_ref(m), locale, None)
             .await
             .into_result()?;
         receipts
@@ -208,7 +210,17 @@ impl Channel for LineChannel {
         msgs: &[Message],
         locale: &Locale,
     ) -> BatchReceipt {
-        self.batch(to, d, msgs, locale).await
+        self.batch(to, d, msgs, locale, None).await
+    }
+    async fn send_batch_keyed(
+        &self,
+        to: &ChannelAccountId,
+        d: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+    ) -> BatchReceipt {
+        self.batch(to, d, msgs, locale, Some(key)).await
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         self.rich_menu_set(to, menu).await

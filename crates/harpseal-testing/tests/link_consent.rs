@@ -144,6 +144,8 @@ async fn re_consent_on_one_channel_counts_for_the_other() {
         from: t1.clone(),
         action: ActionId::new(action).unwrap(),
         reply: None,
+        event_id: None,
+        redelivery: false,
     };
     let mut c = Chat::new(&h, &app, "u1");
     c.link("68010001").await;
@@ -154,6 +156,8 @@ async fn re_consent_on_one_channel_counts_for_the_other() {
         Inbound::Follow {
             from: t1.clone(),
             reply: None,
+            event_id: None,
+            redelivery: false,
         },
     )
     .await;

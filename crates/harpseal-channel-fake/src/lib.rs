@@ -16,7 +16,14 @@
 //! Webhooks: the body is a JSON array of events ([`FakeChannel::encode`])
 //! and header [`SIGNATURE_HEADER`] carries [`FakeChannel::sign`] of it.
 //! [`FakeChannel::webhook`] builds a signed call. A wrong or missing
-//! signature is rejected with `BadSignature` before the body is read.
+//! signature is rejected with `BadSignature` before the body is read. An
+//! event's `event_id` and `redelivery` travel as fields `id` and
+//! `redelivery`, so a test can deliver the same event twice.
+//!
+//! Metering: a Message is charged one unit per metered Push request it
+//! opens (a LineLike text split over 7 objects, sent by Push, opens 2
+//! requests and costs 2). [`FakeChannel::fail_next_batch_at`] makes the
+//! next batch stop part-way, to test partial sends.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
@@ -35,7 +42,7 @@ use harpseal::{
 };
 
 use record::State;
-pub use record::{Call, Sent};
+pub use record::{Call, FAILURE_RETRY_AFTER_SECS, Sent};
 use render::Limits;
 
 /// The Fake Channel's kind.
@@ -254,6 +261,17 @@ impl Channel for FakeChannel {
         msgs: &[Message],
         locale: &Locale,
     ) -> BatchReceipt {
+        self.record_batch(to, d, msgs, locale)
+    }
+    async fn send_batch_keyed(
+        &self,
+        to: &ChannelAccountId,
+        d: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+    ) -> BatchReceipt {
+        self.lock().keys.push(key.to_string());
         self.record_batch(to, d, msgs, locale)
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {

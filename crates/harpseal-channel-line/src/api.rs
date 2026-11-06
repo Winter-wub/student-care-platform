@@ -13,6 +13,10 @@ pub const API: &str = "https://api.line.me";
 /// Host for binary content (message content, rich menu images).
 pub const API_DATA: &str = "https://api-data.line.me";
 
+/// Header carrying a request's idempotency key on push and multicast
+/// (<https://developers.line.biz/en/reference/messaging-api/#retry-api-request>).
+pub const RETRY_KEY_HEADER: &str = "x-line-retry-key";
+
 /// Seconds to wait after a 429 without `Retry-After` (LINE does not
 /// document one; the rate limits are per minute or per second:
 /// <https://developers.line.biz/en/reference/messaging-api/#rate-limits>).
@@ -82,7 +86,9 @@ impl LineChannel {
         content_type: Option<&str>,
         body: Vec<u8>,
     ) -> Result<Answer> {
-        let resp = self.send_raw(method, url, content_type, body, true).await?;
+        let resp = self
+            .request(method, url, content_type, body, true, None)
+            .await?;
         Ok(answer(resp))
     }
 
@@ -97,7 +103,25 @@ impl LineChannel {
         body: Vec<u8>,
         authorised: bool,
     ) -> Result<http::Response<Vec<u8>>> {
+        self.request(method, url, content_type, body, authorised, None)
+            .await
+    }
+
+    /// [`LineChannel::send_raw`], with header [`RETRY_KEY_HEADER`] when
+    /// `retry_key` is given.
+    async fn request(
+        &self,
+        method: Method,
+        url: &str,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+        authorised: bool,
+        retry_key: Option<&str>,
+    ) -> Result<http::Response<Vec<u8>>> {
         let mut req = http::Request::builder().method(method).uri(url);
+        if let Some(k) = retry_key {
+            req = req.header(RETRY_KEY_HEADER, k);
+        }
         if authorised {
             let mut v = header::HeaderValue::from_str(&format!("Bearer {}", self.cfg.access_token))
                 .map_err(|_| {
@@ -121,11 +145,34 @@ impl LineChannel {
         url: &str,
         body: &Value,
     ) -> Result<std::result::Result<Value, Failure>> {
+        self.post_json_keyed(url, body, None).await
+    }
+
+    /// [`LineChannel::post_json`] with `X-Line-Retry-Key: retry_key`. LINE
+    /// answers 409 when a request with that key was already accepted (it
+    /// went out earlier): that counts as sent, with no message ids
+    /// (<https://developers.line.biz/en/docs/messaging-api/retrying-api-request/>).
+    pub(crate) async fn post_json_keyed(
+        &self,
+        url: &str,
+        body: &Value,
+        retry_key: Option<&str>,
+    ) -> Result<std::result::Result<Value, Failure>> {
         let bytes = serde_json::to_vec(body).map_err(|e| Error::Platform(e.to_string()))?;
-        let got = self
-            .call(Method::POST, url, Some("application/json"), bytes)
+        let resp = self
+            .request(
+                Method::POST,
+                url,
+                Some("application/json"),
+                bytes,
+                true,
+                retry_key,
+            )
             .await?;
-        Ok(got.map(|b| parse(&b)))
+        Ok(match answer(resp) {
+            Err(f) if retry_key.is_some() && f.status == 409 => Ok(Value::Null),
+            got => got.map(|b| parse(&b)),
+        })
     }
 }
 

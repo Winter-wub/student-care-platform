@@ -38,6 +38,12 @@ fn event(ev: &Inbound) -> Value {
     let mut o = Map::new();
     o.insert("type".into(), json!(ev.kind()));
     o.insert("from".into(), json!(ev.from().external_id));
+    if let Some(id) = ev.event_id() {
+        o.insert("id".into(), json!(id));
+    }
+    if ev.redelivery() {
+        o.insert("redelivery".into(), json!(true));
+    }
     if let Some(r) = ev.reply() {
         o.insert(
             "reply".into(),
@@ -93,12 +99,21 @@ fn parse_event(kind: ChannelKind, v: &Value, reply_tokens: bool) -> Result<Inbou
         }),
         _ => None,
     };
-    Ok(match text_field(v, "type")?.as_str() {
-        "follow" => Inbound::Follow { from, reply },
+    let event_id = v["id"].as_str().map(str::to_string);
+    let redelivery = v["redelivery"].as_bool().unwrap_or(false);
+    let ev = match text_field(v, "type")?.as_str() {
+        "follow" => Inbound::Follow {
+            from,
+            reply,
+            event_id: None,
+            redelivery: false,
+        },
         "text" => Inbound::Text {
             from,
             text: text_field(v, "text")?,
             reply,
+            event_id: None,
+            redelivery: false,
         },
         "file" => {
             let f = &v["file"];
@@ -111,15 +126,29 @@ fn parse_event(kind: ChannelKind, v: &Value, reply_tokens: bool) -> Result<Inbou
                     size_bytes: f["size"].as_u64(),
                 },
                 reply,
+                event_id: None,
+                redelivery: false,
             }
         }
         "action" => Inbound::Action {
             from,
             action: ActionId::new(text_field(v, "data")?)?,
             reply,
+            event_id: None,
+            redelivery: false,
         },
-        "blocked" => Inbound::Blocked { from },
-        "unblocked" => Inbound::Unblocked { from, reply },
+        "blocked" => Inbound::Blocked {
+            from,
+            event_id: None,
+            redelivery: false,
+        },
+        "unblocked" => Inbound::Unblocked {
+            from,
+            reply,
+            event_id: None,
+            redelivery: false,
+        },
         other => return Err(Error::Invalid(format!("fake event type `{other}`"))),
-    })
+    };
+    Ok(ev.with_event_id(event_id, redelivery))
 }

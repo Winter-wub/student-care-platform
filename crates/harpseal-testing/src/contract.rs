@@ -23,7 +23,8 @@ use harpseal::{ActionId, Channel, ChannelAccountId, Delivery, Metering, WebhookR
 
 pub use checks::{
     action_ids_round_trip, capabilities_agree, degrade_keeps_every_action, menu_set_and_unset,
-    parses_each_inbound_kind, sends_the_minimum, signature_is_checked_before_parsing,
+    metering_counts_push_requests, parses_each_inbound_kind, sends_the_minimum,
+    signature_is_checked_before_parsing,
 };
 pub use fake::{FakeWire, fake};
 
@@ -255,6 +256,7 @@ pub async fn run(factory: impl Fn() -> Target) {
     signature_is_checked_before_parsing(&factory()).await;
     parses_each_inbound_kind(&factory()).await;
     sends_the_minimum(&factory()).await;
+    metering_counts_push_requests(&factory()).await;
     menu_set_and_unset(&factory()).await;
     capabilities_agree(&factory()).await;
     degrade_keeps_every_action(&factory()).await;
