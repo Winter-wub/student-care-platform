@@ -69,6 +69,8 @@ pub struct CurrentStaff {
     pub(crate) nav: Arc<[(String, String)]>,
     pub(crate) flash: Option<(bool, String)>,
     pub(crate) must_change_password: bool,
+    /// The Quota banner for the `#usage-banner` slot (#26), if any.
+    pub(crate) usage_banner: Option<Markup>,
 }
 
 impl CurrentStaff {
@@ -192,6 +194,8 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     let flash = cookies::read_flash(req.headers())
         .map(|(ok, key)| (ok, state.catalog.t(&live.locale, &key)));
     let had_flash = cookies::get(req.headers(), FLASH_COOKIE).is_some();
+    let usage_view = held(crate::kernel::usage::VIEW);
+    let usage_banner = crate::kernel::usage::banner(state, &live.locale, usage_view).await;
     let staff = CurrentStaff {
         id: live.staff_id,
         email: live.email,
@@ -202,6 +206,7 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         csrf,
         nav,
         flash,
+        usage_banner,
     };
     if let Some(p) = forbidden_permission {
         return Ok(Err(forbidden(state, &staff, p)));

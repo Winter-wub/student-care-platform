@@ -48,8 +48,12 @@ impl Deployment {
     /// recorded. After the send, every Message sent gets one
     /// `outbound_message` row and its metered units
     /// ([`SendReceipt::metered_units`]) count in `usage_daily (channel,
-    /// day)`, all in one `Db::batch`. A Push to an account that blocked the
-    /// bot is skipped with `Error::Unreachable`; a send the Channel refuses
+    /// day)`, all in one `Db::batch`. When the Channel returns an error,
+    /// every Message that did not wholly go out (the one it stopped in
+    /// included) adds 1 to `usage_daily.failed` (#26), in the same batch
+    /// when something was sent, else on its own (best effort). A Push to an
+    /// account that blocked the bot is skipped with `Error::Unreachable`
+    /// before the Channel is called and counts nowhere; a send the Channel refuses
     /// with `Error::Unreachable` marks the account's Link `unreachable`.
     ///
     /// If the Channel stops part-way, what went out is recorded (the
@@ -142,14 +146,29 @@ impl Deployment {
         let batch = channel
             .send_batch_keyed(to, &delivery, msgs, locale, &key)
             .await;
+        // Messages that reached the platform and did not wholly go out
+        // (the one the batch stopped in counts: the Student did not get all
+        // of it) count in `usage_daily.failed` (#26).
+        let failed = match batch.error {
+            Some(_) => msgs.len().saturating_sub(batch.receipts.len()),
+            None => 0,
+        };
         if batch.anything_sent() {
-            let stmts = self.outbound_rows(to, &delivery, msgs, &batch, module)?;
+            let mut stmts = self.outbound_rows(to, &delivery, msgs, &batch, module)?;
+            if failed > 0 {
+                stmts.push(self.failed_usage(to.channel.as_str(), failed));
+            }
             if let Err(db) = self.services.db.batch(stmts).await {
                 return Err(match &batch.error {
                     Some(e) => Error::Db(format!("{db}; the channel had stopped with: {e}")),
                     None => db,
                 });
             }
+        }
+        else if failed > 0 {
+            // Best effort: the Channel's error is what the caller needs.
+            let stmt = self.failed_usage(to.channel.as_str(), failed);
+            let _ = self.services.db.execute(stmt).await;
         }
         let Some(error) = batch.error else {
             return Ok(batch.receipts);
@@ -187,6 +206,18 @@ impl Deployment {
             )
             .await?;
         Ok(!rows.rows.is_empty())
+    }
+
+    /// Adds `n` failed Messages to today's `usage_daily` row of `channel`.
+    fn failed_usage(&self, channel: &str, n: usize) -> Statement {
+        let offset = self.config.utc_offset_minutes().unwrap_or(0);
+        Statement::new(
+            "INSERT INTO usage_daily (channel, day, failed) VALUES (?, ?, ?) \
+             ON CONFLICT (channel, day) DO UPDATE SET failed = failed + excluded.failed",
+        )
+        .bind(channel)
+        .bind(civil_day(self.services.now_ms(), offset))
+        .bind(i64::try_from(n).unwrap_or(i64::MAX))
     }
 
     /// Ensures the `channel_account` row, then per Message sent its usage

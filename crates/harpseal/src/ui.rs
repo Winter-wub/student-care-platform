@@ -129,8 +129,8 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
                 }
             }
         }
-        // Filled by the usage warnings (#26); empty until then.
-        div id="usage-banner" {}
+        // The Quota banner (#26): empty below 80 % of every Quota.
+        div id="usage-banner" { @if let Some(b) = &staff.usage_banner { (b) } }
         main {
             @if let Some((ok, text)) = &staff.flash { (flash(&Flash { ok: *ok, text })) }
             (body)
