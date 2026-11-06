@@ -104,6 +104,38 @@ re-runs a Job. `JobContext::progress(note)` saves a note while the run holds
 its lock. `GET /admin/jobs.json` (Permission `kernel.audit.view`) returns the
 counts per state and the 50 newest running and failed Jobs, without payloads.
 
+### Sends, retries and webhook duplicates
+
+- **Metering.** Each `SendReceipt` carries `metered_units`: one per Push
+  request to one recipient, charged to the Message that opens the request.
+  A Message the adapter spreads over several Push requests (a long text, a
+  Card List of 61 on LINE) costs one unit per request, and
+  `usage_daily.metered` adds the units. Telegram is always 0.
+- **Partial sends.** When a Channel stops part-way, what went out is
+  recorded (`outbound_message` rows and usage; a Message cut off after some
+  of its parts gets a row with `error = 'partly sent: …'`) and
+  `Deployment::send_batch` returns `Error::PartialSend { sent, total, source
+  }`. A Job resumes with `msgs[sent..]`; `Error::root()` gives the cause
+  (`RateLimited`, `Unreachable`). Only the Message it stopped in may repeat
+  its delivered parts on Telegram.
+- **Idempotency keys.** `Deployment::send_batch_with_key(to, reply, msgs,
+  locale, key)` passes a stable key (e.g. `<job id>/<account>`); LINE turns it
+  into one `X-Line-Retry-Key` per Push or multicast request (a UUID derived
+  from the key, the recipients and the objects), so a retry of a request
+  that already went out is answered 409 by LINE and counted as sent. Without
+  a key every batch gets a fresh one. `Multicast::send_many` takes the key
+  too and reports whole groups of 500 on failure.
+- **Webhook duplicates.** `Inbound` carries `event_id` (LINE
+  `webhookEventId`, Telegram `update_id`) and `redelivery` (LINE
+  `deliveryContext.isRedelivery`). The Kernel claims `(channel, event_id)` in
+  `inbound_event` with one conditional insert before handling an event and
+  skips an id it has seen (still 200; counted in `WebhookReport::duplicates`),
+  so a redelivered LINE event can no longer fall back to a second, metered
+  Push. Claims are kept 7 days.
+- **Transport errors.** `ReqwestHttp` strips the request URL from every
+  reqwest error (`without_url`), so bot tokens in URLs never reach logs or
+  `security_event`; the Telegram adapter still redacts its token too.
+
 Storage follows ADR-0007: `Services::new_id()` makes UUIDv7 text ids from the
 Clock and Random ports, `Services::now_ms()` gives integer milliseconds UTC,
 and `audit_log` (plus `security_event` and `consent` deletes) are refused by
@@ -277,6 +309,9 @@ h.emails();  h.http_requests();               // captured, never sent
 Channel imitate LINE (one reply token covers 5 objects, Push metered, LINE's
 degrade limits, no attachments); `FakeProfile::TelegramLike` has no reply
 tokens, meters nothing and sends one message per Card.
+`h.fake_channel().fail_next_batch_at(k)` makes the next send stop with
+`RateLimited` before its object `k`, and a Fake event with `event_id` set
+travels on the wire, so tests can deliver it twice.
 
 The Channel contract suite lives in `harpseal_testing::contract`: an adapter
 crate adds `harpseal-testing` as a dev-dependency and calls

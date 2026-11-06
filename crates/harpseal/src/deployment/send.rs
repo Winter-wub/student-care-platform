@@ -1,9 +1,13 @@
 //! The Kernel send path: one batch per reply token, Capability checks
 //! before anything goes out, and one `outbound_message` row plus a
-//! `usage_daily` upsert per Message, written in a single `Db::batch`.
+//! `usage_daily` upsert (its metered units) per Message, written in a
+//! single `Db::batch`. A batch the Channel stops part-way is recorded as
+//! far as it went and reported as `Error::PartialSend`.
 
 use super::Deployment;
-use crate::delivery::{Capability, ChannelAccountId, Delivery, Metering, ReplyToken, SendReceipt};
+use crate::delivery::{
+    BatchReceipt, Capability, ChannelAccountId, Delivery, ReplyToken, SendReceipt,
+};
 use crate::message::{Locale, Message};
 use crate::port_types::Statement;
 use crate::{Error, Result};
@@ -42,13 +46,20 @@ impl Deployment {
     /// Before anything is sent, a Message needing a Capability the Channel
     /// lacks fails the whole batch with `Error::Unsupported` and nothing is
     /// recorded. After the send, every Message sent gets one
-    /// `outbound_message` row and counts once in `usage_daily (channel,
+    /// `outbound_message` row and its metered units
+    /// ([`SendReceipt::metered_units`]) count in `usage_daily (channel,
     /// day)`, all in one `Db::batch`. A Push to an account that blocked the
     /// bot is skipped with `Error::Unreachable`; a send the Channel refuses
     /// with `Error::Unreachable` marks the account's Link `unreachable`.
-    /// If the Channel stops part-way, the Messages already sent are
-    /// recorded and its error is returned; if the write fails, the database
-    /// error is returned (the Messages did go out).
+    ///
+    /// If the Channel stops part-way, what went out is recorded (the
+    /// Message it stopped in gets a row with `error` set when some of its
+    /// parts went out) and the result is [`Error::PartialSend`]: resume
+    /// with `msgs[sent..]`, ideally through
+    /// [`Deployment::send_batch_with_key`] with the same key. When nothing
+    /// went out the Channel's error is returned as is. If the write fails,
+    /// a database error is returned (the Messages did go out); it names the
+    /// Channel's error too when there was one.
     pub async fn send_batch(
         &self,
         to: &ChannelAccountId,
@@ -56,7 +67,25 @@ impl Deployment {
         msgs: &[Message],
         locale: &Locale,
     ) -> Result<Vec<SendReceipt>> {
-        self.deliver(to, reply, msgs, locale, None).await
+        self.deliver_keyed(to, reply, msgs, locale, None, None)
+            .await
+    }
+
+    /// [`Deployment::send_batch`] with an idempotency `key` for the batch
+    /// (e.g. derived from a Job id and the recipient). A retry that passes
+    /// the same key, account and Messages lets the Channel de-duplicate
+    /// requests that already went out (LINE `X-Line-Retry-Key`, honoured
+    /// by LINE for 24 hours). Without a key each call gets a fresh one.
+    pub async fn send_batch_with_key(
+        &self,
+        to: &ChannelAccountId,
+        reply: Option<&ReplyToken>,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+    ) -> Result<Vec<SendReceipt>> {
+        self.deliver_keyed(to, reply, msgs, locale, None, Some(key))
+            .await
     }
 
     /// [`Deployment::send_batch`] on behalf of `module` (stored on the rows).
@@ -67,6 +96,19 @@ impl Deployment {
         msgs: &[Message],
         locale: &Locale,
         module: Option<&str>,
+    ) -> Result<Vec<SendReceipt>> {
+        self.deliver_keyed(to, reply, msgs, locale, module, None)
+            .await
+    }
+
+    async fn deliver_keyed(
+        &self,
+        to: &ChannelAccountId,
+        reply: Option<&ReplyToken>,
+        msgs: &[Message],
+        locale: &Locale,
+        module: Option<&str>,
+        key: Option<&str>,
     ) -> Result<Vec<SendReceipt>> {
         let channel = self.channel_or_err(to.channel.as_str())?;
         let caps = channel.capabilities();
@@ -80,22 +122,39 @@ impl Deployment {
         if matches!(delivery, Delivery::Push) && self.blocked(to).await? {
             return Err(Error::Unreachable);
         }
-        let batch = channel.send_batch(to, &delivery, msgs, locale).await;
-        if !batch.receipts.is_empty() {
-            let stmts = self.outbound_rows(to, &delivery, msgs, &batch.receipts, module)?;
-            // Follow-up: when the Channel stopped part-way and this write
-            // also fails, the Db error is returned and the Channel's error
-            // is lost.
-            self.services.db.batch(stmts).await?;
+        let key = match key {
+            Some(k) => k.to_string(),
+            None => self.services.new_id()?,
+        };
+        let batch = channel
+            .send_batch_keyed(to, &delivery, msgs, locale, &key)
+            .await;
+        if batch.anything_sent() {
+            let stmts = self.outbound_rows(to, &delivery, msgs, &batch, module)?;
+            if let Err(db) = self.services.db.batch(stmts).await {
+                return Err(match &batch.error {
+                    Some(e) => Error::Db(format!("{db}; the channel had stopped with: {e}")),
+                    None => db,
+                });
+            }
         }
-        let result = batch.into_result();
-        if let Err(Error::Unreachable) = &result {
+        let Some(error) = batch.error else {
+            return Ok(batch.receipts);
+        };
+        if let Error::Unreachable = error.root() {
             // The account blocked the bot: its Link becomes unreachable and
             // later sends skip it. The send error is what the caller sees.
             let stmts = crate::kernel::flow::mark_unreachable(&self.services, to);
             let _ = self.services.db.batch(stmts).await;
         }
-        result
+        if batch.receipts.is_empty() && batch.unfinished.is_none() {
+            return Err(error);
+        }
+        Err(Error::PartialSend {
+            sent: batch.receipts.len(),
+            total: msgs.len(),
+            source: Box::new(error),
+        })
     }
 
     /// The account blocked the bot (`blocked_at` set by `Inbound::Blocked`
@@ -117,14 +176,16 @@ impl Deployment {
         Ok(!rows.rows.is_empty())
     }
 
-    /// Ensures the `channel_account` row, then per Message its usage upsert
-    /// and `outbound_message` row. One `Db::batch`: all commit or none do.
+    /// Ensures the `channel_account` row, then per Message sent its usage
+    /// upsert and `outbound_message` row (the Message the batch stopped in,
+    /// when some of its parts went out, gets a row with `error` set). One
+    /// `Db::batch`: all commit or none do.
     fn outbound_rows(
         &self,
         to: &ChannelAccountId,
         delivery: &Delivery,
         msgs: &[Message],
-        receipts: &[SendReceipt],
+        batch: &BatchReceipt,
         module: Option<&str>,
     ) -> Result<Vec<Statement>> {
         let now = self.services.now_ms();
@@ -142,8 +203,18 @@ impl Deployment {
             .bind(now)
             .bind(now),
         ];
-        for (msg, r) in msgs.iter().zip(receipts) {
-            let metered = r.metering == Metering::Metered;
+        let unfinished_error = batch.error.as_ref().map(|e| {
+            let text: String = e.to_string().chars().take(200).collect();
+            format!("partly sent: {text}")
+        });
+        let rows = batch.receipts.iter().map(|r| (r, None)).chain(
+            batch
+                .unfinished
+                .iter()
+                .map(|r| (r, unfinished_error.clone())),
+        );
+        for ((msg, r), error) in msgs.iter().zip(rows).map(|(m, (r, e))| ((m, r), e)) {
+            let units = r.metered_units;
             stmts.push(
                 Statement::new(
                     "INSERT INTO usage_daily (channel, day, metered, free) VALUES (?, ?, ?, ?) \
@@ -152,26 +223,27 @@ impl Deployment {
                 )
                 .bind(channel)
                 .bind(day.clone())
-                .bind(i64::from(metered))
-                .bind(i64::from(!metered)),
+                .bind(i64::from(units))
+                .bind(i64::from(units == 0)),
             );
             stmts.push(
                 Statement::new(
                     "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
-                     metering, platform_message_id, module, kind, sent_at) VALUES (?, ?, \
+                     metering, platform_message_id, module, kind, sent_at, error) VALUES (?, ?, \
                      (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
-                     ?, ?, ?, ?, ?, ?)",
+                     ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(self.services.new_id()?)
                 .bind(channel)
                 .bind(channel)
                 .bind(to.external_id.clone())
                 .bind(r.pushed || matches!(delivery, Delivery::Push))
-                .bind(if metered { "metered" } else { "free" })
+                .bind(if units > 0 { "metered" } else { "free" })
                 .bind(r.message_id.as_ref().map(|m| m.0.clone()))
                 .bind(module.map(str::to_string))
                 .bind(msg.kind())
-                .bind(now),
+                .bind(now)
+                .bind(error),
             );
         }
         Ok(stmts)

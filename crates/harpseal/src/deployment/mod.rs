@@ -65,7 +65,13 @@ pub struct WebhookReport {
     /// The events that failed (kind and error); each was logged as a
     /// Security Event `inbound.failed` and did not stop the others.
     pub failed: Vec<(&'static str, Error)>,
+    /// Events skipped because their event id was already handled (a
+    /// platform retry or redelivery).
+    pub duplicates: usize,
 }
+
+/// Days a handled webhook event id is remembered (`inbound_event`).
+pub(crate) const INBOUND_EVENT_DAYS: i64 = 7;
 
 impl Deployment {
     /// Starts assembling a Deployment.
@@ -157,22 +163,77 @@ impl Deployment {
     /// Event `inbound.failed`) and does not stop the others. `Err` only when
     /// the call as a whole is refused: `BadSignature`, or the body could not
     /// be parsed.
+    ///
+    /// An event with a platform event id ([`Inbound::event_id`]) is first
+    /// claimed in `inbound_event` with one conditional insert; an id this
+    /// Channel already claimed is skipped before anything is handled or
+    /// sent (counted in [`WebhookReport::duplicates`]), so a retried or
+    /// redelivered event is answered once. The claim stays even when
+    /// handling fails: the event was logged, and answering it twice is
+    /// worse than once.
     pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
         let channel = self.channel_or_err(kind)?;
+        let channel_kind = channel.kind().as_str();
         let events = channel.parse_webhook(req).await?;
         let mut report = WebhookReport {
             events: events.len(),
             failed: Vec::new(),
+            duplicates: 0,
         };
+        let mut claimed = false;
         for ev in events {
             let ev_kind = ev.kind();
             let from = ev.from().clone();
+            if let Some(id) = ev.event_id() {
+                match self.claim_event(channel_kind, id).await {
+                    Ok(true) => claimed = true,
+                    Ok(false) => {
+                        report.duplicates += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        self.log_failed_event(&from, ev_kind, &e).await;
+                        report.failed.push((ev_kind, e));
+                        continue;
+                    }
+                }
+            }
             if let Err(e) = self.handle_inbound(ev).await {
                 self.log_failed_event(&from, ev_kind, &e).await;
                 report.failed.push((ev_kind, e));
             }
         }
+        if claimed {
+            self.forget_old_events().await;
+        }
         Ok(report)
+    }
+
+    /// Claims `(channel, event_id)`: `true` the first time, `false` when
+    /// the id was already claimed. One conditional statement, so two
+    /// deliveries racing each other cannot both win.
+    async fn claim_event(&self, channel: &str, event_id: &str) -> Result<bool> {
+        let done = self
+            .services
+            .db
+            .execute(
+                Statement::new(
+                    "INSERT INTO inbound_event (channel, event_id, received_at) VALUES (?, ?, ?) \
+                     ON CONFLICT (channel, event_id) DO NOTHING",
+                )
+                .bind(channel)
+                .bind(event_id)
+                .bind(self.services.now_ms()),
+            )
+            .await?;
+        Ok(done.rows_affected == 1)
+    }
+
+    /// Best effort: drops claims older than [`INBOUND_EVENT_DAYS`].
+    async fn forget_old_events(&self) {
+        let cutoff = self.services.now_ms() - INBOUND_EVENT_DAYS * 86_400_000;
+        let stmt = Statement::new("DELETE FROM inbound_event WHERE received_at < ?").bind(cutoff);
+        let _ = self.services.db.execute(stmt).await;
     }
 
     /// Best effort: if even this write fails there is nowhere left to log.

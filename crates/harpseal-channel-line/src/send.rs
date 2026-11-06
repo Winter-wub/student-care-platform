@@ -2,27 +2,31 @@
 //! like the Fake Channel's LineLike profile: the reply token works once and
 //! covers the first 5 objects in one reply call (free); the rest go in Push
 //! calls of at most 5 objects (`/v2/bot/message/push`), each one metered
-//! unit, reported on the receipt of the Message that opens it.
+//! unit, charged to the receipt of the Message that opens it (a Message
+//! opening two Push requests costs 2 units). Every Push carries an
+//! `X-Line-Retry-Key` derived from the Core's batch key ([`crate::retry_key`]).
+//! A failed request ends the batch with the receipts of the Messages
+//! wholly sent before it, plus the started Message as `unfinished`.
 //! Limits: 5 objects per request
 //! (<https://developers.line.biz/en/reference/messaging-api/#send-reply-message>,
 //! <https://developers.line.biz/en/reference/messaging-api/#send-push-message>),
 //! 500 recipients per multicast
 //! (<https://developers.line.biz/en/reference/messaging-api/#send-multicast-message>).
 
-use async_trait::async_trait;
 use harpseal::{
     BatchReceipt, Capability, ChannelAccountId, Delivery, Error, Locale, Message, Metering,
-    Multicast, PlatformMessageId, Result, SendReceipt,
+    PlatformMessageId, Result, SendReceipt,
 };
 use serde_json::{Value, json};
 
 use crate::api::{API, Failure};
+use crate::retry_key::retry_key;
 use crate::{LineChannel, render};
 
 /// Most objects in one reply, push or multicast request.
 pub const MESSAGES_PER_REQUEST: usize = render::MESSAGES_PER_REQUEST;
 /// Most recipients in one multicast request.
-pub const MULTICAST_MAX: usize = 500;
+pub const MULTICAST_MAX: usize = crate::multicast::MULTICAST_MAX;
 
 /// One rendered object and the index of the Message it came from.
 #[derive(Debug, Clone)]
@@ -117,12 +121,18 @@ pub fn metering(d: &Delivery) -> Metering {
 }
 
 impl LineChannel {
+    /// Sends a rendered batch. `key`: the Core's batch key, from which
+    /// every Push request gets its `X-Line-Retry-Key` (none without it; a
+    /// reply has no retry key). On a failed request, the Messages wholly
+    /// sent before it are receipts, and a Message whose first parts went
+    /// out in earlier requests is `unfinished`.
     pub(crate) async fn batch(
         &self,
         to: &ChannelAccountId,
         d: &Delivery,
         msgs: &[Message],
         locale: &Locale,
+        key: Option<&str>,
     ) -> BatchReceipt {
         let Rendered {
             parts,
@@ -137,10 +147,10 @@ impl LineChannel {
             let sent = match &req.reply {
                 Some(t) => match self.reply_call(t, &objects).await {
                     // Expired or spent token: the same objects go by Push.
-                    Ok(Err(f)) if f.bad_reply_token() => self.push_call(to, &objects).await,
+                    Ok(Err(f)) if f.bad_reply_token() => self.push_call(to, &objects, key).await,
                     other => other.map(|r| r.map(|ids| (ids, false))),
                 },
-                None => self.push_call(to, &objects).await,
+                None => self.push_call(to, &objects, key).await,
             };
             let sent = match sent {
                 Ok(Ok(v)) => Ok(v),
@@ -150,9 +160,15 @@ impl LineChannel {
             let (ids, pushed) = match sent {
                 Ok(v) => v,
                 Err(e) => {
+                    let first = chunk[0].source;
+                    let started = req.parts.start > 0 && parts[req.parts.start - 1].source == first;
+                    let unfinished = started.then(|| receipts[first].clone());
                     // Messages wholly sent before this request.
-                    receipts.truncate(chunk[0].source);
-                    return BatchReceipt::partial(receipts, e);
+                    receipts.truncate(first);
+                    return match unfinished {
+                        Some(u) => BatchReceipt::part_way(receipts, u, e),
+                        None => BatchReceipt::partial(receipts, e),
+                    };
                 }
             };
             for (i, p) in chunk.iter().enumerate() {
@@ -160,7 +176,9 @@ impl LineChannel {
                 if pushed {
                     r.pushed = true;
                     if i == 0 {
-                        r.metering = Metering::Metered;
+                        // One metered unit per Push request, charged to the
+                        // Message that opens it.
+                        r.add_metered_unit();
                     }
                 }
                 if let Some(id) = ids.get(i).cloned().flatten() {
@@ -186,15 +204,22 @@ impl LineChannel {
         Ok(got.map(|v| sent_ids(&v)))
     }
 
-    /// A Push: `(ids, true)`.
+    /// A Push: `(ids, true)`. A 409 for an already accepted retry key
+    /// counts as sent (no ids).
     async fn push_call(
         &self,
         to: &ChannelAccountId,
         objects: &[&Value],
+        key: Option<&str>,
     ) -> Result<std::result::Result<(Vec<Option<String>>, bool), Failure>> {
         let body = json!({ "to": to.external_id, "messages": objects });
+        let retry = key.map(|k| retry_key(k, &[to.external_id.as_str()], objects));
         let got = self
-            .post_json(&format!("{API}/v2/bot/message/push"), &body)
+            .post_json_keyed(
+                &format!("{API}/v2/bot/message/push"),
+                &body,
+                retry.as_deref(),
+            )
             .await?;
         Ok(got.map(|v| (sent_ids(&v), true)))
     }
@@ -210,53 +235,6 @@ fn sent_ids(v: &Value) -> Vec<Option<String>> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-#[async_trait]
-impl Multicast for LineChannel {
-    fn max_recipients(&self) -> usize {
-        MULTICAST_MAX
-    }
-
-    async fn send_many(
-        &self,
-        to: &[ChannelAccountId],
-        msgs: &[Message],
-        locale: &Locale,
-    ) -> Result<Vec<SendReceipt>> {
-        if msgs.iter().any(|m| matches!(m, Message::Attachment(_))) {
-            return Err(Error::Unsupported(Capability::SendAttachment));
-        }
-        if let Some(a) = to.iter().find(|a| a.channel != crate::KIND) {
-            return Err(Error::Invalid(format!(
-                "{} is not a LINE account",
-                a.channel
-            )));
-        }
-        let Rendered { parts, stop, .. } = render_batch(self, msgs, locale);
-        if let Some(e) = stop {
-            return Err(e);
-        }
-        let requests = plan(parts.len(), None);
-        let url = format!("{API}/v2/bot/message/multicast");
-        for group in to.chunks(MULTICAST_MAX) {
-            let ids: Vec<&str> = group.iter().map(|a| a.external_id.as_str()).collect();
-            for req in &requests {
-                let objects: Vec<&Value> =
-                    parts[req.parts.clone()].iter().map(|p| &p.object).collect();
-                let body = json!({ "to": ids, "messages": objects });
-                self.post_json(&url, &body)
-                    .await?
-                    .map_err(|f| f.into_error(false))?;
-            }
-        }
-        // Per recipient: the Message opening each request is metered.
-        let mut one = vec![SendReceipt::new(None, Metering::Free, true); msgs.len()];
-        for req in &requests {
-            one[parts[req.parts.start].source].metering = Metering::Metered;
-        }
-        Ok(to.iter().flat_map(|_| one.iter().cloned()).collect())
-    }
 }
 
 #[cfg(test)]

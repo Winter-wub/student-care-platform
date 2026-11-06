@@ -122,10 +122,50 @@ async fn a_signed_text_is_stored_and_answered_with_one_fallback() {
     assert_eq!(calls.len(), 1, "one reply call");
     assert!(calls[0].uri.ends_with("/message/reply"), "{}", calls[0].uri);
     assert_eq!(app.count("SELECT count(*) FROM inbound_message").await, 1);
+    // A new event (another webhookEventId) with the same text.
+    let body = String::from_utf8(body)
+        .unwrap()
+        .replace("01JSEALBAY0000000000000006", "01JSEALBAY0000000000000099")
+        .into_bytes();
     let resp = post(&app, body.clone(), &sign(SECRET, &body)).await;
     assert_eq!(resp.status, 200);
     assert!(h.http_requests().is_empty(), "no second fallback this hour");
     assert_eq!(app.count("SELECT count(*) FROM inbound_message").await, 2);
+}
+
+#[tokio::test]
+async fn a_redelivered_event_is_handled_once_and_never_falls_back_to_push() {
+    // LINE redelivers the text event (same webhookEventId, isRedelivery
+    // true) after the first delivery already spent the reply token. Before
+    // de-duplication the spent token fell back to a metered Push.
+    let (h, app) = linked().await;
+    let body = fixture_body("text");
+    let resp = post(&app, body.clone(), &sign(SECRET, &body)).await;
+    assert_eq!(resp.status, 200);
+    assert_eq!(h.http().take_requests().len(), 1, "one reply call");
+    let sent = app.count("SELECT count(*) FROM outbound_message").await;
+    let again = String::from_utf8(body)
+        .unwrap()
+        .replace(r#""isRedelivery": false"#, r#""isRedelivery": true"#)
+        .into_bytes();
+    h.http()
+        .respond_with(400, r#"{"message":"Invalid reply token"}"#);
+    let resp = post(&app, again.clone(), &sign(SECRET, &again)).await;
+    assert_eq!(resp.status, 200);
+    assert!(h.http_requests().is_empty(), "no reply, no Push");
+    assert_eq!(app.count("SELECT count(*) FROM inbound_message").await, 1);
+    assert_eq!(
+        app.count("SELECT count(*) FROM outbound_message").await,
+        sent
+    );
+    let metered = app
+        .count("SELECT coalesce(sum(metered), 0) FROM usage_daily WHERE channel = 'line'")
+        .await;
+    assert_eq!(metered, 0);
+    let claimed = app
+        .count("SELECT count(*) FROM inbound_event WHERE channel = 'line'")
+        .await;
+    assert!(claimed >= 1);
 }
 
 #[tokio::test]

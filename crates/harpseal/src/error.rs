@@ -27,6 +27,19 @@ pub enum Error {
     /// The change clashes with the current state (e.g. a live Link already
     /// exists, or the Link is already revoked).
     Conflict(String),
+    /// A batch (or one multi-part Message) stopped part-way. The first
+    /// `sent` of its `total` Messages went out and were recorded
+    /// (`outbound_message` rows and `usage_daily`), as were the parts of
+    /// Message `sent` that went out before the failure, if any. A retry
+    /// resumes with Messages `sent..`; nothing before `sent` is sent again.
+    PartialSend {
+        /// Messages wholly sent and recorded.
+        sent: usize,
+        /// Messages in the batch.
+        total: usize,
+        /// Why it stopped (e.g. `RateLimited`).
+        source: Box<Error>,
+    },
 }
 
 /// `Result` with the Core's [`Error`].
@@ -45,11 +58,34 @@ impl core::fmt::Display for Error {
             Error::Db(m) => write!(f, "database: {m}"),
             Error::Platform(m) => write!(f, "platform: {m}"),
             Error::Conflict(m) => write!(f, "conflict: {m}"),
+            Error::PartialSend {
+                sent,
+                total,
+                source,
+            } => write!(f, "sent {sent} of {total} messages, then: {source}"),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::PartialSend { source, .. } => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl Error {
+    /// The error underneath a [`Error::PartialSend`] (itself otherwise), so
+    /// callers can match `Unreachable` or `RateLimited` either way.
+    pub fn root(&self) -> &Error {
+        match self {
+            Error::PartialSend { source, .. } => source.root(),
+            e => e,
+        }
+    }
+}
 
 /// A part [`crate::DeploymentBuilder`] needs before it can build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -69,7 +69,8 @@ async fn each_fixture_becomes_its_event() {
         evs.into_iter().next().unwrap()
     };
     let start = one(tg.parse_webhook(fixture("start")).await.unwrap());
-    assert!(matches!(start, Inbound::Follow { from, reply: None } if from == chat()));
+    assert!(matches!(start, Inbound::Follow { ref from, reply: None, .. } if *from == chat()));
+    assert_eq!(start.event_id(), Some("900000001"), "the update_id");
     match one(tg.parse_webhook(fixture("text")).await.unwrap()) {
         Inbound::Text { text, .. } => assert_eq!(text, "สอบถามค่าเทอมครับ"),
         other => panic!("{other:?}"),

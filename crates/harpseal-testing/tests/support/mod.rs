@@ -109,6 +109,8 @@ impl<'a> Chat<'a> {
         self.send(Inbound::Follow {
             from: self.who.clone(),
             reply,
+            event_id: None,
+            redelivery: false,
         })
         .await
     }
@@ -118,6 +120,8 @@ impl<'a> Chat<'a> {
             from: self.who.clone(),
             text: text.into(),
             reply,
+            event_id: None,
+            redelivery: false,
         };
         self.send(ev).await
     }
@@ -128,6 +132,8 @@ impl<'a> Chat<'a> {
             from: self.who.clone(),
             action,
             reply,
+            event_id: None,
+            redelivery: false,
         })
         .await
     }
@@ -137,6 +143,8 @@ impl<'a> Chat<'a> {
             from: self.who.clone(),
             file,
             reply,
+            event_id: None,
+            redelivery: false,
         })
         .await
     }

@@ -15,8 +15,10 @@
 //!   Module (the chat flow answers it with the Consent / Link steps).
 //! - **Sending** ([`render`]): per `docs/prototypes/message-render.md`.
 //!   Every send is [`Metering::Free`] and, as Telegram has no reply tokens,
-//!   a Push; the default [`Channel::send_batch`] (one `send` per Message)
-//!   is right for Telegram.
+//!   a Push. [`Channel::send_batch`] sends one Message after another; a
+//!   Message that renders into several Telegram messages (one per Card,
+//!   long text parts, keyboard follow-ups) and fails part-way is reported
+//!   as `unfinished` with the parts already sent, so the Core records them.
 //! - **Capabilities**: edit (`editMessageText`), delete (`deleteMessage`,
 //!   only within 48 hours, else `Unsupported`), and Mini App (Web App)
 //!   when a Web App URL is configured. Sending files is not offered yet.
@@ -43,9 +45,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use harpseal::{
-    ActionId, Capability, Channel, ChannelAccountId, ChannelKind, Clock, DeleteMessage, Delivery,
-    EditMessage, Error, HttpClient, Inbound, IncomingFile, Locale, Menu, Message, Metering,
-    MiniApp, PlatformMessageId, RenderCx, Result, SendReceipt, WebhookRequest,
+    ActionId, BatchReceipt, Capability, Channel, ChannelAccountId, ChannelKind, Clock,
+    DeleteMessage, Delivery, EditMessage, Error, HttpClient, Inbound, IncomingFile, Locale, Menu,
+    Message, Metering, MiniApp, PlatformMessageId, RenderCx, Result, SendReceipt, WebhookRequest,
 };
 use serde_json::{Value, json};
 
@@ -190,6 +192,46 @@ impl TelegramChannel {
     }
 }
 
+impl TelegramChannel {
+    /// Sends the platform messages one Message renders into. On failure,
+    /// the receipt of the parts already sent (when any went out) and the
+    /// error.
+    async fn send_parts(
+        &self,
+        to: &ChannelAccountId,
+        m: &Message,
+        locale: &Locale,
+    ) -> std::result::Result<SendReceipt, (Option<SendReceipt>, Error)> {
+        if let Message::Attachment(_) = m {
+            return Err((None, Error::Unsupported(Capability::SendAttachment)));
+        }
+        let calls = calls(to, render::message(m, &self.render_cx(locale)));
+        if calls.is_empty() {
+            let e = Error::Invalid(format!("Telegram cannot render a {}", m.kind()));
+            return Err((None, e));
+        }
+        let mut sent = 0usize;
+        let mut last = None;
+        let receipt = |last: &Option<String>| {
+            SendReceipt::new(last.clone().map(PlatformMessageId), Metering::Free, true)
+        };
+        for c in calls {
+            let result = match c.upload {
+                Some(_) => Err(Error::Unsupported(Capability::SendAttachment)),
+                None => self.api().call(&c.method, &c.body).await,
+            };
+            match result {
+                Ok(v) => {
+                    sent += 1;
+                    last = api::message_id(&v).or(last);
+                }
+                Err(e) => return Err(((sent > 0).then(|| receipt(&last)), e)),
+            }
+        }
+        Ok(receipt(&last))
+    }
+}
+
 fn message_id(id: &PlatformMessageId) -> Result<i64> {
     id.0.parse()
         .map_err(|_| Error::Invalid(format!("not a Telegram message id: {}", id.0)))
@@ -226,29 +268,28 @@ impl Channel for TelegramChannel {
         m: &Message,
         locale: &Locale,
     ) -> Result<SendReceipt> {
-        if let Message::Attachment(_) = m {
-            return Err(Error::Unsupported(Capability::SendAttachment));
-        }
-        let calls = calls(to, render::message(m, &self.render_cx(locale)));
-        if calls.is_empty() {
-            return Err(Error::Invalid(format!(
-                "Telegram cannot render a {}",
-                m.kind()
-            )));
-        }
-        let mut last = None;
-        for c in calls {
-            if c.upload.is_some() {
-                return Err(Error::Unsupported(Capability::SendAttachment));
+        self.send_parts(to, m, locale).await.map_err(|(_, e)| e)
+    }
+
+    /// One `send` per Message, but a Message whose first platform messages
+    /// went out before a failure (a Card List, long text, keyboard
+    /// follow-ups) is reported as `unfinished` instead of lost.
+    async fn send_batch(
+        &self,
+        to: &ChannelAccountId,
+        _d: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+    ) -> BatchReceipt {
+        let mut receipts = Vec::with_capacity(msgs.len());
+        for m in msgs {
+            match self.send_parts(to, m, locale).await {
+                Ok(r) => receipts.push(r),
+                Err((Some(part), e)) => return BatchReceipt::part_way(receipts, part, e),
+                Err((None, e)) => return BatchReceipt::partial(receipts, e),
             }
-            let result = self.api().call(&c.method, &c.body).await?;
-            last = api::message_id(&result).or(last);
         }
-        Ok(SendReceipt::new(
-            last.map(PlatformMessageId),
-            Metering::Free,
-            true,
-        ))
+        BatchReceipt::complete(receipts)
     }
 
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {

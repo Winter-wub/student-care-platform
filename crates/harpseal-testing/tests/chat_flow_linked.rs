@@ -205,7 +205,9 @@ async fn blocked_then_unblocked_welcomes_back_without_a_new_code() {
 
     assert!(
         c.send(Inbound::Blocked {
-            from: c.who.clone()
+            from: c.who.clone(),
+            event_id: None,
+            redelivery: false
         })
         .await
         .is_empty()
@@ -240,6 +242,8 @@ async fn blocked_then_unblocked_welcomes_back_without_a_new_code() {
     // Blocked again, then any Inbound (an Action) also recovers and runs.
     c.send(Inbound::Blocked {
         from: c.who.clone(),
+        event_id: None,
+        redelivery: false,
     })
     .await;
     let seen = c.press("hello.say").await;
@@ -257,12 +261,16 @@ async fn a_blocked_account_before_link_starts_over_when_back() {
     c.follow().await;
     c.send(Inbound::Blocked {
         from: c.who.clone(),
+        event_id: None,
+        redelivery: false,
     })
     .await;
     let seen = c
         .send(Inbound::Unblocked {
             from: c.who.clone(),
             reply: None,
+            event_id: None,
+            redelivery: false,
         })
         .await;
     assert_eq!(seen.len(), 2, "welcome + Card again");

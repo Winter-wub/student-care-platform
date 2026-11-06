@@ -1,6 +1,6 @@
 //! Identity, inbound events, Reply/Push, metering and Channel Capabilities.
 
-use crate::message::ActionId;
+pub use crate::inbound::{Inbound, IncomingFile, WebhookRequest};
 
 /// Milliseconds since the Unix epoch, UTC, from the Deployment's Clock
 /// (ADR-0007). Never measure durations with it on Workers.
@@ -119,11 +119,17 @@ pub struct SendReceipt {
     /// The platform's id, when it gives one (the last part's id when the
     /// adapter split the Message into several platform messages).
     pub message_id: Option<PlatformMessageId>,
-    /// Whether this Message counted against the Quota. The metered unit is
-    /// one Push request to one recipient (LINE): only the receipt of the
-    /// Message that opens a Push request is `Metered`; the other Messages
-    /// in that request, and every Reply, are `Free`.
+    /// `Metered` exactly when [`SendReceipt::metered_units`] is above 0:
+    /// the flag stored on the `outbound_message` row.
     pub metering: Metering,
+    /// How many metered units this Message cost. The metered unit is one
+    /// Push request to one recipient (LINE counts requests, not message
+    /// objects): a Message is charged one unit for each Push request it
+    /// opens, so a Message spread over two Push requests costs 2, the other
+    /// Messages sharing those requests cost 0, and a Reply costs 0. Summed
+    /// over a batch it is the number of metered Push requests;
+    /// `usage_daily.metered` adds these units.
+    pub metered_units: u32,
     /// True when any part of this Message did not use the reply token: it
     /// went out by Push, whether the Core chose Push or the token was spent
     /// (used up by an earlier part, or past the Channel's reply limit).
@@ -131,24 +137,56 @@ pub struct SendReceipt {
 }
 
 impl SendReceipt {
-    /// A receipt for one Message.
+    /// A receipt for one Message: one metered unit when `metering` is
+    /// `Metered`, none when `Free` (see [`SendReceipt::with_metered_units`]).
     pub fn new(message_id: Option<PlatformMessageId>, metering: Metering, pushed: bool) -> Self {
         Self {
             message_id,
             metering,
+            metered_units: u32::from(metering == Metering::Metered),
             pushed,
         }
+    }
+
+    /// The same receipt costing `units` metered units (`metering` follows:
+    /// `Metered` when `units > 0`).
+    pub fn with_metered_units(mut self, units: u32) -> Self {
+        self.set_metered_units(units);
+        self
+    }
+
+    /// Sets [`SendReceipt::metered_units`] and keeps `metering` in step.
+    pub fn set_metered_units(&mut self, units: u32) {
+        self.metered_units = units;
+        self.metering = if units > 0 {
+            Metering::Metered
+        } else {
+            Metering::Free
+        };
+    }
+
+    /// Adds one metered unit (the Message opened another Push request).
+    pub fn add_metered_unit(&mut self) {
+        self.set_metered_units(self.metered_units.saturating_add(1));
     }
 }
 
 /// What [`crate::Channel::send_batch`] returns. `receipts[i]` belongs to
-/// the batch's `i`-th Message; when `error` is set, the Messages after the
-/// last receipt were not sent.
+/// the batch's `i`-th Message. When `error` is set the batch stopped
+/// early: the Messages after the last receipt were not sent, except that
+/// `unfinished` (when set) reports the parts of Message `receipts.len()`
+/// that went out before the failure (a Card List split into several
+/// platform messages, a long text, keyboard follow-ups). An adapter
+/// returns what went out instead of a bare error, so the Core can record
+/// it and a retry can resume at Message `receipts.len()`.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct BatchReceipt {
-    /// One receipt per Message sent, in order.
+    /// One receipt per Message wholly sent, in order.
     pub receipts: Vec<SendReceipt>,
+    /// The parts of the next Message that went out before `error` (their
+    /// metered units and last id), if any did.
+    pub unfinished: Option<SendReceipt>,
     /// Why the batch stopped early, if it did.
     pub error: Option<crate::Error>,
 }
@@ -158,136 +196,50 @@ impl BatchReceipt {
     pub fn complete(receipts: Vec<SendReceipt>) -> Self {
         Self {
             receipts,
+            unfinished: None,
             error: None,
         }
     }
-    /// The batch stopped at `error` after sending `receipts.len()` Messages.
+    /// The batch stopped at `error` after sending `receipts.len()` whole
+    /// Messages and none of the next one.
     pub fn partial(receipts: Vec<SendReceipt>, error: crate::Error) -> Self {
         Self {
             receipts,
+            unfinished: None,
             error: Some(error),
         }
     }
-    /// The receipts, or the error when the batch stopped early.
+    /// The batch stopped at `error` after sending `receipts.len()` whole
+    /// Messages and some parts of the next one (`unfinished`).
+    pub fn part_way(
+        receipts: Vec<SendReceipt>,
+        unfinished: SendReceipt,
+        error: crate::Error,
+    ) -> Self {
+        Self {
+            receipts,
+            unfinished: Some(unfinished),
+            error: Some(error),
+        }
+    }
+    /// Whether anything at all went out.
+    pub fn anything_sent(&self) -> bool {
+        !self.receipts.is_empty() || self.unfinished.is_some()
+    }
+    /// Metered units of everything that went out, `unfinished` included.
+    pub fn metered_units(&self) -> u32 {
+        self.receipts
+            .iter()
+            .chain(&self.unfinished)
+            .map(|r| r.metered_units)
+            .sum()
+    }
+    /// The receipts, or the error when the batch stopped early (what went
+    /// out is dropped: the Core's send path records it first).
     pub fn into_result(self) -> crate::Result<Vec<SendReceipt>> {
         match self.error {
             Some(e) => Err(e),
             None => Ok(self.receipts),
-        }
-    }
-}
-
-/// A raw webhook call, already read from the HTTP layer.
-#[derive(Debug, Clone)]
-pub struct WebhookRequest {
-    /// Request headers (signatures live here).
-    pub headers: http::HeaderMap,
-    /// Raw body, unparsed: signatures are computed over it.
-    pub body: Vec<u8>,
-}
-
-/// A file a Student sent, still on the platform until the Core copies it.
-#[derive(Debug, Clone)]
-pub struct IncomingFile {
-    /// The platform's handle for `Channel::download`.
-    pub platform_file_id: String,
-    /// File name, when the platform gives one.
-    pub file_name: Option<String>,
-    /// MIME type, when the platform gives one.
-    pub content_type: Option<String>,
-    /// Size, when the platform gives it.
-    pub size_bytes: Option<u64>,
-}
-
-/// What a Channel tells the Core happened. The adapter has verified the
-/// signature before producing any of these.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum Inbound {
-    /// The Student added the bot (LINE follow, Telegram `/start`).
-    Follow {
-        /// Who.
-        from: ChannelAccountId,
-        /// Reply token, if the Channel issues one.
-        reply: Option<ReplyToken>,
-    },
-    /// Free text.
-    Text {
-        /// Who.
-        from: ChannelAccountId,
-        /// What they typed.
-        text: String,
-        /// Reply token, if the Channel issues one.
-        reply: Option<ReplyToken>,
-    },
-    /// A file.
-    File {
-        /// Who.
-        from: ChannelAccountId,
-        /// The file, still on the platform.
-        file: IncomingFile,
-        /// Reply token, if the Channel issues one.
-        reply: Option<ReplyToken>,
-    },
-    /// A button or Menu entry was pressed.
-    Action {
-        /// Who.
-        from: ChannelAccountId,
-        /// Which Action.
-        action: ActionId,
-        /// Reply token, if the Channel issues one.
-        reply: Option<ReplyToken>,
-    },
-    /// The Student blocked the bot: the Link becomes unreachable. No reply
-    /// token: a blocked account cannot be answered.
-    Blocked {
-        /// Who.
-        from: ChannelAccountId,
-    },
-    /// The Student unblocked the bot.
-    Unblocked {
-        /// Who.
-        from: ChannelAccountId,
-        /// Reply token, if the Channel issues one.
-        reply: Option<ReplyToken>,
-    },
-}
-
-impl Inbound {
-    /// The account the event came from.
-    pub fn from(&self) -> &ChannelAccountId {
-        match self {
-            Inbound::Follow { from, .. }
-            | Inbound::Text { from, .. }
-            | Inbound::File { from, .. }
-            | Inbound::Action { from, .. }
-            | Inbound::Blocked { from }
-            | Inbound::Unblocked { from, .. } => from,
-        }
-    }
-
-    /// The reply token, when the event carries one.
-    pub fn reply(&self) -> Option<&ReplyToken> {
-        match self {
-            Inbound::Follow { reply, .. }
-            | Inbound::Text { reply, .. }
-            | Inbound::File { reply, .. }
-            | Inbound::Action { reply, .. }
-            | Inbound::Unblocked { reply, .. } => reply.as_ref(),
-            Inbound::Blocked { .. } => None,
-        }
-    }
-
-    /// A short name of the event kind (`follow`, `text`, `file`, `action`,
-    /// `blocked`, `unblocked`), for logs.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Inbound::Follow { .. } => "follow",
-            Inbound::Text { .. } => "text",
-            Inbound::File { .. } => "file",
-            Inbound::Action { .. } => "action",
-            Inbound::Blocked { .. } => "blocked",
-            Inbound::Unblocked { .. } => "unblocked",
         }
     }
 }
@@ -340,6 +292,36 @@ impl Capabilities {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn metering_follows_the_units() {
+        let mut r = SendReceipt::new(None, Metering::Free, true);
+        assert_eq!((r.metered_units, r.metering), (0, Metering::Free));
+        r.add_metered_unit();
+        r.add_metered_unit();
+        assert_eq!((r.metered_units, r.metering), (2, Metering::Metered));
+        let r = r.with_metered_units(0);
+        assert_eq!(r.metering, Metering::Free);
+        let one = SendReceipt::new(None, Metering::Metered, true);
+        assert_eq!(one.metered_units, 1);
+        let b = BatchReceipt::part_way(
+            vec![one.clone()],
+            one.with_metered_units(2),
+            crate::Error::Unreachable,
+        );
+        assert!(b.anything_sent());
+        assert_eq!(b.metered_units(), 3);
+        let partial = crate::Error::PartialSend {
+            sent: 1,
+            total: 3,
+            source: Box::new(crate::Error::Unreachable),
+        };
+        assert!(matches!(partial.root(), crate::Error::Unreachable));
+        assert_eq!(
+            partial.to_string(),
+            "sent 1 of 3 messages, then: channel account is unreachable"
+        );
+    }
 
     #[test]
     fn reply_only_with_an_unexpired_token() {

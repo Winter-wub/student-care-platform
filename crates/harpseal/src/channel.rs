@@ -52,7 +52,9 @@ pub trait Channel: Send + Sync {
     /// Pushes (never a lost message). It routes [`Message::Attachment`]
     /// through [`Channel::attachments`], or stops with
     /// `Error::Unsupported(SendAttachment)` when that Capability is absent,
-    /// and stops at the first error.
+    /// and stops at the first error. An adapter that splits one Message
+    /// into several platform messages should override this to report the
+    /// parts that went out before a failure ([`BatchReceipt::part_way`]).
     async fn send_batch(
         &self,
         to: &ChannelAccountId,
@@ -76,6 +78,24 @@ pub trait Channel: Send + Sync {
             }
         }
         BatchReceipt::complete(receipts)
+    }
+
+    /// [`Channel::send_batch`] with an idempotency `key` the Core chose for
+    /// this batch: the same key, account and Messages on a retry mean the
+    /// same send, so an adapter whose platform de-duplicates requests
+    /// (LINE `X-Line-Retry-Key`) derives each request's key from it and a
+    /// request that already went out is not delivered twice. The Core
+    /// calls this; the default ignores the key.
+    async fn send_batch_keyed(
+        &self,
+        to: &ChannelAccountId,
+        delivery: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+    ) -> BatchReceipt {
+        let _ = key;
+        self.send_batch(to, delivery, msgs, locale).await
     }
 
     /// Sets the Menu for one account; `None` resets it to the locked
@@ -168,16 +188,21 @@ pub trait Multicast: Send + Sync {
     /// Most recipients one platform request takes; the adapter splits a
     /// longer `to` itself.
     fn max_recipients(&self) -> usize;
-    /// Sends `msgs` to every account in `to`. The receipts are
+    /// Sends `msgs` to every account in `to`, with idempotency `key` (as
+    /// in [`Channel::send_batch_keyed`]: the same key, recipients and
+    /// Messages on a retry mean the same send). The receipts are
     /// recipient-major: `receipts[i * msgs.len() + j]` is Message `j` to
     /// `to[i]`. Metering is per recipient: for each recipient, the receipt
-    /// of the Message that opens a platform request is `Metered` (one unit
-    /// per request per recipient), every other one `Free`. On error nothing
-    /// is reported as sent, although earlier requests may have gone out.
+    /// of the Message that opens a platform request gets one metered unit
+    /// per request it opens. When a request fails, the receipts cover the
+    /// recipients whose every request went out (a whole number of groups
+    /// of [`Multicast::max_recipients`]) and `error` is set: a retry
+    /// resumes with `to[receipts.len() / msgs.len()..]` and the same key.
     async fn send_many(
         &self,
         to: &[ChannelAccountId],
         msgs: &[Message],
         locale: &Locale,
-    ) -> Result<Vec<SendReceipt>>;
+        key: &str,
+    ) -> BatchReceipt;
 }

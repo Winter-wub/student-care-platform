@@ -20,6 +20,11 @@
 //! never send (not an object, a postback whose `data` is not a valid
 //! ActionId): one bad event never drops the others in the same call, and
 //! never makes LINE redeliver the whole body.
+//!
+//! Every event carries LINE's `webhookEventId` as its event id and
+//! `deliveryContext.isRedelivery` as its redelivery flag
+//! (<https://developers.line.biz/en/reference/messaging-api/#common-properties>),
+//! so the Kernel answers a redelivered event once.
 
 use harpseal::{
     ActionId, ChannelAccountId, Error, Inbound, IncomingFile, ReplyToken, Result, Timestamp,
@@ -77,20 +82,42 @@ fn event(ev: &Value) -> Option<Inbound> {
                 Timestamp(t).plus_ms(REPLY_TOKEN_TTL_MS)
             }),
         });
-    match ev["type"].as_str().unwrap_or("") {
+    let event_id = ev["webhookEventId"]
+        .as_str()
+        .filter(|i| !i.is_empty())
+        .map(str::to_string);
+    let redelivery = ev["deliveryContext"]["isRedelivery"].as_bool() == Some(true);
+    let inbound = match ev["type"].as_str().unwrap_or("") {
         "message" => message(from, &ev["message"], reply),
         "postback" => Some(Inbound::Action {
             from,
             action: postback(&ev["postback"])?,
             reply,
+            event_id: None,
+            redelivery: false,
         }),
         "follow" if ev["follow"]["isUnblocked"].as_bool() == Some(true) => {
-            Some(Inbound::Unblocked { from, reply })
+            Some(Inbound::Unblocked {
+                from,
+                reply,
+                event_id: None,
+                redelivery: false,
+            })
         }
-        "follow" => Some(Inbound::Follow { from, reply }),
-        "unfollow" => Some(Inbound::Blocked { from }),
+        "follow" => Some(Inbound::Follow {
+            from,
+            reply,
+            event_id: None,
+            redelivery: false,
+        }),
+        "unfollow" => Some(Inbound::Blocked {
+            from,
+            event_id: None,
+            redelivery: false,
+        }),
         _ => None,
-    }
+    };
+    inbound.map(|e| e.with_event_id(event_id, redelivery))
 }
 
 /// `data` as an ActionId; `None` when missing or not 1..=64 bytes.
@@ -102,7 +129,13 @@ fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Opti
     let kind = m["type"].as_str()?;
     if kind == "text" {
         let text = m["text"].as_str()?.to_string();
-        return Some(Inbound::Text { from, text, reply });
+        return Some(Inbound::Text {
+            from,
+            text,
+            reply,
+            event_id: None,
+            redelivery: false,
+        });
     }
     if !matches!(kind, "image" | "video" | "audio" | "file") {
         return None;
@@ -119,7 +152,13 @@ fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Opti
         content_type: None,
         size_bytes: m["fileSize"].as_u64(),
     };
-    Some(Inbound::File { from, file, reply })
+    Some(Inbound::File {
+        from,
+        file,
+        reply,
+        event_id: None,
+        redelivery: false,
+    })
 }
 
 #[cfg(test)]
@@ -199,6 +238,28 @@ mod tests {
             [Inbound::File { file, .. }] => assert_eq!(file.platform_file_id, "external:43"),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn event_ids_and_redelivery_come_from_the_event() {
+        let got = one(ev(
+            "follow",
+            json!({ "webhookEventId": "01HSEALBAY0000000000000001",
+                    "deliveryContext": { "isRedelivery": true } }),
+        ))
+        .unwrap();
+        assert_eq!(got[0].event_id(), Some("01HSEALBAY0000000000000001"));
+        assert!(got[0].redelivery());
+        let got = one(ev(
+            "unfollow",
+            json!({ "webhookEventId": "01HSEALBAY0000000000000002",
+                    "deliveryContext": { "isRedelivery": false } }),
+        ))
+        .unwrap();
+        assert_eq!(got[0].event_id(), Some("01HSEALBAY0000000000000002"));
+        assert!(!got[0].redelivery());
+        let got = one(ev("follow", json!({}))).unwrap();
+        assert_eq!((got[0].event_id(), got[0].redelivery()), (None, false));
     }
 
     #[test]

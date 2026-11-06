@@ -56,6 +56,8 @@ fn press(account: &str, action: &str) -> Inbound {
         from: FakeChannel::account(account),
         action: id(action),
         reply: token(START_MS + 60_000),
+        event_id: None,
+        redelivery: false,
     }
 }
 
@@ -268,11 +270,15 @@ async fn every_inbound_kind_can_be_posted_through_the_fake_channel() {
         Inbound::Follow {
             from: from.clone(),
             reply: token(START_MS + 1),
+            event_id: None,
+            redelivery: false,
         },
         Inbound::Text {
             from: from.clone(),
             text: "สอบถามค่าเทอม".into(),
             reply: None,
+            event_id: None,
+            redelivery: false,
         },
         Inbound::File {
             from: from.clone(),
@@ -283,11 +289,19 @@ async fn every_inbound_kind_can_be_posted_through_the_fake_channel() {
                 size_bytes: Some(10),
             },
             reply: None,
+            event_id: None,
+            redelivery: false,
         },
-        Inbound::Blocked { from: from.clone() },
+        Inbound::Blocked {
+            from: from.clone(),
+            event_id: None,
+            redelivery: false,
+        },
         Inbound::Unblocked {
             from: from.clone(),
             reply: None,
+            event_id: None,
+            redelivery: false,
         },
     ];
     let fake = h.fake_channel();

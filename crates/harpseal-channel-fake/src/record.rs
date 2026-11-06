@@ -12,6 +12,10 @@ use harpseal::{
 use crate::FakeChannel;
 use crate::render::render;
 
+/// `retry_after_secs` of the failure [`FakeChannel::fail_next_batch_at`]
+/// injects.
+pub const FAILURE_RETRY_AFTER_SECS: u32 = 30;
+
 /// One object the Fake Channel showed a Student: a Message as the Core
 /// built it, or one part of it after the profile's degrade rules.
 #[derive(Debug, Clone)]
@@ -28,7 +32,8 @@ pub struct Sent {
     /// The id the Fake Channel gave it.
     pub id: PlatformMessageId,
     /// `Metered` only for the first object of a metered Push request: the
-    /// Quota counts one unit per Push request to one recipient.
+    /// Quota counts one unit per Push request to one recipient (a Message
+    /// opening two Push requests has two `Metered` objects and costs 2).
     pub metering: Metering,
     /// Index of the Core Message it came from within its batch.
     pub source: usize,
@@ -60,6 +65,10 @@ pub(crate) struct State {
     pub(crate) deleted: Vec<PlatformMessageId>,
     /// Accounts whose sends fail with `Error::Unreachable`.
     pub(crate) blocked: HashSet<ChannelAccountId>,
+    /// The next batch fails with `Error::RateLimited` before object `n`.
+    pub(crate) fail_at: Option<usize>,
+    /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).
+    pub(crate) keys: Vec<String>,
     next_id: u64,
 }
 
@@ -90,6 +99,8 @@ impl FakeChannel {
             _ => None,
         };
         let reply_limit = profile.reply_limit().unwrap_or(usize::MAX);
+        let fail_at = s.fail_at.take();
+        let mut objects = 0usize;
         let mut receipts = Vec::with_capacity(msgs.len());
         let mut reply_objects = 0usize;
         // Index into `s.calls` of the open Push request.
@@ -106,7 +117,17 @@ impl FakeChannel {
                 parts.push(msg.clone());
             }
             let mut receipt = SendReceipt::new(None, Metering::Free, false);
-            for part in parts {
+            for (k, part) in parts.into_iter().enumerate() {
+                if fail_at == Some(objects) {
+                    let e = Error::RateLimited {
+                        retry_after_secs: FAILURE_RETRY_AFTER_SECS,
+                    };
+                    return match k {
+                        0 => BatchReceipt::partial(receipts, e),
+                        _ => BatchReceipt::part_way(receipts, receipt, e),
+                    };
+                }
+                objects += 1;
                 let (delivery, metering) = match &token {
                     Some(t) if reply_objects < reply_limit => {
                         if reply_objects == 0 {
@@ -161,7 +182,8 @@ impl FakeChannel {
                     source,
                 });
                 if metering == Metering::Metered {
-                    receipt.metering = Metering::Metered;
+                    // One unit per Push request this Message opens.
+                    receipt.add_metered_unit();
                 }
                 receipt.message_id = Some(id);
             }
@@ -180,6 +202,19 @@ impl FakeChannel {
         } else {
             s.blocked.remove(to);
         }
+    }
+
+    /// Makes the next batch fail with `Error::RateLimited` (retry after
+    /// [`FAILURE_RETRY_AFTER_SECS`]) just before its object `part`
+    /// (0-based, counting every rendered object): the objects before it go
+    /// out and are reported as a partial [`BatchReceipt`].
+    pub fn fail_next_batch_at(&self, part: usize) {
+        self.lock().fail_at = Some(part);
+    }
+
+    /// The idempotency key of every keyed batch so far, in order.
+    pub fn keys(&self) -> Vec<String> {
+        self.lock().keys.clone()
     }
 
     /// Every platform request so far, in order.

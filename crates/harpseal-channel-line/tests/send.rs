@@ -225,7 +225,11 @@ async fn multicast_takes_500_recipients_per_request_metered_per_recipient() {
         .map(|i| ChannelAccountId::new(KIND, format!("U{i:032x}")))
         .collect();
     let msgs = texts(6);
-    let receipts = m.send_many(&to, &msgs, &Locale::th()).await.unwrap();
+    let receipts = m
+        .send_many(&to, &msgs, &Locale::th(), "announcement-1")
+        .await
+        .into_result()
+        .unwrap();
     let reqs = api.take();
     assert!(
         reqs.iter()
@@ -270,8 +274,8 @@ async fn multicast_refuses_other_channels_and_attachments() {
         harpseal::ChannelKind("telegram"),
         "1",
     )];
-    let got = m.send_many(&other, &texts(1), &Locale::th()).await;
-    assert!(matches!(got, Err(Error::Invalid(_))));
+    let got = m.send_many(&other, &texts(1), &Locale::th(), "k").await;
+    assert!(matches!(got.into_result(), Err(Error::Invalid(_))));
     let file = Message::Attachment(Attachment {
         file_key: "files/a.png".into(),
         file_name: "a.png".into(),
@@ -279,9 +283,9 @@ async fn multicast_refuses_other_channels_and_attachments() {
         size_bytes: 10,
         url: "https://files.sealbay.example/a.png".into(),
     });
-    let got = m.send_many(&[to()], &[file], &Locale::th()).await;
+    let got = m.send_many(&[to()], &[file], &Locale::th(), "k").await;
     assert!(matches!(
-        got,
+        got.into_result(),
         Err(Error::Unsupported(Capability::SendAttachment))
     ));
     assert!(api.take().is_empty());
