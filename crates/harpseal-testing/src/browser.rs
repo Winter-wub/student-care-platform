@@ -120,6 +120,20 @@ impl Browser<'_> {
         self.post_raw(path, &form).await
     }
 
+    /// Opens the Mini App as the entry page would once the platform gave
+    /// it `token`: posts `channel`, `token` and `next` to `/app/session`
+    /// and keeps the App Session cookie. Returns the POST's response (303
+    /// to `next` on success).
+    pub async fn open_mini_app(&self, channel: &str, token: &str, next: &str) -> TestResponse {
+        let form = format!(
+            "channel={}&token={}&next={}",
+            urlencode(channel),
+            urlencode(token),
+            urlencode(next)
+        );
+        self.post_raw("/app/session", &form).await
+    }
+
     /// Opens the sign-in form and submits it; returns the POST's response
     /// (303 on success).
     pub async fn login(&self, email: &str, password: &str) -> TestResponse {

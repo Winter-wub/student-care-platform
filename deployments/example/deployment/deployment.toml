@@ -3,7 +3,9 @@
 # never go here: they come from the environment or Worker secrets. The
 # Announcements Module sends Mini App buttons, so LINE_LIFF_ID and
 # TELEGRAM_WEB_APP_URL are required: without them the Deployment refuses
-# to start.
+# to start. Both point at the Deployment's HTTPS origin (the LIFF app's
+# endpoint URL, with the `openid` scope; BotFather's Web App URL): `/`
+# forwards to the Mini App page `/app`.
 
 name = "Seal Bay University"
 default_locale = "th"

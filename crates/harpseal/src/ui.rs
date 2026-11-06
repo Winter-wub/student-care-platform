@@ -20,7 +20,7 @@ use crate::{CurrentStaff, PageState};
 pub const CSS: &str = include_str!("ui.css");
 /// Bump the query string when `ui.css` changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=7";
+const CSS_HREF: &str = "/static/app.css?v=8";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).
@@ -155,10 +155,29 @@ pub fn mini_app(s: &PageState, title: &str, body: Markup) -> Markup {
     document(&brand, title, "mini", None, mini_inner(brand.name, body))
 }
 
+/// A Mini App page of an App Session (#28): `csrf` goes into the headers
+/// HTMX sends, and the footer opens the notice inside the app shell with
+/// `notice_label`.
+pub fn mini_app_session(
+    s: &PageState,
+    title: &str,
+    csrf: Option<&str>,
+    notice_label: &str,
+    body: Markup,
+) -> Markup {
+    let brand = Brand::of(s);
+    let inner = mini_footer(brand.name, "/notice?app=1", notice_label, body);
+    document(&brand, title, "mini", csrf, inner)
+}
+
 fn mini_inner(org: &str, body: Markup) -> Markup {
+    mini_footer(org, "/notice", "ประกาศความเป็นส่วนตัว", body)
+}
+
+fn mini_footer(org: &str, notice: &str, label: &str, body: Markup) -> Markup {
     html! {
         main { (body) }
-        footer class="foot" { (org) " · " a href="/notice" { "ประกาศความเป็นส่วนตัว" } }
+        footer class="foot" { (org) " · " a href=(notice) { (label) } }
     }
 }
 

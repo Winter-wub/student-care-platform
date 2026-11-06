@@ -3,6 +3,7 @@
 //! public API: the schema and these queries may change without notice.
 
 mod admin;
+pub(crate) mod app;
 pub mod audience;
 pub(crate) mod flow;
 pub mod links;
@@ -93,6 +94,7 @@ impl Module for Kernel {
         roster::register(r);
         admin::register(r);
         usage::register(r);
+        app::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))

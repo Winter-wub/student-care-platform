@@ -712,6 +712,8 @@ dependencies = [
  "axum",
  "harpseal",
  "harpseal-channel-fake",
+ "harpseal-channel-line",
+ "harpseal-channel-telegram",
  "harpseal-runtime-native",
  "http",
  "serde_json",
