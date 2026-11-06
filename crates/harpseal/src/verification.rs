@@ -65,7 +65,7 @@ pub enum Verdict {
     Passed,
     /// The answer is wrong; the Kernel counts the attempt.
     Wrong,
-    /// The challenge is past its expiry or no longer open.
+    /// The challenge is past its expiry (or gone).
     Expired,
 }
 
@@ -116,7 +116,10 @@ pub trait VerificationMethod: Send + Sync {
     /// and counts the row toward the hourly limit if it remains).
     async fn start(&self, cx: &VerifyContext, claim: &StudentClaim) -> Result<Challenge>;
     /// Judges `answer` for challenge `challenge_id`. Writes nothing: the
-    /// Kernel records attempts and the outcome.
+    /// Kernel records attempts and the outcome. The Kernel calls it only
+    /// after atomically claiming an attempt on a pending, unexpired
+    /// challenge, so a method judges the answer and the expiry, not the
+    /// row's state (a concurrent Inbound may change it meanwhile).
     async fn check(&self, cx: &VerifyContext, challenge_id: &str, answer: &str) -> Result<Verdict>;
 }
 
@@ -257,30 +260,32 @@ impl VerificationMethod for EmailOtp {
         let rows =
             s.db.query(
                 Statement::new(
-                    "SELECT secret_hash, expires_at, state FROM verification_challenge \
+                    "SELECT secret_hash, expires_at FROM verification_challenge \
                      WHERE id = ? AND method = ?",
                 )
                 .bind(challenge_id)
                 .bind(self.id()),
             )
             .await?;
-        let (Some(hash), Some(expires_at), Some(state)) = (
+        let (Some(hash), Some(expires_at)) = (
             rows.get(0, "secret_hash").and_then(|v| v.as_text()),
             rows.get(0, "expires_at").and_then(|v| v.as_i64()),
-            rows.get(0, "state").and_then(|v| v.as_text()),
         ) else {
             return Ok(Verdict::Expired);
         };
-        if state != "pending" || s.now_ms() >= expires_at {
-            return Ok(Verdict::Expired);
-        }
         let mut parts = hash.splitn(3, '$');
         let (Some("sha256"), Some(salt), Some(expected)) =
             (parts.next(), parts.next(), parts.next())
         else {
             return Err(Error::Invalid("unknown verification secret format".into()));
         };
-        Ok(if same(&digest(salt, challenge_id, answer), expected) {
+        let right = same(&digest(salt, challenge_id, answer), expected);
+        // Only time closes the challenge here: the Kernel's claim already
+        // found it pending, and a state another Inbound wrote since (a
+        // lockout, a cancel) must not turn this answer into `Expired`.
+        Ok(if s.now_ms() >= expires_at {
+            Verdict::Expired
+        } else if right {
             Verdict::Passed
         } else {
             Verdict::Wrong
