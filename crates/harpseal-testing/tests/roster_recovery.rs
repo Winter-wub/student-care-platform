@@ -135,7 +135,7 @@ async fn a_staff_edit_made_while_the_chunk_runs_survives() {
     )
     .await;
     let mut file = String::from_utf8(csv(0..3)).unwrap();
-    file = file.replace("ปี1;DDS,DDS,1,3.0", "ปี2;DDS,DDS,2,3.5");
+    file = file.replace("ปี1;MSC,MSC,1,3.0", "ปี2;MSC,MSC,2,3.5");
     let id = previewed(&b, "b.csv", file.as_bytes(), "full").await;
     confirm(&b, &id).await;
     // Staff edit again after the Job read the row: the trigger runs

@@ -35,7 +35,7 @@ async fn refused(name: &str, bytes: &[u8]) -> (harpseal_testing::Harness, String
 #[tokio::test]
 async fn a_header_mismatch_lists_missing_and_unexpected_headers() {
     let file = "รหัสนักศึกษา,ชื่อ,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย,หมายเหตุ\r\n\
-                68000001,นก,,,,DDS,1,,x\r\n";
+                68000001,นก,,,,MSC,1,,x\r\n";
     let (_, _, report) = refused("bad.csv", file.as_bytes()).await;
     assert!(report.contains("1,ชื่อ-สกุล,ไม่มีคอลัมน์นี้"), "{report}");
     assert!(report.contains("1,ชื่อ,คอลัมน์นี้ไม่อยู่ในแม่แบบหรือซ้ำ"), "{report}");
@@ -44,7 +44,7 @@ async fn a_header_mismatch_lists_missing_and_unexpected_headers() {
 
 #[tokio::test]
 async fn a_student_id_off_the_pattern_is_refused() {
-    let file = csv_lines(&["6800000X,นก,,,,DDS,1,", "68000002,ปลา,,,,DDS,1,"]);
+    let file = csv_lines(&["6800000X,นก,,,,MSC,1,", "68000002,ปลา,,,,MSC,1,"]);
     let (_, _, report) = refused("a.csv", &file).await;
     assert!(
         report.contains("2,รหัสนักศึกษา,รหัสนักศึกษาไม่ตรงรูปแบบ"),
@@ -54,20 +54,20 @@ async fn a_student_id_off_the_pattern_is_refused() {
 
 #[tokio::test]
 async fn a_duplicate_student_id_is_refused() {
-    let file = csv_lines(&["68000001,นก,,,,DDS,1,", "68000001,ปลา,,,,DDS,1,"]);
+    let file = csv_lines(&["68000001,นก,,,,MSC,1,", "68000001,ปลา,,,,MSC,1,"]);
     let (_, _, report) = refused("a.csv", &file).await;
     assert!(report.contains("3,รหัสนักศึกษา,รหัสนักศึกษาซ้ำ"), "{report}");
 }
 
 #[tokio::test]
 async fn a_bad_email_is_refused_and_an_empty_one_is_only_counted() {
-    let file = csv_lines(&["68000001,นก,nok@sealbay,,,DDS,1,"]);
+    let file = csv_lines(&["68000001,นก,nok@sealbay,,,MSC,1,"]);
     let (_, _, report) = refused("a.csv", &file).await;
     assert!(report.contains("2,อีเมล,อีเมลไม่ถูกรูปแบบ"), "{report}");
 
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv_lines(&["68000001,นก,,,,DDS,1,"]), "full").await;
+    let id = previewed(&b, "a.csv", &csv_lines(&["68000001,นก,,,,MSC,1,"]), "full").await;
     assert_eq!(counts(&h, &id).await["preview"]["empty_email"], 1);
 }
 
@@ -80,7 +80,7 @@ async fn an_enum_value_off_the_list_is_refused() {
 
 #[tokio::test]
 async fn a_required_attribute_left_empty_is_refused() {
-    let file = csv_lines(&["68000001,นก,,,,DDS,,", "68000002,ปลา,,,,DDS,สอง,"]);
+    let file = csv_lines(&["68000001,นก,,,,MSC,,", "68000002,ปลา,,,,MSC,สอง,"]);
     let (_, _, report) = refused("a.csv", &file).await;
     assert!(report.contains("2,ชั้นปี,ต้องมีค่า"), "{report}");
     assert!(report.contains("3,ชั้นปี,ต้องเป็นจำนวนเต็ม"), "{report}");

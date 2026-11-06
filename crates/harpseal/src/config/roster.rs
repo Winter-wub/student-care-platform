@@ -22,7 +22,7 @@
 //! [roster.attributes.programme]
 //! column = "หลักสูตร"
 //! type = "enum"
-//! values = ["DDS", "DDS-Intl"]
+//! values = ["MSC", "MSC-Intl"]
 //! label = { th = "หลักสูตร", en = "Programme" }
 //! shown_in_list = true
 //! order = 1
@@ -352,9 +352,9 @@ mod tests {
         assert_eq!(num.parse("x"), Err(AttrError::NotNumber));
         assert_eq!(num.parse("NaN"), Err(AttrError::NotNumber));
         assert_eq!(num.parse(""), Ok(None));
-        let en = spec(AttributeType::Enum, &["DDS", "DDS-Intl"], false);
-        assert_eq!(en.parse("DDS-Intl"), Ok(Some(Json::from("DDS-Intl"))));
-        assert_eq!(en.parse("dds"), Err(AttrError::NotInList));
+        let en = spec(AttributeType::Enum, &["MSC", "MSC-Intl"], false);
+        assert_eq!(en.parse("MSC-Intl"), Ok(Some(Json::from("MSC-Intl"))));
+        assert_eq!(en.parse("msc"), Err(AttrError::NotInList));
         let date = spec(AttributeType::Date, &[], false);
         assert_eq!(date.parse("2028-02-29"), Ok(Some(Json::from("2028-02-29"))));
         for bad in [

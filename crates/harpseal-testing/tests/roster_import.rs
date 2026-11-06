@@ -46,12 +46,12 @@ async fn happy_path(name: &str, bytes: &[u8]) {
     // A Student with roster Tags and typed attributes.
     let one = "SELECT count(*) FROM student WHERE student_code = '68010004' AND \
                display_name = 'กุ้งนาง ทะเลใส' AND json_extract(attributes, '$.year') = 4 \
-               AND json_extract(attributes, '$.programme') = 'DDS-Intl' AND status = 'active'";
+               AND json_extract(attributes, '$.programme') = 'MSC-Intl' AND status = 'active'";
     assert_eq!(int(&h, one, &[]).await, 1);
     let tags = "SELECT count(*) FROM student_tag st JOIN tag t ON t.id = st.tag_id \
                 JOIN student s ON s.id = st.student_id \
                 WHERE s.student_code = '68010005' AND st.source = 'roster'";
-    assert_eq!(int(&h, tags, &[]).await, 3, "ปี5; DDS; ชมรมดนตรี");
+    assert_eq!(int(&h, tags, &[]).await, 3, "ปี5; MSC; ชมรมดนตรี");
     let no_email = "SELECT count(*) FROM student WHERE email IS NULL";
     assert_eq!(int(&h, no_email, &[]).await, 2);
 
@@ -188,7 +188,7 @@ async fn manual_overrides_survive_the_import_and_are_counted() {
     let mut file = String::from_utf8(csv(0..3)).unwrap();
     file = file
         .replace("นักศึกษา 1,", "นักศึกษา หนึ่ง,")
-        .replace("ปี1;DDS,DDS,1", "ปี2;DDS,DDS,2");
+        .replace("ปี1;MSC,MSC,1", "ปี2;MSC,MSC,2");
     let id = previewed(&b, "b.csv", file.as_bytes(), "full").await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["skipped_by_override"], 1);
@@ -205,7 +205,7 @@ async fn manual_overrides_survive_the_import_and_are_counted() {
     let got = rows.rows[0][0].as_text().unwrap().to_string();
     let mut got: Vec<&str> = got.split(',').collect();
     got.sort();
-    assert_eq!(got, vec!["DDS:roster", "ทุนเรียนดี:manual", "ปี2:roster"]);
+    assert_eq!(got, vec!["MSC:roster", "ทุนเรียนดี:manual", "ปี2:roster"]);
 }
 
 #[tokio::test]

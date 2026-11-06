@@ -105,7 +105,7 @@ tags = { column = "กลุ่ม", separator = ";" }
 [roster.attributes.programme]
 column = "หลักสูตร"
 type = "enum"
-values = ["DDS", "DDS-Intl"]
+values = ["MSC", "MSC-Intl"]
 order = 1
 
 [roster.attributes.year]

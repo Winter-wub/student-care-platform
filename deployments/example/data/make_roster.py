@@ -15,7 +15,7 @@ for i in range(1, 51):
     name = f"{first[(i-1)%10]} {last[(i-1)//10]}"
     email = "" if i in (10, 20) else f"s{code}@sealbay.example"
     locale = "en" if i % 7 == 0 else ("" if i % 11 == 0 else "th")
-    prog = "DDS-Intl" if i % 4 == 0 else "DDS"
+    prog = "MSC-Intl" if i % 4 == 0 else "MSC"
     year = (i - 1) % 6 + 1
     tags = f"ปี{year};{prog}" + (";ชมรมดนตรี" if i % 5 == 0 else "")
     gpa = "" if i % 9 == 0 else f"{2.5 + (i % 15) / 10:.2f}"

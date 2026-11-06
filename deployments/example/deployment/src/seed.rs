@@ -265,9 +265,10 @@ fn announcements(now: i64) -> Vec<(NewAnnouncement, bool)> {
     ));
     let mut c = NewAnnouncement::new(
         scholarship,
-        "นักศึกษาหลักสูตร DDS-Intl ยื่นใบสมัครทุนได้ที่กองกิจการนักศึกษาภายในสิ้นเดือนนี้ (ข้อความสาธิต)",
+        "นักศึกษาหลักสูตรวิทยาศาสตร์ทางทะเล (นานาชาติ) MSC-Intl \
+         ยื่นใบสมัครทุนได้ที่กองกิจการนักศึกษาภายในสิ้นเดือนนี้ (ข้อความสาธิต)",
     );
-    c.audience = audience("programme", "DDS-Intl");
+    c.audience = audience("programme", "MSC-Intl");
     let mut s = NewAnnouncement::new(
         rehearsal,
         "สมาชิกชมรมดนตรีซ้อมใหญ่ที่ห้องดนตรี อาคาร 3 สัปดาห์หน้า เวลา 17:00 น. (ข้อความสาธิต)",

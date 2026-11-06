@@ -310,13 +310,13 @@ async fn the_audience_filters_who_is_sent_to() {
     tag(&w.h, "s4", "clinic").await;
     tag(&w.h, "s3", "clinic").await;
     let b = signed_in(&w, "Officer").await;
-    // programme DDS (s1, s4) AND Tag clinic (s3, s4) -> s4 only.
+    // programme MSC (s1, s4) AND Tag clinic (s3, s4) -> s4 only.
     create(
         &b,
         &form(
             "กลุ่ม",
             "รายละเอียด",
-            "&attr.programme=DDS&tags=clinic&do=confirm",
+            "&attr.programme=MSC&tags=clinic&do=confirm",
         ),
     )
     .await;

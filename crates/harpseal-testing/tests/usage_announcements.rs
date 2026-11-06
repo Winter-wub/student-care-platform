@@ -32,7 +32,7 @@ async fn the_estimate_shows_this_months_usage_without_a_quota() {
     usage(&w.h, "fake", TODAY, 42).await;
     let b = signed_in(&w, "Officer").await;
     let c = b
-        .post("/admin/announcements/audience", "attr.programme=DDS")
+        .post("/admin/announcements/audience", "attr.programme=MSC")
         .await;
     assert_eq!(c.status, 200);
     assert!(

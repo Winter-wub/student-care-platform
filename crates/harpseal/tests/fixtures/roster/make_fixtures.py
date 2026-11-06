@@ -13,7 +13,7 @@ for i in range(1, 51):
     name = f"{first[(i-1)%10]} {last[(i-1)//10]}"
     email = "" if i in (10, 20) else f"s{code}@student.sealbay.example"
     locale = "en" if i % 7 == 0 else ("" if i % 11 == 0 else "th")
-    prog = "DDS-Intl" if i % 4 == 0 else "DDS"
+    prog = "MSC-Intl" if i % 4 == 0 else "MSC"
     year = (i - 1) % 6 + 1
     tags = f"ปี{year};{prog}" + (";ชมรมดนตรี" if i % 5 == 0 else "")
     gpa = "" if i % 9 == 0 else f"{2.5 + (i % 15) / 10:.2f}"
@@ -70,7 +70,7 @@ write_xlsx(f"{out}/empty_sheet.xlsx", sheet_of(""))
 # GPA is an error cell.
 header = "".join(cell(f"{col(ci)}1", v, False) for ci, v in enumerate(H))
 data = (cell("A2", "68010001", True) + cell("B2", "นกน้อย ทะเลใส", False)
-    + cell("F2", "DDS", False) + '<c r="G2"><f>1+1</f><v>2</v></c>'
+    + cell("F2", "MSC", False) + '<c r="G2"><f>1+1</f><v>2</v></c>'
     + '<c r="H2" t="e"><v>#DIV/0!</v></c>')
 write_xlsx(f"{out}/formula_error.xlsx", sheet_of(
     f'<row r="1">{header}</row><row r="2">{data}</row>'))

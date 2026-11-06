@@ -41,7 +41,7 @@ tags = { column = "กลุ่ม", separator = ";" }
 [roster.attributes.programme]
 column = "หลักสูตร"
 type = "enum"
-values = ["DDS", "DDS-Intl"]
+values = ["MSC", "MSC-Intl"]
 order = 1
 
 [roster.attributes.year]
@@ -228,7 +228,7 @@ pub async fn counts(h: &Harness, id: &str) -> serde_json::Value {
 /// One valid row for student code `68000000 + n`.
 pub fn row(n: usize) -> String {
     let code = 68_000_000 + n;
-    format!("{code},นักศึกษา {n},s{code}@student.sealbay.example,th,ปี1;DDS,DDS,1,3.0\r\n")
+    format!("{code},นักศึกษา {n},s{code}@student.sealbay.example,th,ปี1;MSC,MSC,1,3.0\r\n")
 }
 
 /// A CSV of rows `from..to` (see [`row`]).
