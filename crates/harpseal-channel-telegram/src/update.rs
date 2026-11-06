@@ -43,13 +43,18 @@ pub fn verify(req: &WebhookRequest, secret: &str) -> Result<()> {
 }
 
 /// What one Update asks of the adapter besides the event: the id of a
-/// callback query to answer so the Student's client stops spinning.
+/// callback query to answer so the Student's client stops spinning, and
+/// why the Update is refused after that answer.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct Parsed {
     /// The event, when the Update is one the Core handles.
     pub event: Option<Inbound>,
     /// `callback_query.id`, to pass to `answerCallbackQuery`.
     pub answer_callback: Option<String>,
+    /// A press with malformed `callback_data`: answer it, then refuse the
+    /// call with this `Error::Invalid` (Telegram will redeliver it).
+    pub refused: Option<Error>,
 }
 
 fn invalid(what: &str) -> Error {
@@ -76,7 +81,7 @@ pub fn parse(
     if let Some(m) = update.get("message") {
         return Ok(Parsed {
             event: message(m, lookup)?,
-            answer_callback: None,
+            ..Parsed::default()
         });
     }
     if let Some(q) = update.get("callback_query") {
@@ -85,7 +90,7 @@ pub fn parse(
     if let Some(m) = update.get("my_chat_member") {
         return Ok(Parsed {
             event: member(m)?,
-            answer_callback: None,
+            ..Parsed::default()
         });
     }
     Ok(Parsed::default())
@@ -140,18 +145,24 @@ fn text_event(
 }
 
 /// `/news_latest`, `/news_latest@SealBayBot` or `/news_latest args` →
-/// `news_latest` (<https://core.telegram.org/bots/features#commands>).
+/// `news_latest` (<https://core.telegram.org/bots/features#commands>). The
+/// name starts right after `/`: `/ news_latest` is not a command.
 pub fn command(text: &str) -> Option<String> {
-    let first = text.strip_prefix('/')?.split_whitespace().next()?;
+    let rest = text.strip_prefix('/')?;
+    if rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let first = rest.split_whitespace().next()?;
     let name = first.split('@').next()?;
     (!name.is_empty()).then(|| name.to_ascii_lowercase())
 }
 
-/// The file in a message: the largest `photo` size, or a `document`,
+/// The file in a message: the largest `photo` size by area, or a `document`,
 /// `voice`, `video` or `audio`.
 fn incoming_file(m: &Value) -> Option<IncomingFile> {
     if let Some(sizes) = m["photo"].as_array() {
-        let best = sizes.last()?;
+        let area = |p: &Value| p["width"].as_u64().unwrap_or(0) * p["height"].as_u64().unwrap_or(0);
+        let best = sizes.iter().max_by_key(|p| area(p))?;
         return Some(IncomingFile {
             platform_file_id: best["file_id"].as_str()?.to_string(),
             file_name: None,
@@ -170,30 +181,32 @@ fn incoming_file(m: &Value) -> Option<IncomingFile> {
     })
 }
 
-/// A button press: `data` is the Action id, unchanged.
+/// A button press: `data` is the Action id, unchanged. Presses outside a
+/// private chat (groups, inline messages) are answered and ignored.
 fn callback(q: &Value) -> Result<Parsed> {
     let id = q["id"]
         .as_str()
         .ok_or_else(|| invalid("callback without id"))?;
-    let chat = if q["message"]["chat"].is_object() {
-        &q["message"]["chat"]["id"]
-    } else {
-        // Private chats share the user's id.
-        &q["from"]["id"]
-    };
-    let from = account(chat)?;
-    let data = q["data"]
-        .as_str()
-        .ok_or_else(|| invalid("callback without data"))?;
-    let action = ActionId::new(data).map_err(|_| invalid("callback_data is not an Action id"))?;
-    Ok(Parsed {
-        event: Some(Inbound::Action {
-            from,
-            action,
-            reply: None,
-        }),
+    let mut parsed = Parsed {
         answer_callback: Some(id.to_string()),
-    })
+        ..Parsed::default()
+    };
+    let chat = &q["message"]["chat"];
+    if !private(chat) {
+        return Ok(parsed);
+    }
+    let from = account(&chat["id"])?;
+    match q["data"].as_str().map(ActionId::new) {
+        Some(Ok(action)) => {
+            parsed.event = Some(Inbound::Action {
+                from,
+                action,
+                reply: None,
+            })
+        }
+        _ => parsed.refused = Some(invalid("callback_data is not an Action id")),
+    }
+    Ok(parsed)
 }
 
 /// The Student blocked (`kicked`) or deleted (`left`) the chat, or came
@@ -238,12 +251,14 @@ mod tests {
         );
         assert_eq!(command("news_latest"), None);
         assert_eq!(command("/"), None);
+        assert_eq!(command("/ news_latest"), None);
     }
 
     #[test]
     fn files_of_every_kind() {
         let photo = msg(json!({ "photo": [
-            { "file_id": "small", "file_size": 10 }, { "file_id": "big", "file_size": 900 } ] }));
+            { "file_id": "big", "width": 1280, "height": 960 },
+            { "file_id": "small", "width": 90, "height": 67 } ] }));
         let voice =
             msg(json!({ "voice": { "file_id": "v1", "mime_type": "audio/ogg", "file_size": 5 } }));
         let video = msg(
@@ -277,24 +292,26 @@ mod tests {
     }
 
     #[test]
-    fn malformed_callback_data_is_invalid() {
-        let q = |data: Value| {
-            json!({ "update_id": 1, "callback_query": { "id": "q", "from": { "id": 42 }, "data": data } })
-                .to_string()
-                .into_bytes()
+    fn malformed_callback_data_is_answered_then_refused() {
+        let q = |data: Value, chat: &str| {
+            json!({ "update_id": 1, "callback_query": { "id": "q", "from": { "id": 42 },
+                "message": { "message_id": 1, "chat": { "id": 42, "type": chat } }, "data": data } })
+            .to_string()
+            .into_bytes()
         };
-        assert!(matches!(
-            parse(&q(json!("x".repeat(65))), none),
-            Err(Error::Invalid(_))
-        ));
-        assert!(matches!(parse(&q(json!("")), none), Err(Error::Invalid(_))));
-        assert!(matches!(
-            parse(&q(Value::Null), none),
-            Err(Error::Invalid(_))
-        ));
-        let ok = parse(&q(json!("news.ack.1042")), none).unwrap();
+        for bad in [json!("x".repeat(65)), json!(""), Value::Null] {
+            let p = parse(&q(bad, "private"), none).unwrap();
+            assert_eq!(p.answer_callback.as_deref(), Some("q"));
+            assert!(p.event.is_none());
+            assert!(matches!(p.refused, Some(Error::Invalid(_))));
+        }
+        let ok = parse(&q(json!("news.ack.1042"), "private"), none).unwrap();
         assert_eq!(ok.answer_callback.as_deref(), Some("q"));
+        assert!(ok.refused.is_none());
         assert!(matches!(ok.event, Some(Inbound::Action { from, .. }) if from.external_id == "42"));
+        let group = parse(&q(json!("news.ack.1042"), "group"), none).unwrap();
+        assert_eq!(group.answer_callback.as_deref(), Some("q"));
+        assert!(group.event.is_none() && group.refused.is_none());
     }
 
     #[test]

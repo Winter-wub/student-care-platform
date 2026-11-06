@@ -207,6 +207,7 @@ pub fn command_name(action: &str) -> String {
 
 /// One Bot API command built from a Menu entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Command {
     /// The command without `/`, e.g. `news_latest`.
     pub command: String,

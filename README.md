@@ -73,7 +73,7 @@ let tg = TelegramChannel::new(
     TelegramConfig::new(bot_token, webhook_secret, web_app_url), // "" = no Web App
     services.http.clone(),
 )
-.with_clock(services.clock.clone());          // judges Web App initData freshness
+.with_clock(services.clock.clone());          // needed for the Mini App Capability (initData freshness)
 let d = Deployment::builder() /* ... */ .channel(tg.clone()).build()?;
 tg.with_menu(&d.menu_for(&d.config().default_locale)); // clones share the map
 ```

@@ -223,3 +223,22 @@ async fn files_over_20_mb_are_refused() {
         "no download after getFile says too big"
     );
 }
+
+#[tokio::test]
+async fn malformed_callback_data_is_answered_then_refused() {
+    let (tg, http) = channel();
+    let body = json!({ "update_id": 2, "callback_query": { "id": "bad-press",
+        "from": { "id": 7_012_345_678_i64 }, "chat_instance": "-1", "data": "x".repeat(65),
+        "message": { "message_id": 9, "date": 1, "chat": { "id": 7_012_345_678_i64, "type": "private" } } } });
+    let got = tg
+        .parse_webhook(signed(body.to_string().as_bytes(), Some(SECRET)))
+        .await;
+    assert!(matches!(got, Err(Error::Invalid(_))), "{got:?}");
+    assert_eq!(
+        calls(&http),
+        vec![(
+            "answerCallbackQuery".to_string(),
+            json!({ "callback_query_id": "bad-press" })
+        )]
+    );
+}

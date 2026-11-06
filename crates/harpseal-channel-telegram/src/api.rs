@@ -16,6 +16,34 @@ pub const DOWNLOAD_MAX: u64 = 20 * 1_048_576;
 /// delete (<https://core.telegram.org/bots/api#deletemessage>).
 const CANNOT_DELETE: &str = "message can't be deleted";
 
+/// Answers that mean the goal is already reached: an edit to the same
+/// content (<https://core.telegram.org/bots/api#editmessagetext>) or a
+/// delete of a message already gone.
+fn already_done(method: &str, body: &Value) -> bool {
+    let description = body["description"].as_str().unwrap_or_default();
+    match method {
+        "editMessageText" => description.contains("message is not modified"),
+        "deleteMessage" => description.contains("message to delete not found"),
+        _ => false,
+    }
+}
+
+/// Removes the bot token from an error's text. Port errors (e.g. reqwest's)
+/// quote the request URL, which holds the token, and the Kernel logs error
+/// texts to `security_event`.
+pub(crate) fn redact(e: Error, token: &str) -> Error {
+    if token.is_empty() {
+        return e;
+    }
+    let clean = |m: String| m.replace(token, "<bot-token>");
+    match e {
+        Error::Platform(m) => Error::Platform(clean(m)),
+        Error::Invalid(m) => Error::Invalid(clean(m)),
+        Error::Db(m) => Error::Db(clean(m)),
+        other => other,
+    }
+}
+
 /// What went wrong in one Bot API call, before it becomes an [`Error`].
 fn error_for(method: &str, status: u16, body: &Value) -> Error {
     let code = body["error_code"]
@@ -53,6 +81,12 @@ impl Api<'_> {
     /// answer without `ok: false` counts as success (`result` is then
     /// `Null` when absent).
     pub(crate) async fn call(&self, method: &str, body: &Value) -> Result<Value> {
+        self.call_raw(method, body)
+            .await
+            .map_err(|e| redact(e, self.token))
+    }
+
+    async fn call_raw(&self, method: &str, body: &Value) -> Result<Value> {
         let req = http::Request::post(format!("{API_BASE}/bot{}/{method}", self.token))
             .header(http::header::CONTENT_TYPE, "application/json")
             .body(body.to_string().into_bytes())
@@ -63,12 +97,21 @@ impl Api<'_> {
         if (200..300).contains(&status) && answer["ok"] != Value::Bool(false) {
             return Ok(answer.get("result").cloned().unwrap_or(Value::Null));
         }
+        if already_done(method, &answer) {
+            return Ok(Value::Null);
+        }
         Err(error_for(method, status, &answer))
     }
 
     /// `getFile`, then the file URL. Refuses a file over [`DOWNLOAD_MAX`]
     /// before and after the download.
     pub(crate) async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
+        self.download_raw(file)
+            .await
+            .map_err(|e| redact(e, self.token))
+    }
+
+    async fn download_raw(&self, file: &IncomingFile) -> Result<Vec<u8>> {
         let too_big = |size: u64| {
             Error::Invalid(format!(
                 "Telegram file is {size} bytes; bots may download at most {DOWNLOAD_MAX} \
@@ -112,7 +155,57 @@ pub(crate) fn message_id(result: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use serde_json::json;
+
+    const TOKEN: &str = "8000000001:AAFsealBayTestTokenNotReal0000000000";
+
+    /// Fails like reqwest does: the error text quotes the request URL.
+    struct Unreachable;
+
+    #[async_trait]
+    impl HttpClient for Unreachable {
+        async fn send(&self, req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>> {
+            Err(Error::Platform(format!(
+                "error sending request for url ({})",
+                req.uri()
+            )))
+        }
+    }
+
+    fn tokenless(e: &Error) -> String {
+        let text = e.to_string();
+        assert!(!text.contains(TOKEN), "token leaked: {text}");
+        assert!(!text.contains("AAFsealBay"), "token leaked: {text}");
+        text
+    }
+
+    #[tokio::test]
+    async fn port_errors_never_carry_the_token() {
+        let api = Api {
+            http: &Unreachable,
+            token: TOKEN,
+        };
+        let e = api.call("sendMessage", &json!({})).await.unwrap_err();
+        let text = tokenless(&e);
+        assert!(text.contains("bot<bot-token>/sendMessage"), "{text}");
+        let file = IncomingFile {
+            platform_file_id: "f".into(),
+            file_name: None,
+            content_type: None,
+            size_bytes: None,
+        };
+        tokenless(&api.download(&file).await.unwrap_err());
+    }
+
+    #[test]
+    fn already_done_answers_are_success() {
+        let same = json!({"ok": false, "error_code": 400, "description": "Bad Request: message is not modified: specified new message content and reply markup are exactly the same"});
+        assert!(already_done("editMessageText", &same));
+        let gone = json!({"ok": false, "error_code": 400, "description": "Bad Request: message to delete not found"});
+        assert!(already_done("deleteMessage", &gone));
+        assert!(!already_done("sendMessage", &gone));
+    }
 
     #[test]
     fn errors_map_to_the_core() {

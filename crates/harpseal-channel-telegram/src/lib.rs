@@ -33,11 +33,12 @@
 #![forbid(unsafe_code)]
 
 mod api;
+mod commands;
+mod config;
 pub mod render;
 pub mod update;
 pub mod web_app;
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -49,6 +50,9 @@ use harpseal::{
 use serde_json::{Value, json};
 
 pub use api::{API_BASE, DOWNLOAD_MAX};
+use commands::Commands;
+pub use commands::command_map;
+pub use config::TelegramConfig;
 pub use update::{CommandMap, SECRET_HEADER};
 
 /// Telegram's Channel kind.
@@ -60,44 +64,6 @@ pub const START_COMMAND: &str = "start";
 /// Its description in the command list.
 pub const START_DESCRIPTION: &str = "เริ่มใช้งาน";
 
-/// Secrets of one Telegram bot. Read from the environment or Worker
-/// secrets, never from TOML.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[non_exhaustive]
-pub struct TelegramConfig {
-    /// Bot token from BotFather.
-    pub bot_token: String,
-    /// Checked against `X-Telegram-Bot-Api-Secret-Token`; give the same
-    /// value as `secret_token` to `setWebhook`.
-    pub webhook_secret: String,
-    /// Web App URL; empty when the Deployment has no Mini App on Telegram.
-    pub web_app_url: String,
-    /// Text of the chat's menu button when it opens the Web App.
-    pub menu_button_text: String,
-}
-
-impl TelegramConfig {
-    /// A configuration; pass an empty `web_app_url` for no Mini App.
-    pub fn new(
-        bot_token: impl Into<String>,
-        webhook_secret: impl Into<String>,
-        web_app_url: impl Into<String>,
-    ) -> Self {
-        Self {
-            bot_token: bot_token.into(),
-            webhook_secret: webhook_secret.into(),
-            web_app_url: web_app_url.into(),
-            menu_button_text: "เปิดแอป".into(),
-        }
-    }
-
-    /// Another text for the Web App menu button.
-    pub fn with_menu_button_text(mut self, text: impl Into<String>) -> Self {
-        self.menu_button_text = text.into();
-        self
-    }
-}
-
 /// Telegram never meters.
 pub fn metering(_: &Delivery) -> Metering {
     Metering::Free
@@ -106,6 +72,7 @@ pub fn metering(_: &Delivery) -> Metering {
 /// One Bot API call: method, JSON body, and the FileStore key to upload as
 /// multipart part "file" when the renderer chose `attach://file`.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Call {
     /// Bot API method, e.g. `sendMessage`.
     pub method: String,
@@ -138,22 +105,6 @@ pub fn calls(to: &ChannelAccountId, rendered: Vec<Value>) -> Vec<Call> {
         .collect()
 }
 
-/// The command map for `menu` (see [`render::commands`]).
-pub fn command_map(menu: &Menu) -> CommandMap {
-    render::commands(menu)
-        .into_iter()
-        .map(|c| (c.command, c.action))
-        .collect()
-}
-
-#[derive(Default)]
-struct Commands {
-    /// From [`TelegramChannel::with_menu`].
-    base: CommandMap,
-    /// From `set_menu`, per chat id.
-    overlay: HashMap<String, CommandMap>,
-}
-
 /// The Telegram Channel. Clones share the command map, so a handle kept
 /// after giving a clone to the Deployment builder can still call
 /// [`TelegramChannel::with_menu`].
@@ -177,8 +128,8 @@ impl TelegramChannel {
     }
 
     /// The Clock that judges how fresh Web App `initData` is (pass the
-    /// Deployment's `services.clock`). Without it, Mini App sessions are
-    /// refused.
+    /// Deployment's `services.clock`). Without it the Mini App Capability
+    /// is absent, even with a Web App URL.
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = Some(clock);
         self
@@ -209,12 +160,16 @@ impl TelegramChannel {
 
     /// The render context for one send.
     pub fn render_cx(&self, locale: &Locale) -> RenderCx {
-        let mini_app_base_url =
-            (!self.cfg.web_app_url.is_empty()).then(|| self.cfg.web_app_url.clone());
+        let mini_app_base_url = self.has_mini_app().then(|| self.cfg.web_app_url.clone());
         RenderCx {
             locale: locale.clone(),
             mini_app_base_url,
         }
+    }
+
+    /// A Web App URL and a Clock: the Mini App can open and be verified.
+    fn has_mini_app(&self) -> bool {
+        !self.cfg.web_app_url.is_empty() && self.clock.is_some()
     }
 
     fn api(&self) -> api::Api<'_> {
@@ -226,7 +181,7 @@ impl TelegramChannel {
 
     /// The menu button: the Web App when configured, else the command list.
     fn menu_button(&self) -> Value {
-        if self.cfg.web_app_url.is_empty() {
+        if !self.has_mini_app() {
             json!({ "type": "commands" })
         } else {
             json!({ "type": "web_app", "text": self.cfg.menu_button_text,
@@ -253,6 +208,9 @@ impl Channel for TelegramChannel {
             // Best effort: a failed answer only leaves the spinner running.
             let body = json!({ "callback_query_id": id });
             let _ = self.api().call("answerCallbackQuery", &body).await;
+        }
+        if let Some(e) = parsed.refused {
+            return Err(e);
         }
         Ok(parsed.event.into_iter().collect())
     }
@@ -313,7 +271,7 @@ impl Channel for TelegramChannel {
         api.call("setMyCommands", &body).await?;
         let body = json!({ "chat_id": chat, "menu_button": button });
         api.call("setChatMenuButton", &body).await?;
-        self.lock().overlay.insert(chat.clone(), map);
+        self.lock().set(chat.clone(), map);
         Ok(())
     }
 
@@ -323,8 +281,12 @@ impl Channel for TelegramChannel {
     fn deleter(&self) -> Option<&dyn DeleteMessage> {
         Some(self)
     }
+    /// Present only with a Web App URL and a Clock
+    /// ([`TelegramChannel::with_clock`]): without the Clock `initData`
+    /// cannot be checked, so the Capability is missing (and `build()`
+    /// refuses Mini App buttons) rather than failing at runtime.
     fn mini_app(&self) -> Option<&dyn MiniApp> {
-        (!self.cfg.web_app_url.is_empty()).then_some(self as &dyn MiniApp)
+        self.has_mini_app().then_some(self as &dyn MiniApp)
     }
 }
 

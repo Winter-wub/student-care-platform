@@ -23,6 +23,13 @@ pub fn channel() -> (TelegramChannel, RecordingHttp) {
     channel_with(TelegramConfig::new(TOKEN, SECRET, ""))
 }
 
+/// A channel with a Web App and a Clock (the Mini App Capability).
+pub fn web_app_channel(cfg: TelegramConfig) -> (TelegramChannel, RecordingHttp) {
+    let (tg, http) = channel_with(cfg);
+    let clock = harpseal_testing::ManualClock::new(harpseal_testing::START_MS);
+    (tg.with_clock(Arc::new(clock)), http)
+}
+
 pub fn channel_with(cfg: TelegramConfig) -> (TelegramChannel, RecordingHttp) {
     let http = RecordingHttp::default();
     (TelegramChannel::new(cfg, Arc::new(http.clone())), http)

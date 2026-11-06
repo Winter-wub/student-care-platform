@@ -132,7 +132,7 @@ async fn over_100_buttons_go_on_follow_ups_and_none_is_dropped() {
 
 #[tokio::test]
 async fn a_mini_app_button_is_a_web_app_or_a_notice() {
-    let (tg, http) = channel_with(TelegramConfig::new(TOKEN, SECRET, WEB_APP));
+    let (tg, http) = web_app_channel(TelegramConfig::new(TOKEN, SECRET, WEB_APP));
     let card = fixtures::news_card();
     tg.send(&chat(), &Delivery::Push, &card, &Locale::th())
         .await
@@ -228,13 +228,13 @@ async fn set_menu_sets_chat_commands_and_the_commands_button() {
 
 #[tokio::test]
 async fn set_menu_uses_the_web_app_button_when_configured() {
-    let cfg = TelegramConfig::new(TOKEN, SECRET, WEB_APP).with_menu_button_text("เปิดแอป");
-    let (tg, http) = channel_with(cfg);
+    let cfg = TelegramConfig::new(TOKEN, SECRET, WEB_APP).with_menu_button_text("Seal Bay");
+    let (tg, http) = web_app_channel(cfg);
     tg.set_menu(&chat(), Some(&news_menu())).await.unwrap();
     let sent = calls(&http);
     assert_eq!(
         sent[1].1["menu_button"],
-        json!({ "type": "web_app", "text": "เปิดแอป", "web_app": { "url": WEB_APP } })
+        json!({ "type": "web_app", "text": "Seal Bay", "web_app": { "url": WEB_APP } })
     );
 }
 
@@ -328,11 +328,19 @@ async fn delete_within_48_hours_or_unsupported() {
 }
 
 #[tokio::test]
-async fn mini_app_only_with_a_web_app_url() {
+async fn mini_app_only_with_a_web_app_url_and_a_clock() {
     let (tg, _) = channel();
     assert!(tg.mini_app().is_none());
     assert!(!tg.capabilities().mini_app);
-    let (tg, _) = channel_with(TelegramConfig::new(TOKEN, SECRET, WEB_APP));
+    // A URL without a Clock is a missing Capability, and renders no
+    // web_app button or menu button.
+    let (tg, http) = channel_with(TelegramConfig::new(TOKEN, SECRET, WEB_APP));
+    assert!(tg.mini_app().is_none());
+    assert!(!tg.capabilities().mini_app);
+    tg.set_menu(&chat(), Some(&news_menu())).await.unwrap();
+    assert_eq!(calls(&http)[1].1["menu_button"]["type"], "commands");
+    let (tg, _) = web_app_channel(TelegramConfig::new(TOKEN, SECRET, WEB_APP));
+    assert!(tg.capabilities().mini_app);
     let app = tg.mini_app().unwrap();
     assert_eq!(app.launch_url("/news/1042"), format!("{WEB_APP}/news/1042"));
 }
@@ -345,9 +353,6 @@ async fn mini_app_sessions_check_init_data_with_the_clock() {
         &user=%7B%22id%22%3A7012345678%2C%22first_name%22%3A%22Karn%22%2C%22language_code%22%3A%22th%22%7D\
         &hash=2e9f10864e5d25e3ed0571951dab659b75948576b076b8d92fc2b059b003b1b1";
     let cfg = TelegramConfig::new(TOKEN, SECRET, WEB_APP);
-    let (tg, _) = channel_with(cfg.clone());
-    let got = tg.mini_app().unwrap().verify_session(init).await;
-    assert!(matches!(got, Err(Error::Platform(_))), "no clock: {got:?}");
     let clock = ManualClock::new(1_793_836_800_000 + 60_000);
     let (tg, _) = channel_with(cfg);
     let tg = tg.with_clock(Arc::new(clock.clone()));
@@ -358,4 +363,22 @@ async fn mini_app_sessions_check_init_data_with_the_clock() {
         app.verify_session(init).await,
         Err(Error::Invalid(_))
     ));
+}
+
+#[tokio::test]
+async fn an_unchanged_edit_and_a_vanished_message_are_done() {
+    let (tg, http) = channel();
+    http.respond_with(400, r#"{"ok":false,"error_code":400,"description":"Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"}"#);
+    let msg = Message::text("รับทราบแล้ว");
+    let id = PlatformMessageId("77".into());
+    let editor = tg.editor().unwrap();
+    editor
+        .edit(&chat(), &id, &msg, &Locale::th())
+        .await
+        .unwrap();
+    http.respond_with(
+        400,
+        r#"{"ok":false,"error_code":400,"description":"Bad Request: message to delete not found"}"#,
+    );
+    tg.deleter().unwrap().delete(&chat(), &id).await.unwrap();
 }
