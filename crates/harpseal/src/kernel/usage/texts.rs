@@ -18,7 +18,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Counts metered Pushes (one per request per recipient) by local day. Sending never stops at the Quota."
     ),
     // {month}
-    ("kernel.usage.this_month", "เดือนนี้ ({month})", "This month ({month})"),
+    (
+        "kernel.usage.this_month",
+        "เดือนนี้ ({month})",
+        "This month ({month})"
+    ),
     // {used} {cap} {percent}
     (
         "kernel.usage.used_of",

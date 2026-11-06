@@ -82,8 +82,16 @@ mod tests {
     fn one_bar_per_day_scaled_to_the_highest() {
         let days: Vec<String> = (1..=30).map(|d| format!("2026-11-{d:02}")).collect();
         let mut totals = vec![Totals::default(); 30];
-        totals[29] = Totals { metered: 30, free: 0, failed: 10 };
-        totals[0] = Totals { metered: 20, free: 5, failed: 0 };
+        totals[29] = Totals {
+            metered: 30,
+            free: 0,
+            failed: 10,
+        };
+        totals[0] = Totals {
+            metered: 20,
+            free: 5,
+            failed: 0,
+        };
         let l = Labels {
             caption: "c".into(),
             table: "t".into(),

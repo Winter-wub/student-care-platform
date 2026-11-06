@@ -234,7 +234,12 @@ mod tests {
     fn a_cap_of_zero_is_no_quota() {
         let q = quotas(0);
         assert_eq!(cap_of(&q, "line"), None);
-        let m = month(&[row("line", "2026-11-01", 5)], &["line".into()], &q, "2026-11");
+        let m = month(
+            &[row("line", "2026-11-01", 5)],
+            &["line".into()],
+            &q,
+            "2026-11",
+        );
         assert_eq!((m[0].cap, m[0].level, m[0].used()), (None, Level::Ok, 5));
         assert_eq!(m[0].percent(), None);
     }
@@ -259,7 +264,14 @@ mod tests {
         ];
         let kinds = ["line".to_string(), "telegram".to_string()];
         let m = month(&rows, &kinds, &quotas(300), "2026-11");
-        assert_eq!(m[0].totals, Totals { metered: 240, free: 2, failed: 4 });
+        assert_eq!(
+            m[0].totals,
+            Totals {
+                metered: 240,
+                free: 2,
+                failed: 4
+            }
+        );
         assert_eq!((m[0].level, m[0].percent()), (Level::Warn, Some(80)));
         assert_eq!((m[1].cap, m[1].level, m[1].used()), (None, Level::Ok, 999));
         assert_eq!(highest(&m), Level::Warn);
@@ -270,10 +282,17 @@ mod tests {
     #[test]
     fn empty_tables() {
         let m = month(&[], &["line".into()], &quotas(300), "2026-11");
-        assert_eq!((m[0].used(), m[0].level, m[0].percent()), (0, Level::Ok, Some(0)));
+        assert_eq!(
+            (m[0].used(), m[0].level, m[0].percent()),
+            (0, Level::Ok, Some(0))
+        );
         assert_eq!(highest(&[]), Level::Ok);
         let days = last_days(NOV_30_2330, BKK, 30);
-        assert!(per_day(&[], "line", &days).iter().all(|t| *t == Totals::default()));
+        assert!(
+            per_day(&[], "line", &days)
+                .iter()
+                .all(|t| *t == Totals::default())
+        );
     }
 
     #[test]
@@ -284,7 +303,9 @@ mod tests {
         assert_eq!(days[0], "2026-11-02");
         assert_eq!(
             last_months("2026-02", 6),
-            ["2026-02", "2026-01", "2025-12", "2025-11", "2025-10", "2025-09"]
+            [
+                "2026-02", "2026-01", "2025-12", "2025-11", "2025-10", "2025-09"
+            ]
         );
         let rows = [row("line", "2026-11-02", 3), row("line", "2026-12-01", 4)];
         let d = per_day(&rows, "line", &days);

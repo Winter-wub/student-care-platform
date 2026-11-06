@@ -24,13 +24,21 @@ async fn a_real_send_lands_on_the_local_day_the_page_reads() {
     h.clock().set_ms(START_MS + 23 * 3_600_000 + 30 * 60_000);
     let to = FakeChannel::account("u1");
     app.deployment()
-        .send(&to, None, &Message::text("ข่าวจากมหาวิทยาลัยอ่าวแมวน้ำ"), &Locale::th())
+        .send(
+            &to,
+            None,
+            &Message::text("ข่าวจากมหาวิทยาลัยอ่าวแมวน้ำ"),
+            &Locale::th(),
+        )
         .await
         .unwrap();
     let day = app
         .query("SELECT day FROM usage_daily WHERE channel = 'fake'")
         .await;
-    assert_eq!(day.get(0, "day").and_then(|v| v.as_text()), Some("2026-11-06"));
+    assert_eq!(
+        day.get(0, "day").and_then(|v| v.as_text()),
+        Some("2026-11-06")
+    );
     let b = signed_in(&h, &app, "officer", "Officer").await;
     let r = b.get("/admin/usage").await;
     assert!(r.body.contains("ใช้ไป 1 จาก 300 (0%)"), "{}", r.body);
@@ -51,12 +59,16 @@ async fn a_send_the_platform_refuses_counts_as_failed() {
         .unwrap();
     assert_eq!(row(&h).await, (1, 0, 0));
     fake.fail_next_batch_at(0);
-    let e = d.send(&to, None, &Message::text("สอง"), &Locale::th()).await;
+    let e = d
+        .send(&to, None, &Message::text("สอง"), &Locale::th())
+        .await;
     assert!(e.is_err());
     assert_eq!(row(&h).await, (1, 0, 1));
     // The platform answers that the Student blocked the bot: failed too.
     fake.set_unreachable(&to, true);
-    let e = d.send(&to, None, &Message::text("สาม"), &Locale::th()).await;
+    let e = d
+        .send(&to, None, &Message::text("สาม"), &Locale::th())
+        .await;
     assert!(matches!(e, Err(Error::Unreachable)), "{e:?}");
     assert_eq!(row(&h).await, (1, 0, 2));
 }
@@ -88,8 +100,14 @@ async fn a_push_skipped_for_a_blocked_account_counts_nowhere() {
     d.send(&to, None, &Message::text("หนึ่ง"), &Locale::th())
         .await
         .unwrap();
-    run(&h, "UPDATE channel_account SET blocked_at = 1 WHERE external_id = 'u1'").await;
-    let e = d.send(&to, None, &Message::text("สอง"), &Locale::th()).await;
+    run(
+        &h,
+        "UPDATE channel_account SET blocked_at = 1 WHERE external_id = 'u1'",
+    )
+    .await;
+    let e = d
+        .send(&to, None, &Message::text("สอง"), &Locale::th())
+        .await;
     assert!(matches!(e, Err(Error::Unreachable)));
     assert_eq!(row(&h).await, (1, 0, 0));
     assert_eq!(h.fake_channel().sent().len(), 1);

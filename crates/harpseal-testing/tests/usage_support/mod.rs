@@ -113,7 +113,9 @@ pub async fn watch(app: &TestApp) {
 
 /// The banner slot's contents in `body`.
 pub fn banner(body: &str) -> &str {
-    let at = body.find("<div id=\"usage-banner\">").expect("a banner slot");
+    let at = body
+        .find("<div id=\"usage-banner\">")
+        .expect("a banner slot");
     let rest = &body[at..];
     let end = rest.find("<main>").expect("main after the banner");
     &rest[..end]

@@ -9,7 +9,9 @@ use usage_support::*;
 /// The `<section>` of Channel `kind` on the page.
 fn card<'a>(body: &'a str, kind: &str) -> &'a str {
     let key = format!("id=\"usage-{kind}\"");
-    let at = body.find(&key).unwrap_or_else(|| panic!("no card for {kind}"));
+    let at = body
+        .find(&key)
+        .unwrap_or_else(|| panic!("no card for {kind}"));
     let rest = &body[at..];
     &rest[..rest.find("</section>").unwrap()]
 }
@@ -27,7 +29,10 @@ async fn shows_this_month_against_the_cap_with_levels() {
         let r = b.get("/admin/usage").await;
         assert_eq!(r.status, 200, "{}", r.body);
         let c = card(&r.body, "fake");
-        assert!(c.contains(&format!("data-level=\"{level}\"")), "{percent}: {c}");
+        assert!(
+            c.contains(&format!("data-level=\"{level}\"")),
+            "{percent}: {c}"
+        );
         assert!(
             c.contains(&format!("ใช้ไป {used} จาก 300 ({percent}%)")),
             "{percent}: {c}"
@@ -105,7 +110,10 @@ async fn a_channel_without_a_quota_shows_usage_and_never_warns() {
     let r = b.get("/admin/usage").await;
     let c = card(&r.body, "fake2");
     assert!(c.contains("ไม่ได้ตั้งโควตา: ใช้ไป 5000"), "{c}");
-    assert!(c.contains("data-level=\"ok\"") && !c.contains("role=\"progressbar\""), "{c}");
+    assert!(
+        c.contains("data-level=\"ok\"") && !c.contains("role=\"progressbar\""),
+        "{c}"
+    );
     assert_eq!(banner(&r.body), "<div id=\"usage-banner\"></div>");
     // Both Channels, in registration order.
     assert!(r.body.find("usage-fake\"").unwrap() < r.body.find("usage-fake2\"").unwrap());
@@ -118,7 +126,13 @@ async fn only_holders_of_the_permission_open_it_and_reads_are_not_audited() {
     let r = viewer.get("/admin/usage").await;
     assert_eq!(r.status, 403);
     assert!(r.body.contains("kernel.usage.view"));
-    assert!(!viewer.get("/admin").await.body.contains("href=\"/admin/usage\""));
+    assert!(
+        !viewer
+            .get("/admin")
+            .await
+            .body
+            .contains("href=\"/admin/usage\"")
+    );
     let officer = signed_in(&h, &app, "officer", "Officer").await;
     let home = officer.get("/admin").await;
     assert!(home.body.contains("href=\"/admin/usage\""));

@@ -44,10 +44,7 @@ pub(crate) const FULL_PATH: &str = "/admin/usage";
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .back_office_page(VIEW, PATH, "kernel.usage.title", 85, get(page::page))
-        .job(
-            JobSpec::scheduled(watch::KIND, watch::SCHEDULE),
-            watch::run,
-        );
+        .job(JobSpec::scheduled(watch::KIND, watch::SCHEDULE), watch::run);
 }
 
 /// One Channel's metered Pushes this calendar month against its Quota.

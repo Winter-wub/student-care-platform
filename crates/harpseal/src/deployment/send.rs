@@ -164,8 +164,7 @@ impl Deployment {
                     None => db,
                 });
             }
-        }
-        else if failed > 0 {
+        } else if failed > 0 {
             // Best effort: the Channel's error is what the caller needs.
             let stmt = self.failed_usage(to.channel.as_str(), failed);
             let _ = self.services.db.execute(stmt).await;

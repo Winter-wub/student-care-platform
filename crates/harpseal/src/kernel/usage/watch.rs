@@ -55,7 +55,11 @@ impl Record {
             pending: j
                 .get("pending")
                 .and_then(Json::as_array)
-                .map(|a| a.iter().filter_map(|e| e.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| e.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default(),
         })
     }
@@ -131,7 +135,10 @@ async fn read(d: &Deployment, key: &str) -> Result<Option<String>> {
         .db
         .query(Statement::new("SELECT value FROM setting WHERE key = ? AND locale = ''").bind(key))
         .await?;
-    Ok(rows.get(0, "value").and_then(Value::as_text).map(String::from))
+    Ok(rows
+        .get(0, "value")
+        .and_then(Value::as_text)
+        .map(String::from))
 }
 
 async fn administrators(d: &Deployment) -> Result<Vec<Admin>> {
@@ -197,19 +204,17 @@ async fn claim(
     .bind(s.now_ms())
     .bind(id.as_str());
     s.db.batch(vec![audit, record]).await?;
-    let won = s
-        .db
-        .query(Statement::new("SELECT 1 AS won FROM audit_log WHERE id = ?").bind(id))
-        .await?;
+    let won =
+        s.db.query(Statement::new("SELECT 1 AS won FROM audit_log WHERE id = ?").bind(id))
+            .await?;
     Ok(!won.rows.is_empty())
 }
 
 /// Replaces the record if it still reads `old`.
 async fn swap(d: &Deployment, key: &str, old: &str, new: &str) -> Result<bool> {
     let s = d.services();
-    let done = s
-        .db
-        .execute(
+    let done =
+        s.db.execute(
             Statement::new(
                 "UPDATE setting SET value = ?, updated_at = ? \
                  WHERE key = ? AND locale = '' AND value = ?",
@@ -240,8 +245,7 @@ async fn put_back(d: &Deployment, key: &str, sent: Record, failed: Vec<String>) 
 /// that failed.
 async fn send(d: &Deployment, m: &ChannelMonth, rec: &Record, to: &[Admin]) -> Vec<String> {
     let s = d.services();
-    let Ok(texts) = Texts::load(s, d.catalog_arc(), d.config().default_locale.clone()).await
-    else {
+    let Ok(texts) = Texts::load(s, d.catalog_arc(), d.config().default_locale.clone()).await else {
         return to.iter().map(|a| a.email.clone()).collect();
     };
     let c = d.config();

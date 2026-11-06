@@ -16,7 +16,11 @@ async fn people(h: &Harness) {
     staff(h, "admin1", &["Administrator"]).await;
     staff(h, "admin2", &["Administrator", "Officer"]).await;
     let gone = staff(h, "gone", &["Administrator"]).await;
-    run(h, &format!("UPDATE staff SET status = 'disabled' WHERE id = '{gone}'")).await;
+    run(
+        h,
+        &format!("UPDATE staff SET status = 'disabled' WHERE id = '{gone}'"),
+    )
+    .await;
     staff(h, "officer", &["Officer"]).await;
 }
 
@@ -39,7 +43,10 @@ async fn one_email_per_administrator_at_warn_then_at_over() {
     assert_eq!(recipients(&h), [email_of("admin1"), email_of("admin2")]);
     let e = h.email().last().unwrap();
     assert_eq!(e.subject, SUBJECT_WARN);
-    assert!(e.text.contains("ใช้ Push ที่คิดค่าบริการไปแล้ว 240 จาก 300 ครั้ง (80%) ในเดือน 2026-11"));
+    assert!(
+        e.text
+            .contains("ใช้ Push ที่คิดค่าบริการไปแล้ว 240 จาก 300 ครั้ง (80%) ในเดือน 2026-11")
+    );
     assert!(e.text.contains("/admin/usage"));
     watch(&app).await;
     use_percent(&h, 95).await;
@@ -68,10 +75,21 @@ async fn one_email_per_administrator_at_warn_then_at_over() {
         )
         .await;
     assert_eq!(rows.len(), 2);
-    let text = |i, c| rows.get(i, c).and_then(|v| v.as_text()).unwrap().to_string();
+    let text = |i, c| {
+        rows.get(i, c)
+            .and_then(|v| v.as_text())
+            .unwrap()
+            .to_string()
+    };
     let int = |i, c| rows.get(i, c).and_then(|v| v.as_i64()).unwrap();
-    assert_eq!((text(0, "actor_kind"), text(0, "target_id")), ("system".into(), "fake".into()));
-    assert_eq!((text(0, "level"), int(0, "used"), int(0, "cap"), int(0, "n")), ("warn".into(), 240, 300, 2));
+    assert_eq!(
+        (text(0, "actor_kind"), text(0, "target_id")),
+        ("system".into(), "fake".into())
+    );
+    assert_eq!(
+        (text(0, "level"), int(0, "used"), int(0, "cap"), int(0, "n")),
+        ("warn".into(), 240, 300, 2)
+    );
     assert_eq!((text(1, "level"), int(1, "used")), ("over".into(), 300));
 }
 
@@ -100,7 +118,14 @@ async fn runs_at_the_same_time_send_once() {
     let (a, b) = tokio::join!(d.tick(at), d.tick(at));
     assert_eq!(a.unwrap().scheduled + b.unwrap().scheduled, 1);
     assert_eq!(h.emails().len(), 4);
-    assert_eq!(int(&h, "SELECT count(*) FROM audit_log WHERE action = 'usage.notify'").await, 2);
+    assert_eq!(
+        int(
+            &h,
+            "SELECT count(*) FROM audit_log WHERE action = 'usage.notify'"
+        )
+        .await,
+        2
+    );
 }
 
 #[tokio::test]
