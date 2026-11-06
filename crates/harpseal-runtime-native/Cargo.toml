@@ -1,0 +1,17 @@
+[package]
+name = "harpseal-runtime-native"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+harpseal.workspace = true
+async-trait.workspace = true
+axum = { version = "0.8", features = ["tokio", "http1"] }
+tokio.workspace = true
+rusqlite.workspace = true
+getrandom.workspace = true
+http.workspace = true

@@ -1,0 +1,17 @@
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.latest",
+            "text": "ดูประกาศล่าสุด"
+          }
+        ]
+      ]
+    },
+    "text": "<b>ผูกบัญชีเรียบร้อย</b>\nสวัสดีคุณสมหญิง (รหัส 65012345) ตอนนี้คุณจะได้รับประกาศและใช้เมนูทั้งหมดได้แล้ว"
+  }
+]

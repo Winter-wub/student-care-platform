@@ -1,0 +1,24 @@
+{
+  "setChatMenuButton": {
+    "menu_button": {
+      "type": "commands"
+    },
+    "method": "setChatMenuButton"
+  },
+  "setMyCommands": {
+    "commands": [
+      {
+        "command": "link_start",
+        "description": "ผูกบัญชีนักศึกษา"
+      },
+      {
+        "command": "inbox_open",
+        "description": "ติดต่อเจ้าหน้าที่"
+      }
+    ],
+    "method": "setMyCommands",
+    "scope": {
+      "type": "chat"
+    }
+  }
+}

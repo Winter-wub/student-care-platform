@@ -1,0 +1,22 @@
+[
+  {
+    "method": "sendMessage",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "link.revoke.yes",
+            "text": "ยืนยัน"
+          }
+        ],
+        [
+          {
+            "callback_data": "link.revoke.no",
+            "text": "ยกเลิก"
+          }
+        ]
+      ]
+    },
+    "text": "ยืนยันการยกเลิกการเชื่อมต่อ?"
+  }
+]

@@ -1,0 +1,347 @@
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2001",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2001"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>เปิดลงทะเบียนเรียนภาคฤดูร้อน #1</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2002",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2002"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ประกาศผลทุนการศึกษาประจำปี #2</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2003",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2003"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>กำหนดการสอบปลายภาค #3</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2004",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2004"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>รับสมัครนักศึกษาช่วยงานห้องสมุด #4</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2005",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2005"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ปรับเวลารถรับส่งภายในมหาวิทยาลัย #5</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2006",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2006"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>เปิดลงทะเบียนเรียนภาคฤดูร้อน #6</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2007",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2007"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ประกาศผลทุนการศึกษาประจำปี #7</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2008",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2008"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>กำหนดการสอบปลายภาค #8</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2009",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2009"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>รับสมัครนักศึกษาช่วยงานห้องสมุด #9</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2010",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2010"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ปรับเวลารถรับส่งภายในมหาวิทยาลัย #10</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2011",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2011"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>เปิดลงทะเบียนเรียนภาคฤดูร้อน #11</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2012",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2012"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ประกาศผลทุนการศึกษาประจำปี #12</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2013",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2013"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>กำหนดการสอบปลายภาค #13</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2014",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2014"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>รับสมัครนักศึกษาช่วยงานห้องสมุด #14</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  },
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "news.ack.2015",
+            "text": "รับทราบ"
+          }
+        ],
+        [
+          {
+            "text": "เปิดดูรายละเอียด",
+            "web_app": {
+              "url": "https://app.sealbay.example/tg/news/2015"
+            }
+          }
+        ]
+      ]
+    },
+    "text": "<b>ปรับเวลารถรับส่งภายในมหาวิทยาลัย #15</b>\nรายละเอียดย่อของข่าว อ่านฉบับเต็มได้จากปุ่มด้านล่าง"
+  }
+]

@@ -1,0 +1,4 @@
+/target
+/deployments/example/worker/build
+*.sqlite3
+/deployments/example/worker/.wrangler

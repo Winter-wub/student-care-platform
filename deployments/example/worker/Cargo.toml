@@ -1,0 +1,24 @@
+[package]
+name = "example-worker"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+example-deployment.workspace = true
+harpseal-runtime-cloudflare.workspace = true
+harpseal-channel-line.workspace = true
+harpseal-channel-telegram.workspace = true
+worker.workspace = true
+axum.workspace = true
+tower-service = "0.3"
+
+# worker-build runs `wasm-opt -O` by default; -Oz measured smaller (issue #5).
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-exception-handling", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]

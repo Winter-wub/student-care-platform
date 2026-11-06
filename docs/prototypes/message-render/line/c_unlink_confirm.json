@@ -1,0 +1,28 @@
+[
+  {
+    "quickReply": {
+      "items": [
+        {
+          "action": {
+            "data": "link.revoke.yes",
+            "displayText": "ยืนยัน",
+            "label": "ยืนยัน",
+            "type": "postback"
+          },
+          "type": "action"
+        },
+        {
+          "action": {
+            "data": "link.revoke.no",
+            "displayText": "ยกเลิก",
+            "label": "ยกเลิก",
+            "type": "postback"
+          },
+          "type": "action"
+        }
+      ]
+    },
+    "text": "ยืนยันการยกเลิกการเชื่อมต่อ?",
+    "type": "text"
+  }
+]

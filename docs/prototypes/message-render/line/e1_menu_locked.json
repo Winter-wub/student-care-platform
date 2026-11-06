@@ -1,0 +1,39 @@
+{
+  "areas": [
+    {
+      "action": {
+        "data": "link.start",
+        "displayText": "ผูกบัญชีนักศึกษา",
+        "label": "ผูกบัญชีนักศึกษา",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "action": {
+        "data": "inbox.open",
+        "displayText": "ติดต่อเจ้าหน้าที่",
+        "label": "ติดต่อเจ้าหน้าที่",
+        "type": "postback"
+      },
+      "bounds": {
+        "height": 843,
+        "width": 1250,
+        "x": 1250,
+        "y": 0
+      }
+    }
+  ],
+  "chatBarText": "เมนู",
+  "name": "harpseal-2",
+  "selected": false,
+  "size": {
+    "height": 843,
+    "width": 2500
+  }
+}
