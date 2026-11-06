@@ -59,6 +59,10 @@ pub struct LineConfig {
     pub access_token: String,
     /// LIFF app id; empty when the Deployment has no Mini App on LINE.
     pub liff_id: String,
+    /// Channel id of the LINE Login channel that owns the LIFF app, sent
+    /// as `client_id` when verifying ID tokens. Empty: the part of
+    /// `liff_id` before `-` (LIFF ids are `{loginChannelId}-{suffix}`).
+    pub login_channel_id: String,
     /// The locked Menu (before a Link), shown by `set_menu(None)`. Empty:
     /// `set_menu(None)` unlinks, showing the account's default rich menu.
     pub locked_menu: Menu,
@@ -92,6 +96,12 @@ impl LineConfig {
         self
     }
 
+    /// The LINE Login channel id, when it is not the `liff_id` prefix.
+    pub fn with_login_channel_id(mut self, id: impl Into<String>) -> Self {
+        self.login_channel_id = id.into();
+        self
+    }
+
     /// The locked Menu.
     pub fn with_locked_menu(mut self, menu: Menu) -> Self {
         self.locked_menu = menu;
@@ -105,6 +115,7 @@ impl core::fmt::Debug for LineConfig {
             .field("channel_secret", &"<redacted>")
             .field("access_token", &"<redacted>")
             .field("liff_id", &self.liff_id)
+            .field("login_channel_id", &self.login_channel_id)
             .field("locked_menu", &self.locked_menu)
             .field("locked_menu_image", &self.locked_menu_image.len())
             .field("unlocked_menu_image", &self.unlocked_menu_image.len())
@@ -148,21 +159,32 @@ impl Channel for LineChannel {
         signature::verify(&self.cfg.channel_secret, &req.headers, &req.body)?;
         webhook::parse(&req.body)
     }
-    /// From the content API, or straight from the provider's URL for
-    /// content LINE does not host
+    /// From the content API only
     /// (<https://developers.line.biz/en/reference/messaging-api/#get-content>).
+    /// Any status but 200 is an error: video and audio answer otherwise
+    /// while LINE is still preparing them. Content held by an external
+    /// provider is refused; the adapter never fetches a URL a sender chose.
     async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
         let id = &file.platform_file_id;
-        let answer = if id.starts_with(webhook::EXTERNAL) {
-            let req = http::Request::get(id.as_str())
-                .body(Vec::new())
-                .map_err(|e| Error::Invalid(format!("file URL: {e}")))?;
-            api::answer(self.http.send(req).await?)
-        } else {
-            let url = format!("{API_DATA}/v2/bot/message/{}/content", api::path_id(id)?);
-            self.call(Method::GET, &url, None, Vec::new()).await?
-        };
-        answer.map_err(|f| f.into_error(false))
+        if id.starts_with(webhook::EXTERNAL) {
+            return Err(Error::Platform(format!(
+                "LINE content {id} is held by an external provider; only the content API is used"
+            )));
+        }
+        let url = format!("{API_DATA}/v2/bot/message/{}/content", api::path_id(id)?);
+        let resp = self
+            .send_raw(Method::GET, &url, None, Vec::new(), true)
+            .await?;
+        match resp.status().as_u16() {
+            200 => Ok(resp.into_body()),
+            s if (201..300).contains(&s) => Err(Error::Platform(format!(
+                "LINE content {id} is not ready yet ({s})"
+            ))),
+            _ => Err(api::answer(resp).err().map_or_else(
+                || Error::Platform("LINE content download failed".into()),
+                |f| f.into_error(false),
+            )),
+        }
     }
     async fn send(
         &self,

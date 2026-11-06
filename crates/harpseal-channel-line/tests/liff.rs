@@ -58,6 +58,10 @@ async fn a_valid_id_token_resolves_to_the_line_user() {
         reqs[0].headers["content-type"],
         "application/x-www-form-urlencoded"
     );
+    assert!(
+        reqs[0].headers.get("authorization").is_none(),
+        "the Messaging API token never goes to LINE Login"
+    );
     assert_eq!(
         reqs[0].body_text(),
         "id_token=eyJhbGciOi.eyJpc3Mi.c2ln&client_id=2000000000"
@@ -90,4 +94,27 @@ async fn refused_or_foreign_tokens_are_bad_signatures() {
         2,
         "an empty token is refused without a call"
     );
+}
+
+#[tokio::test]
+async fn the_login_channel_id_can_be_set_and_paths_get_a_slash() {
+    let api = LineApi::default();
+    let cfg = LineConfig::new(SECRET, TOKEN, LIFF).with_login_channel_id("2000000099");
+    let ch = LineChannel::new(cfg, Arc::new(api.clone()));
+    let app = ch.mini_app().unwrap();
+    assert_eq!(
+        app.launch_url("news"),
+        "https://liff.line.me/2000000000-SealBay0/news"
+    );
+    assert_eq!(
+        app.launch_url("?p=1"),
+        "https://liff.line.me/2000000000-SealBay0?p=1"
+    );
+    assert_eq!(
+        app.launch_url(""),
+        "https://liff.line.me/2000000000-SealBay0"
+    );
+    api.http().respond_with(200, claims("2000000099"));
+    app.verify_session("t").await.unwrap();
+    assert!(api.take()[0].body_text().ends_with("client_id=2000000099"));
 }

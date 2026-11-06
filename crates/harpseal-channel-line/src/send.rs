@@ -26,41 +26,68 @@ pub const MULTICAST_MAX: usize = 500;
 
 /// One rendered object and the index of the Message it came from.
 #[derive(Debug, Clone)]
-pub struct Part {
+pub(crate) struct Part {
     /// Index of the source Message in the batch.
-    pub source: usize,
+    pub(crate) source: usize,
     /// The LINE message object.
-    pub object: Value,
+    pub(crate) object: Value,
 }
 
 /// One planned request: `reply` spends the token, otherwise a Push.
 #[derive(Debug, Clone)]
-pub struct Planned {
+pub(crate) struct Planned {
     /// The reply token, `None` for a Push.
-    pub reply: Option<String>,
+    pub(crate) reply: Option<String>,
     /// Range into the parts.
-    pub parts: std::ops::Range<usize>,
+    pub(crate) parts: std::ops::Range<usize>,
 }
 
-/// Renders `msgs` in order, stopping at the first Attachment (LINE has no
-/// SendAttachment Capability): returns the parts and how many Messages
-/// were rendered.
-pub fn render_batch(ch: &LineChannel, msgs: &[Message], locale: &Locale) -> (Vec<Part>, usize) {
+/// What [`render_batch`] produced.
+pub(crate) struct Rendered {
+    pub(crate) parts: Vec<Part>,
+    /// Messages rendered, in order, before `stop`.
+    pub(crate) messages: usize,
+    /// Why rendering stopped early: an Attachment (LINE has no
+    /// SendAttachment Capability) or a Message that renders to nothing
+    /// (e.g. an empty CardList), which must not get a receipt.
+    pub(crate) stop: Option<Error>,
+}
+
+pub(crate) fn render_batch(ch: &LineChannel, msgs: &[Message], locale: &Locale) -> Rendered {
     let cx = ch.render_cx(locale);
     let mut parts = Vec::new();
     for (source, m) in msgs.iter().enumerate() {
+        let stop = |e| Rendered {
+            parts: Vec::new(),
+            messages: source,
+            stop: Some(e),
+        };
         if matches!(m, Message::Attachment(_)) {
-            return (parts, source);
+            return Rendered {
+                parts,
+                ..stop(Error::Unsupported(Capability::SendAttachment))
+            };
         }
         let objects = render::message(m, &cx);
+        if objects.is_empty() {
+            let e = Error::Invalid(format!(
+                "a {} that LINE cannot show (nothing to send)",
+                m.kind()
+            ));
+            return Rendered { parts, ..stop(e) };
+        }
         parts.extend(objects.into_iter().map(|object| Part { source, object }));
     }
-    (parts, msgs.len())
+    Rendered {
+        parts,
+        messages: msgs.len(),
+        stop: None,
+    }
 }
 
 /// Packs `n` objects: the first 5 into the reply when there is a token,
 /// the rest into Pushes of 5.
-pub fn plan(n: usize, reply: Option<&str>) -> Vec<Planned> {
+pub(crate) fn plan(n: usize, reply: Option<&str>) -> Vec<Planned> {
     let mut out = Vec::new();
     let mut start = 0;
     if let Some(t) = reply.filter(|_| n > 0) {
@@ -97,8 +124,12 @@ impl LineChannel {
         msgs: &[Message],
         locale: &Locale,
     ) -> BatchReceipt {
-        let (parts, rendered) = render_batch(self, msgs, locale);
-        let mut receipts = vec![SendReceipt::new(None, Metering::Free, false); rendered];
+        let Rendered {
+            parts,
+            messages,
+            stop,
+        } = render_batch(self, msgs, locale);
+        let mut receipts = vec![SendReceipt::new(None, Metering::Free, false); messages];
         let token = d.reply_token().map(|t| t.token.as_str());
         for req in plan(parts.len(), token) {
             let chunk = &parts[req.parts.clone()];
@@ -137,10 +168,10 @@ impl LineChannel {
                 }
             }
         }
-        if rendered < msgs.len() {
-            return BatchReceipt::partial(receipts, Error::Unsupported(Capability::SendAttachment));
+        match stop {
+            Some(e) => BatchReceipt::partial(receipts, e),
+            None => BatchReceipt::complete(receipts),
         }
-        BatchReceipt::complete(receipts)
     }
 
     async fn reply_call(
@@ -202,7 +233,10 @@ impl Multicast for LineChannel {
                 a.channel
             )));
         }
-        let (parts, _) = render_batch(self, msgs, locale);
+        let Rendered { parts, stop, .. } = render_batch(self, msgs, locale);
+        if let Some(e) = stop {
+            return Err(e);
+        }
         let requests = plan(parts.len(), None);
         let url = format!("{API}/v2/bot/message/multicast");
         for group in to.chunks(MULTICAST_MAX) {

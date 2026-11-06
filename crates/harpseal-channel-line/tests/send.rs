@@ -147,8 +147,10 @@ async fn a_403_on_push_is_unreachable_and_a_429_is_rate_limited() {
         .await;
     assert!(matches!(blocked, Err(Error::Unreachable)), "{blocked:?}");
     let (ch, api) = channel();
-    api.http()
-        .respond_with(429, r#"{"message":"You have reached your monthly limit."}"#);
+    api.http().respond_with(
+        429,
+        r#"{"message":"The API rate limit has been exceeded. Try again later."}"#,
+    );
     let limited = ch
         .send(&to(), &Delivery::Push, &Message::text("x"), &Locale::th())
         .await;
@@ -158,6 +160,20 @@ async fn a_403_on_push_is_unreachable_and_a_429_is_rate_limited() {
             retry_after_secs: 60
         })
     ));
+}
+
+#[tokio::test]
+async fn a_429_for_the_monthly_quota_is_a_platform_error() {
+    let (ch, api) = channel();
+    api.http()
+        .respond_with(429, r#"{"message":"You have reached your monthly limit."}"#);
+    let got = ch
+        .send(&to(), &Delivery::Push, &Message::text("x"), &Locale::th())
+        .await;
+    assert!(
+        matches!(got, Err(Error::Platform(ref m)) if m.contains("monthly")),
+        "{got:?}"
+    );
 }
 
 #[tokio::test]
@@ -293,21 +309,51 @@ async fn files_download_from_the_content_api() {
         format!("Bearer {TOKEN}").as_str()
     );
 
-    let external = IncomingFile {
-        platform_file_id: "https://img.sealbay.example/a.jpg".into(),
-        ..file.clone()
-    };
-    ch.download(&external).await.unwrap();
-    let reqs = api.take();
-    assert_eq!(reqs[0].uri, "https://img.sealbay.example/a.jpg");
-    assert!(
-        reqs[0].headers.get("authorization").is_none(),
-        "no token to third parties"
-    );
+    assert!(reqs[0].headers["authorization"].is_sensitive());
 
-    let bad = IncomingFile {
-        platform_file_id: "../richmenu".into(),
-        ..file
-    };
-    assert!(matches!(ch.download(&bad).await, Err(Error::Invalid(_))));
+    // Video still transcoding: LINE answers 202, which is not the file.
+    api.http().respond_with(202, Vec::new());
+    let got = ch.download(&file).await;
+    assert!(
+        matches!(got, Err(Error::Platform(ref m)) if m.contains("not ready")),
+        "{got:?}"
+    );
+    api.take();
+
+    for id in [
+        "external:43",
+        "https://169.254.169.254/latest/meta-data",
+        "../richmenu",
+    ] {
+        let f = IncomingFile {
+            platform_file_id: id.into(),
+            ..file.clone()
+        };
+        assert!(ch.download(&f).await.is_err(), "{id}");
+    }
+    assert!(
+        api.take().is_empty(),
+        "no request for a URL the sender chose"
+    );
+}
+
+#[tokio::test]
+async fn a_message_that_renders_to_nothing_gets_no_receipt() {
+    let (ch, api) = channel();
+    let empty = Message::CardList(harpseal::CardList(Vec::new()));
+    let out = ch
+        .send_batch(
+            &to(),
+            &Delivery::Push,
+            &[Message::text("ก่อน"), empty, Message::text("หลัง")],
+            &Locale::th(),
+        )
+        .await;
+    assert_eq!(out.receipts.len(), 1, "only the text before it");
+    assert!(
+        matches!(out.error, Some(Error::Invalid(_))),
+        "{:?}",
+        out.error
+    );
+    assert_eq!(api.take().len(), 1);
 }

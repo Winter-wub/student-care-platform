@@ -4,7 +4,8 @@
 //! `POST /oauth2/v2.1/verify`
 //! (<https://developers.line.biz/en/reference/line-login/#verify-id-token>)
 //! against the LINE Login channel that owns the LIFF app, whose channel id
-//! is the part of the LIFF id before `-`.
+//! is [`crate::LineConfig::login_channel_id`] (by default the part of the
+//! LIFF id before `-`).
 
 use async_trait::async_trait;
 use harpseal::{ChannelAccountId, Error, MiniApp, Result};
@@ -17,13 +18,24 @@ use crate::{KIND, LineChannel};
 pub const ISSUER: &str = "https://access.line.me";
 
 impl LineChannel {
+    /// `path` is appended to the LIFF URL; one that starts with neither
+    /// `/` nor `?` gets a `/` first.
     pub(crate) fn liff_url(&self, path: &str) -> String {
-        format!("https://liff.line.me/{}{path}", self.cfg.liff_id)
+        let sep = if path.is_empty() || path.starts_with(['/', '?']) {
+            ""
+        } else {
+            "/"
+        };
+        format!("https://liff.line.me/{}{sep}{path}", self.cfg.liff_id)
     }
 
     /// The LINE Login channel id of the LIFF app.
     fn login_channel_id(&self) -> &str {
-        self.cfg.liff_id.split('-').next().unwrap_or_default()
+        if self.cfg.login_channel_id.is_empty() {
+            self.cfg.liff_id.split('-').next().unwrap_or_default()
+        } else {
+            &self.cfg.login_channel_id
+        }
     }
 }
 
@@ -56,8 +68,11 @@ impl MiniApp for LineChannel {
         let body = format!("id_token={}&client_id={}", form(id_token), form(client));
         let url = format!("{API}/oauth2/v2.1/verify");
         let ct = Some("application/x-www-form-urlencoded");
-        let got = self.call(Method::POST, &url, ct, body.into_bytes()).await?;
-        let claims = match got {
+        // LINE Login endpoint: no Messaging API token.
+        let resp = self
+            .send_raw(Method::POST, &url, ct, body.into_bytes(), false)
+            .await?;
+        let claims = match crate::api::answer(resp) {
             Ok(b) => parse(&b),
             Err(f) if f.status == 400 || f.status == 401 => return Err(Error::BadSignature),
             Err(f) => return Err(f.into_error(false)),

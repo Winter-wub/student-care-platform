@@ -32,6 +32,10 @@ impl Failure {
     /// never added it) and becomes `Error::Unreachable`.
     pub(crate) fn into_error(self, to_user: bool) -> Error {
         match self.status {
+            429 if self.monthly_limit() => Error::Platform(format!(
+                "LINE monthly message quota used up (429): {}",
+                self.message
+            )),
             429 => Error::RateLimited {
                 retry_after_secs: self.retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS),
             },
@@ -39,6 +43,14 @@ impl Failure {
             401 => Error::Platform("LINE refused the channel access token (401)".into()),
             s => Error::Platform(format!("LINE answered {s}: {}", self.message)),
         }
+    }
+
+    /// LINE answers 429 both for rate limits and for a used-up monthly
+    /// message quota ("You have reached your monthly limit."); waiting
+    /// seconds does not help the latter
+    /// (<https://developers.line.biz/en/reference/messaging-api/#status-codes>).
+    fn monthly_limit(&self) -> bool {
+        self.message.to_ascii_lowercase().contains("monthly limit")
     }
 
     /// LINE refused the reply token (expired or already used).
@@ -70,18 +82,37 @@ impl LineChannel {
         content_type: Option<&str>,
         body: Vec<u8>,
     ) -> Result<Answer> {
-        let mut req = http::Request::builder().method(method).uri(url).header(
-            header::AUTHORIZATION,
-            format!("Bearer {}", self.cfg.access_token),
-        );
+        let resp = self.send_raw(method, url, content_type, body, true).await?;
+        Ok(answer(resp))
+    }
+
+    /// One call, with the channel access token only when `authorised`
+    /// (never to LINE Login endpoints). The token header is marked
+    /// sensitive so HTTP clients do not log it.
+    pub(crate) async fn send_raw(
+        &self,
+        method: Method,
+        url: &str,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+        authorised: bool,
+    ) -> Result<http::Response<Vec<u8>>> {
+        let mut req = http::Request::builder().method(method).uri(url);
+        if authorised {
+            let mut v = header::HeaderValue::from_str(&format!("Bearer {}", self.cfg.access_token))
+                .map_err(|_| {
+                    Error::Invalid("the LINE access token is not a header value".into())
+                })?;
+            v.set_sensitive(true);
+            req = req.header(header::AUTHORIZATION, v);
+        }
         if let Some(ct) = content_type {
             req = req.header(header::CONTENT_TYPE, ct);
         }
         let req = req
             .body(body)
             .map_err(|e| Error::Platform(format!("LINE request: {e}")))?;
-        let resp = self.http.send(req).await?;
-        Ok(answer(resp))
+        self.http.send(req).await
     }
 
     /// `POST url` with a JSON body; the answer parsed (`{}` when empty).

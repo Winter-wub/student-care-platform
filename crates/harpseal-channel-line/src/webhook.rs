@@ -5,7 +5,7 @@
 //! | LINE event | Inbound |
 //! |---|---|
 //! | `message` text | `Text` |
-//! | `message` image / video / audio / file | `File` (content id, or the external URL) |
+//! | `message` image / video / audio / file | `File` (content id; `external:<id>` for content LINE does not host) |
 //! | `postback` | `Action` (`data` = ActionId) |
 //! | `follow` | `Follow`, or `Unblocked` when `follow.isUnblocked` is true |
 //! | `unfollow` | `Blocked` |
@@ -15,8 +15,11 @@
 //! (<https://developers.line.biz/en/reference/messaging-api/#follow-event>),
 //! which becomes `Unblocked`; the Kernel treats any Inbound from an
 //! unreachable account as active again anyway. Skipped (no Inbound):
-//! events in `standby` mode, from groups or rooms, and every other type
-//! (sticker, location, join, beacon, unsend, ...).
+//! events in `standby` mode, from groups or rooms, every other type
+//! (sticker, location, join, beacon, unsend, ...), and events LINE should
+//! never send (not an object, a postback whose `data` is not a valid
+//! ActionId): one bad event never drops the others in the same call, and
+//! never makes LINE redeliver the whole body.
 
 use harpseal::{
     ActionId, ChannelAccountId, Error, Inbound, IncomingFile, ReplyToken, Result, Timestamp,
@@ -28,16 +31,20 @@ use crate::KIND;
 /// How long a reply token is taken to be usable after the event's
 /// `timestamp`: LINE says to reply within one minute
 /// (<https://developers.line.biz/en/reference/messaging-api/#send-reply-message>).
-/// A spent or late token is caught at send time and becomes a Push.
+/// A spent or late token is caught at send time and becomes a Push. An
+/// event without a `timestamp` (LINE always sends one) gets a token with
+/// no known expiry: the Core replies, and if LINE refuses the token the
+/// adapter sends the same objects by Push.
 pub const REPLY_TOKEN_TTL_MS: i64 = 60_000;
 
-/// Prefix of an [`IncomingFile::platform_file_id`] that is a URL: content
-/// from an external provider is not on LINE's content API.
-pub(crate) const EXTERNAL: &str = "https://";
+/// Prefix of an [`IncomingFile::platform_file_id`] whose content is held
+/// by an external provider (`contentProvider.type = external`), not on
+/// LINE's content API: `download` refuses it rather than fetch a URL the
+/// sender chose.
+pub(crate) const EXTERNAL: &str = "external:";
 
-/// Parses a verified body. A body that is not a webhook (no `events`
-/// array) or an event LINE should never send (a postback whose `data` is
-/// not a valid ActionId) is `Error::Invalid`.
+/// Parses a verified body. Only a body that is not a webhook (not JSON, no
+/// `events` array) is `Error::Invalid`; bad events are skipped.
 pub(crate) fn parse(body: &[u8]) -> Result<Vec<Inbound>> {
     let v: Value = serde_json::from_slice(body)
         .map_err(|e| Error::Invalid(format!("LINE webhook body: {e}")))?;
@@ -45,24 +52,20 @@ pub(crate) fn parse(body: &[u8]) -> Result<Vec<Inbound>> {
         .as_array()
         .ok_or_else(|| Error::Invalid("LINE webhook body without `events`".into()))?;
     let mut out = Vec::with_capacity(events.len());
-    for ev in events {
-        if let Some(i) = event(ev)? {
-            out.push(i);
-        }
-    }
+    out.extend(events.iter().filter_map(event));
     Ok(out)
 }
 
-fn event(ev: &Value) -> Result<Option<Inbound>> {
+fn event(ev: &Value) -> Option<Inbound> {
     if !ev.is_object() {
-        return Err(Error::Invalid("LINE webhook event is not an object".into()));
+        return None;
     }
     let user = ev["source"]["userId"].as_str().filter(|u| !u.is_empty());
     let (Some(user), "user") = (user, ev["source"]["type"].as_str().unwrap_or("")) else {
-        return Ok(None);
+        return None;
     };
     if ev["mode"].as_str() == Some("standby") {
-        return Ok(None);
+        return None;
     }
     let from = ChannelAccountId::new(KIND, user);
     let reply = ev["replyToken"]
@@ -70,10 +73,11 @@ fn event(ev: &Value) -> Result<Option<Inbound>> {
         .filter(|t| !t.is_empty())
         .map(|t| ReplyToken {
             token: t.to_string(),
-            expires_at: Timestamp(ev["timestamp"].as_i64().unwrap_or(0))
-                .plus_ms(REPLY_TOKEN_TTL_MS),
+            expires_at: ev["timestamp"].as_i64().map_or(Timestamp(i64::MAX), |t| {
+                Timestamp(t).plus_ms(REPLY_TOKEN_TTL_MS)
+            }),
         });
-    Ok(match ev["type"].as_str().unwrap_or("") {
+    match ev["type"].as_str().unwrap_or("") {
         "message" => message(from, &ev["message"], reply),
         "postback" => Some(Inbound::Action {
             from,
@@ -86,14 +90,12 @@ fn event(ev: &Value) -> Result<Option<Inbound>> {
         "follow" => Some(Inbound::Follow { from, reply }),
         "unfollow" => Some(Inbound::Blocked { from }),
         _ => None,
-    })
+    }
 }
 
-fn postback(p: &Value) -> Result<ActionId> {
-    let data = p["data"]
-        .as_str()
-        .ok_or_else(|| Error::Invalid("LINE postback without `data`".into()))?;
-    ActionId::new(data)
+/// `data` as an ActionId; `None` when missing or not 1..=64 bytes.
+fn postback(p: &Value) -> Option<ActionId> {
+    ActionId::new(p["data"].as_str()?).ok()
 }
 
 fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Option<Inbound> {
@@ -105,13 +107,14 @@ fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Opti
     if !matches!(kind, "image" | "video" | "audio" | "file") {
         return None;
     }
-    let provider = &m["contentProvider"];
-    let id = match provider["originalContentUrl"].as_str() {
-        Some(url) if provider["type"] == "external" && url.starts_with(EXTERNAL) => url,
-        _ => m["id"].as_str().filter(|i| !i.is_empty())?,
+    let id = m["id"].as_str().filter(|i| !i.is_empty())?;
+    let platform_file_id = if m["contentProvider"]["type"] == "external" {
+        format!("{EXTERNAL}{id}")
+    } else {
+        id.to_string()
     };
     let file = IncomingFile {
-        platform_file_id: id.to_string(),
+        platform_file_id,
         file_name: m["fileName"].as_str().map(str::to_string),
         content_type: None,
         size_bytes: m["fileSize"].as_u64(),
@@ -147,19 +150,35 @@ mod tests {
     fn reply_token_expires_a_minute_after_the_event() {
         let got = one(ev("follow", json!({}))).unwrap();
         assert_eq!(got[0].reply().unwrap().expires_at, Timestamp(61_000));
+        let mut no_time = ev("follow", json!({}));
+        no_time.as_object_mut().unwrap().remove("timestamp");
+        let got = one(no_time).unwrap();
+        assert_eq!(
+            got[0].reply().unwrap().expires_at,
+            Timestamp(i64::MAX),
+            "never an epoch expiry that silently turns the Reply into a Push"
+        );
     }
 
     #[test]
-    fn postback_data_must_be_an_action_id() {
-        let long = ev(
-            "postback",
+    fn a_bad_postback_is_skipped_and_the_others_kept() {
+        let bad = [
             json!({ "postback": { "data": "a".repeat(65) } }),
-        );
-        assert!(matches!(one(long), Err(Error::Invalid(_))));
-        let missing = ev("postback", json!({ "postback": {} }));
-        assert!(matches!(one(missing), Err(Error::Invalid(_))));
-        let number = ev("postback", json!({ "postback": { "data": 7 } }));
-        assert!(matches!(one(number), Err(Error::Invalid(_))));
+            json!({ "postback": {} }),
+            json!({ "postback": { "data": 7 } }),
+        ];
+        for b in bad {
+            let body = json!({ "events": [
+                ev("postback", b),
+                ev("postback", json!({ "postback": { "data": "news.ack.1" } })),
+                "not an event",
+            ]});
+            let got = parse(body.to_string().as_bytes()).unwrap();
+            match got.as_slice() {
+                [Inbound::Action { action, .. }] => assert_eq!(action.as_str(), "news.ack.1"),
+                other => panic!("{other:?}"),
+            }
+        }
     }
 
     #[test]
@@ -177,9 +196,7 @@ mod tests {
         let external = json!({ "message": { "id": "43", "type": "image", "contentProvider":
             { "type": "external", "originalContentUrl": "https://img.sealbay.example/a.jpg" } } });
         match one(ev("message", external)).unwrap().as_slice() {
-            [Inbound::File { file, .. }] => {
-                assert_eq!(file.platform_file_id, "https://img.sealbay.example/a.jpg")
-            }
+            [Inbound::File { file, .. }] => assert_eq!(file.platform_file_id, "external:43"),
             other => panic!("{other:?}"),
         }
     }
