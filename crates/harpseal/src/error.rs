@@ -105,6 +105,9 @@ pub enum BuildError {
         /// The unknown catalog key.
         key: String,
     },
+    /// A configuration value is invalid (e.g. `[branding] primary_color`
+    /// set in code to something that is not a CSS hex colour).
+    InvalidConfig(String),
     /// Two Modules share a `name()`, or a Module is named `kernel`.
     DuplicateModule(String),
     /// Two routes would match the same requests: the same path, or paths
@@ -152,6 +155,7 @@ impl core::fmt::Display for BuildError {
             BuildError::UnknownText { source, key } => {
                 write!(f, "{source} uses unknown text key `{key}`")
             }
+            BuildError::InvalidConfig(m) => write!(f, "invalid configuration: {m}"),
             BuildError::DuplicateModule(m) => write!(f, "module name `{m}` is used twice"),
             BuildError::DuplicateRoute {
                 module,

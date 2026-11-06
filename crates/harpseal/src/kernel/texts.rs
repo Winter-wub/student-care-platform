@@ -36,11 +36,6 @@ pub(crate) const DEFAULTS: &[E] = th_en![
          You can ask to see, correct or unlink your data at any time by contacting Staff."
     ),
     (
-        "kernel.backoffice.sign_in",
-        "กรุณาเข้าสู่ระบบเจ้าหน้าที่",
-        "Please sign in as Staff."
-    ),
-    (
         "kernel.flow.welcome",
         "สวัสดีครับ ยินดีต้อนรับสู่ช่องทางบริการนักศึกษา ก่อนเริ่มใช้งาน กรุณาอ่านและยอมรับประกาศความเป็นส่วนตัวด้านล่าง",
         "Hello and welcome to student services. Before we start, please read and accept the privacy notice below."

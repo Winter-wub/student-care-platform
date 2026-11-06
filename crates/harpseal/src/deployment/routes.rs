@@ -39,10 +39,18 @@ impl Seg {
 pub(super) struct Routes(Vec<(Vec<Seg>, &'static str)>);
 
 impl Routes {
-    /// Starts with the Kernel's own paths.
+    /// Starts with the Kernel's own paths: webhooks, the stylesheet and the
+    /// back-office home, sign-in, sign-out and password pages.
     pub(super) fn new() -> Self {
         let kernel = crate::kernel::NAME;
-        let own = [WEBHOOK_PATH, crate::ui::CSS_PATH];
+        let own = [
+            WEBHOOK_PATH,
+            crate::ui::CSS_PATH,
+            crate::auth::HOME_PATH,
+            crate::auth::LOGIN_PATH,
+            crate::auth::LOGOUT_PATH,
+            crate::auth::PASSWORD_PATH,
+        ];
         Self(
             own.iter()
                 .map(|p| (parse(p).expect("Kernel paths are valid"), kernel))
@@ -201,6 +209,15 @@ mod tests {
         }
         r.back_office("a", "/reports").unwrap();
         r.public("a", "/reports").unwrap();
+        for own in ["/login", "/logout", "/password"] {
+            assert!(matches!(
+                r.back_office("b", own),
+                Err(BuildError::DuplicateRoute {
+                    first: "kernel",
+                    ..
+                })
+            ));
+        }
         assert!(r.back_office("b", "/reports").is_err());
         assert!(r.back_office("b", "/a/{*rest}/b").is_err());
     }

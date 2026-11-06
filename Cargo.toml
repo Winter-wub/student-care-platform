@@ -28,6 +28,7 @@ harpseal-channel-fake = { path = "crates/harpseal-channel-fake" }
 harpseal-runtime-native = { path = "crates/harpseal-runtime-native" }
 harpseal-runtime-cloudflare = { path = "crates/harpseal-runtime-cloudflare" }
 harpseal-testing = { path = "crates/harpseal-testing" }
+harpseal-cli = { path = "crates/harpseal-cli" }
 example-deployment = { path = "deployments/example/deployment" }
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false }
@@ -45,6 +46,13 @@ pbkdf2 = { version = "0.13", default-features = false, features = ["phc", "alloc
 sha2 = { version = "0.11", default-features = false }
 hmac = "0.13"
 calamine = { version = "0.38", default-features = false }
+
+# Argon2id (m=19 MiB, t=2) takes seconds per hash unoptimised; tests log in
+# many times, so dev and test builds optimise the hashing crates only.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
 
 # Measured in docs/prototypes/workers-pages.md (issue #5). The native
 # binary keeps panic unwinding, so one panicking Job handler or request
