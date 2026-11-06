@@ -1,22 +1,19 @@
 //! The Channel contract suite against the LINE adapter, through a
-//! `RecordingHttp` (nothing leaves the process).
-//!
-//! `#[ignore]` until #16: the adapter's webhook parsing and HTTP send still
-//! return `Error::Platform`. #16 removes the `#[ignore]`; the fixtures
-//! (recorded webhook bodies signed with HMAC-SHA256 below) and the wire
-//! reader are ready.
+//! recording HttpClient that answers like the Messaging API (nothing
+//! leaves the process). The fixtures are recorded webhook bodies signed
+//! here with an HMAC-SHA256 written from RFC 2104, independent of the
+//! adapter's.
+
+mod common;
 
 use std::sync::Arc;
 
-use harpseal::{ActionId, ChannelAccountId, Delivery, Metering, WebhookRequest};
+use common::{LineApi, SECRET, TOKEN, USER, fixture, json, png};
+use harpseal::{ActionId, ChannelAccountId, Delivery, Menu, MenuEntry, Metering, WebhookRequest};
 use harpseal_channel_line::{KIND, LineChannel, LineConfig, metering};
-use harpseal_testing::RecordingHttp;
 use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-
-const SECRET: &str = "seal-bay-line-channel-secret";
-const USER: &str = "U5ea1ba7000000000000000000000c0de";
 
 /// HMAC-SHA256 (RFC 2104) from the plain hash, as LINE signs webhooks.
 fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
@@ -57,6 +54,7 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// Signed with the RFC 2104 construction above, not the adapter's code.
 fn signed(body: &[u8], secret: &str) -> WebhookRequest {
     let mut headers = http::HeaderMap::new();
     let sig = base64(&hmac_sha256(secret.as_bytes(), body));
@@ -67,16 +65,20 @@ fn signed(body: &[u8], secret: &str) -> WebhookRequest {
     }
 }
 
-fn fixture(name: &str) -> WebhookRequest {
-    let path = format!(
-        "{}/tests/fixtures/webhook/{name}.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    signed(&std::fs::read(path).expect("fixture exists"), SECRET)
+/// The locked Menu of the contract target.
+const LOCKED_ACTION: &str = "contract.locked.start";
+
+fn locked_menu() -> Menu {
+    Menu {
+        entries: vec![MenuEntry {
+            label: "เริ่มใช้งาน".into(),
+            action: ActionId::new(LOCKED_ACTION).unwrap(),
+        }],
+    }
 }
 
-/// Postback `data` in every request body LINE received.
-struct LineWire(RecordingHttp);
+/// Reads the requests LINE received.
+struct LineWire(LineApi);
 
 fn postbacks(v: &Value, out: &mut Vec<String>) {
     match v {
@@ -93,25 +95,27 @@ fn postbacks(v: &Value, out: &mut Vec<String>) {
     }
 }
 
-fn json(body: &[u8]) -> Value {
-    serde_json::from_slice(body).unwrap_or(Value::Null)
-}
-
 impl Wire for LineWire {
     fn take(&self) -> WireLog {
         let mut payloads = Vec::new();
         let mut calls = Vec::new();
-        for r in self.0.take_requests() {
+        for r in self.0.take() {
             let v = json(&r.body);
+            assert_eq!(
+                r.headers["authorization"],
+                format!("Bearer {TOKEN}").as_str()
+            );
             let objects = v["messages"].as_array().map_or(0, Vec::len);
-            if r.uri.ends_with("/v2/bot/message/reply") {
+            if r.uri == "https://api.line.me/v2/bot/message/reply" {
                 let token = v["replyToken"].as_str().unwrap_or_default();
                 calls.push(Call::reply(token, objects));
-            } else if r.uri.ends_with("/v2/bot/message/push") {
+            } else if r.uri == "https://api.line.me/v2/bot/message/push" {
+                assert_eq!(v["to"], USER, "push goes to the account");
                 calls.push(Call::push(objects));
             } else {
                 continue; // rich menu calls carry Menu postbacks, not messages
             }
+            assert!((1..=5).contains(&objects), "1..=5 objects per request");
             postbacks(&v, &mut payloads);
         }
         WireLog::new(payloads, calls)
@@ -131,28 +135,33 @@ impl Wire for LineWire {
     fn reply_limit(&self) -> Option<usize> {
         Some(5)
     }
-    /// The last per-user rich menu call decides: an unlink (DELETE) is the
-    /// locked Menu; a link shows the areas of the last rich menu created.
-    /// #16 may adjust this to the rich menu flow it implements.
+    /// The last per-user rich menu call decides: an unlink (DELETE), or a
+    /// link to the locked Menu's rich menu, is the locked Menu; a link to
+    /// any other rich menu shows its areas.
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
         let reqs = self.0.requests();
-        let user = format!("/v2/bot/user/{}/richmenu", to.external_id);
-        let last = reqs.iter().rev().find(|r| r.uri.contains(&user))?;
+        let user = format!(
+            "https://api.line.me/v2/bot/user/{}/richmenu",
+            to.external_id
+        );
+        let last = reqs.iter().rev().find(|r| r.uri.starts_with(&user))?;
         if last.method == http::Method::DELETE {
             return None;
         }
-        let created = reqs
-            .iter()
-            .rev()
-            .find(|r| r.uri.ends_with("/v2/bot/richmenu"))?;
-        json(&created.body)["areas"].as_array().map(Vec::len)
+        let id = last.uri.rsplit('/').next()?;
+        let menu = self.0.created(id)?;
+        let mut data = Vec::new();
+        postbacks(&menu, &mut data);
+        (data != [LOCKED_ACTION]).then_some(data.len())
     }
 }
 
 fn target() -> Target {
-    let http = RecordingHttp::default();
-    let cfg = LineConfig::new(SECRET, "seal-bay-access-token", "");
-    let channel = LineChannel::new(cfg, Arc::new(http.clone()));
+    let api = LineApi::default();
+    let cfg = LineConfig::new(SECRET, TOKEN, "")
+        .with_locked_menu(locked_menu())
+        .with_menu_images(png(2500, 843), png(2500, 1686));
+    let channel = LineChannel::new(cfg, Arc::new(api.clone()));
     let follow = fixture("follow");
     let mut missing = follow.clone();
     missing.headers.remove("x-line-signature");
@@ -168,11 +177,11 @@ fn target() -> Target {
         .missing_signature(missing)
         .signed_garbage(signed(b"{not json", SECRET))
         .build();
-    Target::new(Arc::new(channel), fixtures, Arc::new(LineWire(http)))
+    Target::new(Arc::new(channel), fixtures, Arc::new(LineWire(api)))
 }
 
 #[test]
-fn the_hmac_matches_rfc_4231() {
+fn the_hmac_matches_rfc_4231_and_the_adapter() {
     // RFC 4231 test case 2.
     let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
     let hex: String = mac.iter().map(|b| format!("{b:02x}")).collect();
@@ -181,10 +190,14 @@ fn the_hmac_matches_rfc_4231() {
         "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
     );
     assert_eq!(base64(b"Ma"), "TWE=");
+    let body = b"{\"events\":[]}";
+    assert_eq!(
+        base64(&hmac_sha256(SECRET.as_bytes(), body)),
+        harpseal_channel_line::sign(SECRET, body)
+    );
 }
 
 #[tokio::test]
-#[ignore = "LINE webhook parsing and HTTP send arrive with #16; remove this then"]
 async fn line_passes_the_channel_contract() {
     run(target).await;
 }
