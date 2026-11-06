@@ -17,7 +17,7 @@ async fn seed_120(h: &harpseal_testing::Harness) {
             &format!(
                 "INSERT INTO student (id, student_code, display_name, email, locale, status, \
                  attributes, created_at, updated_at) VALUES ('w{i}', '6900{i:04}', 'Wave {i:03}', \
-                 NULL, 'th', 'active', '{{\"year\":1,\"programme\":\"DDS-Intl\"}}', 1, 1)"
+                 NULL, 'th', 'active', '{{\"year\":1,\"programme\":\"MSC-Intl\"}}', 1, 1)"
             ),
         )
         .await;
@@ -104,7 +104,7 @@ async fn the_detail_shows_links_tags_consent_and_logs_the_read() {
     let mut c = Chat::new(&h, &app, "u1");
     c.link("68010001").await;
     for sql in [
-        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'DDS-1', 1), ('t2', 'ทุนเรียนดี', 1)",
+        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'MSC-1', 1), ('t2', 'ทุนเรียนดี', 1)",
         "INSERT INTO student_tag (student_id, tag_id, source, added_at) VALUES \
          ('s1', 't1', 'roster', 1), ('s1', 't2', 'manual', 1)",
         "INSERT INTO security_event (id, at, kind, student_id) VALUES \
@@ -119,7 +119,7 @@ async fn the_detail_shows_links_tags_consent_and_logs_the_read() {
     let body = &r.body;
     assert!(body.contains("Nok Thale") && body.contains("68010001"));
     assert!(body.contains("s68010001@student.sealbay.example"));
-    assert!(body.contains("<dt>หลักสูตร</dt><dd>DDS</dd>"), "{body}");
+    assert!(body.contains("<dt>หลักสูตร</dt><dd>MSC</dd>"), "{body}");
     assert!(body.contains("<dt>ชั้นปี</dt><dd>2</dd>"));
     assert!(body.contains("<dt>วันเข้าศึกษา</dt><dd>ไม่มีข้อมูล</dd>"));
     // Links per Channel with status, method and time.
@@ -129,9 +129,9 @@ async fn the_detail_shows_links_tags_consent_and_logs_the_read() {
     // Tags grouped roster vs manual; Consent; the Security Event.
     let roster = body.find("จากทะเบียน").unwrap();
     let manual = body.find("เพิ่มโดยเจ้าหน้าที่").unwrap();
-    let dds = body.find(">DDS-1<").unwrap();
+    let msc = body.find(">MSC-1<").unwrap();
     let scholarship = body.find(">ทุนเรียนดี<").unwrap();
-    assert!(roster < dds && dds < manual && manual < scholarship);
+    assert!(roster < msc && msc < manual && manual < scholarship);
     assert!(body.contains("ฉบับที่ 1"));
     assert!(body.contains("otp.lockout") && body.contains("2026-11-05 07:00"));
     // A Viewer sees no edit, Tag, status, Manual Link or revoke forms.
@@ -207,7 +207,7 @@ async fn a_post_without_the_csrf_token_is_refused_and_writes_nothing() {
     let r = b
         .post_raw(
             "/admin/students/s1/edit",
-            "display_name=Hacked&email=&locale=th&attr.year=2&attr.programme=DDS",
+            "display_name=Hacked&email=&locale=th&attr.year=2&attr.programme=MSC",
         )
         .await;
     assert_eq!(r.status, 403);

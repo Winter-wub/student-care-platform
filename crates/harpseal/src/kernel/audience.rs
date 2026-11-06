@@ -5,7 +5,7 @@
 //! The filters are AND-ed:
 //! - **attributes**: for each key (one of `[roster.attributes]`), any of
 //!   the listed values (OR), compared as text with the stored JSON value
-//!   (`2`, `3.5`, `DDS`);
+//!   (`2`, `3.5`, `MSC`);
 //! - **tags**: the Student holds any of the listed Tags (by name, roster
 //!   or manual);
 //! - **Link status**: `active` Links only, or also `unreachable` ones

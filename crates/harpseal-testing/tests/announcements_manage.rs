@@ -144,7 +144,7 @@ async fn the_form_refuses_a_missing_thai_text_and_counts_the_audience_live() {
     let c = b
         .post(
             "/admin/announcements/audience",
-            "attr.programme=DDS&attr.programme=DDS-Intl",
+            "attr.programme=MSC&attr.programme=MSC-Intl",
         )
         .await;
     assert_eq!(c.status, 200);
@@ -183,13 +183,13 @@ async fn the_form_refuses_a_missing_thai_text_and_counts_the_audience_live() {
 async fn the_audience_ands_attributes_tags_and_link_status() {
     let w = boot().await;
     let h = &w.h;
-    student(h, "a1", "th", "active", r#"{"programme":"DDS","year":2}"#).await;
+    student(h, "a1", "th", "active", r#"{"programme":"MSC","year":2}"#).await;
     student(
         h,
         "a2",
         "th",
         "active",
-        r#"{"programme":"DDS-Intl","year":2}"#,
+        r#"{"programme":"MSC-Intl","year":2}"#,
     )
     .await;
     student(
@@ -197,12 +197,12 @@ async fn the_audience_ands_attributes_tags_and_link_status() {
         "a3",
         "th",
         "active",
-        r#"{"programme":"Hygiene","year":2}"#,
+        r#"{"programme":"Fisheries","year":2}"#,
     )
     .await;
-    student(h, "a4", "th", "active", r#"{"programme":"DDS","year":3}"#).await;
-    student(h, "a5", "th", "left", r#"{"programme":"DDS","year":2}"#).await;
-    student(h, "a6", "th", "active", r#"{"programme":"DDS","year":2}"#).await;
+    student(h, "a4", "th", "active", r#"{"programme":"MSC","year":3}"#).await;
+    student(h, "a5", "th", "left", r#"{"programme":"MSC","year":2}"#).await;
+    student(h, "a6", "th", "active", r#"{"programme":"MSC","year":2}"#).await;
     for s in ["a1", "a2", "a3", "a4", "a5", "a6"] {
         tag(h, s, "clinic").await;
         link(
@@ -218,7 +218,7 @@ async fn the_audience_ands_attributes_tags_and_link_status() {
     let d = w.app.deployment();
     let mut a = Audience::everyone();
     a.attributes
-        .insert("programme".into(), vec!["DDS".into(), "DDS-Intl".into()]);
+        .insert("programme".into(), vec!["MSC".into(), "MSC-Intl".into()]);
     a.attributes.insert("year".into(), vec!["2".into()]);
     a.tags = vec!["clinic".into()];
     let ids = |r: Vec<audience::Recipient>| -> Vec<String> {

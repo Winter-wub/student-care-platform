@@ -32,7 +32,7 @@ order = 2
 [roster.attributes.programme]
 column = "หลักสูตร"
 type = "enum"
-values = ["DDS", "DDS-Intl"]
+values = ["MSC", "MSC-Intl"]
 label = { th = "หลักสูตร", en = "Programme" }
 shown_in_list = true
 order = 1
@@ -55,7 +55,7 @@ pub async fn boot() -> (Harness, TestApp) {
     }
     run(
         &h,
-        "UPDATE student SET attributes = '{\"year\":2,\"programme\":\"DDS\"}' WHERE id = 's1'",
+        "UPDATE student SET attributes = '{\"year\":2,\"programme\":\"MSC\"}' WHERE id = 's1'",
     )
     .await;
     (h, app)
