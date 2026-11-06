@@ -39,6 +39,7 @@ impl Deployment {
             catalog: self.catalog.clone(),
             config: self.config.clone(),
             jobs: self.queue.clone(),
+            deployment: self.clone(),
         });
         let cx = Arc::new(AdminCx {
             state: state.clone(),
@@ -102,6 +103,13 @@ impl Deployment {
             ))
             .with_state(state)
             .layer(axum::Extension(self))
+    }
+}
+
+impl Deployment {
+    /// The kinds of the Deployment's Channels, in registration order.
+    pub(crate) fn channel_kinds(&self) -> Vec<crate::ChannelKind> {
+        self.channels.iter().map(|c| c.kind()).collect()
     }
 }
 

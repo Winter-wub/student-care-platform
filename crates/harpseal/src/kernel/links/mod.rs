@@ -21,7 +21,9 @@ mod revoke;
 
 pub use manual::manual_link;
 pub use revoke::revoke_by_staff;
-pub(crate) use revoke::revoke_statements;
+pub(crate) use revoke::{
+    live_links_of, notify_revoked, revoke_statements, staff_revoke_statements,
+};
 
 use crate::audit::Actor;
 use crate::delivery::ChannelAccountId;

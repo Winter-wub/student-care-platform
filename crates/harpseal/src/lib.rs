@@ -58,8 +58,9 @@ pub use auth::{
 };
 pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
 pub use config::{
-    BrandingConfig, ConsentConfig, DeploymentConfig, InboundConfig, OtpConfig, QuotaConfig,
-    RetentionConfig, StaffConfig, StudentConfig,
+    AttrError, AttributeSpec, AttributeType, BrandingConfig, ConsentConfig, DeploymentConfig,
+    InboundConfig, LocaleColumn, OtpConfig, QuotaConfig, RetentionConfig, RosterConfig,
+    StaffConfig, StudentConfig, TagsColumn,
 };
 pub use delivery::{
     BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,
@@ -72,6 +73,7 @@ pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};
 pub use kernel::links;
 pub use kernel::links::LinkChange;
+pub use kernel::students;
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{
     ActionId, Attachment, Button, Card, CardList, Choices, Locale, Menu, MenuEntry, Message,

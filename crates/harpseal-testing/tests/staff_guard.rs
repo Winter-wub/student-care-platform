@@ -73,7 +73,7 @@ impl Module for Pages {
             )
             .back_office_page(
                 "kernel.student.view",
-                "/students",
+                "/classes",
                 "pages.students",
                 10,
                 get(|| async { "students" }),
@@ -100,11 +100,11 @@ async fn a_viewer_gets_a_403_page_on_a_send_only_route() {
     assert!(r.header("content-type").unwrap().starts_with("text/html"));
     assert!(r.body.contains("ไม่มีสิทธิ์เข้าหน้านี้"));
     assert!(!r.body.contains("send form"));
-    assert_eq!(b.get("/admin/students").await.body, "students");
+    assert_eq!(b.get("/admin/classes").await.body, "students");
 
     // Navigation and home list only what the Viewer may open.
     let home = b.get("/admin").await;
-    assert!(home.body.contains("href=\"/admin/students\""));
+    assert!(home.body.contains("href=\"/admin/classes\""));
     assert!(!home.body.contains("href=\"/admin/send\""));
 }
 
@@ -122,7 +122,7 @@ async fn a_database_role_grants_the_route_and_orders_the_nav() {
     b.login("sender@sealbay.example", PASSWORD).await;
     assert_eq!(b.get("/admin/send").await.body, "send form");
     let home = b.get("/admin").await.body;
-    let students = home.find("href=\"/admin/students\"").unwrap();
+    let students = home.find("href=\"/admin/classes\"").unwrap();
     let send = home.find("href=\"/admin/send\"").unwrap();
     assert!(students < send, "nav_order 10 before 20");
 }

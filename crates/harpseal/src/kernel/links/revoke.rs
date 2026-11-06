@@ -7,7 +7,7 @@ use crate::delivery::ChannelAccountId;
 use crate::deployment::Deployment;
 use crate::kernel::text::Texts;
 use crate::message::{Locale, Message};
-use crate::port_types::Statement;
+use crate::port_types::{Rows, Statement, Value};
 use crate::{Error, Services};
 
 /// Revokes a live (active or unreachable) Link on behalf of Staff (or the
@@ -37,7 +37,31 @@ pub async fn revoke_by_staff(
     if link.status == "revoked" {
         return Err(already_revoked());
     }
-    let (mut stmts, gate) = revoke_statements(s, &link.id, &link.status, actor, ctx)?;
+    let stmts = staff_revoke_statements(s, &link, actor, ctx, None)?;
+    let done = s.db.batch(stmts).await?;
+    if done.get(1).map(|r| r.rows_affected) != Some(1) {
+        return Err(already_revoked());
+    }
+    let link_id = link.id.clone();
+    let notified = notify_revoked(d, link).await?;
+    Ok(LinkChange { link_id, notified })
+}
+
+/// The three statements of a Staff (or system) revoke of `link`, for a
+/// caller's batch: the gated audit row and Link update of
+/// [`revoke_statements`] (the update is the second statement), then the
+/// account's flow state (see [`revoke_by_staff`]). With `gate` (an audit
+/// row id written earlier in the same batch), nothing happens unless that
+/// row exists: the Students page's "set left" revokes every Link only if
+/// its own status change went through.
+pub(crate) fn staff_revoke_statements(
+    s: &Services,
+    link: &LinkInfo,
+    actor: &Actor,
+    ctx: &RequestCtx,
+    gate: Option<&str>,
+) -> R<Vec<Statement>> {
+    let (mut stmts, own) = gated_revoke_statements(s, &link.id, &link.status, actor, ctx, gate)?;
     let accepted_here = "(SELECT notice_version FROM consent WHERE channel_account_id = ? \
         ORDER BY accepted_at DESC LIMIT 1)";
     stmts.push(
@@ -51,20 +75,20 @@ pub async fn revoke_by_staff(
         .bind(link.account.clone())
         .bind(s.now_ms())
         .bind(link.account.clone())
-        .bind(gate),
+        .bind(own),
     );
-    let done = s.db.batch(stmts).await?;
-    if done.get(1).map(|r| r.rows_affected) != Some(1) {
-        return Err(already_revoked());
-    }
+    Ok(stmts)
+}
+
+/// After a committed revoke: locks the account's Menu and Pushes
+/// `kernel.link.revoked_by_staff` in the Student's Locale. `true` when the
+/// Student was told.
+pub(crate) async fn notify_revoked(d: &Deployment, link: LinkInfo) -> R<bool> {
+    let s = d.services();
     let to = ChannelAccountId::new(d.channel_or_err(&link.channel)?.kind(), link.external_id);
     let texts = Texts::load(s, d.catalog_arc(), link.locale.clone()).await?;
     let notice = Message::text(texts.t("kernel.link.revoked_by_staff"));
-    let notified = notify(d, &to, None, vec![notice], &link.locale).await;
-    Ok(LinkChange {
-        link_id: link.id,
-        notified,
-    })
+    Ok(notify(d, &to, None, vec![notice], &link.locale).await)
 }
 
 /// The revoke itself, for a caller's batch: the audit row `link.revoke`
@@ -79,12 +103,32 @@ pub(crate) fn revoke_statements(
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> R<(Vec<Statement>, String)> {
+    gated_revoke_statements(s, link_id, status, actor, ctx, None)
+}
+
+/// [`revoke_statements`], run only if the audit row `gate` exists.
+fn gated_revoke_statements(
+    s: &Services,
+    link_id: &str,
+    status: &str,
+    actor: &Actor,
+    ctx: &RequestCtx,
+    gate: Option<&str>,
+) -> R<(Vec<Statement>, String)> {
     let now = s.now_ms();
     let before = serde_json::json!({ "status": status });
     let after = serde_json::json!({ "status": "revoked" });
     let target = Target::new("link", link_id);
-    let live = Statement::new("EXISTS (SELECT 1 FROM link WHERE id = ? AND status <> 'revoked')")
-        .bind(link_id);
+    let live = match gate {
+        None => Statement::new("EXISTS (SELECT 1 FROM link WHERE id = ? AND status <> 'revoked')")
+            .bind(link_id),
+        Some(g) => Statement::new(
+            "EXISTS (SELECT 1 FROM link WHERE id = ? AND status <> 'revoked') \
+             AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+        )
+        .bind(link_id)
+        .bind(g),
+    };
     let (audit, gate) = audit::entry_if(
         s,
         actor,
@@ -112,8 +156,8 @@ fn already_revoked() -> Error {
 }
 
 /// A Link with its account and the Student's Locale.
-struct LinkInfo {
-    id: String,
+pub(crate) struct LinkInfo {
+    pub(crate) id: String,
     status: String,
     account: String,
     channel: String,
@@ -121,23 +165,51 @@ struct LinkInfo {
     locale: Locale,
 }
 
-async fn read_link(s: &Services, link_id: &str, default: &Locale) -> R<LinkInfo> {
-    let stmt = Statement::new(
-        "SELECT l.id, l.status, l.channel_account_id, ca.channel, ca.external_id, st.locale \
-         FROM link l JOIN channel_account ca ON ca.id = l.channel_account_id \
-         JOIN student st ON st.id = l.student_id WHERE l.id = ?",
-    )
-    .bind(link_id);
+const LINK_INFO: &str = "SELECT l.id, l.status, l.channel_account_id, ca.channel, \
+    ca.external_id, st.locale FROM link l JOIN channel_account ca ON ca.id = l.channel_account_id \
+    JOIN student st ON st.id = l.student_id";
+
+/// The live (active or unreachable) Links of a Student.
+pub(crate) async fn live_links_of(
+    s: &Services,
+    student_id: &str,
+    default: &Locale,
+) -> R<Vec<LinkInfo>> {
+    let stmt = Statement::new(format!(
+        "{LINK_INFO} WHERE l.student_id = ? AND l.status <> 'revoked' ORDER BY l.id"
+    ))
+    .bind(student_id);
     let rows = s.db.query(stmt).await?;
-    let Some(id) = text(&rows, "id") else {
-        return Err(Error::Invalid(format!("no link {link_id}")));
+    Ok((0..rows.len())
+        .map(|i| info_at(&rows, i, default))
+        .collect())
+}
+
+fn info_at(rows: &Rows, i: usize, default: &Locale) -> LinkInfo {
+    let t = |c: &str| {
+        rows.get(i, c)
+            .and_then(Value::as_text)
+            .unwrap_or_default()
+            .to_string()
     };
-    Ok(LinkInfo {
-        id,
-        status: text(&rows, "status").unwrap_or_default(),
-        account: text(&rows, "channel_account_id").unwrap_or_default(),
-        channel: text(&rows, "channel").unwrap_or_default(),
-        external_id: text(&rows, "external_id").unwrap_or_default(),
-        locale: text(&rows, "locale").map_or_else(|| default.clone(), Locale),
-    })
+    LinkInfo {
+        id: t("id"),
+        status: t("status"),
+        account: t("channel_account_id"),
+        channel: t("channel"),
+        external_id: t("external_id"),
+        locale: rows
+            .get(i, "locale")
+            .and_then(Value::as_text)
+            .map_or_else(|| default.clone(), |l| Locale(l.to_string())),
+    }
+}
+
+async fn read_link(s: &Services, link_id: &str, default: &Locale) -> R<LinkInfo> {
+    let stmt = Statement::new(format!("{LINK_INFO} WHERE l.id = ?")).bind(link_id);
+    let rows = s.db.query(stmt).await?;
+    if text(&rows, "id").is_none() {
+        return Err(Error::Invalid(format!("no link {link_id}")));
+    }
+    Ok(info_at(&rows, 0, default))
 }

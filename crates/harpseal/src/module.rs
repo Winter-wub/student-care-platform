@@ -34,6 +34,9 @@ pub struct PageState {
     pub config: Arc<DeploymentConfig>,
     /// Enqueues Jobs (e.g. a send started from a back-office page).
     pub jobs: Jobs,
+    /// The Deployment itself, for Kernel pages that call its services
+    /// (the Link service needs the Channels and the catalog).
+    pub(crate) deployment: Arc<crate::Deployment>,
 }
 
 impl PageState {
