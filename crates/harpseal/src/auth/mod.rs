@@ -26,6 +26,7 @@ mod session;
 mod staff;
 mod texts;
 
+pub(crate) use cookies::flash as flash_cookie;
 pub use guard::CurrentStaff;
 pub(crate) use guard::{AdminCx, Gate, NavItem, guard, request_ctx};
 pub(crate) use login::{login_form, login_submit, logout, password_form, password_submit};

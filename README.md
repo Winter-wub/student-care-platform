@@ -205,6 +205,16 @@ Staff member and starts a fresh one; the per-minute tick deletes expired
 sessions. `--admin` on an `Administrator` Role that already exists from
 `[roles]` keeps the TOML's Permissions and prints the ones it lacks.
 
+`/admin/students` lists the roster (50 per page, HTMX search by name or code)
+and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
+recent Security Events. Staff with `kernel.student.edit` edit fields (each
+edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
+the status. Staff with `kernel.link.manage` create Manual Links and revoke
+Links. The attributes come from `[roster.attributes.<key>]` in
+`deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
+`enum` with `values`), `label = { th = "..", en = ".." }`, `optional`,
+`shown_in_list` and `order` (see `harpseal::RosterConfig`).
+
 ## Deploying the example to Workers
 
 Workers Paid is required (Free's 10 ms CPU fails logins and imports). The
