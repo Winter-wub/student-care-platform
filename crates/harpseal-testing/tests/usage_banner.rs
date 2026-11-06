@@ -4,6 +4,8 @@
 
 mod usage_support;
 
+use axum::body::Body;
+use usage_support::spy::boot_spied;
 use usage_support::*;
 
 #[tokio::test]
@@ -80,4 +82,28 @@ async fn a_failing_read_shows_no_banner_and_the_page_still_renders() {
     assert_eq!(banner(&r.body), "<div id=\"usage-banner\"></div>");
     run(&h, "ALTER TABLE usage_daily_gone RENAME TO usage_daily").await;
     assert!(banner(&b.get("/admin").await.body).contains("usage-line over"));
+}
+
+#[tokio::test]
+async fn only_a_full_page_get_reads_usage_for_the_banner() {
+    let (h, app, spy) = boot_spied().await;
+    let b = signed_in(&h, &app, "viewer", "Viewer").await;
+    use_percent(&h, 100).await;
+    let before = spy.usage_reads();
+    let r = b.get("/admin/students").await;
+    assert!(banner(&r.body).contains("usage-line over"));
+    assert_eq!(spy.usage_reads(), before + 1);
+    // An HTMX fragment of the same page: no read, no banner markup.
+    let req = http::Request::get("/admin/students")
+        .header("hx-request", "true")
+        .body(Body::empty())
+        .unwrap();
+    let r = b.send(req).await;
+    assert_eq!(r.status, 200);
+    assert!(!r.body.contains("usage-line"), "{}", r.body);
+    // A `.json` read and a POST (both refused for a Viewer, past the guard).
+    assert_eq!(b.get("/admin/jobs.json").await.status, 403);
+    let r = b.post("/admin/students/s1/tags", "tag=x").await;
+    assert!(!r.body.contains("usage-line"));
+    assert_eq!(spy.usage_reads(), before + 1);
 }

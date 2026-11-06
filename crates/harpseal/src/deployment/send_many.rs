@@ -89,13 +89,13 @@ impl Deployment {
         let batch = multi.send_many(to, msgs, locale, key).await;
         let reached = batch.receipts.len() / msgs.len();
         // A failed group: each of its recipients missed every Message
-        // (`usage_daily.failed`, #26).
-        let failed = match batch.error {
-            Some(_) => {
+        // (`usage_daily.failed`, #26; a 429 is retried, not counted).
+        let failed = match &batch.error {
+            Some(e) if !matches!(e.root(), Error::RateLimited { .. }) => {
                 let group = multi.max_recipients().max(1).min(to.len() - reached);
                 group * msgs.len()
             }
-            None => 0,
+            _ => 0,
         };
         if reached > 0 {
             let mut stmts = self.many_rows(&to[..reached], msgs, &batch, module)?;

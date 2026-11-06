@@ -7,6 +7,7 @@ mod usage_support;
 
 use harpseal::Timestamp;
 use harpseal_testing::{Harness, START_MS};
+use usage_support::spy::boot_spied;
 use usage_support::*;
 
 const SUBJECT_WARN: &str = "[Seal Bay University (usage)] fake ใช้ไป 80% ของโควตาเดือน 2026-11";
@@ -22,6 +23,16 @@ async fn people(h: &Harness) {
     )
     .await;
     staff(h, "officer", &["Officer"]).await;
+}
+
+/// `fake`'s record: (sent, dropped, pending addresses).
+async fn record(h: &Harness) -> (i64, i64, i64) {
+    let q = |f: &str| format!("SELECT {f} FROM setting WHERE key = 'kernel.usage.notified.fake'");
+    (
+        int(h, &q("json_extract(value, '$.sent')")).await,
+        int(h, &q("json_extract(value, '$.dropped')")).await,
+        int(h, &q("json_array_length(value, '$.pending')")).await,
+    )
 }
 
 fn recipients(h: &Harness) -> Vec<String> {
@@ -106,11 +117,25 @@ async fn straight_past_100_percent_sends_the_over_email_only() {
 
 #[tokio::test]
 async fn runs_at_the_same_time_send_once() {
-    let (h, app) = boot().await;
+    let (h, app, spy) = boot_spied().await;
     people(&h).await;
     use_percent(&h, 90).await;
-    tokio::join!(watch(&app), watch(&app), watch(&app));
-    assert_eq!(h.emails().len(), 2);
+    // Run A has read the record and holds its claim; run B reads the same
+    // record and claims meanwhile. Both read before either claim commits.
+    let d = app.deployment().clone();
+    spy.before_next_claim(Box::pin(watch_on(d)));
+    watch(&app).await;
+    assert!(!spy.hook_pending(), "run B ran inside run A's claim");
+    assert_eq!(done(&h).await, 1);
+    assert_eq!(recipients(&h), [email_of("admin1"), email_of("admin2")]);
+    assert_eq!(
+        int(
+            &h,
+            "SELECT count(*) FROM audit_log WHERE action = 'usage.notify'"
+        )
+        .await,
+        1
+    );
     // Two ticks in the same scheduled minute: one Job, one send.
     use_percent(&h, 100).await;
     let at = Timestamp(START_MS + 10 * 60_000);
@@ -169,6 +194,46 @@ async fn a_failing_address_is_retried_on_the_next_run_only() {
     assert_eq!(recipients(&h), [email_of("admin1"), email_of("admin2")]);
     watch(&app).await;
     assert_eq!(h.emails().len(), 2);
+    assert_eq!(record(&h).await, (2, 0, 0));
+    assert_eq!(done(&h).await, 1);
+}
+
+#[tokio::test]
+async fn an_address_failing_three_times_is_dropped() {
+    let (h, app) = boot().await;
+    people(&h).await;
+    h.email().fail_for(&email_of("admin2"), true);
+    use_percent(&h, 80).await;
+    watch(&app).await;
+    assert_eq!(record(&h).await, (1, 0, 1));
+    watch(&app).await;
+    assert_eq!(record(&h).await, (1, 0, 1));
+    assert_eq!(done(&h).await, 0, "not settled while an address is pending");
+    watch(&app).await; // the third try: given up on
+    assert_eq!(record(&h).await, (1, 1, 0));
+    // Settled: one done row, sent N-1 of the 2 Administrators, failed 1.
+    let q = |f: &str| {
+        format!(
+            "SELECT json_extract(after, '$.{f}') FROM audit_log \
+             WHERE action = 'usage.notify.done' AND target_id = 'fake'"
+        )
+    };
+    assert_eq!(int(&h, &q("sent")).await, 1);
+    assert_eq!(int(&h, &q("failed")).await, 1);
+    assert_eq!(int(&h, &q("dropped_addresses_count")).await, 1);
+    h.email().fail_for(&email_of("admin2"), false);
+    watch(&app).await;
+    assert_eq!(recipients(&h), [email_of("admin1")]);
+    assert_eq!(done(&h).await, 1);
+}
+
+/// `usage.notify.done` rows so far.
+async fn done(h: &Harness) -> i64 {
+    int(
+        h,
+        "SELECT count(*) FROM audit_log WHERE action = 'usage.notify.done'",
+    )
+    .await
 }
 
 #[tokio::test]

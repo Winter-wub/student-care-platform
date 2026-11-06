@@ -1,7 +1,7 @@
 //! What the send path writes for the usage page (#26): a real Fake send
-//! lands on the local day the page reads, and Messages the platform failed
-//! on count in `usage_daily.failed`; a Push skipped before the platform
-//! (the account blocked the bot) counts nowhere.
+//! lands on the local day the page reads, and each failed attempt at the
+//! platform counts in `usage_daily.failed`; a 429 and a Push skipped
+//! before the platform (the account blocked the bot) count nowhere.
 
 mod usage_support;
 
@@ -58,26 +58,41 @@ async fn a_send_the_platform_refuses_counts_as_failed() {
         .await
         .unwrap();
     assert_eq!(row(&h).await, (1, 0, 0));
+    // A 429 is "try later": the Job retries it, nothing counts.
     fake.fail_next_batch_at(0);
     let e = d
         .send(&to, None, &Message::text("สอง"), &Locale::th())
         .await;
-    assert!(e.is_err());
+    assert!(matches!(e, Err(Error::RateLimited { .. })), "{e:?}");
+    assert_eq!(row(&h).await, (1, 0, 0));
+    // Another error counts, once per attempt.
+    fake.fail_next_batch_at_with(0, "fake: 500");
+    let e = d
+        .send(&to, None, &Message::text("สอง"), &Locale::th())
+        .await;
+    assert!(matches!(e, Err(Error::Platform(_))), "{e:?}");
     assert_eq!(row(&h).await, (1, 0, 1));
+    fake.fail_next_batch_at_with(0, "fake: 500");
+    assert!(
+        d.send(&to, None, &Message::text("สอง"), &Locale::th())
+            .await
+            .is_err()
+    );
+    assert_eq!(row(&h).await, (1, 0, 2));
     // The platform answers that the Student blocked the bot: failed too.
     fake.set_unreachable(&to, true);
     let e = d
         .send(&to, None, &Message::text("สาม"), &Locale::th())
         .await;
     assert!(matches!(e, Err(Error::Unreachable)), "{e:?}");
-    assert_eq!(row(&h).await, (1, 0, 2));
+    assert_eq!(row(&h).await, (1, 0, 3));
 }
 
 #[tokio::test]
 async fn a_batch_stopped_part_way_counts_what_did_not_wholly_go_out() {
     let (h, app) = boot().await;
     let to = FakeChannel::account("u1");
-    h.fake_channel().fail_next_batch_at(1);
+    h.fake_channel().fail_next_batch_at_with(1, "fake: 500");
     let msgs: Vec<Message> = ["หนึ่ง", "สอง", "สาม"].map(Message::text).to_vec();
     let e = app
         .deployment()

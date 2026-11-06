@@ -14,8 +14,10 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.usage.title", "การใช้งานและโควตา", "Usage and Quotas"),
     (
         "kernel.usage.intro",
-        "นับจาก Push ที่คิดค่าบริการ (หนึ่งครั้งต่อผู้รับต่อคำขอ) ตามวันในเขตเวลาของระบบ ระบบไม่หยุดส่งข้อความเมื่อถึงโควตา",
-        "Counts metered Pushes (one per request per recipient) by local day. Sending never stops at the Quota."
+        "นับจาก Push ที่คิดค่าบริการ (หนึ่งครั้งต่อผู้รับต่อคำขอ) ตามวันในเขตเวลาของระบบ ระบบไม่หยุดส่งข้อความเมื่อถึงโควตา \
+         ช่อง \"ส่งไม่สำเร็จ\" นับครั้งที่ส่งไปยังแพลตฟอร์มแล้วล้มเหลว ข้อความที่ล้มเหลวสองครั้งแล้วส่งได้ในครั้งที่สามจึงนับ 2",
+        "Counts metered Pushes (one per request per recipient) by local day. Sending never stops at the Quota. \
+         \"Failed sends\" counts failed attempts to the platform: a Message that fails twice and goes out the third time counts 2."
     ),
     // {month}
     (
@@ -87,9 +89,9 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.usage.email_body",
         "{channel} ใช้ Push ที่คิดค่าบริการไปแล้ว {used} จาก {cap} ครั้ง ({percent}%) ในเดือน {month}\n\n\
          ระบบยังส่งข้อความต่อตามปกติ หากต้องการเพิ่มโควตา กรุณาติดต่อผู้ให้บริการช่องทาง\n\n\
-         ดูรายละเอียดที่หน้า {path} ในระบบหลังบ้าน",
+         เปิดหน้า Usage ในระบบหลังบ้าน ({path})",
         "{channel} has used {used} of {cap} metered pushes ({percent}%) in {month}.\n\n\
          Messages still go out. To raise the Quota, contact the Channel's provider.\n\n\
-         Details: {path} in the back office."
+         Open the Usage page in the back office ({path})."
     ),
 ];

@@ -145,12 +145,9 @@ pub(super) async fn audience_fragment(
         .iter()
         .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))
         .collect();
-    let mut used = Vec::new();
-    for kind in kinds {
-        if let Ok(m) = usage::month_summary(&s.deployment, &kind).await {
-            used.push((kind, m));
-        }
-    }
+    let used = usage::month_summaries(&s.deployment, &kinds)
+        .await
+        .unwrap_or_default();
     (
         StatusCode::OK,
         Html(count_box(&v, counts.as_ref(), &used).into_string()),

@@ -1,6 +1,7 @@
 //! The Quota banner: one line per Channel at `Warn` (yellow) or `Over`
 //! (red), rendered into the `#usage-banner` slot of every back-office page
-//! for any Staff member (the guard calls [`banner`] once per request).
+//! for any Staff member (the guard calls [`banner`] once per full-page
+//! GET; other requests never render it).
 
 use maud::{Markup, html};
 

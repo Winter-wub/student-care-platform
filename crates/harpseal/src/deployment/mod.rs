@@ -3,6 +3,7 @@
 mod builder;
 mod routes;
 mod send;
+pub(crate) use send::civil_day;
 mod send_many;
 mod tick;
 mod web;

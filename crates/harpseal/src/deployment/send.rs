@@ -3,6 +3,12 @@
 //! `usage_daily` upsert (its metered units) per Message, written in a
 //! single `Db::batch`. A batch the Channel stops part-way is recorded as
 //! far as it went and reported as `Error::PartialSend`.
+//!
+//! `usage_daily.failed` counts failed attempts to the platform, not failed
+//! Messages: a Message that fails twice and goes out on the third try
+//! counts 2 there (and 1 in `metered`). `Error::RateLimited` adds nothing
+//! (the caller retries later), and neither does a Push skipped before the
+//! platform because the account blocked the bot.
 
 use super::Deployment;
 use crate::delivery::{
@@ -148,10 +154,13 @@ impl Deployment {
             .await;
         // Messages that reached the platform and did not wholly go out
         // (the one the batch stopped in counts: the Student did not get all
-        // of it) count in `usage_daily.failed` (#26).
-        let failed = match batch.error {
-            Some(_) => msgs.len().saturating_sub(batch.receipts.len()),
-            None => 0,
+        // of it) count in `usage_daily.failed` (#26), per attempt. A 429 is
+        // "try later", not a failure: the Job retries it.
+        let failed = match &batch.error {
+            Some(e) if !matches!(e.root(), Error::RateLimited { .. }) => {
+                msgs.len().saturating_sub(batch.receipts.len())
+            }
+            _ => 0,
         };
         if batch.anything_sent() {
             let mut stmts = self.outbound_rows(to, &delivery, msgs, &batch, module)?;

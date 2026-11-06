@@ -85,7 +85,7 @@ async fn a_failed_multicast_group_counts_each_recipient_in_it_as_failed() {
         .map(|i| fake_account("fake", &format!("s{i}")))
         .collect();
     let msgs = vec![Message::text("ประกาศหนึ่ง"), Message::text("ประกาศสอง")];
-    w.line.fail_next_batch_at(1);
+    w.line.fail_next_batch_at_with(1, "fake: 500");
     let sent = w
         .app
         .deployment()
@@ -99,7 +99,7 @@ async fn a_failed_multicast_group_counts_each_recipient_in_it_as_failed() {
     // Group 1 (2 recipients) x 2 Messages; group 0 went out (1 unit each).
     assert_eq!((failed, metered), (4, 2));
     // The first group failing: nothing went out, failures still count.
-    w.line.fail_next_batch_at(0);
+    w.line.fail_next_batch_at_with(0, "fake: 500");
     let sent = w
         .app
         .deployment()
@@ -107,6 +107,17 @@ async fn a_failed_multicast_group_counts_each_recipient_in_it_as_failed() {
         .await
         .unwrap();
     assert!(sent.results.is_empty() && sent.stopped.is_some());
+    let failed = count(&w, "SELECT failed FROM usage_daily WHERE channel = 'fake'").await;
+    assert_eq!(failed, 6);
+    // A 429 on a group adds nothing: the Job sends it again later.
+    w.line.fail_next_batch_at(0);
+    let sent = w
+        .app
+        .deployment()
+        .send_many_with_key("fake", &to[4..], &msgs, &Locale::th(), None, "k-usage-3")
+        .await
+        .unwrap();
+    assert!(sent.stopped.is_some());
     let failed = count(&w, "SELECT failed FROM usage_daily WHERE channel = 'fake'").await;
     assert_eq!(failed, 6);
 }

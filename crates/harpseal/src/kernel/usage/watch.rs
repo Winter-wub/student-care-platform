@@ -11,20 +11,35 @@
 //! reason, and because a missed cron minute is skipped while a window is
 //! caught up by any later tick in it.
 //!
-//! No migration: the record is a `setting` row `kernel.usage.notified.<kind>`
-//! (Locale `''`, never shown on the Texts page) holding
-//! `{"month":"2026-11","level":"warn","pending":[]}`. A notification is
-//! claimed with one batch: the audit row `usage.notify` (actor system) is
-//! inserted only while the record still reads what this run read, and the
-//! record is rewritten only if that audit row exists. Two runs at once
-//! therefore send once. A new month never matches the record, so the levels
-//! start over. Emails go out after the claim; addresses that fail are put
-//! back in `pending` and retried on the next run (never failing the Job),
-//! as long as they still belong to an active Administrator.
+//! No migration: the record is a `setting` row (see [`super::record`]). A
+//! notification is claimed with one batch: the audit row `usage.notify`
+//! (actor system) is inserted only while the record still reads what this
+//! run read, and the record is rewritten only if that audit row exists.
+//! Two runs at once therefore send once. A new month never matches the
+//! record, so the levels start over. Emails go out after the claim;
+//! addresses that fail stay in `pending` and are retried on the next runs
+//! (never failing the Job), at most [`TRIES`](super::record::TRIES) sends per address per claim
+//! and only while the address belongs to an active Administrator; then it
+//! is dropped and counted in the record's `dropped`. Once nothing is left
+//! to retry the claim settles: one audit row `usage.notify.done` with
+//! `{channel, month, level, sent, failed, dropped_addresses_count}`
+//! (`failed`: addresses dropped), written with the record by the same
+//! gated batch, so at most once.
+//!
+//! At most once, not exactly once. The trade-offs, on purpose:
+//! - The claim comes before the sends: a crash or restart part-way through
+//!   the sends loses the rest of them (the record says claimed, with
+//!   nothing pending).
+//! - With no active Administrator the level is still claimed: nobody is
+//!   emailed for it later, even once an Administrator exists.
+//! - An `Over` claim made while a `Warn` send is still going (or still has
+//!   addresses pending) replaces the record: the `Warn` pending list is
+//!   dropped, since the `Over` email supersedes it.
 
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
 use super::quota::{ChannelMonth, Level};
+use super::record::{Pending, Record};
 use super::{FULL_PATH, store};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::delivery::Timestamp;
@@ -41,42 +56,6 @@ pub(super) const KIND: &str = "kernel.usage.watch";
 const EVERY_MS: i64 = 10 * 60_000;
 /// `setting` key prefix of the notification records.
 pub(super) const KEY_PREFIX: &str = "kernel.usage.notified.";
-
-/// What a `setting` record says.
-struct Record {
-    month: String,
-    level: Level,
-    pending: Vec<String>,
-}
-
-impl Record {
-    fn parse(v: &str) -> Option<Self> {
-        let j: Json = serde_json::from_str(v).ok()?;
-        let level = match j.get("level")?.as_str()? {
-            "warn" => Level::Warn,
-            "over" => Level::Over,
-            _ => Level::Ok,
-        };
-        Some(Self {
-            month: j.get("month")?.as_str()?.to_string(),
-            level,
-            pending: j
-                .get("pending")
-                .and_then(Json::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|e| e.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        })
-    }
-
-    fn to_value(&self) -> String {
-        json!({ "month": self.month, "level": self.level.as_str(), "pending": self.pending })
-            .to_string()
-    }
-}
 
 /// An active Administrator.
 struct Admin {
@@ -114,38 +93,79 @@ async fn watch(d: &Deployment, month: &str, m: &ChannelMonth) -> Result<()> {
             .is_none_or(|r| r.month != month || r.level < m.level);
     if due {
         let admins = administrators(d).await?;
-        let claimed = Record {
-            month: month.to_string(),
-            level: m.level,
-            pending: Vec::new(),
-        };
+        let claimed = Record::claim(month, m.level);
         if !claim(d, &key, old.as_deref(), &claimed, m, admins.len()).await? {
             return Ok(());
         }
-        let failed = send(d, m, &claimed, &admins).await;
-        return put_back(d, &key, claimed, failed).await;
+        let to = admins.into_iter().map(|a| (a, 0)).collect();
+        return deliver(d, &key, m, claimed, to).await;
     }
-    // A retry of the addresses the last send could not reach.
+    // A retry of the addresses the last sends could not reach.
     let Some(rec) = rec.filter(|r| r.month == month && !r.pending.is_empty()) else {
         return Ok(());
     };
     let Some(old) = old else { return Ok(()) };
-    let pending = rec.pending;
     let taken = Record {
-        month: rec.month,
-        level: rec.level,
         pending: Vec::new(),
+        ..rec.clone()
     };
     if !swap(d, &key, &old, &taken.to_value()).await? {
         return Ok(());
     }
-    let admins: Vec<Admin> = administrators(d)
+    let to = administrators(d)
         .await?
         .into_iter()
-        .filter(|a| pending.contains(&a.email))
+        .filter_map(|a| {
+            let tries = rec.pending.iter().find(|p| p.email == a.email)?.tries;
+            Some((a, tries))
+        })
         .collect();
-    let failed = send(d, m, &taken, &admins).await;
-    put_back(d, &key, taken, failed).await
+    deliver(d, &key, m, taken, to).await
+}
+
+/// Sends `rec`'s email to each Administrator of `to` (each tried that many
+/// times before) and records what went out and what is left to retry.
+async fn deliver(
+    d: &Deployment,
+    key: &str,
+    m: &ChannelMonth,
+    rec: Record,
+    to: Vec<(Admin, u32)>,
+) -> Result<()> {
+    let admins: Vec<&Admin> = to.iter().map(|(a, _)| a).collect();
+    let failed = send(d, m, &rec, &admins).await;
+    let failed: Vec<Pending> = to
+        .iter()
+        .filter(|(a, _)| failed.contains(&a.email))
+        .map(|(a, tries)| Pending {
+            email: a.email.clone(),
+            tries: *tries,
+        })
+        .collect();
+    let next = rec.after_send(to.len() - failed.len(), &failed);
+    if !next.pending.is_empty() {
+        swap(d, key, &rec.to_value(), &next.to_value()).await?;
+        return Ok(());
+    }
+    // Settled: nothing left to retry. One `usage.notify.done` row, written
+    // with the record (at most once: only while it still reads `rec`).
+    let after = json!({
+        "channel": m.kind, "month": next.month, "level": next.level.as_str(),
+        "sent": next.sent, "failed": next.dropped,
+        "dropped_addresses_count": next.dropped,
+    });
+    let old = rec.to_value();
+    gated(
+        d,
+        key,
+        Some(&old),
+        &next.to_value(),
+        "usage.notify.done",
+        m,
+        after,
+    )
+    .await?;
+    Ok(())
 }
 
 async fn read(d: &Deployment, key: &str) -> Result<Option<String>> {
@@ -183,8 +203,8 @@ async fn administrators(d: &Deployment) -> Result<Vec<Admin>> {
         .collect())
 }
 
-/// The claim: audit row while the record still reads `old`, then the new
-/// record if that row exists. `true` when this run won.
+/// The claim: audit row `usage.notify` while the record still reads
+/// `old`, then the new record if that row exists. `true` when this run won.
 async fn claim(
     d: &Deployment,
     key: &str,
@@ -193,19 +213,34 @@ async fn claim(
     m: &ChannelMonth,
     recipients: usize,
 ) -> Result<bool> {
-    let s = d.services();
-    let cond = Statement::new("(SELECT value FROM setting WHERE key = ? AND locale = '') IS ?")
-        .bind(key)
-        .bind(old.map(String::from));
     let after = json!({
         "channel": m.kind, "month": new.month, "level": new.level.as_str(),
         "used": m.used(), "cap": m.cap, "recipients": recipients,
     });
+    gated(d, key, old, &new.to_value(), "usage.notify", m, after).await
+}
+
+/// Audit row `action` (actor system, target the Channel) only while the
+/// record still reads `old`, and the record `new` only if that row exists,
+/// in one batch. `true` when both were written.
+async fn gated(
+    d: &Deployment,
+    key: &str,
+    old: Option<&str>,
+    new: &str,
+    action: &str,
+    m: &ChannelMonth,
+    after: serde_json::Value,
+) -> Result<bool> {
+    let s = d.services();
+    let cond = Statement::new("(SELECT value FROM setting WHERE key = ? AND locale = '') IS ?")
+        .bind(key)
+        .bind(old.map(String::from));
     let target = Target::new("channel", m.kind.clone());
     let (audit, id) = audit::entry_if(
         s,
         &Actor::System,
-        "usage.notify",
+        action,
         Some(&target),
         None,
         Some(after),
@@ -219,7 +254,7 @@ async fn claim(
          updated_at = excluded.updated_at",
     )
     .bind(key)
-    .bind(new.to_value())
+    .bind(new)
     .bind(s.now_ms())
     .bind(id.as_str());
     s.db.batch(vec![audit, record]).await?;
@@ -247,22 +282,9 @@ async fn swap(d: &Deployment, key: &str, old: &str, new: &str) -> Result<bool> {
     Ok(done.rows_affected == 1)
 }
 
-/// Records the addresses that failed for the next run.
-async fn put_back(d: &Deployment, key: &str, sent: Record, failed: Vec<String>) -> Result<()> {
-    if failed.is_empty() {
-        return Ok(());
-    }
-    let old = sent.to_value();
-    let new = Record {
-        pending: failed,
-        ..sent
-    };
-    swap(d, key, &old, &new.to_value()).await.map(|_| ())
-}
-
 /// Sends the email of `rec.level` to each of `to`; returns the addresses
 /// that failed.
-async fn send(d: &Deployment, m: &ChannelMonth, rec: &Record, to: &[Admin]) -> Vec<String> {
+async fn send(d: &Deployment, m: &ChannelMonth, rec: &Record, to: &[&Admin]) -> Vec<String> {
     let s = d.services();
     let Ok(texts) = Texts::load(s, d.catalog_arc(), d.config().default_locale.clone()).await else {
         return to.iter().map(|a| a.email.clone()).collect();

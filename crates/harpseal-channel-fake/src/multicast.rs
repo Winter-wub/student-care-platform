@@ -3,11 +3,11 @@
 
 use async_trait::async_trait;
 use harpseal::{
-    BatchReceipt, ChannelAccountId, Delivery, Error, Locale, Message, Metering, Multicast,
+    BatchReceipt, ChannelAccountId, Delivery, Locale, Message, Metering, Multicast,
     PlatformMessageId, SendReceipt,
 };
 
-use crate::record::{Call, FAILURE_RETRY_AFTER_SECS, Sent};
+use crate::record::{Call, Sent};
 use crate::render::render;
 use crate::{FakeChannel, FakeProfile};
 
@@ -59,10 +59,7 @@ impl Multicast for FakeChannel {
         };
         for (g, group) in to.chunks(self.max_recipients).enumerate() {
             if s.fail_at == Some(g) {
-                s.fail_at = None;
-                let e = Error::RateLimited {
-                    retry_after_secs: FAILURE_RETRY_AFTER_SECS,
-                };
+                let e = s.take_failure();
                 return BatchReceipt::partial(receipts, e);
             }
             for chunk in objects.chunks(size.max(1)) {

@@ -10,7 +10,6 @@
 use std::collections::BTreeMap;
 
 use crate::config::QuotaConfig;
-use crate::kernel::students::view::format_ms;
 
 /// How close a Channel is to its Quota this month. Ordered: `Ok < Warn <
 /// Over`.
@@ -110,11 +109,9 @@ pub(crate) fn level(used: i64, cap: Option<u64>) -> Level {
     }
 }
 
-/// The local day `YYYY-MM-DD` of the instant `ms` (the send path's
-/// `usage_daily.day`).
-pub(crate) fn civil_day(ms: i64, offset_minutes: i32) -> String {
-    format_ms(ms, offset_minutes)[..10].to_string()
-}
+/// The local day `YYYY-MM-DD` of the instant `ms`: the send path's own
+/// `usage_daily.day`.
+pub(crate) use crate::deployment::civil_day;
 
 /// The local month `YYYY-MM` of the instant `now_ms`.
 pub(crate) fn month_at(now_ms: i64, offset_minutes: i32) -> String {

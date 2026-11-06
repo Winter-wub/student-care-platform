@@ -45,9 +45,18 @@ pub(crate) fn kinds(d: &Deployment) -> Vec<String> {
 
 /// The current local month (`YYYY-MM`) and each Channel in it.
 pub(crate) async fn this_month(d: &Deployment) -> Result<(String, Vec<ChannelMonth>)> {
+    this_month_of(d, &kinds(d)).await
+}
+
+/// The current local month (`YYYY-MM`) and each of `kinds` in it, from one
+/// read.
+pub(crate) async fn this_month_of(
+    d: &Deployment,
+    kinds: &[String],
+) -> Result<(String, Vec<ChannelMonth>)> {
     let offset = d.config().utc_offset_minutes().unwrap_or(0);
     let month = quota::month_at(d.services().now_ms(), offset);
     let rows = rows_since(d.services(), &format!("{month}-01")).await?;
-    let months = quota::month(&rows, &kinds(d), &d.config().quotas, &month);
+    let months = quota::month(&rows, kinds, &d.config().quotas, &month);
     Ok((month, months))
 }

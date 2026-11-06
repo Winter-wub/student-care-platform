@@ -10,7 +10,8 @@
 //!
 //! Levels ([`quota::Level`]): `Warn` at 80 % of the cap, `Over` at 100 %.
 //! Sending is never blocked. The banner is rendered server-side: the Staff
-//! guard reads this month's level once per request (see [`banner`]); a
+//! guard reads this month's level once per full-page GET (not for POSTs,
+//! HTMX fragments or `.json`/`.csv`; see [`banner`]); a
 //! failing read shows no banner rather than breaking the page. The emails
 //! lag the banner by at most 10 minutes (one Job run).
 //!
@@ -20,6 +21,7 @@ mod banner;
 mod chart;
 mod page;
 pub(crate) mod quota;
+mod record;
 mod store;
 mod texts;
 mod watch;
@@ -60,22 +62,26 @@ pub(crate) struct MonthSummary {
     pub(crate) level: Level,
 }
 
-/// This month's usage of Channel `kind` (from `usage_daily`), for pages
-/// that show a cost next to the Quota: the Announcements send page shows
-/// "ใช้ไปแล้ว X/Y เดือนนี้" (`kernel.usage.send_used`, or
-/// `kernel.usage.send_used_no_cap` without a Quota) beside its push
-/// estimate. A kind the Deployment does not have reads as 0 with its
-/// configured cap, if any.
-pub(crate) async fn month_summary(d: &Deployment, kind: &str) -> Result<MonthSummary> {
-    let offset = d.config().utc_offset_minutes().unwrap_or(0);
-    let month = quota::month_at(d.services().now_ms(), offset);
-    let rows = store::rows_since(d.services(), &format!("{month}-01")).await?;
-    let m = quota::month(&rows, &[kind.to_string()], &d.config().quotas, &month);
-    let used = m.first().map_or(0, |m| m.used());
-    let cap = quota::cap_of(&d.config().quotas, kind);
-    Ok(MonthSummary {
-        used,
-        cap,
-        level: quota::level(used, cap),
-    })
+/// This month's usage of each Channel of `kinds` (from `usage_daily`, read
+/// once), in that order, for pages that show a cost next to the Quota: the
+/// Announcements send page shows "ใช้ไปแล้ว X/Y เดือนนี้"
+/// (`kernel.usage.send_used`, or `kernel.usage.send_used_no_cap` without a
+/// Quota) beside each push estimate. A kind the Deployment does not have
+/// reads as 0 with its configured cap, if any.
+pub(crate) async fn month_summaries(
+    d: &Deployment,
+    kinds: &[String],
+) -> Result<Vec<(String, MonthSummary)>> {
+    if kinds.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (_, months) = store::this_month_of(d, kinds).await?;
+    Ok(months
+        .into_iter()
+        .map(|m| {
+            let (used, cap) = (m.used(), m.cap);
+            let level = quota::level(used, cap);
+            (m.kind, MonthSummary { used, cap, level })
+        })
+        .collect())
 }

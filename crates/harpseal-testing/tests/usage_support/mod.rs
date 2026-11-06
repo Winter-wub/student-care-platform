@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+pub mod spy;
+
 use harpseal::{DeploymentConfig, Job, Statement};
 use harpseal_testing::{Browser, Harness, START_MS, TestApp};
 
@@ -100,15 +102,19 @@ pub async fn use_percent(h: &Harness, percent: i64) {
 
 /// Runs the watch Job once, outside any tick.
 pub async fn watch(app: &TestApp) {
-    app.deployment()
-        .run_job(Job {
-            id: "watch-test".into(),
-            kind: "kernel.usage.watch".into(),
-            payload: "{}".into(),
-            attempt: 1,
-        })
-        .await
-        .unwrap();
+    watch_on(app.deployment().clone()).await;
+}
+
+/// [`watch`] on an owned Deployment (for hooks that must be `'static`).
+pub async fn watch_on(d: harpseal::Deployment) {
+    d.run_job(Job {
+        id: "watch-test".into(),
+        kind: "kernel.usage.watch".into(),
+        payload: "{}".into(),
+        attempt: 1,
+    })
+    .await
+    .unwrap();
 }
 
 /// The banner slot's contents in `body`.
