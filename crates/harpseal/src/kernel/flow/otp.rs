@@ -191,8 +191,12 @@ pub(super) async fn answer(t: &mut Turn<'_>, typed: &str) -> Result<()> {
     }
 }
 
-/// The challenge took no attempt: past its expiry (offer a resend), or
-/// used up / failed by a concurrent answer (locked).
+/// The challenge took no attempt (or lost its pass): past its expiry
+/// (offer a resend), or used up / failed by a concurrent answer (locked).
+///
+/// The used-up case changes nothing: the answer that holds the last
+/// attempt finishes the lockout or the Link, and cancelling the challenge
+/// or moving the flow here would make that answer lose its own outcome.
 async fn closed(t: &mut Turn<'_>, challenge: &str) -> Result<()> {
     let read = Statement::new("SELECT state, expires_at FROM verification_challenge WHERE id = ?")
         .bind(challenge);
@@ -210,7 +214,7 @@ async fn closed(t: &mut Turn<'_>, challenge: &str) -> Result<()> {
     t.out.push(Message::text(
         t.tf("kernel.otp.locked", &[("minutes", &minutes)]),
     ));
-    back_to_student_id(t).await
+    Ok(())
 }
 
 async fn expired(t: &mut Turn<'_>, challenge: &str) -> Result<()> {
@@ -270,7 +274,9 @@ async fn wrong(
         .bind(student.id.clone()),
         event,
     ];
-    t.commit(stmts, "awaiting_student_id").await?;
+    // The lock and the Security Event land even if a concurrent Inbound
+    // moved the account first, and the locked text is still answered.
+    t.commit_outcome(stmts, "awaiting_student_id").await?;
     Ok(())
 }
 
