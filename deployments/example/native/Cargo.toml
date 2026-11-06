@@ -6,8 +6,18 @@ rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
 publish = false
+# `cargo run -p harpseal-example-native` serves; `--bin harpseal` is the CLI.
+default-run = "harpseal-example-native"
 
 [dependencies]
 harpseal-runtime-native.workspace = true
 example-deployment.workspace = true
+harpseal-cli.workspace = true
 tokio.workspace = true
+
+# The CLI. Not documented: its docs would overwrite the `harpseal` library's
+# (same output name, cargo#6313).
+[[bin]]
+name = "harpseal"
+path = "src/bin/harpseal.rs"
+doc = false

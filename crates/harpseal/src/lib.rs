@@ -11,7 +11,9 @@
 //!
 //! Every type a Deployment or Module author needs is re-exported here. The
 //! modules [`render`] (helpers for Channel adapters), [`ui`] (the shared page
-//! layout) and [`password`] (Staff password hashing) group free functions.
+//! layout), [`password`] (Staff password hashing) and [`audit`] (the audit
+//! writer every Staff write goes through) group free functions. Back-office
+//! handlers extract [`CurrentStaff`] and [`RequestCtx`].
 //! The Kernel's schema is not public API.
 //!
 //! Everything here compiles to `wasm32-unknown-unknown`; nothing names a
@@ -20,6 +22,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod auth;
 mod channel;
 mod config;
 mod delivery;
@@ -38,6 +41,7 @@ mod resend;
 mod sql_split;
 mod verification;
 
+pub mod audit;
 pub mod password;
 pub mod render;
 pub mod ui;
@@ -45,10 +49,15 @@ pub mod ui;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 
+pub use audit::{Actor, PeerIp, RequestCtx, Target};
+pub use auth::{
+    ADMINISTRATOR_ROLE, CurrentStaff, MIN_PASSWORD_CHARS, NewStaff, check_password_rules,
+    create_staff, ensure_role, set_roles, set_temporary_password, staff_count,
+};
 pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
 pub use config::{
     BrandingConfig, ConsentConfig, DeploymentConfig, InboundConfig, OtpConfig, QuotaConfig,
-    RetentionConfig, StudentConfig,
+    RetentionConfig, StaffConfig, StudentConfig,
 };
 pub use delivery::{
     BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,

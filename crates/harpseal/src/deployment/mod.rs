@@ -46,6 +46,8 @@ struct Registry {
     back_office: Vec<(&'static str, &'static str, &'static str, Route)>,
     /// (module, path, handler).
     public: Vec<(&'static str, &'static str, Route)>,
+    /// Back-office navigation, sorted (#21).
+    nav: Vec<crate::auth::NavItem>,
 }
 
 /// One registered route's handler.
@@ -93,11 +95,15 @@ impl Deployment {
         &self.registry.migrations
     }
 
-    /// Applies every pending migration to this Deployment's `Db`. Running
-    /// it again is a no-op.
+    /// Applies every pending migration to this Deployment's `Db`, then
+    /// merges `[roles]` into the Roles tables (add-only). Running it again
+    /// is a no-op.
     pub async fn migrate(&self) -> Result<MigrationReport> {
         let now = self.services.now_ms();
-        crate::migrate::migrate(self.services.db.as_ref(), self.migrations(), now).await
+        let report =
+            crate::migrate::migrate(self.services.db.as_ref(), self.migrations(), now).await?;
+        crate::auth::roles::seed(&self.services, &self.config.roles).await?;
+        Ok(report)
     }
 
     /// The Channel of `kind`.

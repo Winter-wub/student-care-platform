@@ -504,6 +504,7 @@ dependencies = [
  "maud",
  "pbkdf2",
  "serde",
+ "serde_json",
  "sha2",
  "toml",
 ]
@@ -554,6 +555,8 @@ name = "harpseal-cli"
 version = "0.0.0"
 dependencies = [
  "harpseal",
+ "harpseal-testing",
+ "tokio",
 ]
 
 [[package]]
@@ -561,6 +564,7 @@ name = "harpseal-example-native"
 version = "0.0.0"
 dependencies = [
  "example-deployment",
+ "harpseal-cli",
  "harpseal-runtime-native",
  "tokio",
 ]

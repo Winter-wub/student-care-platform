@@ -122,7 +122,8 @@ async fn back_office_routes_refuse_requests_without_a_staff_session() {
     let h = Harness::new();
     let app = h.boot(h.builder().module(Reports).build().unwrap()).await;
     let r = app.get("/admin/reports").await;
-    assert_eq!(r.status, 401);
+    assert_eq!(r.status, 303);
+    assert_eq!(r.header("location"), Some("/admin/login"));
     assert!(!r.body.contains("secret"));
 }
 

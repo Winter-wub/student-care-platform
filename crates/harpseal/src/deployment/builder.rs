@@ -11,6 +11,7 @@ use crate::config::DeploymentConfig;
 use crate::error::{BuildError, Part};
 use crate::kernel::Kernel;
 use crate::manifest::{Catalog, MenuEntrySpec, Permission};
+use crate::module::NavSpec;
 use crate::{Channel, Module, ModuleRegistrar, Services, VerificationMethod};
 
 /// Assembles a [`Deployment`]: config, the runtime's [`Services`], Channels,
@@ -78,6 +79,9 @@ impl DeploymentBuilder {
             names.push(m.name());
             let mut r = ModuleRegistrar::new(m.name());
             m.register(&mut r);
+            if m.name() == crate::kernel::NAME {
+                r.messages(crate::auth::TEXTS);
+            }
             collected.absorb(r)?;
         }
         collected.check(&config, &self.channels)?;
@@ -85,6 +89,8 @@ impl DeploymentBuilder {
         check_toml_texts(&config, &catalog)?;
         config.apply_texts(&mut catalog);
         check_menu_texts(&collected.menu, &catalog)?;
+        check_nav(&collected.nav, &catalog)?;
+        let nav = nav_items(collected.nav);
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
         menu.sort_by_key(|e| e.order);
         Ok(Deployment {
@@ -101,6 +107,7 @@ impl DeploymentBuilder {
                 migrations: collected.migrations,
                 back_office: collected.back_office,
                 public: collected.public,
+                nav,
             },
         })
     }
@@ -121,6 +128,7 @@ struct Collected {
     routes: Routes,
     mini_app_users: Vec<&'static str>,
     catalog: Catalog,
+    nav: Vec<(&'static str, NavSpec)>,
 }
 
 impl Default for Collected {
@@ -136,6 +144,7 @@ impl Default for Collected {
             routes: Routes::new(),
             mini_app_users: Vec::new(),
             catalog: Catalog::default(),
+            nav: Vec::new(),
         }
     }
 }
@@ -172,6 +181,7 @@ impl Collected {
             self.catalog.insert(e.locale, e.key, e.text);
         }
         self.menu.extend(r.menu.into_iter().map(|e| (module, e)));
+        self.nav.extend(r.nav.into_iter().map(|n| (module, n)));
         self.migrations.extend(r.migrations);
         if !r.mini_app_paths.is_empty() {
             self.mini_app_users.push(module);
@@ -227,6 +237,40 @@ fn check_menu_texts(
         }),
         None => Ok(()),
     }
+}
+
+/// Navigation entries: a known title in the default Locale, no parameters.
+fn check_nav(nav: &[(&'static str, NavSpec)], catalog: &Catalog) -> Result<(), BuildError> {
+    let locale = catalog.default_locale();
+    for (module, n) in nav {
+        if n.path.contains('{') {
+            return Err(BuildError::InvalidRoute {
+                module,
+                path: n.path.into(),
+            });
+        }
+        if !catalog.has(&locale, n.title_key) {
+            return Err(BuildError::UnknownText {
+                source: format!("module `{module}`"),
+                key: n.title_key.into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::NavItem> {
+    let mut items: Vec<crate::auth::NavItem> = nav
+        .into_iter()
+        .map(|(_, n)| crate::auth::NavItem {
+            permission: n.permission,
+            path: format!("{}{}", super::routes::ADMIN, n.path),
+            title_key: n.title_key,
+            order: n.order,
+        })
+        .collect();
+    items.sort_by_key(|n| n.order);
+    items
 }
 
 /// `[texts]` may only override keys some Module declares: a typo would

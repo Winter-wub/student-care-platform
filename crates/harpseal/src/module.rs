@@ -125,6 +125,16 @@ pub struct ModuleRegistrar {
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
     pub(crate) migrations: Vec<Migration>,
     pub(crate) mini_app_paths: Vec<&'static str>,
+    pub(crate) nav: Vec<NavSpec>,
+}
+
+/// A back-office page listed in the navigation and on `/admin`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NavSpec {
+    pub(crate) permission: &'static str,
+    pub(crate) path: &'static str,
+    pub(crate) title_key: &'static str,
+    pub(crate) order: u16,
 }
 
 impl ModuleRegistrar {
@@ -140,6 +150,7 @@ impl ModuleRegistrar {
             jobs: Vec::new(),
             migrations: Vec::new(),
             mini_app_paths: Vec::new(),
+            nav: Vec::new(),
         }
     }
 
@@ -184,6 +195,28 @@ impl ModuleRegistrar {
     ) -> &mut Self {
         self.back_office.push((permission, path, route));
         self
+    }
+
+    /// Like [`ModuleRegistrar::back_office`], and also lists the page in
+    /// the back-office navigation and on the `/admin` home for Staff
+    /// holding `permission`: `title_key` is a catalog key (checked by
+    /// `build()`), `nav_order` sorts the entries (lower first). `path` must
+    /// not contain parameters ([`crate::BuildError::InvalidRoute`]).
+    pub fn back_office_page(
+        &mut self,
+        permission: &'static str,
+        path: &'static str,
+        title_key: &'static str,
+        nav_order: u16,
+        route: MethodRouter<AppState>,
+    ) -> &mut Self {
+        self.nav.push(NavSpec {
+            permission,
+            path,
+            title_key,
+            order: nav_order,
+        });
+        self.back_office(permission, path, route)
     }
 
     /// A page outside `/admin` with no Staff session: Mini App pages (which
