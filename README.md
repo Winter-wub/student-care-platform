@@ -75,7 +75,9 @@ FAKE_SECRET=change-me cargo run -p harpseal-example-native
 ```
 
 Every setting comes from the environment (`NativeSettings::from_env`);
-secrets never go in TOML. Empty values count as unset.
+secrets never go in TOML. Empty values count as unset. Building the native
+runtime compiles `aws-lc-sys` (rustls' crypto for reqwest and lettre), which
+needs a C compiler, plus NASM on Windows x86-64.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -87,14 +89,17 @@ secrets never go in TOML. Empty values count as unset.
 | `HARPSEAL_S3_REGION` | `auto` | SigV4 signing region |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | required with a bucket | S3 credentials |
 | `HARPSEAL_EMAIL` | `smtp` | `smtp` or `resend` |
-| `HARPSEAL_SMTP` | `smtp://localhost:25` | lettre URL: `smtp://host:25`, `smtp://user:pass@host:587?tls=required`, `smtps://user:pass@host:465` |
+| `HARPSEAL_SMTP` | `smtp://localhost:25` | lettre URL: `smtp://host:25` (unencrypted), `smtp://host:25?tls=opportunistic` (STARTTLS if offered), `smtp://user:pass@host:587?tls=required`, `smtps://user:pass@host:465`; credentials in `smtp://` without `tls=required`/`opportunistic` are refused |
 | `RESEND_API_KEY` | required with `resend` | Resend API key |
 | `HARPSEAL_EMAIL_FROM` | `noreply@localhost` | sender address (`Name <addr@domain>`) |
 
 The Deployment's secrets: `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`,
 `LINE_LIFF_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
 `TELEGRAM_WEB_APP_URL`, `FAKE_SECRET` (required, non-empty: the Fake Channel
-refuses an empty secret). A timer calls `Deployment::tick` every minute.
+refuses an empty secret). A timer calls `Deployment::tick` every minute, each
+tick in its own task, so a panicking Job handler is logged and the next tick
+still runs. The plain `release` profile keeps panic unwinding for this binary;
+the Worker builds with `wasm-release` (release + `panic = "abort"`).
 Back-office pages answer 401, and `/admin/login` 404, until Staff login lands
 (#21).
 
@@ -103,7 +108,7 @@ Back-office pages answer 401, and `/admin/login` 404, until Staff login lands
 Workers Paid is required (Free's 10 ms CPU fails logins and imports). The
 build needs `worker-build` (`cargo install worker-build`) and binaryen's
 `wasm-opt` (`brew install binaryen`); `wrangler.toml`'s `[build]` command runs
-`worker-build --release --no-opt`, then `wasm-opt -Oz`.
+`worker-build --profile wasm-release --no-opt`, then `wasm-opt -Oz`.
 
 Locally, with no Cloudflare account (D1 is simulated by miniflare):
 
@@ -116,7 +121,11 @@ curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'   # with --test-schedule
 
 The first request in an isolate builds the Deployment and applies its
 migrations to D1; later requests reuse it. A Cron Trigger (`* * * * *`, UTC)
-calls `Deployment::tick` at the trigger's scheduled time.
+calls `Deployment::tick` at the trigger's scheduled time. `job.max_attempts`
+counts retries: the default 3 means up to 4 runs, retried after 1, 5 and 30
+minutes. A Job whose runtime died mid-run (CPU limit, trap) is re-claimed when
+its 15-minute lock expires, while it has retries left, and is marked failed
+(`lock expired`) otherwise.
 
 A preview on your own account:
 

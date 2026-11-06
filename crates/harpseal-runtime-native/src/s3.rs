@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use harpseal::{Clock, Error, FileStore, HttpClient, Result};
+use harpseal::{Clock, Error, FileStore, HttpClient, Result, check_file_key};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
@@ -67,9 +67,19 @@ pub struct S3Files {
 }
 
 impl S3Files {
-    /// Signs with `clock`'s time and sends through `http`.
-    pub fn new(s: S3Settings, http: Arc<dyn HttpClient>, clock: Arc<dyn Clock>) -> Self {
-        Self { s, http, clock }
+    /// Signs with `clock`'s time and sends through `http`. The endpoint
+    /// must be a bare origin (`https://host[:port]`): a path prefix or a
+    /// query is refused, because path-style URLs put the bucket first.
+    pub fn new(s: S3Settings, http: Arc<dyn HttpClient>, clock: Arc<dyn Clock>) -> Result<Self> {
+        let bad = |why: &str| Error::Invalid(format!("S3 endpoint {:?}: {why}", s.endpoint));
+        let uri: http::Uri = s.endpoint.parse().map_err(|_| bad("not a URL"))?;
+        if !matches!(uri.scheme_str(), Some("https" | "http")) || uri.host().is_none() {
+            return Err(bad("expected http(s)://host[:port]"));
+        }
+        if !matches!(uri.path(), "" | "/") || uri.query().is_some() {
+            return Err(bad("a path prefix or query is not supported"));
+        }
+        Ok(Self { s, http, clock })
     }
 
     fn request(
@@ -79,9 +89,7 @@ impl S3Files {
         body: Vec<u8>,
         content_type: Option<&str>,
     ) -> Result<http::Request<Vec<u8>>> {
-        if key.is_empty() {
-            return Err(Error::Invalid("empty file key".into()));
-        }
+        check_file_key(key)?;
         let path = format!("/{}/{}", uri_encode(&self.s.bucket), uri_encode(key));
         let url = format!("{}{path}", self.s.endpoint);
         let uri: http::Uri = url.parse().map_err(platform)?;
@@ -92,9 +100,13 @@ impl S3Files {
             s: &self.s,
             method: method.as_str(),
             path: &path,
-            host: &host,
             amz_date: &amz_date,
             payload_hash: &payload_hash,
+            headers: &[
+                ("host", &host),
+                ("x-amz-content-sha256", &payload_hash),
+                ("x-amz-date", &amz_date),
+            ],
         });
         let mut b = http::Request::builder()
             .method(method)
@@ -177,18 +189,31 @@ fn host_of(uri: &http::Uri) -> Result<String> {
 struct SignInput<'a> {
     s: &'a S3Settings,
     method: &'a str,
+    /// Already URI-encoded.
     path: &'a str,
-    host: &'a str,
     amz_date: &'a str,
     payload_hash: &'a str,
+    /// Signed headers, lowercase names; `host`, `x-amz-content-sha256` and
+    /// `x-amz-date` at least.
+    headers: &'a [(&'a str, &'a str)],
 }
 
 /// The `Authorization` header value (SigV4, no query string).
 fn sign(i: &SignInput<'_>) -> String {
-    let signed_headers = "host;x-amz-content-sha256;x-amz-date";
+    let mut headers = i.headers.to_vec();
+    headers.sort_by_key(|(k, _)| *k);
+    let canonical_headers: String = headers
+        .iter()
+        .map(|(k, v)| format!("{k}:{}\n", v.trim()))
+        .collect();
+    let signed_headers = headers
+        .iter()
+        .map(|(k, _)| *k)
+        .collect::<Vec<_>>()
+        .join(";");
     let canonical = format!(
-        "{}\n{}\n\nhost:{}\nx-amz-content-sha256:{}\nx-amz-date:{}\n\n{signed_headers}\n{}",
-        i.method, i.path, i.host, i.payload_hash, i.amz_date, i.payload_hash
+        "{}\n{}\n\n{canonical_headers}\n{signed_headers}\n{}",
+        i.method, i.path, i.payload_hash
     );
     let date = &i.amz_date[..8];
     let scope = format!("{date}/{}/s3/aws4_request", i.s.region);
@@ -275,6 +300,39 @@ mod tests {
         assert_eq!(
             hex(&k),
             "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d"
+        );
+    }
+
+    /// "GET Object" from the SigV4 S3 examples:
+    /// https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+    #[test]
+    fn signature_matches_aws_get_object_example() {
+        let s = S3Settings::new(
+            "https://examplebucket.s3.amazonaws.com",
+            "examplebucket",
+            "us-east-1",
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        );
+        let empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let auth = sign(&SignInput {
+            s: &s,
+            method: "GET",
+            path: "/test.txt",
+            amz_date: "20130524T000000Z",
+            payload_hash: empty,
+            headers: &[
+                ("x-amz-date", "20130524T000000Z"),
+                ("range", "bytes=0-9"),
+                ("host", "examplebucket.s3.amazonaws.com"),
+                ("x-amz-content-sha256", empty),
+            ],
+        });
+        assert_eq!(
+            auth,
+            "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, \
+             SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, \
+             Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"
         );
     }
 

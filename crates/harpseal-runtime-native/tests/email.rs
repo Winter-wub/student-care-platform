@@ -118,6 +118,23 @@ async fn smtp_rejects_bad_settings_and_addresses() {
     assert!(err.to_string().contains("recipient"), "{err}");
 }
 
+#[test]
+fn smtp_refuses_credentials_without_tls() {
+    let from = "noreply@sealbay.example";
+    let err = Smtp::new("smtp://officer:pw@mail.sealbay.example:25", from)
+        .err()
+        .expect("clear-text credentials refused");
+    assert!(err.to_string().contains("no TLS"), "{err}");
+    for ok in [
+        "smtp://mail.sealbay.example:25",
+        "smtp://officer:pw@mail.sealbay.example:587?tls=required",
+        "smtp://officer:pw@mail.sealbay.example:587?tls=opportunistic",
+        "smtps://officer:pw@mail.sealbay.example:465",
+    ] {
+        assert!(Smtp::new(ok, from).is_ok(), "{ok} refused");
+    }
+}
+
 #[tokio::test]
 async fn resend_posts_json_with_bearer_key() {
     let http = harpseal_testing::RecordingHttp::default();

@@ -3,10 +3,12 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use harpseal::{Error, FileStore, Result};
+use harpseal::{Error, FileStore, Random, Result, check_file_key};
 
-/// A local directory as the FileStore. Keys are relative paths with `/`
-/// separators; empty keys, absolute keys and `..` segments are refused.
+use crate::OsRandom;
+
+/// A local directory as the FileStore. Keys follow [`check_file_key`]
+/// (the same rule as R2 and S3).
 /// `content_type` is not stored (S3 and R2 keep it; a directory cannot).
 #[derive(Debug, Clone)]
 pub struct LocalFiles {
@@ -20,15 +22,7 @@ impl LocalFiles {
     }
 
     fn path(&self, key: &str) -> Result<PathBuf> {
-        let bad = key.is_empty()
-            || key.starts_with('/')
-            || key.contains('\\')
-            || key
-                .split('/')
-                .any(|p| p.is_empty() || p == "." || p == "..");
-        if bad {
-            return Err(Error::Invalid(format!("bad file key {key:?}")));
-        }
+        check_file_key(key)?;
         Ok(self.root.join(key))
     }
 }
@@ -44,12 +38,17 @@ impl FileStore for LocalFiles {
         if let Some(dir) = p.parent() {
             tokio::fs::create_dir_all(dir).await.map_err(io)?;
         }
-        // Write a sibling temp file, then rename: readers never see half a file.
-        let tmp = p.with_extension(format!(
-            "{}.tmp",
-            p.extension().and_then(|e| e.to_str()).unwrap_or("")
-        ));
-        tokio::fs::write(&tmp, bytes).await.map_err(io)?;
+        // Write a uniquely named sibling temp file, then rename: readers never
+        // see half a file, and concurrent puts of one key never share a temp.
+        let mut tag = [0u8; 8];
+        OsRandom.fill(&mut tag)?;
+        let tag: String = tag.iter().map(|b| format!("{b:02x}")).collect();
+        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let tmp = p.with_file_name(format!(".{name}.{tag}.tmp"));
+        if let Err(e) = tokio::fs::write(&tmp, bytes).await {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return Err(io(e));
+        }
         tokio::fs::rename(&tmp, &p).await.map_err(io)
     }
 

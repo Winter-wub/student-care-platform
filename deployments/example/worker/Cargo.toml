@@ -16,6 +16,6 @@ example-deployment.workspace = true
 harpseal-runtime-cloudflare.workspace = true
 worker.workspace = true
 
-# The release profile is the workspace's (opt-level "z", lto, codegen-units 1,
-# panic "abort", strip). wasm-opt -Oz runs explicitly in wrangler.toml's
-# [build] command, after `worker-build --no-opt`.
+# Built with the workspace's `wasm-release` profile (release + panic "abort").
+# wasm-opt -Oz runs explicitly in wrangler.toml's [build] command, after
+# `worker-build --profile wasm-release --no-opt`.

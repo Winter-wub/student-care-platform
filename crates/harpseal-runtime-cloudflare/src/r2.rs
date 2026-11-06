@@ -1,7 +1,7 @@
 //! [`R2Files`]: an R2 bucket binding as the `FileStore`.
 
 use async_trait::async_trait;
-use harpseal::{Error, FileStore, Result};
+use harpseal::{Error, FileStore, Result, check_file_key};
 use worker::send::SendWrapper;
 use worker::{Bucket, Env, HttpMetadata};
 
@@ -38,17 +38,10 @@ fn platform(e: impl core::fmt::Display) -> Error {
     Error::Platform(e.to_string())
 }
 
-fn check(key: &str) -> Result<()> {
-    if key.is_empty() {
-        return Err(Error::Invalid("empty file key".into()));
-    }
-    Ok(())
-}
-
 #[async_trait]
 impl FileStore for R2Files {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<()> {
-        check(key)?;
+        check_file_key(key)?;
         let bucket = self.bucket()?;
         let meta = HttpMetadata {
             content_type: Some(content_type.to_string()),
@@ -67,7 +60,7 @@ impl FileStore for R2Files {
     }
 
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        check(key)?;
+        check_file_key(key)?;
         let bucket = self.bucket()?;
         worker::send::SendFuture::new(async move {
             let Some(obj) = bucket.get(key).execute().await.map_err(platform)? else {
@@ -82,7 +75,7 @@ impl FileStore for R2Files {
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        check(key)?;
+        check_file_key(key)?;
         let bucket = self.bucket()?;
         worker::send::SendFuture::new(async move { bucket.delete(key).await.map_err(platform) })
             .await

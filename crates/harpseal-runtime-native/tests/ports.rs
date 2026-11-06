@@ -129,7 +129,17 @@ async fn local_files_put_get_delete() {
     let dir = scratch("files");
     let files = LocalFiles::new(&dir);
     round_trip(&files, "roster/2026/import.csv").await;
-    for bad in ["", "/etc/passwd", "../x", "a/../../x", "a//b", "a\\b"] {
+    for bad in [
+        "",
+        "/etc/passwd",
+        "../x",
+        "a/../../x",
+        "a//b",
+        "a\\b",
+        "c:/x",
+        "a/./b",
+        "a/",
+    ] {
         assert!(files.get(bad).await.is_err(), "{bad:?} accepted");
     }
     std::fs::remove_dir_all(dir).unwrap();
@@ -153,13 +163,63 @@ async fn s3_files_put_get_delete_when_configured() {
     let region = var("HARPSEAL_TEST_S3_REGION").unwrap_or_else(|| "auto".into());
     let s = S3Settings::new(endpoint, bucket, region, id, secret);
     let http = Arc::new(harpseal_runtime_native::ReqwestHttp::new().unwrap());
-    let files = S3Files::new(s, http, Arc::new(SystemClock));
+    let files = S3Files::new(s, http, Arc::new(SystemClock)).unwrap();
     let key = scratch("s3");
     let key = format!(
         "harpseal-test/{}",
         key.file_name().unwrap().to_str().unwrap()
     );
     round_trip(&files, &key).await;
+}
+
+#[tokio::test]
+async fn local_files_concurrent_puts_of_one_key_do_not_clash() {
+    let dir = scratch("race");
+    let files = Arc::new(LocalFiles::new(&dir));
+    let puts = (0..8u8).map(|i| {
+        let f = files.clone();
+        tokio::spawn(async move { f.put("same.txt", vec![i; 1024], "text/plain").await })
+    });
+    for p in puts {
+        p.await.unwrap().unwrap();
+    }
+    let got = files.get("same.txt").await.unwrap().unwrap();
+    assert_eq!(got.len(), 1024);
+    assert!(got.iter().all(|b| *b == got[0]), "one whole write wins");
+    files
+        .put("x.tmp", b"a".to_vec(), "text/plain")
+        .await
+        .unwrap();
+    assert_eq!(
+        files.get("x.tmp").await.unwrap().as_deref(),
+        Some(&b"a"[..])
+    );
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+    assert_eq!(left.len(), 2, "no temp files left behind");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn s3_refuses_bad_keys_and_endpoints_with_a_path() {
+    let http = Arc::new(harpseal_testing::RecordingHttp::default());
+    let clock = Arc::new(SystemClock);
+    let s = |endpoint: &str| S3Settings::new(endpoint, "b", "auto", "id", "secret");
+    for bad in [
+        "https://s3.example/prefix",
+        "https://s3.example?x=1",
+        "s3.example",
+        "ftp://s3.example",
+    ] {
+        assert!(
+            S3Files::new(s(bad), http.clone(), clock.clone()).is_err(),
+            "{bad}"
+        );
+    }
+    let files = S3Files::new(s("https://s3.example:9000/"), http.clone(), clock).unwrap();
+    for bad in ["", "a/../b", "c:/x", "/abs"] {
+        assert!(files.get(bad).await.is_err(), "{bad:?} accepted");
+    }
+    assert!(http.requests().is_empty(), "nothing sent for refused keys");
 }
 
 #[tokio::test]
@@ -173,7 +233,7 @@ async fn s3_requests_are_signed_path_style() {
         "AKIDEXAMPLE",
         "secret",
     );
-    let files = S3Files::new(s, Arc::new(http.clone()), Arc::new(clock));
+    let files = S3Files::new(s, Arc::new(http.clone()), Arc::new(clock)).unwrap();
     http.respond_with(200, "");
     http.respond_with(404, "<Error><Code>NoSuchKey</Code></Error>");
     http.respond_with(204, "");

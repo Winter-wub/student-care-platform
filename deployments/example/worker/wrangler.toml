@@ -12,14 +12,15 @@ main = "build/index.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
 
-# worker-build compiles with the workspace release profile (opt-level "z",
-# lto, codegen-units 1, panic "abort", strip) and runs wasm-bindgen; its own
+# worker-build compiles with the workspace `wasm-release` profile (release:
+# opt-level "z", lto, codegen-units 1, strip; plus panic "abort") and runs
+# wasm-bindgen; its own
 # wasm-opt step is skipped (--no-opt) so `wasm-opt -Oz` runs explicitly with
 # the features wasm-bindgen output needs. Needs worker-build
 # (`cargo install worker-build`) and binaryen's wasm-opt (`brew install binaryen`).
 [build]
 command = """
-worker-build --release --no-opt && \
+worker-build --profile wasm-release --no-opt && \
 wasm-opt -Oz --enable-bulk-memory --enable-exception-handling --enable-mutable-globals \
   --enable-nontrapping-float-to-int --enable-reference-types --enable-sign-ext --enable-multivalue \
   build/index_bg.wasm -o build/index_bg.wasm

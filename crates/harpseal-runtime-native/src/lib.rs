@@ -67,7 +67,7 @@ pub fn services(s: &NativeSettings) -> Result<Services> {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let files: Arc<dyn harpseal::FileStore> = match &s.files {
         FilesSettings::Local(root) => Arc::new(LocalFiles::new(root.clone())),
-        FilesSettings::S3(s3) => Arc::new(S3Files::new(s3.clone(), http.clone(), clock.clone())),
+        FilesSettings::S3(s3) => Arc::new(S3Files::new(s3.clone(), http.clone(), clock.clone())?),
     };
     let email: Arc<dyn harpseal::EmailSender> = match &s.email {
         EmailSettings::Smtp { url, from } => Arc::new(Smtp::new(url, from)?),
@@ -94,9 +94,11 @@ pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
 }
 
 /// Calls [`Deployment::tick`] every `period` (one minute in production)
-/// with the Deployment's Clock, starting one period from now. Errors are
-/// printed to stderr and the next tick runs anyway; a tick that overruns
-/// delays the next one instead of piling up. Abort the handle to stop.
+/// with the Deployment's Clock, starting one period from now. Each tick
+/// runs in its own task: an error, a failed outcome write or a handler
+/// panic is printed to stderr and the next tick runs anyway. A tick that
+/// overruns delays the next one instead of piling up. Abort the handle to
+/// stop.
 pub fn spawn_ticker(d: Arc<Deployment>, period: Duration) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let start = tokio::time::Instant::now() + period;
@@ -104,9 +106,15 @@ pub fn spawn_ticker(d: Arc<Deployment>, period: Duration) -> tokio::task::JoinHa
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             every.tick().await;
-            let now = d.services().clock.now();
-            if let Err(e) = d.tick(now).await {
-                eprintln!("tick failed: {e}");
+            let d = d.clone();
+            let run = tokio::spawn(async move {
+                let now = d.services().clock.now();
+                d.tick(now).await
+            });
+            match run.await {
+                Ok(Ok(r)) => r.errors.iter().for_each(|e| eprintln!("tick: {e}")),
+                Ok(Err(e)) => eprintln!("tick failed: {e}"),
+                Err(e) => eprintln!("tick aborted: {e}"),
             }
         }
     })

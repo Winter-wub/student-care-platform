@@ -81,12 +81,9 @@ pub struct NoEmail {
 
 #[async_trait]
 impl harpseal::EmailSender for NoEmail {
-    async fn send(&self, email: Email) -> Result<()> {
-        worker::console_error!(
-            "email to {} not sent: {} is not set",
-            email.to,
-            self.missing
-        );
+    async fn send(&self, _email: Email) -> Result<()> {
+        // Never log the recipient: it is personal data.
+        worker::console_error!("email not sent: the {} secret is not set", self.missing);
         Err(Error::Platform(format!(
             "email is not configured: set the {} secret",
             self.missing
