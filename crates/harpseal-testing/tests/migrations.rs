@@ -64,7 +64,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
     let rows = h
         .db()
         .query(Statement::new(
-            "SELECT module, name, applied_at FROM migration ORDER BY name",
+            "SELECT module, name, applied_at, checksum FROM migration ORDER BY name",
         ))
         .await
         .unwrap();
@@ -87,6 +87,11 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
+    assert_eq!(
+        rows.rows[0][3].as_text().map(str::len),
+        Some(64),
+        "SHA-256 hex"
+    );
 }
 
 #[tokio::test]
@@ -200,4 +205,84 @@ async fn consent_rows_are_never_deleted() {
         exec(&h, sql).await.unwrap();
     }
     assert!(exec(&h, "DELETE FROM consent").await.is_err());
+}
+
+struct Versioned(&'static str);
+
+impl harpseal::Module for Versioned {
+    fn name(&self) -> &'static str {
+        "versioned"
+    }
+    fn register(&self, r: &mut harpseal::ModuleRegistrar) {
+        r.migration("0001_thing", self.0);
+    }
+}
+
+#[tokio::test]
+async fn an_applied_migration_that_changed_is_refused() {
+    let h = Harness::new();
+    let v1 = h
+        .builder()
+        .module(Versioned("CREATE TABLE thing (id TEXT PRIMARY KEY);"));
+    v1.build().unwrap().migrate().await.unwrap();
+    let v2 = h
+        .builder()
+        .module(Versioned(
+            "CREATE TABLE thing (id TEXT PRIMARY KEY, x TEXT);",
+        ))
+        .build()
+        .unwrap();
+    let err = v2.migrate().await.unwrap_err().to_string();
+    assert!(
+        err.contains("versioned/0001_thing changed after it was applied"),
+        "{err}"
+    );
+    let same = h
+        .builder()
+        .module(Versioned("CREATE TABLE thing (id TEXT PRIMARY KEY);"))
+        .build()
+        .unwrap();
+    assert!(same.migrate().await.unwrap().applied.is_empty());
+}
+
+#[tokio::test]
+async fn consent_is_once_per_notice_version_and_never_changed() {
+    let h = Harness::new();
+    let _app = h.start().await;
+    for sql in [
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s1', '68010001', 'น้ำใส ดาวทะเล', 'th', 1, 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+         VALUES ('a1', 'fake', 'u1', 1, 1)",
+        "INSERT INTO consent (id, student_id, channel_account_id, notice_version, locale, accepted_at) \
+         VALUES ('c1', 's1', 'a1', '1', 'th', 1)",
+    ] {
+        exec(&h, sql).await.unwrap();
+    }
+    let again = "INSERT INTO consent (id, student_id, channel_account_id, notice_version, locale, accepted_at) \
+                 VALUES ('c2', 's1', 'a1', '1', 'th', 2)";
+    assert!(exec(&h, again).await.is_err(), "one row per version");
+    assert!(exec(&h, "UPDATE consent SET locale = 'en'").await.is_err());
+}
+
+#[tokio::test]
+async fn revoked_by_and_added_by_must_name_staff() {
+    let h = Harness::new();
+    let _app = h.start().await;
+    for sql in [
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s1', '68010001', 'ปลายฟ้า คลื่นเงิน', 'th', 1, 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+         VALUES ('a1', 'fake', 'u1', 1, 1)",
+        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'ปี 1', 1)",
+    ] {
+        exec(&h, sql).await.unwrap();
+    }
+    let link = "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+                linked_at, revoked_at, revoked_by, updated_at) \
+                VALUES ('l1', 's1', 'a1', 'fake', 'revoked', 'manual', 1, 2, 'nobody', 2)";
+    assert!(exec(&h, link).await.is_err());
+    let tag = "INSERT INTO student_tag (student_id, tag_id, source, added_at, added_by) \
+               VALUES ('s1', 't1', 'manual', 1, 'nobody')";
+    assert!(exec(&h, tag).await.is_err());
 }

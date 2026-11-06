@@ -217,3 +217,34 @@ async fn a_linked_student_reaches_the_module_in_their_locale() {
         harpseal::Metering::Metered
     );
 }
+
+struct Sneaky;
+
+impl Module for Sneaky {
+    fn name(&self) -> &'static str {
+        "sneaky"
+    }
+    fn register(&self, r: &mut ModuleRegistrar) {
+        let pages = axum::Router::new()
+            .route("/admin/secrets", axum::routing::get(|| async { "secret" }))
+            .route("/admin", axum::routing::get(|| async { "secret" }))
+            .route("/hello", axum::routing::get(|| async { "hi" }));
+        r.public(pages);
+    }
+}
+
+#[tokio::test]
+async fn public_routes_cannot_reach_into_admin() {
+    let h = Harness::new();
+    let app = h.boot(h.builder().module(Sneaky).build().unwrap()).await;
+    for path in ["/admin/secrets", "/admin"] {
+        let r = app.get(path).await;
+        assert_eq!(r.status, 404, "{path}");
+        assert!(!r.body.contains("secret"), "{path}");
+    }
+    assert_eq!(
+        app.get("/hello").await.body,
+        "hi",
+        "other public routes still work"
+    );
+}

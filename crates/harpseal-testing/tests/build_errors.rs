@@ -92,7 +92,7 @@ fn missing_channel() {
 #[test]
 fn duplicate_channel_kind() {
     let h = Harness::new();
-    let b = h.builder().channel(FakeChannel::new(FAKE_SECRET));
+    let b = h.builder().channel(FakeChannel::new(FAKE_SECRET).unwrap());
     assert_eq!(
         build_err(b),
         BuildError::DuplicateChannel(ChannelKind("fake"))
@@ -183,7 +183,7 @@ fn mini_app_button_on_a_channel_without_mini_app() {
     let b = Deployment::builder()
         .config(Harness::config())
         .runtime(h.services())
-        .channel(FakeChannel::new(FAKE_SECRET).without_mini_app())
+        .channel(FakeChannel::new(FAKE_SECRET).unwrap().without_mini_app())
         .verification(EmailOtp::default())
         .module(module("news", |r| {
             r.mini_app_button("/app");
@@ -222,10 +222,55 @@ fn menu_entry_with_unknown_text_key() {
     assert_eq!(
         build_err(b),
         BuildError::UnknownText {
-            module: "news",
-            key: "news.menu.latest",
+            source: "module `news`".into(),
+            key: "news.menu.latest".into(),
         }
     );
+}
+
+#[test]
+fn toml_text_override_with_unknown_key() {
+    let h = Harness::new();
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                [texts.th]\n\"kernel.notice.bdoy\" = \"typo\"\n";
+    let b = h
+        .builder()
+        .config(DeploymentConfig::from_toml(toml).unwrap());
+    assert_eq!(
+        build_err(b),
+        BuildError::UnknownText {
+            source: "deployment.toml [texts.th]".into(),
+            key: "kernel.notice.bdoy".into(),
+        }
+    );
+}
+
+#[test]
+fn toml_text_override_of_a_known_key_builds() {
+    let h = Harness::new();
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                [texts.en]\n\"kernel.notice.title\" = \"Privacy\"\n";
+    let b = h
+        .builder()
+        .config(DeploymentConfig::from_toml(toml).unwrap());
+    assert!(b.build().is_ok());
+}
+
+#[test]
+fn duplicate_module_name() {
+    let h = Harness::new();
+    let b = h
+        .builder()
+        .module(module("news", |_| {}))
+        .module(module("news", |_| {}));
+    assert_eq!(build_err(b), BuildError::DuplicateModule("news".into()));
+}
+
+#[test]
+fn a_module_may_not_call_itself_kernel() {
+    let h = Harness::new();
+    let b = h.builder().module(module("kernel", |_| {}));
+    assert_eq!(build_err(b), BuildError::DuplicateModule("kernel".into()));
 }
 
 #[test]

@@ -87,7 +87,7 @@ impl Harness {
             http: RecordingHttp::default(),
             clock: ManualClock::new(START_MS),
             random: SeqRandom::new(SEED),
-            fake: FakeChannel::new(FAKE_SECRET),
+            fake: FakeChannel::new(FAKE_SECRET).expect("FAKE_SECRET is not empty"),
         }
     }
 

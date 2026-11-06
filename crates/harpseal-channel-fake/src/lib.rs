@@ -66,13 +66,20 @@ pub struct FakeChannel {
 }
 
 impl FakeChannel {
-    /// A Fake Channel whose webhooks must carry `secret`.
-    pub fn new(secret: impl Into<String>) -> Self {
-        Self {
-            secret: secret.into(),
+    /// A Fake Channel whose webhooks must carry `secret`. An empty secret
+    /// is refused, so an unsigned call can never pass.
+    pub fn new(secret: impl Into<String>) -> Result<Self> {
+        let secret = secret.into();
+        if secret.is_empty() {
+            return Err(Error::Invalid(
+                "the Fake Channel secret must not be empty".into(),
+            ));
+        }
+        Ok(Self {
+            secret,
             mini_app: true,
             state: Arc::default(),
-        }
+        })
     }
 
     /// The same Channel without the Mini App Capability (as if no Mini App
@@ -167,7 +174,7 @@ impl Channel for FakeChannel {
             .headers
             .get(SIGNATURE_HEADER)
             .and_then(|v| v.to_str().ok());
-        if sig != Some(self.secret.as_str()) {
+        if self.secret.is_empty() || sig != Some(self.secret.as_str()) {
             return Err(Error::BadSignature);
         }
         Ok(std::mem::take(&mut self.lock().inbox))

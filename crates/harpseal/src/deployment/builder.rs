@@ -69,13 +69,19 @@ impl DeploymentBuilder {
         }
         let kernel: Box<dyn Module> = Box::new(Kernel);
         let mut collected = Collected::default();
+        let mut names: Vec<&'static str> = Vec::new();
         for m in std::iter::once(&kernel).chain(self.modules.iter()) {
+            if names.contains(&m.name()) {
+                return Err(BuildError::DuplicateModule(m.name().into()));
+            }
+            names.push(m.name());
             let mut r = ModuleRegistrar::new(m.name());
             m.register(&mut r);
             collected.absorb(r)?;
         }
         collected.check(&config, &self.channels)?;
         let mut catalog = collected.catalog;
+        check_toml_texts(&config, &catalog)?;
         config.apply_texts(&mut catalog);
         check_menu_texts(&collected.menu, &catalog)?;
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
@@ -195,9 +201,23 @@ fn check_menu_texts(
         .find(|(_, e)| !catalog.has(&locale, e.label_key))
     {
         Some((module, e)) => Err(BuildError::UnknownText {
-            module,
-            key: e.label_key,
+            source: format!("module `{module}`"),
+            key: e.label_key.into(),
         }),
         None => Ok(()),
     }
+}
+
+/// `[texts]` may only override keys some Module declares: a typo would
+/// otherwise be ignored silently.
+fn check_toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result<(), BuildError> {
+    for (locale, entries) in &config.texts {
+        if let Some(key) = entries.keys().find(|k| !catalog.knows(k)) {
+            return Err(BuildError::UnknownText {
+                source: format!("deployment.toml [texts.{locale}]"),
+                key: key.clone(),
+            });
+        }
+    }
+    Ok(())
 }

@@ -107,6 +107,7 @@ fn renders_every_fixture_within_limits() {
                 }
                 v
             }
+            _ => panic!("{name}: a Sample kind this test does not know"),
         };
         write(name, &out);
     }

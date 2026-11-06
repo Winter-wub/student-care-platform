@@ -21,24 +21,6 @@ CREATE TABLE student (
 CREATE INDEX student_display_name ON student (display_name);
 CREATE INDEX student_status ON student (status);
 
-CREATE TABLE tag (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL
-);
-
--- A roster Tag and a manual Tag of the same name may coexist; an import
--- replaces only the 'roster' rows.
-CREATE TABLE student_tag (
-    student_id TEXT NOT NULL REFERENCES student (id),
-    tag_id TEXT NOT NULL REFERENCES tag (id),
-    source TEXT NOT NULL CHECK (source IN ('roster', 'manual')),
-    added_at INTEGER NOT NULL,
-    added_by TEXT, -- staff.id for manual Tags, NULL for roster Tags
-    PRIMARY KEY (student_id, tag_id, source)
-);
-CREATE INDEX student_tag_tag ON student_tag (tag_id);
-
 CREATE TABLE staff (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE, -- stored lowercased
@@ -52,6 +34,24 @@ CREATE TABLE staff (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE tag (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+);
+
+-- A roster Tag and a manual Tag of the same name may coexist; an import
+-- replaces only the 'roster' rows.
+CREATE TABLE student_tag (
+    student_id TEXT NOT NULL REFERENCES student (id),
+    tag_id TEXT NOT NULL REFERENCES tag (id),
+    source TEXT NOT NULL CHECK (source IN ('roster', 'manual')),
+    added_at INTEGER NOT NULL,
+    added_by TEXT REFERENCES staff (id), -- manual Tags; NULL for roster Tags
+    PRIMARY KEY (student_id, tag_id, source)
+);
+CREATE INDEX student_tag_tag ON student_tag (tag_id);
 
 CREATE TABLE role (
     id TEXT PRIMARY KEY,

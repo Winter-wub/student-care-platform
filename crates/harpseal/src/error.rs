@@ -97,14 +97,16 @@ pub enum BuildError {
         /// The Channel without a Mini App.
         channel: ChannelKind,
     },
-    /// A Menu entry's label key is not in the text catalog for the
-    /// default Locale.
+    /// A Menu entry's label key has no text in the default Locale, or
+    /// `[texts]` in the TOML overrides a key no Module declares.
     UnknownText {
-        /// The Module that declared the Menu entry.
-        module: &'static str,
-        /// The missing catalog key.
-        key: &'static str,
+        /// The Module that declared the Menu entry, or the TOML table.
+        source: String,
+        /// The unknown catalog key.
+        key: String,
     },
+    /// Two Modules share a `name()`, or a Module is named `kernel`.
+    DuplicateModule(String),
 }
 
 impl core::fmt::Display for BuildError {
@@ -126,9 +128,10 @@ impl core::fmt::Display for BuildError {
                 f,
                 "module `{module}` sends Mini App buttons but channel `{channel}` has no Mini App URL"
             ),
-            BuildError::UnknownText { module, key } => {
-                write!(f, "module `{module}` uses unknown text key `{key}`")
+            BuildError::UnknownText { source, key } => {
+                write!(f, "{source} uses unknown text key `{key}`")
             }
+            BuildError::DuplicateModule(m) => write!(f, "module name `{m}` is used twice"),
         }
     }
 }

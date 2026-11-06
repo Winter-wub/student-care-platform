@@ -77,8 +77,33 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
         .module(Contact)
 }
 
-/// The whole Deployment, with a Fake Channel keyed by `secrets.fake_secret`.
-pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, BuildError> {
-    let fake = FakeChannel::new(secrets.fake_secret.clone());
-    builder(services, secrets).channel(fake).build()
+/// Why [`deployment`] refused to start.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum StartError {
+    /// `FAKE_SECRET` is empty: the Fake Channel would accept unsigned calls.
+    FakeSecret(harpseal::Error),
+    /// The builder refused the configuration.
+    Build(BuildError),
+}
+
+impl std::fmt::Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
+            StartError::Build(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for StartError {}
+
+/// The whole Deployment, with a Fake Channel keyed by `secrets.fake_secret`,
+/// which must not be empty.
+pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, StartError> {
+    let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
+    builder(services, secrets)
+        .channel(fake)
+        .build()
+        .map_err(StartError::Build)
 }

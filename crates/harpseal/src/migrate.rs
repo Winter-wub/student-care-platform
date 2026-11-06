@@ -1,17 +1,23 @@
-//! Applies `.sql` migrations through the [`Db`] port and records each one in
-//! the `migration` table, so a second run is a no-op. Works the same on
-//! rusqlite and D1: each file is split into single statements and applied
-//! as one all-or-nothing [`Db::batch`] together with its `migration` row.
+//! Applies `.sql` migrations through the [`Db`] port and records each one,
+//! with a checksum of its text, in the `migration` table: a second run is a
+//! no-op, and a file edited after it was applied is refused. Works the same
+//! on rusqlite and D1: each file is split into single statements and
+//! applied as one all-or-nothing [`Db::batch`] together with its row.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
+use sha2::{Digest, Sha256};
+
+use crate::id::hex;
 use crate::manifest::Migration;
 use crate::port_types::{Statement, Value};
+use crate::sql_split::split_sql;
 use crate::{Db, Error, Result};
 
 const CREATE_MIGRATION_TABLE: &str = "CREATE TABLE IF NOT EXISTS migration (\
      module TEXT NOT NULL, \
      name TEXT NOT NULL, \
+     checksum TEXT NOT NULL, \
      applied_at INTEGER NOT NULL, \
      PRIMARY KEY (module, name))";
 
@@ -21,12 +27,19 @@ const CREATE_MIGRATION_TABLE: &str = "CREATE TABLE IF NOT EXISTS migration (\
 pub struct MigrationReport {
     /// `(module, name)` of each migration applied by this run, in order.
     pub applied: Vec<(String, String)>,
-    /// How many were already recorded and skipped.
+    /// How many were already recorded (with an unchanged checksum) and skipped.
     pub skipped: usize,
 }
 
+/// SHA-256 hex of the migration text, line endings normalised to `\n` so a
+/// CRLF checkout does not count as an edit.
+pub(crate) fn checksum(sql: &str) -> String {
+    hex(&Sha256::digest(sql.replace("\r\n", "\n").as_bytes()))
+}
+
 /// Applies every migration not yet recorded in `migration`, in the order
-/// given. `now_ms` is stored as `applied_at`.
+/// given; `now_ms` is stored as `applied_at`. Fails, before applying
+/// anything, when an already-applied file's text has changed.
 pub async fn migrate(
     db: &dyn Db,
     migrations: &[Migration],
@@ -34,29 +47,50 @@ pub async fn migrate(
 ) -> Result<MigrationReport> {
     db.execute(Statement::new(CREATE_MIGRATION_TABLE)).await?;
     let rows = db
-        .query(Statement::new("SELECT module, name FROM migration"))
+        .query(Statement::new(
+            "SELECT module, name, checksum FROM migration",
+        ))
         .await?;
-    let done: HashSet<(String, String)> = rows
+    let done: HashMap<(String, String), String> = rows
         .rows
         .iter()
         .filter_map(|r| match r.as_slice() {
-            [Value::Text(m), Value::Text(n)] => Some((m.clone(), n.clone())),
+            [Value::Text(m), Value::Text(n), Value::Text(c)] => {
+                Some(((m.clone(), n.clone()), c.clone()))
+            }
             _ => None,
         })
         .collect();
+    for m in migrations {
+        let key = (m.module.to_string(), m.name.to_string());
+        if let Some(applied) = done.get(&key)
+            && *applied != checksum(m.sql)
+        {
+            return Err(Error::Db(format!(
+                "migration {}/{} changed after it was applied (checksum {applied}, now {}); \
+                 add a new migration instead of editing an applied one",
+                m.module,
+                m.name,
+                checksum(m.sql)
+            )));
+        }
+    }
     let mut report = MigrationReport::default();
     for m in migrations {
         let key = (m.module.to_string(), m.name.to_string());
-        if done.contains(&key) {
+        if done.contains_key(&key) {
             report.skipped += 1;
             continue;
         }
         let mut batch: Vec<Statement> = split_sql(m.sql).into_iter().map(Statement::new).collect();
         batch.push(
-            Statement::new("INSERT INTO migration (module, name, applied_at) VALUES (?, ?, ?)")
-                .bind(m.module)
-                .bind(m.name)
-                .bind(now_ms),
+            Statement::new(
+                "INSERT INTO migration (module, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+            )
+            .bind(m.module)
+            .bind(m.name)
+            .bind(checksum(m.sql))
+            .bind(now_ms),
         );
         db.batch(batch)
             .await
@@ -66,89 +100,14 @@ pub async fn migrate(
     Ok(report)
 }
 
-/// Splits a SQL file into statements at top-level `;`. Understands `--` and
-/// `/* */` comments, quoted strings and identifiers, and `CREATE TRIGGER ...
-/// BEGIN ... END;` bodies. Comment-only fragments are dropped.
-pub(crate) fn split_sql(sql: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut chars = sql.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '-' if chars.peek() == Some(&'-') => {
-                for c in chars.by_ref() {
-                    if c == '\n' {
-                        cur.push('\n');
-                        break;
-                    }
-                }
-            }
-            '/' if chars.peek() == Some(&'*') => {
-                chars.next();
-                let mut prev = ' ';
-                for c in chars.by_ref() {
-                    if prev == '*' && c == '/' {
-                        break;
-                    }
-                    prev = c;
-                }
-                cur.push(' ');
-            }
-            '\'' | '"' | '`' => {
-                cur.push(c);
-                for q in chars.by_ref() {
-                    cur.push(q);
-                    if q == c {
-                        break;
-                    }
-                }
-            }
-            ';' if !inside_trigger_body(&cur) => push_statement(&mut out, &mut cur),
-            _ => cur.push(c),
-        }
-    }
-    push_statement(&mut out, &mut cur);
-    out
-}
-
-/// A `;` inside `CREATE TRIGGER ... BEGIN` ends a body statement, not the
-/// trigger; the trigger ends at the `;` after `END`.
-fn inside_trigger_body(cur: &str) -> bool {
-    let upper = cur.trim_start().to_ascii_uppercase();
-    upper.starts_with("CREATE TRIGGER") && !upper.trim_end().ends_with("END")
-}
-
-fn push_statement(out: &mut Vec<String>, cur: &mut String) {
-    let s = cur.trim();
-    if !s.is_empty() {
-        out.push(s.to_string());
-    }
-    cur.clear();
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::checksum;
 
     #[test]
-    fn splits_statements_and_skips_comments() {
-        let sql = "-- header; not a statement\nCREATE TABLE a (x TEXT DEFAULT ';');\n\
-                   /* block; */ CREATE INDEX i ON a (x);\n-- trailing\n";
-        assert_eq!(
-            split_sql(sql),
-            vec![
-                "CREATE TABLE a (x TEXT DEFAULT ';')".to_string(),
-                "CREATE INDEX i ON a (x)".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn keeps_trigger_bodies_whole() {
-        let sql =
-            "CREATE TRIGGER t BEFORE DELETE ON a BEGIN SELECT RAISE(ABORT, 'no'); END;\nSELECT 1;";
-        let parts = split_sql(sql);
-        assert_eq!(parts.len(), 2);
-        assert!(parts[0].ends_with("END"), "{parts:?}");
+    fn checksum_ignores_line_endings_only() {
+        assert_eq!(checksum("A;\r\nB;"), checksum("A;\nB;"));
+        assert_ne!(checksum("A;"), checksum("A; "));
+        assert_eq!(checksum("").len(), 64);
     }
 }

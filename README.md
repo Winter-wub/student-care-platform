@@ -67,7 +67,7 @@ triggers.
 ## Running the example natively
 
 ```sh
-cargo run -p harpseal-example-native
+FAKE_SECRET=change-me cargo run -p harpseal-example-native
 # migrations: 3 applied, 0 already done
 # listening on http://127.0.0.1:8080  (try /notice)
 ```
@@ -76,7 +76,7 @@ Settings come from the environment: `HARPSEAL_DB` (default
 `example.sqlite3`), `HARPSEAL_FILES`, `HARPSEAL_SMTP`, `HARPSEAL_ADDR`, and the
 Channel secrets `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`, `LINE_LIFF_ID`,
 `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_WEB_APP_URL`,
-`FAKE_SECRET` (default `demo`). Back-office pages answer 401 until Staff
+`FAKE_SECRET` (required, non-empty: the Fake Channel refuses an empty secret). Back-office pages answer 401 until Staff
 login lands (#21).
 
 ## Testing

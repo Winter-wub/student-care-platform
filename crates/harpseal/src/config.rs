@@ -10,6 +10,7 @@ use crate::message::Locale;
 
 /// The whole `deployment.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct DeploymentConfig {
     /// The customer's name, shown in page chrome.
@@ -47,7 +48,7 @@ fn default_offset() -> String {
 
 /// `[branding]`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct BrandingConfig {
     /// Main colour, CSS hex.
@@ -70,6 +71,7 @@ impl Default for BrandingConfig {
 
 /// `[quotas.<channel>]`: warns Staff, never stops sending.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct QuotaConfig {
     /// Metered pushes allowed per calendar month.
@@ -78,7 +80,7 @@ pub struct QuotaConfig {
 
 /// `[otp]`, defaults from the spec.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct OtpConfig {
     /// Digits in a code.
@@ -107,7 +109,7 @@ impl Default for OtpConfig {
 
 /// `[retention]`, in days.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct RetentionConfig {
     /// `outbound_message` rows.
@@ -158,7 +160,8 @@ fn parse_offset(s: &str) -> Option<i32> {
         _ => return None,
     };
     let (h, m) = rest.split_once(':')?;
-    if h.len() != 2 || m.len() != 2 {
+    let two_digits = |p: &str| p.len() == 2 && p.bytes().all(|b| b.is_ascii_digit());
+    if !two_digits(h) || !two_digits(m) {
         return None;
     }
     let (h, m): (i32, i32) = (h.parse().ok()?, m.parse().ok()?);
@@ -168,6 +171,21 @@ fn parse_offset(s: &str) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_keys_are_refused_at_every_level() {
+        let base = "name = \"X\"\ndefault_locale = \"th\"\n";
+        for extra in [
+            "nmae = \"typo\"",
+            "[branding]\nprimary_colour = \"#000\"",
+            "[otp]\ndigit = 6",
+            "[retention]\njobs_days = 1",
+            "[quotas.line]\nmetered_per_month = 1\nper_day = 2",
+        ] {
+            let err = DeploymentConfig::from_toml(&format!("{base}{extra}"));
+            assert!(err.is_err(), "accepted: {extra}");
+        }
+    }
 
     #[test]
     fn minimal_toml_gets_spec_defaults() {
@@ -183,6 +201,10 @@ mod tests {
         assert_eq!(parse_offset("-03:30"), Some(-210));
         assert_eq!(parse_offset("07:00"), None);
         assert_eq!(parse_offset("+7:00"), None);
+        assert_eq!(parse_offset("++7:00"), None);
+        assert_eq!(parse_offset("+-7:00"), None);
+        assert_eq!(parse_offset("-+07:00"), None);
+        assert_eq!(parse_offset("+15:00"), None);
         let bad = "name = \"X\"\ndefault_locale = \"th\"\nutc_offset = \"Asia/Bangkok\"";
         assert!(DeploymentConfig::from_toml(bad).is_err());
     }

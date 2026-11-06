@@ -33,6 +33,7 @@ mod migrate;
 mod module;
 mod port_types;
 mod ports;
+mod sql_split;
 mod verification;
 
 pub mod password;

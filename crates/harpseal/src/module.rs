@@ -182,14 +182,17 @@ impl ModuleRegistrar {
     }
 
     /// Pages outside `/admin` with no Staff session: Mini App pages (which
-    /// check their own App Session) and public pages.
+    /// check their own App Session) and public pages. Routes under `/admin`
+    /// registered here answer 404; use [`ModuleRegistrar::back_office`].
     pub fn public(&mut self, r: axum::Router<AppState>) -> &mut Self {
         self.public.push(r);
         self
     }
 
     /// Declares that this Module sends `Button::MiniApp` to `path`.
-    /// `build()` then requires every Channel to have a Mini App.
+    /// `build()` then requires every Channel to have a Mini App. A Mini App
+    /// button sent without this declaration is not checked at build time:
+    /// the adapter degrades it at send time to a visible notice.
     pub fn mini_app_button(&mut self, path: &'static str) -> &mut Self {
         self.mini_app_paths.push(path);
         self

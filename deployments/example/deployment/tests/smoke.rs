@@ -57,5 +57,19 @@ async fn unlinked_student_pressing_contact_is_asked_to_verify() {
 #[test]
 fn production_wiring_builds_with_its_own_fake_channel() {
     let h = Harness::new();
-    assert!(example_deployment::deployment(h.services(), Secrets::default()).is_ok());
+    let secrets = Secrets {
+        fake_secret: "s3cret".into(),
+        ..Secrets::default()
+    };
+    assert!(example_deployment::deployment(h.services(), secrets).is_ok());
+}
+
+#[test]
+fn an_empty_fake_secret_refuses_to_start() {
+    let h = Harness::new();
+    let err = example_deployment::deployment(h.services(), Secrets::default()).unwrap_err();
+    assert!(
+        matches!(err, example_deployment::StartError::FakeSecret(_)),
+        "{err}"
+    );
 }

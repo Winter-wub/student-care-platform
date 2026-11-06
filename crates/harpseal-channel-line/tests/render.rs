@@ -125,6 +125,7 @@ fn renders_every_fixture_within_limits() {
                 assert!(w / h >= 1.45, "rich menu aspect ratio");
                 v
             }
+            _ => panic!("{name}: a Sample kind this test does not know"),
         };
         write(name, &out);
     }

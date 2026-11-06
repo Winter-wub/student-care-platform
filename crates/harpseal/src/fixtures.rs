@@ -7,6 +7,7 @@ use crate::message::{
 };
 
 /// One rendered sample: a Message (`render::message`) or a Menu (`render::menu`).
+#[non_exhaustive]
 pub enum Sample {
     /// A Message for `render::message`.
     Message(Message),

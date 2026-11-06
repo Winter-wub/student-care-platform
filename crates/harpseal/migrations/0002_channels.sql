@@ -28,11 +28,12 @@ CREATE TABLE link (
     verified_by_staff_id TEXT REFERENCES staff (id), -- Manual Links
     linked_at INTEGER NOT NULL,
     revoked_at INTEGER,
-    revoked_by TEXT, -- staff.id; NULL when the Student or the system revoked
+    revoked_by TEXT REFERENCES staff (id), -- NULL when the Student or the system revoked
     updated_at INTEGER NOT NULL
 );
--- At most one live (active or unreachable) Link per Student per Channel,
--- and per Channel Account.
+-- At most one live Link per Student per Channel, and per Channel Account.
+-- Deliberately counts 'unreachable' as live: a blocked Link recovers by
+-- itself, so it still holds its place.
 CREATE UNIQUE INDEX link_live_student_channel ON link (student_id, channel)
     WHERE status <> 'revoked';
 CREATE UNIQUE INDEX link_live_account ON link (channel_account_id)
@@ -54,16 +55,21 @@ CREATE TABLE verification_challenge (
 CREATE INDEX verification_challenge_student ON verification_challenge (student_id, created_at);
 CREATE INDEX verification_challenge_account ON verification_challenge (channel_account_id, state);
 
--- One row per Student per accepted notice version. Never deleted.
+-- One row per Student per accepted notice version. Never changed or deleted.
 CREATE TABLE consent (
     id TEXT PRIMARY KEY,
     student_id TEXT NOT NULL REFERENCES student (id),
     channel_account_id TEXT NOT NULL REFERENCES channel_account (id),
     notice_version TEXT NOT NULL,
     locale TEXT NOT NULL,
-    accepted_at INTEGER NOT NULL
+    accepted_at INTEGER NOT NULL,
+    UNIQUE (student_id, notice_version)
 );
 CREATE INDEX consent_student ON consent (student_id, accepted_at);
+CREATE TRIGGER consent_no_update BEFORE UPDATE ON consent
+BEGIN
+    SELECT RAISE(ABORT, 'consent rows are never changed');
+END;
 CREATE TRIGGER consent_no_delete BEFORE DELETE ON consent
 BEGIN
     SELECT RAISE(ABORT, 'consent rows are never deleted');

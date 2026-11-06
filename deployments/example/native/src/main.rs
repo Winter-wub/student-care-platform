@@ -15,8 +15,12 @@ fn env(k: &str, default: &str) -> String {
     std::env::var(k).unwrap_or_else(|_| default.to_string())
 }
 
-fn secrets() -> Secrets {
-    Secrets {
+fn secrets() -> Result<Secrets, String> {
+    let fake_secret = std::env::var("FAKE_SECRET")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .ok_or("FAKE_SECRET must be set (the Fake Channel's webhook secret)")?;
+    Ok(Secrets {
         line: LineConfig::new(
             env("LINE_CHANNEL_SECRET", ""),
             env("LINE_ACCESS_TOKEN", ""),
@@ -27,8 +31,8 @@ fn secrets() -> Secrets {
             env("TELEGRAM_WEBHOOK_SECRET", ""),
             env("TELEGRAM_WEB_APP_URL", ""),
         ),
-        fake_secret: env("FAKE_SECRET", "demo"),
-    }
+        fake_secret,
+    })
 }
 
 #[tokio::main]
@@ -39,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env("HARPSEAL_SMTP", "smtp://localhost:25"),
     );
     let addr = env("HARPSEAL_ADDR", "127.0.0.1:8080");
-    let d = deployment(services(&settings)?, secrets())?;
+    let d = deployment(services(&settings)?, secrets()?)?;
     let report = d.migrate().await?;
     println!(
         "migrations: {} applied, {} already done",

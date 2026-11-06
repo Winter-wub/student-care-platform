@@ -103,6 +103,11 @@ impl Catalog {
             .contains_key(&(locale.0.clone(), key.to_string()))
     }
 
+    /// Whether any Locale has a text for `key`.
+    pub(crate) fn knows(&self, key: &str) -> bool {
+        self.texts.keys().any(|(_, k)| k == key)
+    }
+
     /// The text for `key` in `locale`; falls back to the default Locale,
     /// then to the key itself (so a missing text is visible, not empty).
     pub fn t(&self, locale: &Locale, key: &str) -> String {

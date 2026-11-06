@@ -19,7 +19,9 @@ impl Deployment {
     /// The whole HTTP surface:
     /// - `POST /webhook/{kind}`: Channel webhooks (401 on a bad signature);
     /// - `GET /static/app.css`: the shared stylesheet;
-    /// - Module public routes at the root (the Kernel's `/notice`);
+    /// - Module public routes at the root (the Kernel's `/notice`); a
+    ///   public route under `/admin` answers 404, so `public()` can never
+    ///   bypass the Permission guard;
     /// - Module back-office routes under `/admin`, each guarded by its
     ///   Permission.
     pub fn router(self: Arc<Self>) -> axum::Router {
@@ -38,7 +40,7 @@ impl Deployment {
         }
         let mut root = axum::Router::new();
         for r in &self.registry.public {
-            root = root.merge(r.clone());
+            root = root.merge(r.clone().layer(axum::middleware::from_fn(public_only)));
         }
         let css = get(|| async {
             (
@@ -75,6 +77,16 @@ async fn webhook(
         Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+/// Public routers must not serve the back office: anything under `/admin`
+/// registered through `ModuleRegistrar::public` answers 404.
+async fn public_only(req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    if path == "/admin" || path.starts_with("/admin/") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(req).await
 }
 
 /// Lets a back-office request through only for Staff holding `permission`.
