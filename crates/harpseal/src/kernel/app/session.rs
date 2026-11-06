@@ -74,16 +74,6 @@ pub(crate) fn create(services: &Services, account: &str) -> Result<(String, Vec<
     Ok((token, stmts))
 }
 
-/// The newest session of `account` started after `since` exists.
-pub(crate) async fn started_since(services: &Services, account: &str, since: i64) -> Result<bool> {
-    let stmt = Statement::new(
-        "SELECT 1 FROM app_session WHERE channel_account_id = ? AND created_at > ? LIMIT 1",
-    )
-    .bind(account)
-    .bind(since);
-    Ok(!services.db.query(stmt).await?.is_empty())
-}
-
 /// The visitor behind the request's cookie. A missing, unknown or expired
 /// session is `None`; an expired row is deleted on the way.
 pub(crate) async fn resolve(
@@ -151,10 +141,14 @@ pub(crate) fn cookie(token: Option<&str>, secure: bool) -> HeaderValue {
     HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
-/// Deletes sessions expired more than [`PRUNE_AFTER_MS`] before `now`;
-/// returns how many.
+/// Deletes at most 500 sessions expired more than [`PRUNE_AFTER_MS`]
+/// before `now`; returns how many. (`app_session` has no `expires_at`
+/// index yet: a follow-up migration.)
 pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
-    let stmt =
-        Statement::new("DELETE FROM app_session WHERE expires_at < ?").bind(now - PRUNE_AFTER_MS);
+    let stmt = Statement::new(
+        "DELETE FROM app_session WHERE id IN \
+         (SELECT id FROM app_session WHERE expires_at < ? LIMIT 500)",
+    )
+    .bind(now - PRUNE_AFTER_MS);
     Ok(services.db.execute(stmt).await?.rows_affected)
 }

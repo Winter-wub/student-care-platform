@@ -24,6 +24,12 @@ pub(crate) const TELEGRAM_SDK: &str = "https://telegram.org/js/telegram-web-app.
 /// shows the "open from the chat" text instead.
 const EXCHANGE_JS: &str = r#"(function () {
   var f = document.getElementById('xchg');
+  // LIFF redirects to `liff.state` after init: only a plain /app path.
+  var st = new URLSearchParams(location.search).get('liff.state');
+  if (st !== null && !/^\/app(\/[A-Za-z0-9_.\-]+)*$/.test(st)) {
+    location.replace(location.pathname);
+    return;
+  }
   var fail = function () {
     document.getElementById('xchg-wait').hidden = true;
     document.getElementById('xchg-fail').hidden = false;
@@ -117,6 +123,18 @@ pub(crate) fn answer(
         script { (PreEscaped(CLEAR_GUARD_JS)) }
     };
     respond(status, page(s, t, None, &text, body))
+}
+
+/// "Open it again from the chat", no button: the token the webview holds
+/// is stale (a Telegram `initData` stays the same while the Mini App is
+/// open), so retrying here cannot help.
+pub(crate) fn hint(s: &PageState, t: &Texts) -> Response {
+    let body = html! {
+        div class="card app-center" { p { (t.t("kernel.app.open_in_chat")) } }
+        script { (PreEscaped(CLEAR_GUARD_JS)) }
+    };
+    let title = t.t("kernel.app.title");
+    respond(StatusCode::UNAUTHORIZED, page(s, t, None, &title, body))
 }
 
 /// The page of an account without a live Link.

@@ -15,6 +15,7 @@
 //! `kernel.app.prune_sessions` deletes rows expired over a day ago.
 
 mod exchange;
+mod limit;
 mod pages;
 mod sdk;
 pub(crate) mod session;
@@ -61,13 +62,15 @@ pub(crate) async fn texts(s: &AppState, locale: &Locale) -> Result<crate::kernel
 }
 
 /// Deletes App Sessions expired more than a day before `now` (ms); returns
-/// how many. Run hourly by the Job `kernel.app.prune_sessions`.
+/// how many (at most 500 per call). Run hourly by the Job
+/// `kernel.app.prune_sessions`, which also deletes the exchange's old
+/// rate-limit windows.
 pub(crate) async fn prune_sessions(services: &Services, now: i64) -> Result<u64> {
     session::prune(services, now).await
 }
 
 async fn prune_job(cx: JobContext, _job: Job) -> Result<()> {
-    prune_sessions(&cx.services, cx.services.now_ms())
-        .await
-        .map(|_| ())
+    let now = cx.services.now_ms();
+    prune_sessions(&cx.services, now).await?;
+    limit::prune(&cx.services, now).await.map(|_| ())
 }

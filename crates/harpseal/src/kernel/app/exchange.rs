@@ -4,38 +4,49 @@
 //! token or Telegram `initData`) and `next`. The Channel's `MiniApp`
 //! Capability verifies the token; the account must already exist (it
 //! chatted with the bot). Answers:
+//! - `Sec-Fetch-Site: cross-site`: 403 (login CSRF; the real exchange is a
+//!   same-origin form post);
 //! - no such Channel, or no Mini App on it: 404;
-//! - a token the platform refuses (`BadSignature` / `Invalid`): 403 with a
-//!   retry button and a Security Event `app.session_refused` (Channel kind
-//!   and client IP, never the token);
+//! - on a Channel whose verification is a network call (LIFF: LINE's
+//!   verify endpoint), more than 30 exchanges per IP group per minute:
+//!   429 before verifying ([`super::limit`]);
+//! - a token the platform refuses (`BadSignature`): 403 with a retry
+//!   button and at most one Security Event `app.session_refused` per IP
+//!   group per minute (Channel kind and IP group, never the token);
+//! - a correctly signed but stale or malformed token (`Invalid`, e.g. a
+//!   Telegram `initData` older than an hour, which stays the same while
+//!   the webview is open): the "open it again from the chat" page, no
+//!   retry button, no event;
 //! - any other failure: 500, no details;
-//! - ten refusals from one IP within a minute: 429 before verifying;
-//! - a second session for the same account within one second: 429;
 //! - an account the Deployment has never seen: the "not linked" page,
 //!   without a session;
 //! - otherwise a new session (the account's expired ones deleted in the
 //!   same batch), its cookie, and 303 to `next` when it is a safe `/app`
 //!   path, else to `/app`.
+//!
+//! Trade-offs of the limits: Telegram's `initData` is checked locally (one
+//! HMAC), so it gets no limit at all; a limit keyed by IP would only lock
+//! out Students sharing campus Wi-Fi or carrier NAT. LINE's check costs a
+//! request to LINE, so it is capped per IP group (IPv6 /64) at a level a
+//! shared NAT should not reach: 30 a minute. Every exchange counts
+//! (successful ones too), and one counter row per group per minute keeps
+//! the table small; the hourly Job deletes old windows. There is no
+//! per-account limit: the account is known only after the verification
+//! the limit is meant to spare, and a valid token is never refused for
+//! being used again.
 
 use axum::Form;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
-use super::session;
-use super::view::{answer, not_linked};
+use super::sdk::Sdks;
+use super::view::{answer, hint, not_linked};
+use super::{limit, session};
 use crate::audit::RequestCtx;
 use crate::port_types::{Statement, Value};
 use crate::{AppState, Error, Result};
-
-/// Refusals one IP may collect within [`REFUSAL_WINDOW_MS`].
-const REFUSALS_PER_IP: i64 = 10;
-const REFUSAL_WINDOW_MS: i64 = 60_000;
-/// One session per account per this long.
-const PER_ACCOUNT_MS: i64 = 1_000;
-/// Security Event kind of a refused token.
-pub(crate) const REFUSED: &str = "app.session_refused";
 
 /// The exchange form.
 #[derive(Debug, Default, Deserialize)]
@@ -66,11 +77,20 @@ pub(crate) fn safe_next(next: &str) -> &str {
 pub(crate) async fn exchange(
     State(s): State<AppState>,
     ctx: RequestCtx,
+    headers: HeaderMap,
     Form(f): Form<ExchangeForm>,
 ) -> Response {
     let Ok(t) = super::texts(&s, &s.config.default_locale).await else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
+    // The entry page posts from the same origin; a cross-site post would
+    // sign the browser in as someone else (login CSRF).
+    if headers
+        .get("sec-fetch-site")
+        .is_some_and(|v| v == "cross-site")
+    {
+        return answer(&s, &t, StatusCode::FORBIDDEN, "kernel.app.forbidden", None);
+    }
     let next = safe_next(&f.next);
     let d = s.deployment.clone();
     let Some(app) = d.channel(&f.channel).and_then(|c| c.mini_app()) else {
@@ -86,29 +106,26 @@ pub(crate) async fn exchange(
             Some(next),
         )
     };
-    match refused_lately(&s, ctx.ip.as_deref()).await {
-        Ok(true) => {
-            return answer(
-                &s,
-                &t,
-                StatusCode::TOO_MANY_REQUESTS,
-                "kernel.app.slow_down",
-                Some(next),
-            );
+    let group = ctx.ip.as_deref().map(limit::ip_group);
+    if let Some(g) = group.as_deref().filter(|_| networked(&s, &f.channel)) {
+        match limit::verify_allowed(&s.services, g).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return answer(
+                    &s,
+                    &t,
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "kernel.app.slow_down",
+                    Some(next),
+                );
+            }
+            Err(e) => return fail(&e),
         }
-        Ok(false) => {}
-        Err(e) => return fail(&e),
     }
     let who = match app.verify_session(&f.token).await {
         Ok(who) => who,
-        Err(Error::BadSignature | Error::Invalid(_)) => {
-            let mut details = vec![("channel", f.channel.clone())];
-            if let Some(ip) = &ctx.ip {
-                details.push(("ip", ip.clone()));
-            }
-            let logged =
-                crate::kernel::security::record(&s.services, REFUSED, None, None, &details).await;
-            if let Err(e) = logged {
+        Err(Error::BadSignature) => {
+            if let Err(e) = limit::log_refusal(&s.services, &f.channel, group.as_deref()).await {
                 return fail(&e);
             }
             return answer(
@@ -119,6 +136,7 @@ pub(crate) async fn exchange(
                 Some(next),
             );
         }
+        Err(Error::Invalid(_)) => return hint(&s, &t),
         Err(e) => return fail(&e),
     };
     // The adapter vouches for the external id on its own Channel.
@@ -127,20 +145,6 @@ pub(crate) async fn exchange(
         Ok(None) => return not_linked(&s, &t, None),
         Err(e) => return fail(&e),
     };
-    let since = s.services.now_ms() - PER_ACCOUNT_MS;
-    match session::started_since(&s.services, &account, since).await {
-        Ok(true) => {
-            return answer(
-                &s,
-                &t,
-                StatusCode::TOO_MANY_REQUESTS,
-                "kernel.app.slow_down",
-                Some(next),
-            );
-        }
-        Ok(false) => {}
-        Err(e) => return fail(&e),
-    }
     let started = match session::create(&s.services, &account) {
         Ok((token, stmts)) => s.services.db.batch(stmts).await.map(|_| token),
         Err(e) => Err(e),
@@ -163,18 +167,12 @@ pub(crate) async fn exchange(
     r
 }
 
-/// The client at `ip` collected [`REFUSALS_PER_IP`] refusals lately.
-async fn refused_lately(s: &AppState, ip: Option<&str>) -> Result<bool> {
-    let Some(ip) = ip else { return Ok(false) };
-    let stmt = Statement::new(
-        "SELECT count(*) AS n FROM security_event WHERE at > ? AND kind = ? \
-         AND json_extract(details, '$.ip') = ?",
-    )
-    .bind(s.services.now_ms() - REFUSAL_WINDOW_MS)
-    .bind(REFUSED)
-    .bind(ip);
-    let rows = s.services.db.query(stmt).await?;
-    Ok(rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0) >= REFUSALS_PER_IP)
+/// The Channel's verification is a network call: LIFF (LINE's verify
+/// endpoint). Telegram and the Fake verify locally.
+fn networked(s: &AppState, channel: &str) -> bool {
+    Sdks::of(&s.deployment)
+        .liff
+        .is_some_and(|(kind, _)| kind == channel)
 }
 
 /// `channel_account.id` of (`channel`, `external_id`).

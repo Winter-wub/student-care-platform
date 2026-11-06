@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use axum::body::Body;
+use harpseal_channel_fake::FakeChannel;
 use http::{Request, header};
 
 use crate::{TestApp, TestResponse};
@@ -120,11 +121,25 @@ impl Browser<'_> {
         self.post_raw(path, &form).await
     }
 
-    /// Opens the Mini App as the entry page would once the platform gave
-    /// it `token`: posts `channel`, `token` and `next` to `/app/session`
-    /// and keeps the App Session cookie. Returns the POST's response (303
-    /// to `next` on success).
-    pub async fn open_mini_app(&self, channel: &str, token: &str, next: &str) -> TestResponse {
+    /// Opens the Mini App as the entry page would once the Fake platform
+    /// gave it a token: posts `fake`'s kind, its
+    /// [`FakeChannel::mini_app_token`] for `external_id` and `next` to
+    /// `/app/session`, and keeps the App Session cookie. Returns the POST's
+    /// response (303 to `next` on success).
+    pub async fn open_mini_app(
+        &self,
+        fake: &FakeChannel,
+        external_id: &str,
+        next: &str,
+    ) -> TestResponse {
+        let kind = harpseal::Channel::kind(fake);
+        let token = fake.mini_app_token(external_id);
+        self.open_mini_app_raw(kind.as_str(), &token, next).await
+    }
+
+    /// Posts `channel`, `token` and `next` to `/app/session` as given (real
+    /// adapters' tokens, forged tokens).
+    pub async fn open_mini_app_raw(&self, channel: &str, token: &str, next: &str) -> TestResponse {
         let form = format!(
             "channel={}&token={}&next={}",
             urlencode(channel),

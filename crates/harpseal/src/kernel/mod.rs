@@ -8,6 +8,7 @@ pub mod audience;
 pub(crate) mod flow;
 pub mod links;
 pub(crate) mod notice;
+pub(crate) mod rate_limit;
 pub(crate) mod roster;
 pub(crate) mod security;
 pub mod students;
@@ -72,6 +73,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0006_inbound_event_id",
         include_str!("../../migrations/0006_inbound_event_id.sql"),
+    ),
+    (
+        "0007_rate_limit",
+        include_str!("../../migrations/0007_rate_limit.sql"),
     ),
 ];
 

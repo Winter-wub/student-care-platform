@@ -2,7 +2,7 @@
 //! always through the Student's delivery rows, so a page never shows (or
 //! reveals the existence of) an announcement the Student was not sent.
 
-use super::store::{self, int, text};
+use super::store::{int, text};
 use crate::message::Locale;
 use crate::port_types::Statement;
 use crate::{Deployment, Result};
@@ -38,6 +38,11 @@ impl StudentAnnouncement {
 /// `max(acked_at)` of the Student's rows; binds the Student once.
 const ACKED: &str = "(SELECT max(acked_at) FROM announcement_delivery x \
      WHERE x.announcement_id = a.id AND x.student_id = ?) AS acked_at";
+/// Title and body in the bound Locale, else Thai; binds the Locale once.
+const TEXT: &str = "coalesce(tl.title, tt.title, '') AS title, \
+     coalesce(tl.body, tt.body, '') AS body FROM announcement a \
+     LEFT JOIN announcement_text tl ON tl.announcement_id = a.id AND tl.locale = ? \
+     LEFT JOIN announcement_text tt ON tt.announcement_id = a.id AND tt.locale = 'th'";
 /// The Student has a delivery row; binds the Student once.
 const DELIVERED: &str = "EXISTS (SELECT 1 FROM announcement_delivery d \
      WHERE d.announcement_id = a.id AND d.student_id = ?)";
@@ -55,20 +60,21 @@ pub async fn list_for_student(
     let s = d.services();
     let sql = format!(
         "SELECT a.id, a.status, a.require_ack, {ACKED}, \
-         coalesce(a.sent_at, a.send_at, a.created_at) AS at \
-         FROM announcement a WHERE a.status IN ('sending', 'sent') \
+         coalesce(a.sent_at, a.send_at, a.created_at) AS at, {TEXT} \
+         WHERE a.status IN ('sending', 'sent') \
          AND (a.expires_at IS NULL OR a.expires_at > ?) AND {DELIVERED} \
          ORDER BY (a.require_ack = 1 AND acked_at IS NULL) DESC, at DESC, a.id DESC LIMIT ?"
     );
     let stmt = Statement::new(sql)
         .bind(student)
+        .bind(locale.as_str())
         .bind(s.now_ms())
         .bind(student)
         .bind(limit);
     let rows = s.db.query(stmt).await?;
     let mut out = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
-        out.push(read(d, &rows, i, locale).await?);
+        out.push(read(&rows, i));
     }
     Ok(out)
 }
@@ -87,33 +93,29 @@ pub async fn detail_for_student(
     let s = d.services();
     let sql = format!(
         "SELECT a.id, a.status, a.require_ack, {ACKED}, \
-         coalesce(a.sent_at, a.send_at, a.created_at) AS at \
-         FROM announcement a WHERE a.id = ? AND {DELIVERED}"
+         coalesce(a.sent_at, a.send_at, a.created_at) AS at, {TEXT} \
+         WHERE a.id = ? AND {DELIVERED}"
     );
-    let stmt = Statement::new(sql).bind(student).bind(id).bind(student);
+    let stmt = Statement::new(sql)
+        .bind(student)
+        .bind(locale.as_str())
+        .bind(id)
+        .bind(student);
     let rows = s.db.query(stmt).await?;
     if rows.is_empty() {
         return Ok(None);
     }
-    read(d, &rows, 0, locale).await.map(Some)
+    Ok(Some(read(&rows, 0)))
 }
 
-async fn read(
-    d: &Deployment,
-    rows: &crate::port_types::Rows,
-    i: usize,
-    locale: &Locale,
-) -> Result<StudentAnnouncement> {
-    let id = text(rows, i, "id");
-    let texts = store::texts(d.services(), &id).await?;
-    let (title, body) = texts.pick(locale);
-    Ok(StudentAnnouncement {
-        title: title.to_string(),
-        body: body.to_string(),
+fn read(rows: &crate::port_types::Rows, i: usize) -> StudentAnnouncement {
+    StudentAnnouncement {
+        id: text(rows, i, "id"),
+        title: text(rows, i, "title"),
+        body: text(rows, i, "body"),
         require_ack: int(rows, i, "require_ack") == Some(1),
         acked_at: int(rows, i, "acked_at"),
         at: int(rows, i, "at").unwrap_or(0),
         retracted: text(rows, i, "status") == "retracted",
-        id,
-    })
+    }
 }

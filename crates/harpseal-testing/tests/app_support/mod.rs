@@ -1,19 +1,18 @@
 //! Setup for the Mini App tests (#28), on top of the Announcements world
 //! (`fake` LineLike and `tg` TelegramLike Fake Channels, both with a Mini
-//! App, whose `verify_session` takes the external id as the token).
+//! App; their tokens come from `FakeChannel::mini_app_token`).
 
 #![allow(dead_code)]
 
 use harpseal_testing::{Browser, TestResponse};
 
-use crate::announcements_support::{World, ext, run};
+use crate::announcements_support::{TG, World, ext, run};
 
 /// A browser holding an App Session of `student`'s account on `channel`.
 pub async fn open<'a>(w: &'a World, channel: &str, student: &str) -> Browser<'a> {
     let b = w.app.browser();
-    let r = b
-        .open_mini_app(channel, &ext(channel, student), "/app")
-        .await;
+    let fake = if channel == TG { &w.tg } else { &w.line };
+    let r = b.open_mini_app(fake, &ext(channel, student), "/app").await;
     assert_eq!(r.status, 303, "{}", r.body);
     b
 }

@@ -256,3 +256,79 @@ async fn the_notice_is_public_plain_or_in_the_app_shell() {
     .await;
     assert!(w.app.get("/notice").await.body.contains("ฉบับที่ 2026-11"));
 }
+
+#[tokio::test]
+async fn an_ack_post_for_an_announcement_without_require_ack_is_404() {
+    let w = boot().await;
+    roster(&w).await;
+    let now = w.h.clock().now_ms();
+    seeded(&w, "info", "s1", "fake", now, false, None).await;
+    let b = open(&w, "fake", "s1").await;
+    let csrf = csrf_of(&b.get("/app").await.body);
+    let r = hx_post(&b, "/app/announcements/info/ack", &format!("_csrf={csrf}")).await;
+    assert_eq!(r.status, 404);
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL"
+        )
+        .await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_wrong_csrf_header_is_refused() {
+    let w = boot().await;
+    roster(&w).await;
+    let now = w.h.clock().now_ms();
+    seeded(&w, "ask", "s1", "fake", now, true, None).await;
+    let b = open(&w, "fake", "s1").await;
+    let csrf = csrf_of(&b.get("/app").await.body);
+    let req = |token: String| {
+        http::Request::post("/app/announcements/ask/ack")
+            .header("hx-request", "true")
+            .header("x-csrf-token", token)
+            .body(axum::body::Body::empty())
+            .unwrap()
+    };
+    assert_eq!(b.send(req("ab".repeat(32))).await.status, 403);
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL"
+        )
+        .await,
+        0
+    );
+    // The right header alone (no form field) is enough, as HTMX sends it.
+    let ok = b.send(req(csrf)).await;
+    assert_eq!(ok.status, 200);
+    assert!(ok.body.contains("รับทราบแล้ว"));
+}
+
+#[tokio::test]
+async fn an_expired_announcement_still_opens_and_takes_the_ack() {
+    let w = boot().await;
+    roster(&w).await;
+    let now = w.h.clock().now_ms();
+    seeded(&w, "late", "s1", "fake", now - 10_000, true, Some(now - 1)).await;
+    let b = open(&w, "fake", "s1").await;
+    let home = b.get("/app").await.body;
+    assert!(!home.contains("ข่าว late"), "expired: not listed");
+    let page = b.get("/app/announcements/late").await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("รายละเอียด late"));
+    let csrf = csrf_of(&page.body);
+    let r = hx_post(&b, "/app/announcements/late/ack", &format!("_csrf={csrf}")).await;
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("รับทราบแล้ว"));
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL"
+        )
+        .await,
+        1
+    );
+}

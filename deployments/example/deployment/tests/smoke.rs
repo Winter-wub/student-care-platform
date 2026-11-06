@@ -31,8 +31,8 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("มหาวิทยาลัยอ่าวแมวน้ำ"), "TOML text wins");
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
-    // Six Kernel migrations and the Announcements Module's one.
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(7));
+    // Seven Kernel migrations and the Announcements Module's one.
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(8));
 }
 
 #[test]

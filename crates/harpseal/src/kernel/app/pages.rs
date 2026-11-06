@@ -21,13 +21,44 @@ use crate::{AppState, Result};
 const LIST_LIMIT: i64 = 100;
 
 /// `GET /`: the LIFF endpoint and the Telegram Web App URL are the
-/// Deployment's origin, so the root forwards to `/app` with its query
-/// (LIFF's `liff.state` deep path rides on it).
+/// Deployment's origin, so the root forwards to `/app`. Only LIFF's
+/// `liff.state` (the deep path the SDK redirects to after `liff.init`) is
+/// kept, and only when it is a plain `/app` path ([`super::safe_next`]);
+/// anything else is dropped, so the SDK can never be sent elsewhere.
 pub(crate) async fn root(uri: Uri) -> Redirect {
-    match uri.query() {
-        Some(q) => Redirect::to(&format!("{}?{q}", super::APP_PATH)),
-        None => Redirect::to(super::APP_PATH),
+    let state = uri
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .filter_map(|p| p.split_once('='))
+        .find(|(k, _)| *k == "liff.state")
+        .and_then(|(_, v)| percent_decode(v));
+    match state {
+        Some(path) if super::safe_next(&path) == path => {
+            let encoded = path.replace('/', "%2F");
+            Redirect::to(&format!("{}?liff.state={encoded}", super::APP_PATH))
+        }
+        _ => Redirect::to(super::APP_PATH),
     }
+}
+
+/// One query value, `%XX` and `+` decoded; `None` when malformed.
+fn percent_decode(v: &str) -> Option<String> {
+    let b = v.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' => {
+                out.push(u8::from_str_radix(v.get(i + 1..i + 3)?, 16).ok()?);
+                i += 2;
+            }
+            b'+' => out.push(b' '),
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8(out).ok()
 }
 
 async fn visitor(s: &AppState, headers: &HeaderMap) -> Result<Option<AppVisitor>> {
@@ -189,6 +220,10 @@ pub(crate) async fn ack(
         Ok(None) => return not_found(&s, &t),
         Err(_) => return error(&s, &t),
     };
+    // Nothing to acknowledge: answered like an unknown id.
+    if !a.require_ack && !a.retracted {
+        return not_found(&s, &t);
+    }
     let outcome = if a.retracted {
         AckOutcome::Retracted
     } else {

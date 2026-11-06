@@ -609,6 +609,7 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "harpseal",
+ "hmac",
  "http",
  "serde_json",
  "sha2",

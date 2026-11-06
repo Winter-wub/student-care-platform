@@ -109,7 +109,7 @@ async fn a_liff_id_token_line_accepts_opens_the_students_page() {
     let (h, app) = boot().await;
     h.http().respond_with(200, claims("2000000000"));
     let b = app.browser();
-    let r = b.open_mini_app("line", ID_TOKEN, "/app").await;
+    let r = b.open_mini_app_raw("line", ID_TOKEN, "/app").await;
     assert_eq!(r.status, 303, "{}", r.body);
     let reqs = h.http_requests();
     assert_eq!(reqs.len(), 1);
@@ -128,7 +128,10 @@ async fn a_liff_id_token_line_refuses_is_a_403_and_never_stored() {
         400,
         r#"{"error":"invalid_request","error_description":"IdToken expired."}"#,
     );
-    let r = app.browser().open_mini_app("line", ID_TOKEN, "/app").await;
+    let r = app
+        .browser()
+        .open_mini_app_raw("line", ID_TOKEN, "/app")
+        .await;
     assert_eq!(r.status, 403);
     assert!(!r.body.contains(ID_TOKEN));
     let details = refused_details(&app).await;
@@ -136,7 +139,10 @@ async fn a_liff_id_token_line_refuses_is_a_403_and_never_stored() {
     assert!(!details.contains(ID_TOKEN));
     // LINE down is a 500 without details, and no Security Event.
     h.http().respond_with(503, "upstream down");
-    let down = app.browser().open_mini_app("line", ID_TOKEN, "/app").await;
+    let down = app
+        .browser()
+        .open_mini_app_raw("line", ID_TOKEN, "/app")
+        .await;
     assert_eq!(down.status, 500);
     assert!(!down.body.contains("upstream"));
 }
@@ -145,7 +151,7 @@ async fn a_liff_id_token_line_refuses_is_a_403_and_never_stored() {
 async fn telegram_init_data_is_checked_by_hash_and_age() {
     let (h, app) = boot().await;
     let b = app.browser();
-    let r = b.open_mini_app("telegram", INIT_DATA, "/app").await;
+    let r = b.open_mini_app_raw("telegram", INIT_DATA, "/app").await;
     assert_eq!(r.status, 303, "{}", r.body);
     let page = b.get("/app").await.body;
     assert!(page.contains("Karn Seal") && page.contains("เชื่อมต่อผ่าน Telegram"));
@@ -153,22 +159,64 @@ async fn telegram_init_data_is_checked_by_hash_and_age() {
     let tampered = INIT_DATA.replace("7012345678", "7012345679");
     let r = app
         .browser()
-        .open_mini_app("telegram", &tampered, "/app")
-        .await;
-    assert_eq!(r.status, 403);
-    // An hour and a bit later the same initData is stale.
-    h.clock().advance_minutes(61);
-    let r = app
-        .browser()
-        .open_mini_app("telegram", INIT_DATA, "/app")
+        .open_mini_app_raw("telegram", &tampered, "/app")
         .await;
     assert_eq!(r.status, 403);
     let details = refused_details(&app).await;
     assert_eq!(
         details.matches("\"channel\":\"telegram\"").count(),
-        2,
+        1,
         "{details}"
     );
     assert!(!details.contains("hash") && !details.contains("auth_date"));
+
+    // An hour and a bit later the same (correctly signed) initData is
+    // stale, as it is in a webview left open: when the session has expired
+    // too, the entry page's exchange lands on "open it again from the
+    // chat", with no retry button and no Security Event.
+    h.clock().advance_minutes(61);
+    assert!(b.get("/app").await.body.contains("id=\"xchg\""));
+    let r = b.open_mini_app_raw("telegram", INIT_DATA, "/app").await;
+    assert_eq!(r.status, 401);
+    assert!(r.body.contains("กรุณาปิดแล้วเปิดใหม่จากปุ่มในแชท"), "{}", r.body);
+    assert!(!r.body.contains("ลองอีกครั้ง"));
+    assert_eq!(refused_details(&app).await, details);
     assert!(h.http_requests().is_empty());
+}
+
+#[tokio::test]
+async fn line_verify_calls_are_limited_per_ip_group_per_minute() {
+    let (h, app) = boot().await;
+    let from = |ip: &'static str| {
+        http::Request::post("/app/session")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("cf-connecting-ip", ip)
+            .body(axum::body::Body::from(format!(
+                "channel=line&token={ID_TOKEN}&next=%2Fapp"
+            )))
+            .unwrap()
+    };
+    // The canned `200 {}` is no valid claim: each call is a refusal, and
+    // every call counts.
+    for i in 0..30 {
+        let ip = if i % 2 == 0 {
+            "2001:db8:aa:bb::1"
+        } else {
+            "2001:db8:aa:bb::2"
+        };
+        assert_eq!(app.request(from(ip)).await.status, 403, "call {i}");
+    }
+    assert_eq!(h.http_requests().len(), 30);
+    // Same /64: limited, and LINE is not called.
+    let limited = app.request(from("2001:db8:aa:bb::3")).await;
+    assert_eq!(limited.status, 429);
+    assert_eq!(h.http_requests().len(), 30);
+    // Another group is not.
+    assert_eq!(app.request(from("203.0.113.9")).await.status, 403);
+    // One refusal event per group per minute.
+    let details = refused_details(&app).await;
+    assert_eq!(details.matches("\"ip\"").count(), 2, "{details}");
+    // The next minute the group may try again.
+    h.clock().advance_ms(60_000);
+    assert_eq!(app.request(from("2001:db8:aa:bb::1")).await.status, 403);
 }

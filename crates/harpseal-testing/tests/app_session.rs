@@ -15,7 +15,7 @@ async fn an_exchange_for_a_linked_account_sets_the_cookie_and_opens_the_page() {
     let w = boot().await;
     roster(&w).await;
     let b = w.app.browser();
-    let r = b.open_mini_app("fake", "fake-s1", "/app").await;
+    let r = b.open_mini_app(&w.line, "fake-s1", "/app").await;
     assert_eq!(r.status, 303, "{}", r.body);
     assert_eq!(r.header("location"), Some("/app"));
     let cookie = r.header("set-cookie").unwrap();
@@ -56,11 +56,18 @@ async fn an_exchange_for_a_linked_account_sets_the_cookie_and_opens_the_page() {
 }
 
 #[tokio::test]
-async fn a_refused_token_is_a_403_with_a_security_event_and_no_session() {
+async fn a_bare_external_id_is_refused_with_a_403_and_one_event_a_minute() {
     let w = boot().await;
     roster(&w).await;
     let b = w.app.browser();
-    let r = b.open_mini_app("fake", "", "/app").await;
+    // The external id alone (or with a wrong signature) does not open
+    // anyone's page: only the Fake's signed token does.
+    let wrong = format!("fake-s1.{}", "0".repeat(64));
+    for forged in ["fake-s1", "", wrong.as_str()] {
+        let r = b.open_mini_app_raw("fake", forged, "/app").await;
+        assert_eq!(r.status, 403, "{forged}");
+    }
+    let r = b.open_mini_app_raw("fake", "fake-s1", "/app").await;
     assert_eq!(r.status, 403);
     assert!(r.body.contains("ยืนยันบัญชีแชทของคุณไม่สำเร็จ"), "{}", r.body);
     assert!(r.body.contains("ลองอีกครั้ง"));
@@ -72,16 +79,30 @@ async fn a_refused_token_is_a_403_with_a_security_event_and_no_session() {
              WHERE kind = 'app.session_refused'"
         )
         .await,
-        ["fake"]
+        ["fake"],
+        "one event per IP group per minute"
     );
     assert_eq!(count(&w, "SELECT count(*) FROM app_session").await, 0);
+    w.h.clock().advance_ms(60_000);
+    b.open_mini_app_raw("fake", "fake-s1", "/app").await;
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM security_event WHERE kind = 'app.session_refused'"
+        )
+        .await,
+        2
+    );
+    let signed = b.open_mini_app(&w.line, "fake-s1", "/app").await;
+    assert_eq!(signed.status, 303);
+    assert!(w.line.mini_app_token("fake-s1").starts_with("fake-s1."));
 }
 
 #[tokio::test]
 async fn unknown_channels_and_channels_without_a_mini_app_are_404() {
     let w = boot().await;
     let b = w.app.browser();
-    assert_eq!(b.open_mini_app("nope", "x", "/app").await.status, 404);
+    assert_eq!(b.open_mini_app_raw("nope", "x", "/app").await.status, 404);
 
     let h = Harness::new();
     let plain = FakeChannel::new("plain-secret")
@@ -98,7 +119,7 @@ async fn unknown_channels_and_channels_without_a_mini_app_are_404() {
     let app = h.boot(d).await;
     let r = app
         .browser()
-        .open_mini_app("plain", "someone", "/app")
+        .open_mini_app_raw("plain", "someone", "/app")
         .await;
     assert_eq!(r.status, 404);
 }
@@ -133,7 +154,7 @@ async fn unlinked_unreachable_and_unknown_accounts_see_the_go_back_text() {
     }
     // An account the Deployment never saw gets the text without a session.
     let b = w.app.browser();
-    let r = b.open_mini_app("fake", "fake-stranger", "/app").await;
+    let r = b.open_mini_app(&w.line, "fake-stranger", "/app").await;
     assert_eq!(r.status, 200);
     assert!(r.body.contains("กลับไปที่แชทแล้วกด เริ่มใช้งาน"));
     assert!(b.cookie("app_session").is_none());
@@ -180,6 +201,18 @@ async fn without_a_session_every_page_is_the_entry_page_for_its_own_path() {
         root.header("location"),
         Some("/app?liff.state=%2Fapp%2Fannouncements")
     );
+    // An unsafe liff.state (or anything else in the query) is dropped.
+    for unsafe_state in [
+        "/?liff.state=https%3A%2F%2Fevil.example%2Fapp",
+        "/?liff.state=%2F%2Fevil.example",
+        "/?liff.state=%2Fapp%2F..%2Fadmin",
+        "/?liff.state=%2Fadmin&x=1",
+        "/?next=%2Fapp%2Fx",
+        "/?liff.state=%zz",
+    ] {
+        let r = b.get(unsafe_state).await;
+        assert_eq!(r.header("location"), Some("/app"), "{unsafe_state}");
+    }
 }
 
 #[tokio::test]
@@ -187,7 +220,11 @@ async fn next_survives_the_exchange_and_foreign_targets_are_refused() {
     let w = boot().await;
     roster(&w).await;
     let deep = "/app/announcements/0193a0d2-0000-7000-8000-000000000001";
-    let r = w.app.browser().open_mini_app("fake", "fake-s1", deep).await;
+    let r = w
+        .app
+        .browser()
+        .open_mini_app(&w.line, "fake-s1", deep)
+        .await;
     assert_eq!(r.header("location"), Some(deep));
     for bad in [
         "https://evil.example/app",
@@ -195,58 +232,60 @@ async fn next_survives_the_exchange_and_foreign_targets_are_refused() {
         "/admin",
         "/app/../admin",
     ] {
-        w.h.clock().advance_ms(1_500);
-        let r = w.app.browser().open_mini_app("fake", "fake-s1", bad).await;
+        let r = w.app.browser().open_mini_app(&w.line, "fake-s1", bad).await;
         assert_eq!(r.status, 303, "{bad}");
         assert_eq!(r.header("location"), Some("/app"), "{bad}");
     }
 }
 
 #[tokio::test]
-async fn one_session_per_account_per_second_and_ten_refusals_per_ip_per_minute() {
+async fn a_valid_token_is_never_limited_and_cross_site_posts_are_refused() {
     let w = boot().await;
     roster(&w).await;
-    assert_eq!(
-        w.app
+    // The Fake verifies locally: no limit, however often or from where.
+    for _ in 0..40 {
+        let r = w
+            .app
             .browser()
-            .open_mini_app("fake", "fake-s1", "/app")
-            .await
-            .status,
-        303
+            .open_mini_app(&w.line, "fake-s1", "/app")
+            .await;
+        assert_eq!(r.status, 303);
+    }
+    let form = format!(
+        "channel=fake&token={}&next=%2Fapp",
+        w.line.mini_app_token("fake-s1")
     );
-    let again = w
-        .app
-        .browser()
-        .open_mini_app("fake", "fake-s1", "/app")
-        .await;
-    assert_eq!(again.status, 429);
-    w.h.clock().advance_ms(1_001);
-    let later = w
-        .app
-        .browser()
-        .open_mini_app("fake", "fake-s1", "/app")
-        .await;
-    assert_eq!(later.status, 303);
-    // Both sessions work; the older one's expired siblings are removed
-    // on the next exchange.
-    assert_eq!(count(&w, "SELECT count(*) FROM app_session").await, 2);
-
-    // Refusals are counted per client IP: the tenth in a minute is the
-    // last one verified.
-    let from = |ip: &'static str| {
+    let post = |site: &'static str| {
         http::Request::post("/app/session")
             .header("content-type", "application/x-www-form-urlencoded")
-            .header("cf-connecting-ip", ip)
-            .body(axum::body::Body::from("channel=fake&token=&next=%2Fapp"))
+            .header("sec-fetch-site", site)
+            .body(axum::body::Body::from(form.clone()))
             .unwrap()
     };
-    for _ in 0..10 {
-        assert_eq!(w.app.request(from("203.0.113.9")).await.status, 403);
+    let cross = w.app.request(post("cross-site")).await;
+    assert_eq!(cross.status, 403);
+    assert!(cross.header("set-cookie").is_none());
+    assert_eq!(w.app.request(post("same-origin")).await.status, 303);
+}
+
+#[tokio::test]
+async fn a_revoke_or_a_left_student_after_the_exchange_shows_not_linked() {
+    let w = boot().await;
+    roster(&w).await;
+    let s1 = open(&w, "fake", "s1").await;
+    let s3 = open(&w, "fake", "s3").await;
+    assert!(s1.get("/app").await.body.contains("Name s1"));
+    run(
+        &w.h,
+        "UPDATE link SET status = 'revoked' WHERE id = 'l-fake-s1'",
+    )
+    .await;
+    run(&w.h, "UPDATE student SET status = 'left' WHERE id = 's3'").await;
+    for (b, who) in [(&s1, "s1"), (&s3, "s3")] {
+        let page = b.get("/app").await.body;
+        assert!(page.contains("กลับไปที่แชทแล้วกด เริ่มใช้งาน"), "{who}");
+        assert!(!page.contains(&format!("Name {who}")));
     }
-    assert_eq!(w.app.request(from("203.0.113.9")).await.status, 429);
-    assert_eq!(w.app.request(from("198.51.100.4")).await.status, 403);
-    w.h.clock().advance_ms(61_000);
-    assert_eq!(w.app.request(from("203.0.113.9")).await.status, 403);
 }
 
 #[tokio::test]
@@ -260,10 +299,25 @@ async fn the_hourly_job_prunes_sessions_expired_over_a_day_ago() {
     w.h.clock().advance_minutes(2 * 60 + 7);
     // 25:07 after the start: the first is over a day old, the second not.
     let now = w.h.clock().now_ms();
+    let minute = now / 60_000;
+    run(
+        &w.h,
+        &format!(
+            "INSERT INTO rate_limit (key, window, n) VALUES ('app.verify:old', {}, 3), \
+             ('app.verify:new', {minute}, 3), ('other:old', 1, 3)",
+            minute - 61
+        ),
+    )
+    .await;
     w.app.deployment().tick(Timestamp(now)).await.unwrap();
     drain(&w).await;
     assert_eq!(
         texts(&w, "SELECT channel_account_id FROM app_session").await,
         ["a-fake-s3"]
+    );
+    // Old exchange windows go; other key families are left to their owners.
+    assert_eq!(
+        texts(&w, "SELECT key FROM rate_limit ORDER BY key").await,
+        ["app.verify:new", "other:old"]
     );
 }
