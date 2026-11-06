@@ -14,13 +14,13 @@ first slice is specified in [`docs/specs/first-slice.md`](docs/specs/first-slice
 | `crates/harpseal-channel-line` | LINE adapter: renderer and request packing (real), HTTP calls (#16). | native + wasm32 |
 | `crates/harpseal-channel-telegram` | Telegram adapter: renderer and call building (real), HTTP calls (#17). | native + wasm32 |
 | `crates/harpseal-channel-fake` | Fake Channel: in-memory, records what the Student saw; used by tests and demos. | native + wasm32 |
-| `crates/harpseal-runtime-native` | Native runtime: SQLite (rusqlite), local files, OS clock and RNG, `axum::serve`. SMTP/HTTP client in #18. | native |
-| `crates/harpseal-runtime-cloudflare` | Workers runtime: D1, `fetch`, `Date.now`, `crypto.getRandomValues`. R2 and Resend in #18. | wasm32 |
+| `crates/harpseal-runtime-native` | Native runtime: SQLite (rusqlite), local directory or S3-compatible files (SigV4), SMTP (lettre) or Resend email, reqwest, OS clock and RNG, `axum::serve`, a per-minute ticker. | native |
+| `crates/harpseal-runtime-cloudflare` | Workers runtime: D1, R2, Resend over `fetch`, `Date.now`, `crypto.getRandomValues`, panic hook, and the `fetch` / `scheduled` (Cron) entry points. | wasm32 |
 | `crates/harpseal-testing` | The test harness (dev-dependency): fake Services + Fake Channel + the Router, driven in-process. | native |
 | `crates/harpseal-cli` | The `harpseal` command line (placeholder; #21, #29). | native |
 | `deployments/example/deployment` | Seal Bay University, a fictional customer: `deployment.toml` + `builder()` / `deployment()`. | native + wasm32 |
-| `deployments/example/native` | The example as a self-hosted binary. | native |
-| `deployments/example/worker` | The example as a Cloudflare Worker (`wrangler.toml`). | wasm32 |
+| `deployments/example/native` | The example as a self-hosted binary (`harpseal-example-native`). | native |
+| `deployments/example/worker` | The example as a Cloudflare Worker (`harpseal-example-worker`, `wrangler.toml`). | wasm32 |
 
 The Core and the channel crates have no platform feature flags; everything
 platform-specific lives in a runtime crate. `harpseal`'s `fixtures` feature
@@ -49,7 +49,9 @@ let d = Deployment::builder()
     .module(MyModule)
     .build()?;                               // BuildError on any misconfiguration
 d.migrate().await?;                          // Kernel first, then Modules; idempotent
-let router = Arc::new(d).router();          // serve with either runtime
+let d = Arc::new(d);
+let router = d.clone().router();             // serve with either runtime
+d.tick(now).await?;                          // once a minute: claims and runs due Jobs
 ```
 
 `build()` refuses: a missing config, runtime, Verification Method or Channel;
@@ -72,12 +74,79 @@ FAKE_SECRET=change-me cargo run -p harpseal-example-native
 # listening on http://127.0.0.1:8080  (try /notice)
 ```
 
-Settings come from the environment: `HARPSEAL_DB` (default
-`example.sqlite3`), `HARPSEAL_FILES`, `HARPSEAL_SMTP`, `HARPSEAL_ADDR`, and the
-Channel secrets `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`, `LINE_LIFF_ID`,
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_WEB_APP_URL`,
-`FAKE_SECRET` (required, non-empty: the Fake Channel refuses an empty secret). Back-office pages answer 401 until Staff
-login lands (#21).
+Every setting comes from the environment (`NativeSettings::from_env`);
+secrets never go in TOML. Empty values count as unset. Building the native
+runtime compiles `aws-lc-sys` (rustls' crypto for reqwest and lettre), which
+needs a C compiler, plus NASM on Windows x86-64.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HARPSEAL_DB` | `harpseal.sqlite3` | SQLite file (created and migrated at start) |
+| `HARPSEAL_ADDR` | `127.0.0.1:8080` | listen address |
+| `HARPSEAL_FILES` | `files` | FileStore directory |
+| `HARPSEAL_S3_BUCKET` | unset | use an S3-compatible bucket instead of `HARPSEAL_FILES` |
+| `HARPSEAL_S3_ENDPOINT` | required with a bucket | `https://<account>.r2.cloudflarestorage.com`, `https://s3.<region>.amazonaws.com`, MinIO, ... (path-style) |
+| `HARPSEAL_S3_REGION` | `auto` | SigV4 signing region |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | required with a bucket | S3 credentials |
+| `HARPSEAL_EMAIL` | `smtp` | `smtp` or `resend` |
+| `HARPSEAL_SMTP` | `smtp://localhost:25` | lettre URL: `smtp://host:25` (unencrypted), `smtp://host:25?tls=opportunistic` (STARTTLS if offered), `smtp://user:pass@host:587?tls=required`, `smtps://user:pass@host:465`; credentials in `smtp://` without `tls=required`/`opportunistic` are refused |
+| `RESEND_API_KEY` | required with `resend` | Resend API key |
+| `HARPSEAL_EMAIL_FROM` | `noreply@localhost` | sender address (`Name <addr@domain>`) |
+
+The Deployment's secrets: `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`,
+`LINE_LIFF_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
+`TELEGRAM_WEB_APP_URL`, `FAKE_SECRET` (required, non-empty: the Fake Channel
+refuses an empty secret). A timer calls `Deployment::tick` every minute, each
+tick in its own task, so a panicking Job handler is logged and the next tick
+still runs. The plain `release` profile keeps panic unwinding for this binary;
+the Worker builds with `wasm-release` (release + `panic = "abort"`).
+Back-office pages answer 401, and `/admin/login` 404, until Staff login lands
+(#21).
+
+## Deploying the example to Workers
+
+Workers Paid is required (Free's 10 ms CPU fails logins and imports). The
+build needs `worker-build` (`cargo install worker-build`) and binaryen's
+`wasm-opt` (`brew install binaryen`); `wrangler.toml`'s `[build]` command runs
+`worker-build --profile wasm-release --no-opt`, then `wasm-opt -Oz`.
+
+Locally, with no Cloudflare account (D1 is simulated by miniflare):
+
+```sh
+cd deployments/example/worker
+echo 'FAKE_SECRET=change-me' > .dev.vars        # git-ignored
+npx wrangler@4 dev --local                       # http://localhost:8787/notice
+curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'   # with --test-scheduled: runs one tick
+```
+
+The first request in an isolate builds the Deployment and applies its
+migrations to D1; later requests reuse it. A Cron Trigger (`* * * * *`, UTC)
+calls `Deployment::tick` at the trigger's scheduled time. `job.max_attempts`
+counts retries: the default 3 means up to 4 runs, retried after 1, 5 and 30
+minutes. A Job whose runtime died mid-run (CPU limit, trap) is re-claimed when
+its 15-minute lock expires, while it has retries left, and is marked failed
+(`lock expired`) otherwise.
+
+A preview on your own account:
+
+```sh
+cd deployments/example/worker
+npx wrangler@4 d1 create harpseal-example            # paste database_id into wrangler.toml
+npx wrangler@4 secret put FAKE_SECRET                 # required
+npx wrangler@4 secret put RESEND_API_KEY              # optional: without it every email send fails
+npx wrangler@4 secret put LINE_CHANNEL_SECRET         # and LINE_ACCESS_TOKEN, LINE_LIFF_ID,
+                                                      # TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET,
+                                                      # TELEGRAM_WEB_APP_URL when the Channels are set up
+npx wrangler@4 r2 bucket create harpseal-example-files   # optional: then uncomment [[r2_buckets]]
+npx wrangler@4 deploy
+curl https://harpseal-example.<subdomain>.workers.dev/notice
+```
+
+Bindings the runtime reads (`CloudflareSettings`): D1 `DB`, R2 `FILES`
+(optional: without it file operations answer an error naming the binding),
+secret `RESEND_API_KEY`, var `EMAIL_FROM` (set in `wrangler.toml`).
+`Date.now()` is frozen while a request computes, so never measure durations
+with the Clock there; use `wrangler tail`.
 
 ## Testing
 
@@ -103,6 +172,12 @@ crate adds `harpseal-testing` as a dev-dependency and calls
 a `Wire` reading its `RecordingHttp`. It runs green against the Fake Channel in
 every profile; the LINE and Telegram runs are `#[ignore]` until #16/#17.
 
+Runtime port tests live in `crates/harpseal-runtime-native/tests` (SQLite
+batch rollback, local files, a mock SMTP server, Resend and S3 signing against
+the recording HttpClient, the ticker). The real-S3 round trip runs only when
+`HARPSEAL_TEST_S3_BUCKET`, `HARPSEAL_TEST_S3_ENDPOINT`, `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` are set.
+
 Use `h.builder()` to add Modules before booting, or pass any Deployment to
 `h.boot(d)` (the example's tests do `example_deployment::builder(h.services(),
 ..).channel(h.fake_channel())`).
@@ -114,8 +189,9 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo check --target wasm32-unknown-unknown -p harpseal -p harpseal-channel-line \
-  -p harpseal-channel-telegram -p harpseal-channel-fake -p harpseal-runtime-cloudflare
-cargo doc --workspace --no-deps
+  -p harpseal-channel-telegram -p harpseal-channel-fake -p harpseal-runtime-cloudflare \
+  -p harpseal-example-worker
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
 ## License

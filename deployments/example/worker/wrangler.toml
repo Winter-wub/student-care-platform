@@ -1,16 +1,46 @@
-# Seal Bay University (fictional) on Cloudflare Workers. Workers Paid is the
-# baseline (issue #6). Create the database first and paste its id below:
-#   npx wrangler@4 d1 create harpseal-example
-# Secrets: npx wrangler@4 secret put LINE_CHANNEL_SECRET (and the others in src/lib.rs).
+# Seal Bay University (fictional) on Cloudflare Workers. Workers Paid is
+# required (Free's 10 ms CPU fails logins and imports; issue #6).
+#
+# Local, no account needed (local D1 via miniflare):
+#   npx wrangler@4 dev --local          # then open http://localhost:8787/notice
+# The owner's preview (creates resources on their account):
+#   npx wrangler@4 d1 create harpseal-example   # paste the id below
+#   npx wrangler@4 secret put FAKE_SECRET       # required; see README for the rest
+#   npx wrangler@4 deploy
 name = "harpseal-example"
-main = "build/worker/shim.mjs"
+main = "build/index.js"
 compatibility_date = "2026-11-01"
 workers_dev = true
 
+# worker-build compiles with the workspace `wasm-release` profile (release:
+# opt-level "z", lto, codegen-units 1, strip; plus panic "abort") and runs
+# wasm-bindgen; its own
+# wasm-opt step is skipped (--no-opt) so `wasm-opt -Oz` runs explicitly with
+# the features wasm-bindgen output needs. Needs worker-build
+# (`cargo install worker-build`) and binaryen's wasm-opt (`brew install binaryen`).
 [build]
-command = "cargo install -q worker-build && worker-build --release"
+command = """
+worker-build --profile wasm-release --no-opt && \
+wasm-opt -Oz --enable-bulk-memory --enable-exception-handling --enable-mutable-globals \
+  --enable-nontrapping-float-to-int --enable-reference-types --enable-sign-ext --enable-multivalue \
+  build/index_bg.wasm -o build/index_bg.wasm
+"""
+
+# Per-minute ticker: Deployment::tick claims due Jobs (Cron runs on UTC).
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+EMAIL_FROM = "Seal Bay University <noreply@sealbay.example>"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "harpseal-example"
 database_id = "00000000-0000-0000-0000-000000000000"
+
+# FileStore. Uncomment once the bucket exists
+# (`npx wrangler@4 r2 bucket create harpseal-example-files`); without it the
+# Worker still boots and file operations answer an error naming the binding.
+# [[r2_buckets]]
+# binding = "FILES"
+# bucket_name = "harpseal-example-files"

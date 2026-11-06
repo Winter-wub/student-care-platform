@@ -10,6 +10,4 @@ publish = false
 [dependencies]
 harpseal-runtime-native.workspace = true
 example-deployment.workspace = true
-harpseal-channel-line.workspace = true
-harpseal-channel-telegram.workspace = true
 tokio.workspace = true
