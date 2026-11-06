@@ -73,9 +73,11 @@ pub use deployment::{Deployment, DeploymentBuilder, ManySent, TickReport, Webhoo
 pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};
+pub use kernel::admin::texts_api as texts;
 pub use kernel::audience;
 pub use kernel::links;
 pub use kernel::links::LinkChange;
+pub use kernel::roster::api as roster;
 pub use kernel::students;
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{

@@ -1,11 +1,15 @@
 [package]
 name = "harpseal"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
-publish = false
+readme.workspace = true
+homepage.workspace = true
+description = "The Core of harpseal: a reusable student care platform that serves students over messaging channels (Kernel, message model, Channel and Module traits, back office)."
+keywords = ["student", "chatbot", "line", "telegram", "axum"]
+categories = ["web-programming", "wasm"]
 
 [dependencies]
 async-trait.workspace = true

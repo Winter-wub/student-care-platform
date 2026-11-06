@@ -9,6 +9,8 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod seed;
+
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
     ActionContext, ActionId, BuildError, CatalogEntry, Deployment, DeploymentBuilder,
@@ -141,9 +143,19 @@ impl std::error::Error for StartError {}
 /// The whole Deployment, with a Fake Channel keyed by `secrets.fake_secret`,
 /// which must not be empty.
 pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, StartError> {
+    deployment_with_fake(services, secrets).map(|(d, _)| d)
+}
+
+/// [`deployment`], also returning a handle on its Fake Channel (it shares
+/// the recorded state), for the native binary's dev mode.
+pub fn deployment_with_fake(
+    services: Services,
+    secrets: Secrets,
+) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
-    builder(services, secrets)
-        .channel(fake)
+    let d = builder(services, secrets)
+        .channel(fake.clone())
         .build()
-        .map_err(StartError::Build)
+        .map_err(StartError::Build)?;
+    Ok((d, fake))
 }

@@ -588,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "argon2",
  "async-trait",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-channel-fake"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "harpseal",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-channel-line"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -632,7 +632,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-channel-telegram"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "harpseal",
  "harpseal-testing",
@@ -655,13 +655,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "harpseal-example-e2e"
+version = "0.0.0"
+dependencies = [
+ "harpseal",
+ "harpseal-channel-fake",
+ "reqwest",
+ "rusqlite",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "harpseal-example-native"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
+ "axum",
  "example-deployment",
+ "harpseal",
+ "harpseal-channel-fake",
  "harpseal-cli",
  "harpseal-runtime-native",
+ "harpseal-testing",
+ "serde_json",
  "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -676,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-runtime-cloudflare"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -689,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-runtime-native"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -707,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "harpseal-testing"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",

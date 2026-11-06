@@ -23,7 +23,11 @@
 //!   within 48 hours).
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
+//! - **From code**: [`create_draft`] and [`confirm`] take the same path as
+//!   the pages (Permission `announcements.send` checked, audited as the
+//!   acting Staff member).
 
+mod api;
 mod chat;
 mod deliver;
 mod form;
@@ -44,6 +48,7 @@ mod view;
 
 use axum::routing::{get, post};
 
+pub use api::{NewAnnouncement, SEND_PERMISSION, confirm, create_draft};
 pub use chat::{AckOutcome, ack, ack_action, detail_path, latest};
 pub use stats::{RoundStats, Stats, stats};
 pub use store::Summary;

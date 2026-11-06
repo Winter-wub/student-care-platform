@@ -1,0 +1,11 @@
+# `cp .dev.vars.example .dev.vars` for `npx wrangler@4 dev --local`
+# (.dev.vars is git-ignored). Placeholders only; real values are Worker
+# secrets (`npx wrangler@4 secret put NAME`).
+FAKE_SECRET=change-me
+LINE_LIFF_ID=0000000000-placeholder
+TELEGRAM_WEB_APP_URL=https://students.sealbay.example
+# RESEND_API_KEY=re_placeholder
+# LINE_CHANNEL_SECRET=
+# LINE_ACCESS_TOKEN=
+# TELEGRAM_BOT_TOKEN=
+# TELEGRAM_WEBHOOK_SECRET=

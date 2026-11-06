@@ -97,12 +97,30 @@ pub struct RequestCtx {
     pub user_agent: Option<String>,
     /// The id the Router gave this request.
     pub request_id: Option<String>,
+    /// Demo data: every audit row written with this context gets
+    /// `"seed": true` in its `after` (see [`RequestCtx::seeded`]).
+    pub seed: bool,
 }
 
 /// Response header carrying [`RequestCtx::request_id`].
 pub const REQUEST_ID_HEADER: &str = "x-request-id";
 
 impl RequestCtx {
+    /// A command-line call: no address, `request_id` `cli`.
+    pub fn cli() -> Self {
+        Self {
+            request_id: Some("cli".into()),
+            ..Self::default()
+        }
+    }
+
+    /// The same context marking demo data: audit rows carry
+    /// `"seed": true` in `after`, so seeded writes stay distinguishable.
+    pub fn seeded(mut self) -> Self {
+        self.seed = true;
+        self
+    }
+
     /// Reads ip and user agent from the request; `request_id` as given.
     pub(crate) fn from_parts(
         headers: &HeaderMap,
@@ -119,6 +137,7 @@ impl RequestCtx {
             ip,
             user_agent,
             request_id,
+            seed: false,
         }
     }
 }
@@ -237,6 +256,7 @@ fn row(
     condition: Option<Statement>,
 ) -> Result<(Statement, String)> {
     let (actor_kind, actor_id) = actor.parts();
+    let after = if ctx.seed { mark_seed(after) } else { after };
     let json = |v: Option<Json>| v.map(|v| redact(v).to_string());
     let id = services.new_id()?;
     let head = "INSERT INTO audit_log (id, at, actor_kind, actor_id, action, target_kind, \
@@ -263,6 +283,22 @@ fn row(
         stmt.params.extend(c.params);
     }
     Ok((stmt, id))
+}
+
+/// `after` with `"seed": true` (an object is extended; anything else is
+/// kept under `value`).
+fn mark_seed(after: Option<Json>) -> Option<Json> {
+    let mut map = match after {
+        Some(Json::Object(m)) => m,
+        None => serde_json::Map::new(),
+        Some(other) => {
+            let mut m = serde_json::Map::new();
+            m.insert("value".into(), other);
+            m
+        }
+    };
+    map.insert("seed".into(), Json::Bool(true));
+    Some(Json::Object(map))
 }
 
 /// Writes one audit row on its own. Prefer [`entry`] inside the write's

@@ -12,6 +12,7 @@ members = [
     "deployments/example/deployment",
     "deployments/example/native",
     "deployments/example/worker",
+    "deployments/example/e2e",
 ]
 
 [workspace.package]
@@ -19,16 +20,20 @@ edition = "2024"
 rust-version = "1.91"
 license = "Apache-2.0"
 repository = "https://github.com/Winter-wub/student-care-platform"
+homepage = "https://github.com/Winter-wub/student-care-platform"
+readme = "README.md"
 
 [workspace.dependencies]
-harpseal = { path = "crates/harpseal" }
-harpseal-channel-line = { path = "crates/harpseal-channel-line" }
-harpseal-channel-telegram = { path = "crates/harpseal-channel-telegram" }
-harpseal-channel-fake = { path = "crates/harpseal-channel-fake" }
-harpseal-runtime-native = { path = "crates/harpseal-runtime-native" }
-harpseal-runtime-cloudflare = { path = "crates/harpseal-runtime-cloudflare" }
+harpseal = { path = "crates/harpseal", version = "0.1.0" }
+harpseal-channel-line = { path = "crates/harpseal-channel-line", version = "0.1.0" }
+harpseal-channel-telegram = { path = "crates/harpseal-channel-telegram", version = "0.1.0" }
+harpseal-channel-fake = { path = "crates/harpseal-channel-fake", version = "0.1.0" }
+harpseal-runtime-native = { path = "crates/harpseal-runtime-native", version = "0.1.0" }
+harpseal-runtime-cloudflare = { path = "crates/harpseal-runtime-cloudflare", version = "0.1.0" }
+# Path only: a dev-dependency of the crates it tests (cycles), which cargo
+# drops when publishing. Customers depend on the published crate.
 harpseal-testing = { path = "crates/harpseal-testing" }
-harpseal-cli = { path = "crates/harpseal-cli" }
+harpseal-cli = { path = "crates/harpseal-cli", version = "0.1.0" }
 example-deployment = { path = "deployments/example/deployment" }
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false }

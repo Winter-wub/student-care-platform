@@ -29,7 +29,11 @@
 //! counts, file hash, mode, file name), `roster.import.cancel`,
 //! `roster.import.fail`, `roster.file.download`; the Job writes `student.status` per Student it
 //! marks left and `link.revoke` per Link.
+//!
+//! From code: `harpseal::roster::{upload, confirm}` ([`api`]) take the same
+//! path, checking `kernel.roster.import` themselves.
 
+pub mod api;
 mod chunk;
 pub(crate) mod csv;
 pub(crate) mod file;

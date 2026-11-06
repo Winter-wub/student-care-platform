@@ -1,0 +1,20 @@
+[package]
+name = "harpseal-example-e2e"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "`just e2e`: boots the example native binary and walks it over HTTP."
+
+# A real process over real HTTP, so it lives beside the example and not in
+# harpseal-testing (published, and in-process only). The Fake Channel
+# crate signs webhooks and Mini App tokens exactly as the server checks.
+[dependencies]
+harpseal.workspace = true
+harpseal-channel-fake.workspace = true
+reqwest = { version = "0.13", default-features = false }
+rusqlite.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }

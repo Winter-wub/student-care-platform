@@ -18,7 +18,7 @@
 //! it is and a warning lists the declared Permissions it lacks. `--admin`
 //! is refused once any Staff exists unless `--force` is given. Passwords on the command line end up in shell
 //! history: prefer `--password-stdin` or the generated one. Backup and
-//! restore arrive with #29.
+//! restore are planned in a follow-up ticket.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]

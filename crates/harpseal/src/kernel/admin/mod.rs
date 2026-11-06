@@ -22,6 +22,7 @@ mod settings;
 mod staff_detail;
 mod staff_pages;
 mod texts;
+pub mod texts_api;
 mod texts_pages;
 mod texts_staff;
 mod view;

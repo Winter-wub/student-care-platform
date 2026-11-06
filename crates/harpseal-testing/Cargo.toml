@@ -1,12 +1,15 @@
 [package]
 name = "harpseal-testing"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
-description = "Test harness for harpseal Deployments: fake Services, the Fake Channel and the axum Router."
-publish = false
+readme.workspace = true
+homepage.workspace = true
+description = "Test harness for harpseal Deployments: fake Services, the Fake Channel, the axum Router and a cookie-keeping Browser."
+keywords = ["testing", "harness", "fake", "axum", "harpseal"]
+categories = ["development-tools::testing"]
 
 [dependencies]
 harpseal.workspace = true
