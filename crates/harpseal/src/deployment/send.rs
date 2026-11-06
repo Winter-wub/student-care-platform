@@ -13,7 +13,7 @@ use crate::port_types::Statement;
 use crate::{Error, Result};
 
 /// The Capability a Message needs beyond the Channel minimum.
-fn required(msg: &Message) -> Option<Capability> {
+pub(super) fn required(msg: &Message) -> Option<Capability> {
     match msg {
         Message::Attachment(_) => Some(Capability::SendAttachment),
         _ => None,
@@ -98,6 +98,19 @@ impl Deployment {
         module: Option<&str>,
     ) -> Result<Vec<SendReceipt>> {
         self.deliver_keyed(to, reply, msgs, locale, module, None)
+            .await
+    }
+
+    /// A keyed Push on behalf of `module` ([`Deployment::send_many_with_key`]).
+    pub(super) async fn deliver_with(
+        &self,
+        to: &ChannelAccountId,
+        msgs: &[Message],
+        locale: &Locale,
+        module: Option<&str>,
+        key: &str,
+    ) -> Result<Vec<SendReceipt>> {
+        self.deliver_keyed(to, None, msgs, locale, module, Some(key))
             .await
     }
 

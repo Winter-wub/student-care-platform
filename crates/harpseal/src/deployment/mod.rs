@@ -3,6 +3,7 @@
 mod builder;
 mod routes;
 mod send;
+mod send_many;
 mod tick;
 mod web;
 
@@ -10,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub use builder::DeploymentBuilder;
+pub use send_many::ManySent;
 pub use tick::TickReport;
 
 use crate::config::DeploymentConfig;
@@ -42,6 +44,9 @@ struct Registry {
     permissions: Vec<Permission>,
     menu: Vec<MenuEntrySpec>,
     actions: HashMap<ActionId, (&'static str, Arc<dyn ActionHandler>)>,
+    /// (prefix, module, handler) from `action_prefix`, checked not to
+    /// overlap each other or any exact id.
+    action_prefixes: Vec<(&'static str, &'static str, Arc<dyn ActionHandler>)>,
     jobs: HashMap<&'static str, (JobSpec, Arc<dyn JobHandler>)>,
     /// Parsed `JobSpec::schedule`s, in registration order (#23).
     schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
@@ -274,15 +279,16 @@ impl Deployment {
         kernel::flow::handle(self, ev).await
     }
 
-    /// The Module and handler registered for `action`.
+    /// The Module and handler registered for `action`: the exact id
+    /// first, then the longest `action_prefix` it starts with.
     pub(crate) fn module_action(
         &self,
         action: &ActionId,
     ) -> Option<(&'static str, Arc<dyn ActionHandler>)> {
-        self.registry
-            .actions
-            .get(action)
-            .map(|(m, h)| (*m, h.clone()))
+        if let Some((m, h)) = self.registry.actions.get(action) {
+            return Some((*m, h.clone()));
+        }
+        resolve_prefix(&self.registry.action_prefixes, action.as_str())
     }
 
     /// The merged catalog, shared.
@@ -331,6 +337,18 @@ impl Deployment {
     }
 }
 
+/// The handler of the longest prefix `id` starts with.
+fn resolve_prefix(
+    prefixes: &[(&'static str, &'static str, Arc<dyn ActionHandler>)],
+    id: &str,
+) -> Option<(&'static str, Arc<dyn ActionHandler>)> {
+    prefixes
+        .iter()
+        .filter(|(p, _, _)| id.starts_with(p) && id.len() > p.len())
+        .max_by_key(|(p, _, _)| p.len())
+        .map(|(_, m, h)| (*m, h.clone()))
+}
+
 impl core::fmt::Debug for Deployment {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Deployment")
@@ -340,5 +358,24 @@ impl core::fmt::Debug for Deployment {
                 &self.channels.iter().map(|c| c.kind()).collect::<Vec<_>>(),
             )
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::module::ActionContext;
+
+    fn handler() -> Arc<dyn ActionHandler> {
+        Arc::new(|_: ActionContext| async { Ok(Vec::new()) })
+    }
+
+    #[test]
+    fn the_longest_prefix_wins_and_a_bare_prefix_matches_nothing() {
+        let p = vec![("a.", "short", handler()), ("a.b.", "long", handler())];
+        assert_eq!(resolve_prefix(&p, "a.b.c").map(|(m, _)| m), Some("long"));
+        assert_eq!(resolve_prefix(&p, "a.x").map(|(m, _)| m), Some("short"));
+        assert!(resolve_prefix(&p, "a.").is_none(), "no suffix");
+        assert!(resolve_prefix(&p, "b.c").is_none());
     }
 }

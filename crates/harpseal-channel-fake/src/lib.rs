@@ -20,6 +20,11 @@
 //! event's `event_id` and `redelivery` travel as fields `id` and
 //! `redelivery`, so a test can deliver the same event twice.
 //!
+//! Multicast: the LineLike profile has the Multicast Capability (groups
+//! of 500 recipients, [`FakeChannel::with_max_recipients`] to shrink
+//! them); each group is one [`Call`] per Push request with
+//! `recipients` set, metered once per recipient.
+//!
 //! Metering: a Message is charged one unit per metered Push request it
 //! opens (a LineLike text split over 7 objects, sent by Push, opens 2
 //! requests and costs 2). [`FakeChannel::fail_next_batch_at`] makes the
@@ -28,6 +33,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod multicast;
 mod record;
 mod render;
 mod wire;
@@ -65,7 +71,8 @@ pub enum FakeProfile {
     /// its batch; the rest go in Push requests of 5, each request one
     /// metered unit; text over 5000 chars split, over 12 Cards several
     /// carousels, over 13 quick replies (or a label over 20) one Card with
-    /// every button; no attachments, edit or delete.
+    /// every button; no attachments, edit or delete; multicast in groups
+    /// of 500 recipients, metered once per recipient per request.
     LineLike,
     /// Telegram: no reply tokens, every send free, one message per Card,
     /// text over 4096 chars split, at most 100 buttons per message.
@@ -73,7 +80,7 @@ pub enum FakeProfile {
 }
 
 impl FakeProfile {
-    fn limits(self) -> Limits {
+    pub(crate) fn limits(self) -> Limits {
         match self {
             FakeProfile::Full => Limits::NONE,
             FakeProfile::LineLike => Limits::LINE,
@@ -121,6 +128,7 @@ pub struct FakeChannel {
     secret: String,
     mini_app: bool,
     profile: FakeProfile,
+    max_recipients: usize,
     state: Arc<Mutex<State>>,
 }
 
@@ -139,6 +147,7 @@ impl FakeChannel {
             secret,
             mini_app: true,
             profile: FakeProfile::Full,
+            max_recipients: multicast::MAX_RECIPIENTS,
             state: Arc::default(),
         })
     }
@@ -160,6 +169,13 @@ impl FakeChannel {
     /// URL were configured).
     pub fn without_mini_app(mut self) -> Self {
         self.mini_app = false;
+        self
+    }
+
+    /// The same Channel with multicast groups of at most `n` recipients
+    /// (default 500, as LINE); only the LineLike profile multicasts.
+    pub fn with_max_recipients(mut self, n: usize) -> Self {
+        self.max_recipients = n.max(1);
         self
     }
 
@@ -211,7 +227,7 @@ impl FakeChannel {
         self.lock().files.insert(platform_file_id.into(), bytes);
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 }
@@ -299,6 +315,9 @@ impl Channel for FakeChannel {
         self.profile
             .attachments()
             .then_some(self as &dyn SendAttachment)
+    }
+    fn multicast(&self) -> Option<&dyn harpseal::Multicast> {
+        (self.profile == FakeProfile::LineLike).then_some(self as &dyn harpseal::Multicast)
     }
 }
 

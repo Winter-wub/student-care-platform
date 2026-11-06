@@ -64,6 +64,10 @@ pub struct ActionContext {
     pub account: ChannelAccountId,
     /// The Student's Locale.
     pub locale: Locale,
+    /// The Action pressed: the registered id, or for a handler registered
+    /// with [`ModuleRegistrar::action_prefix`] the whole id (prefix and
+    /// suffix), which the handler parses.
+    pub action: ActionId,
 }
 
 impl ActionContext {
@@ -155,6 +159,7 @@ pub struct ModuleRegistrar {
     pub(crate) permissions: Vec<Permission>,
     pub(crate) menu: Vec<MenuEntrySpec>,
     pub(crate) actions: Vec<(ActionId, Arc<dyn ActionHandler>)>,
+    pub(crate) action_prefixes: Vec<(&'static str, Arc<dyn ActionHandler>)>,
     pub(crate) back_office: Vec<(&'static str, &'static str, MethodRouter<AppState>)>,
     pub(crate) public: Vec<(&'static str, MethodRouter<AppState>)>,
     pub(crate) catalog: Vec<CatalogEntry>,
@@ -180,6 +185,7 @@ impl ModuleRegistrar {
             permissions: Vec::new(),
             menu: Vec::new(),
             actions: Vec::new(),
+            action_prefixes: Vec::new(),
             back_office: Vec::new(),
             public: Vec::new(),
             catalog: Vec::new(),
@@ -215,6 +221,28 @@ impl ModuleRegistrar {
     /// An Action not on the Menu (e.g. a Card button).
     pub fn action(&mut self, id: ActionId, h: impl ActionHandler + 'static) -> &mut Self {
         self.actions.push((id, Arc::new(h)));
+        self
+    }
+
+    /// A handler for every Action id starting with `prefix` (e.g.
+    /// `announcements.ack.` for `announcements.ack.<announcement id>`), so
+    /// a button can carry an argument in its id. The handler gets the
+    /// whole id in [`ActionContext::action`] and must validate the suffix
+    /// itself: an unknown or malformed suffix should answer with a polite
+    /// Text, never an `Err` (which the Student would not see answered).
+    ///
+    /// `build()` refuses ([`crate::BuildError::DuplicateAction`]) a prefix
+    /// that does not end with `.`, two prefixes where one starts with the
+    /// other, and a prefix that covers an exact id registered with
+    /// [`ModuleRegistrar::action`] or [`ModuleRegistrar::menu_entry`] by
+    /// any Module. An exact id always wins; otherwise the longest
+    /// matching prefix handles the Action.
+    pub fn action_prefix(
+        &mut self,
+        prefix: &'static str,
+        h: impl ActionHandler + 'static,
+    ) -> &mut Self {
+        self.action_prefixes.push((prefix, Arc::new(h)));
         self
     }
 

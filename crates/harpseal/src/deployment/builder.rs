@@ -115,6 +115,7 @@ impl DeploymentBuilder {
                 permissions: collected.permissions,
                 menu,
                 actions: collected.actions,
+                action_prefixes: collected.action_prefixes,
                 jobs: collected.jobs,
                 schedules: collected.schedules,
                 migrations: collected.migrations,
@@ -128,12 +129,14 @@ impl DeploymentBuilder {
 
 type BackOffice = Vec<(&'static str, &'static str, &'static str, Route)>;
 type Actions = HashMap<crate::ActionId, (&'static str, Arc<dyn crate::ActionHandler>)>;
+type Prefixes = Vec<(&'static str, &'static str, Arc<dyn crate::ActionHandler>)>;
 
 /// Everything every Module registered, merged.
 struct Collected {
     permissions: Vec<Permission>,
     menu: Vec<(&'static str, MenuEntrySpec)>,
     actions: Actions,
+    action_prefixes: Prefixes,
     jobs: HashMap<&'static str, (crate::JobSpec, Arc<dyn crate::JobHandler>)>,
     schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
     migrations: Vec<crate::Migration>,
@@ -151,6 +154,7 @@ impl Default for Collected {
             permissions: Vec::new(),
             menu: Vec::new(),
             actions: HashMap::new(),
+            action_prefixes: Vec::new(),
             jobs: HashMap::new(),
             schedules: Vec::new(),
             migrations: Vec::new(),
@@ -172,6 +176,9 @@ impl Collected {
                 return Err(BuildError::DuplicateAction(id));
             }
             self.actions.insert(id, (module, h));
+        }
+        for (prefix, h) in r.action_prefixes {
+            self.action_prefixes.push((prefix, module, h));
         }
         for (path, route) in r.public {
             self.routes.public(module, path)?;
@@ -234,12 +241,36 @@ impl Collected {
                 });
             }
         }
+        self.check_prefixes()?;
         for module in &self.mini_app_users {
             if let Some(c) = channels.iter().find(|c| c.mini_app().is_none()) {
                 return Err(BuildError::MiniAppUnavailable {
                     module,
                     channel: c.kind(),
                 });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Collected {
+    /// Action prefixes end with `.`, never overlap, and cover no exact id.
+    fn check_prefixes(&self) -> Result<(), BuildError> {
+        let refuse = |p: &str| {
+            let id =
+                crate::ActionId::new(p).map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
+            Err(BuildError::DuplicateAction(id))
+        };
+        for (i, (p, _, _)) in self.action_prefixes.iter().enumerate() {
+            if !p.ends_with('.') {
+                return refuse(p);
+            }
+            let overlaps = self.action_prefixes[..i]
+                .iter()
+                .any(|(q, _, _)| p.starts_with(q) || q.starts_with(p));
+            if overlaps || self.actions.keys().any(|id| id.as_str().starts_with(p)) {
+                return refuse(p);
             }
         }
         Ok(())

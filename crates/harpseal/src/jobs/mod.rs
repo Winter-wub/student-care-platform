@@ -127,6 +127,30 @@ impl Jobs {
         self.statement(Some(key), kind, payload, run_at)
     }
 
+    /// [`Jobs::insert_unique`] that inserts only when `condition` (an SQL
+    /// boolean expression with its own params, e.g. `EXISTS (SELECT 1 FROM
+    /// audit_log WHERE id = ?)`) holds when the statement runs: a Job that
+    /// belongs to a compare-and-set write is enqueued only if that write
+    /// won.
+    pub(crate) fn insert_unique_if(
+        &self,
+        key: &str,
+        kind: &str,
+        payload: &serde_json::Value,
+        run_at: Option<Timestamp>,
+        condition: Statement,
+    ) -> Result<(JobId, Statement)> {
+        let (id, mut stmt) = self.insert_unique(key, kind, payload, run_at)?;
+        stmt.sql = format!(
+            "INSERT INTO job (id, kind, payload, run_at, unique_key, created_at) \
+             SELECT ?, ?, ?, ?, ?, ? WHERE {} ON CONFLICT (unique_key) DO NOTHING",
+            condition.sql
+        )
+        .into();
+        stmt.params.extend(condition.params);
+        Ok((id, stmt))
+    }
+
     fn statement(
         &self,
         key: Option<&str>,
