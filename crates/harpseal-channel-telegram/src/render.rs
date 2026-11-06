@@ -205,23 +205,37 @@ pub fn command_name(action: &str) -> String {
     s.chars().take(COMMAND_MAX).collect()
 }
 
-/// `setMyCommands` (scope = this chat) + `setChatMenuButton` (opens the
-/// command list). `send` fills both `chat_id`s.
-pub fn menu(m: &Menu) -> Value {
-    let mut entries: Vec<(String, String)> = m
+/// One Bot API command built from a Menu entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Command {
+    /// The command without `/`, e.g. `news_latest`.
+    pub command: String,
+    /// What the Student sees in the command list.
+    pub description: String,
+    /// The Action the command triggers.
+    pub action: ActionId,
+}
+
+/// The commands for `m`, in order: names derived from the Action ids
+/// ([`command_name`]), duplicates suffixed `_2`, `_3`; over
+/// [`COMMANDS_MAX`] entries, the first 99 plus `/kernel_menu_more`. Both
+/// [`menu`] and the inbound command map use this, so they always agree.
+pub fn commands(m: &Menu) -> Vec<Command> {
+    let mut entries: Vec<(String, ActionId)> = m
         .entries
         .iter()
-        .map(|e| (e.label.clone(), e.action.as_str().to_string()))
+        .map(|e| (e.label.clone(), e.action.clone()))
         .collect();
     if entries.len() > COMMANDS_MAX {
         entries.truncate(COMMANDS_MAX - 1);
-        entries.push(("เพิ่มเติม".into(), MENU_MORE_ACTION.into()));
+        let more = ActionId::new(MENU_MORE_ACTION).expect("the Kernel's id is short");
+        entries.push(("เพิ่มเติม".into(), more));
     }
     let mut seen = std::collections::HashSet::new();
-    let commands: Vec<Value> = entries
-        .iter()
+    entries
+        .into_iter()
         .map(|(label, action)| {
-            let base = command_name(action);
+            let base = command_name(action.as_str());
             let mut name = base.clone();
             let mut k = 2;
             while !seen.insert(name.clone()) {
@@ -232,8 +246,22 @@ pub fn menu(m: &Menu) -> Value {
                 );
                 k += 1;
             }
-            json!({ "command": name, "description": truncate(label, COMMAND_DESCRIPTION_MAX) })
+            Command {
+                command: name,
+                description: truncate(&label, COMMAND_DESCRIPTION_MAX),
+                action,
+            }
         })
+        .collect()
+}
+
+/// `setMyCommands` (scope = this chat) + `setChatMenuButton` (opens the
+/// command list). `set_menu` fills both `chat_id`s and switches the button
+/// to the Web App when one is configured.
+pub fn menu(m: &Menu) -> Value {
+    let commands: Vec<Value> = commands(m)
+        .into_iter()
+        .map(|c| json!({ "command": c.command, "description": c.description }))
         .collect();
     json!({
         "setMyCommands": { "method": "setMyCommands", "commands": commands, "scope": { "type": "chat" } },

@@ -1,6 +1,7 @@
-//! Renders every first-slice fixture, checks Telegram's limits, prints the
-//! JSON (`cargo test -- --nocapture`) and writes it to
-//! `docs/prototypes/message-render/telegram/<fixture>.json`.
+//! Renders every first-slice fixture, checks Telegram's limits and compares
+//! the JSON with the committed snapshot in
+//! `docs/prototypes/message-render/telegram/<fixture>.json` (read-only:
+//! the snapshots are the spec; print the output with `-- --nocapture`).
 
 use harpseal::Locale;
 use harpseal::fixtures::{self, Sample};
@@ -57,19 +58,38 @@ fn assert_limits(m: &Value) {
     }
 }
 
-fn write(name: &str, v: &Value) {
-    let pretty = serde_json::to_string_pretty(v).unwrap();
-    println!("── telegram/{name}.json ──\n{pretty}");
+fn matches_snapshot(name: &str, v: &Value) {
+    println!(
+        "── telegram/{name}.json ──\n{}",
+        serde_json::to_string_pretty(v).unwrap()
+    );
+    let path = format!(
+        "{}/../../docs/prototypes/message-render/telegram/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let committed: Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}")))
+            .unwrap();
+    assert_eq!(v, &committed, "{name} differs from its committed snapshot");
+}
+
+#[test]
+fn renders_every_fixture_within_limits_and_matches_its_snapshot() {
     let dir = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../docs/prototypes/message-render/telegram"
     );
-    std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(format!("{dir}/{name}.json"), pretty + "\n").unwrap();
-}
-
-#[test]
-fn renders_every_fixture_within_limits() {
+    let mut files: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    let mut names: Vec<String> = fixtures::all()
+        .iter()
+        .map(|(n, _)| format!("{n}.json"))
+        .collect();
+    names.sort();
+    assert_eq!(files, names, "every snapshot has a fixture and back");
     for (name, sample) in fixtures::all() {
         let out = match &sample {
             Sample::Message(m) => {
@@ -109,7 +129,7 @@ fn renders_every_fixture_within_limits() {
             }
             _ => panic!("{name}: a Sample kind this test does not know"),
         };
-        write(name, &out);
+        matches_snapshot(name, &out);
     }
 }
 
