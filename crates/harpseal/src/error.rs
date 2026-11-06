@@ -1,6 +1,7 @@
-//! One error type for every port and Channel.
+//! One error type for every port and Channel, and the build-time errors.
 
-use crate::delivery::Capability;
+use crate::delivery::{Capability, ChannelKind};
+use crate::message::ActionId;
 
 /// Every failure a Core port or Channel adapter can report.
 #[derive(Debug)]
@@ -11,7 +12,10 @@ pub enum Error {
     /// The Channel Account blocked the bot; the Link becomes unreachable.
     Unreachable,
     /// The platform asked us to slow down.
-    RateLimited { retry_after_secs: u32 },
+    RateLimited {
+        /// Seconds the platform asked us to wait.
+        retry_after_secs: u32,
+    },
     /// A webhook failed signature verification.
     BadSignature,
     /// Input broke an invariant (e.g. an Action id over 64 bytes).
@@ -22,36 +26,111 @@ pub enum Error {
     Platform(String),
 }
 
+/// `Result` with the Core's [`Error`].
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Error::Unsupported(c) => write!(f, "channel capability not available: {c:?}"),
+            Error::Unreachable => f.write_str("channel account is unreachable"),
+            Error::RateLimited { retry_after_secs } => {
+                write!(f, "rate limited, retry after {retry_after_secs} s")
+            }
+            Error::BadSignature => f.write_str("webhook signature rejected"),
+            Error::Invalid(m) => write!(f, "invalid: {m}"),
+            Error::Db(m) => write!(f, "database: {m}"),
+            Error::Platform(m) => write!(f, "platform: {m}"),
+        }
     }
 }
 
 impl std::error::Error for Error {}
 
-/// Why `Deployment::builder()...build()` refused. Both designs return it;
-/// Design B turns the "missing piece" variants into compile errors.
-#[derive(Debug)]
+/// A part [`crate::DeploymentBuilder`] needs before it can build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Part {
+    /// `.config(..)`.
+    Config,
+    /// `.runtime(..)`: the runtime's [`crate::Services`].
+    Runtime,
+    /// `.verification(..)`.
+    Verification,
+    /// At least one `.channel(..)`.
+    Channel,
+}
+
+/// Why `Deployment::builder()...build()` refused. Every misconfiguration
+/// surfaces here, at startup, never at the first request.
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BuildError {
-    MissingConfig,
-    MissingRuntime,
-    MissingVerification,
-    NoChannel,
-    DuplicateChannel(&'static str),
-    DuplicateAction(String),
-    DuplicatePermission(&'static str),
-    /// A Role in deployment.toml names a Permission no Module defined.
+    /// A required part was never given.
+    Missing(Part),
+    /// Two Channels report the same kind.
+    DuplicateChannel(ChannelKind),
+    /// Two handlers registered for one Action id.
+    DuplicateAction(ActionId),
+    /// Two Modules (or one twice) declared the same Permission id.
+    DuplicatePermission(String),
+    /// Two handlers registered for one Job kind.
+    DuplicateJob(String),
+    /// A Role in `deployment.toml` names a Permission no Module declared.
     UnknownPermission {
+        /// The Role.
         role: String,
+        /// The Permission id it names.
         permission: String,
     },
-    /// A back-office route or Menu entry refers to an undefined Permission.
+    /// A back-office route is guarded by a Permission no Module declared.
     UnguardedRoute {
+        /// The Module that registered the route.
         module: &'static str,
+        /// The undeclared Permission id.
         permission: &'static str,
     },
+    /// A Module sends `Button::MiniApp` but a Channel has no Mini App URL.
+    MiniAppUnavailable {
+        /// The Module that declared the Mini App button.
+        module: &'static str,
+        /// The Channel without a Mini App.
+        channel: ChannelKind,
+    },
+    /// A Menu entry's label key is not in the text catalog for the
+    /// default Locale.
+    UnknownText {
+        /// The Module that declared the Menu entry.
+        module: &'static str,
+        /// The missing catalog key.
+        key: &'static str,
+    },
 }
+
+impl core::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            BuildError::Missing(p) => write!(f, "deployment is missing its {p:?}"),
+            BuildError::DuplicateChannel(k) => write!(f, "channel `{k}` is added twice"),
+            BuildError::DuplicateAction(a) => write!(f, "action `{a}` has two handlers"),
+            BuildError::DuplicatePermission(p) => write!(f, "permission `{p}` declared twice"),
+            BuildError::DuplicateJob(j) => write!(f, "job kind `{j}` has two handlers"),
+            BuildError::UnknownPermission { role, permission } => {
+                write!(f, "role `{role}` names unknown permission `{permission}`")
+            }
+            BuildError::UnguardedRoute { module, permission } => write!(
+                f,
+                "module `{module}` guards a back-office route with unknown permission `{permission}`"
+            ),
+            BuildError::MiniAppUnavailable { module, channel } => write!(
+                f,
+                "module `{module}` sends Mini App buttons but channel `{channel}` has no Mini App URL"
+            ),
+            BuildError::UnknownText { module, key } => {
+                write!(f, "module `{module}` uses unknown text key `{key}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BuildError {}

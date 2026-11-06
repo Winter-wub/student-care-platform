@@ -2,44 +2,50 @@
 //! No I/O. Every limit below is cited; degrade rules are in
 //! `docs/prototypes/message-render.md`.
 
-use harpseal::message::{Attachment, Button, Card, Choices, Menu, Message};
 use harpseal::render::{
     MENU_MORE_ACTION, RenderCx, char_len, file_link, mini_app_unavailable, split_text, truncate,
 };
+use harpseal::{Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
 
-// https://developers.line.biz/en/reference/messaging-api/#text-message
+/// <https://developers.line.biz/en/reference/messaging-api/#text-message>
 pub const TEXT_MAX: usize = 5000;
-// https://developers.line.biz/en/reference/messaging-api/#flex-message (altText)
+/// <https://developers.line.biz/en/reference/messaging-api/#flex-message> (altText)
 pub const ALT_TEXT_MAX: usize = 1500;
-// https://developers.line.biz/en/reference/messaging-api/#f-carousel
+/// <https://developers.line.biz/en/reference/messaging-api/#f-carousel>
 pub const CAROUSEL_MAX: usize = 12;
+/// `CAROUSEL_JSON_MAX`: see the platform reference cited above.
 pub const CAROUSEL_JSON_MAX: usize = 50_000;
-// https://developers.line.biz/en/reference/messaging-api/#bubble
+/// <https://developers.line.biz/en/reference/messaging-api/#bubble>
 pub const BUBBLE_JSON_MAX: usize = 30_000;
-// https://developers.line.biz/en/reference/messaging-api/#items-object
+/// <https://developers.line.biz/en/reference/messaging-api/#items-object>
 pub const QUICK_REPLY_MAX: usize = 13;
-// https://developers.line.biz/en/reference/messaging-api/#action-object-label-spec
+/// <https://developers.line.biz/en/reference/messaging-api/#action-object-label-spec>
 pub const QUICK_REPLY_LABEL_MAX: usize = 20;
+/// `FLEX_BUTTON_LABEL_MAX`: see the platform reference cited above.
 pub const FLEX_BUTTON_LABEL_MAX: usize = 40;
+/// `RICH_MENU_LABEL_MAX`: see the platform reference cited above.
 pub const RICH_MENU_LABEL_MAX: usize = 20;
-// https://developers.line.biz/en/reference/messaging-api/#postback-action
+/// <https://developers.line.biz/en/reference/messaging-api/#postback-action>
 pub const POSTBACK_DATA_MAX: usize = 300;
+/// `DISPLAY_TEXT_MAX`: see the platform reference cited above.
 pub const DISPLAY_TEXT_MAX: usize = 300;
-// https://developers.line.biz/en/reference/messaging-api/#send-reply-message (messages: Max 5)
+/// <https://developers.line.biz/en/reference/messaging-api/#send-reply-message> (messages: Max 5)
 pub const MESSAGES_PER_REQUEST: usize = 5;
-// https://developers.line.biz/en/reference/messaging-api/#image-message
+/// <https://developers.line.biz/en/reference/messaging-api/#image-message>
 pub const IMAGE_MAX_BYTES: u64 = 10 * 1_048_576;
+/// `PREVIEW_MAX_BYTES`: see the platform reference cited above.
 pub const PREVIEW_MAX_BYTES: u64 = 1_048_576;
-// https://developers.line.biz/en/reference/messaging-api/#rich-menu-object
+/// <https://developers.line.biz/en/reference/messaging-api/#rich-menu-object>
 pub const RICH_MENU_AREAS_MAX: usize = 20;
+/// `CHAT_BAR_TEXT_MAX`: see the platform reference cited above.
 pub const CHAT_BAR_TEXT_MAX: usize = 14;
 /// Ours, not LINE's: a Card body longer than this is sent as Text first, so
 /// one bubble stays far below `BUBBLE_JSON_MAX` (Thai is 3 bytes per char).
 pub const FLEX_BODY_SOFT_MAX: usize = 2000;
 
 // The invariant that makes "postback data > 300" impossible.
-const _: () = assert!(harpseal::message::ActionId::MAX_BYTES <= POSTBACK_DATA_MAX);
+const _: () = assert!(harpseal::ActionId::MAX_BYTES <= POSTBACK_DATA_MAX);
 
 /// One `Message` -> LINE message objects (several when degraded). The
 /// caller packs them into requests of at most `MESSAGES_PER_REQUEST`.
@@ -110,9 +116,7 @@ fn bubble(title: &str, body: &str, buttons: &[Button], cx: &RenderCx) -> Value {
 
 /// A visible line instead of a Mini App button nobody can open.
 fn notice(b: &Button, cx: &RenderCx) -> Value {
-    let label = match b {
-        Button::Action { label, .. } | Button::MiniApp { label, .. } => label,
-    };
+    let label = b.label();
     json!({ "type": "text", "text": mini_app_unavailable(cx, label), "size": "xs", "wrap": true, "color": "#888888" })
 }
 
@@ -128,6 +132,8 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
         Button::MiniApp { label, path } => cx
             .mini_app_url(path)
             .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
+        // #[non_exhaustive]: an unknown kind renders as the visible notice.
+        _ => None,
     }
 }
 
@@ -187,11 +193,9 @@ fn carousels(cards: &[Card], cx: &RenderCx) -> Vec<Value> {
 
 fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
     let fits = c.options.len() <= QUICK_REPLY_MAX
-        && c.options.iter().all(|b| match b {
-            Button::Action { label, .. } | Button::MiniApp { label, .. } => {
-                char_len(label) <= QUICK_REPLY_LABEL_MAX
-            }
-        });
+        && c.options
+            .iter()
+            .all(|b| char_len(b.label()) <= QUICK_REPLY_LABEL_MAX);
     if !fits {
         // Too many or too long for quick reply: a bubble shows every option.
         let as_card = Card {
@@ -221,9 +225,7 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
 }
 
 fn label_of(b: &Button) -> &str {
-    match b {
-        Button::Action { label, .. } | Button::MiniApp { label, .. } => label,
-    }
+    b.label()
 }
 
 fn attachment(a: &Attachment, cx: &RenderCx) -> Value {

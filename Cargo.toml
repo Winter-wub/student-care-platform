@@ -8,6 +8,7 @@ members = [
     "crates/harpseal-runtime-cloudflare",
     "crates/harpseal-runtime-native",
     "crates/harpseal-cli",
+    "crates/harpseal-testing",
     "deployments/example/deployment",
     "deployments/example/native",
     "deployments/example/worker",
@@ -25,6 +26,8 @@ harpseal-channel-line = { path = "crates/harpseal-channel-line" }
 harpseal-channel-telegram = { path = "crates/harpseal-channel-telegram" }
 harpseal-channel-fake = { path = "crates/harpseal-channel-fake" }
 harpseal-runtime-native = { path = "crates/harpseal-runtime-native" }
+harpseal-runtime-cloudflare = { path = "crates/harpseal-runtime-cloudflare" }
+harpseal-testing = { path = "crates/harpseal-testing" }
 example-deployment = { path = "deployments/example/deployment" }
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false }

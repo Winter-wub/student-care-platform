@@ -1,24 +1,22 @@
-//! The fictional Deployment as a Cloudflare Worker (issue #5 prototype).
-//! `#[event(fetch)]` hands every request to the Deployment's axum router
-//! (workers-rs `http` feature), plus the `/bench/*` measurement routes.
-//! Built with `worker-build --release`; see `wrangler.toml`.
+//! The fictional Seal Bay University Deployment as a Cloudflare Worker.
+//! `#[event(fetch)]` hands every request to the Deployment's axum Router
+//! (workers-rs `http` feature). Built with `worker-build --release`; see
+//! `wrangler.toml`. Migrations on D1 and the Cron trigger arrive with #18.
 
-mod bench;
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use example_deployment::{Secrets, with_design_a};
+use example_deployment::{Secrets, deployment};
 use harpseal_channel_line::LineConfig;
 use harpseal_channel_telegram::TelegramConfig;
+use harpseal_runtime_cloudflare::worker::{self, Context, Env, HttpRequest, event};
 use tower_service::Service;
-use worker::{Context, Env, HttpRequest, event};
-
-pub use example_deployment::DEPLOYMENT_TOML;
-pub use harpseal_runtime_cloudflare::worker;
 
 thread_local! {
-    // One isolate = one thread: build the router on the first request and
+    // One isolate = one thread: build the Router on the first request and
     // reuse it while the isolate lives (warm requests skip the build).
     static ROUTER: RefCell<Option<axum::Router>> = const { RefCell::new(None) };
 }
@@ -32,16 +30,16 @@ fn var(env: &Env, k: &str) -> String {
 
 fn secrets(env: &Env) -> Secrets {
     Secrets {
-        line: LineConfig {
-            channel_secret: var(env, "LINE_CHANNEL_SECRET"),
-            access_token: var(env, "LINE_ACCESS_TOKEN"),
-            liff_id: var(env, "LINE_LIFF_ID"),
-        },
-        telegram: TelegramConfig {
-            bot_token: var(env, "TELEGRAM_BOT_TOKEN"),
-            webhook_secret: var(env, "TELEGRAM_WEBHOOK_SECRET"),
-            web_app_url: var(env, "TELEGRAM_WEB_APP_URL"),
-        },
+        line: LineConfig::new(
+            var(env, "LINE_CHANNEL_SECRET"),
+            var(env, "LINE_ACCESS_TOKEN"),
+            var(env, "LINE_LIFF_ID"),
+        ),
+        telegram: TelegramConfig::new(
+            var(env, "TELEGRAM_BOT_TOKEN"),
+            var(env, "TELEGRAM_WEBHOOK_SECRET"),
+            var(env, "TELEGRAM_WEB_APP_URL"),
+        ),
         fake_secret: var(env, "FAKE_SECRET"),
     }
 }
@@ -49,9 +47,9 @@ fn secrets(env: &Env) -> Secrets {
 fn build(env: &Env) -> worker::Result<axum::Router> {
     let services = harpseal_runtime_cloudflare::services(env, "DB")
         .map_err(|e| worker::Error::RustError(e.to_string()))?;
-    let d = with_design_a::deployment(services.clone(), secrets(env), true)
-        .map_err(|e| worker::Error::RustError(format!("{e:?}")))?;
-    Ok(Arc::new(d).router().merge(bench::router(services)))
+    let d =
+        deployment(services, secrets(env)).map_err(|e| worker::Error::RustError(e.to_string()))?;
+    Ok(Arc::new(d).router())
 }
 
 #[event(fetch)]

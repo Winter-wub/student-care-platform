@@ -1,5 +1,5 @@
-//! Shared page layout for back-office and Mini App pages (issue #5
-//! prototype): one maud layout, one CSS file served at [`CSS_PATH`], HTMX
+//! Shared page layout for back-office and Mini App pages (issue #5): one
+//! maud layout, one CSS file served at [`CSS_PATH`], HTMX
 //! from a pinned CDN URL. No JS framework, no build step.
 
 use maud::{DOCTYPE, Markup, html};
@@ -13,9 +13,13 @@ const CSS_HREF: &str = "/static/app.css?v=1";
 pub const HTMX_URL: &str = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js";
 
 /// Which chrome a page gets.
+#[non_exhaustive]
 pub enum Shell<'a> {
     /// Back office: brand bar, navigation, signed-in Staff email.
-    BackOffice { staff_email: Option<&'a str> },
+    BackOffice {
+        /// The signed-in Staff member's email, if any.
+        staff_email: Option<&'a str>,
+    },
     /// Inside LINE LIFF / Telegram Web App: no navigation, the host app
     /// already draws a title bar.
     MiniApp,
@@ -23,10 +27,13 @@ pub enum Shell<'a> {
 
 /// A short message shown once at the top of the main column.
 pub struct Flash<'a> {
+    /// Success (green) or failure (red).
     pub ok: bool,
+    /// The message.
     pub text: &'a str,
 }
 
+/// Renders a [`Flash`].
 pub fn flash(f: &Flash<'_>) -> Markup {
     html! {
         div class=(if f.ok { "flash ok" } else { "flash err" }) role="status" { (f.text) }
@@ -50,12 +57,8 @@ pub fn page(org: &str, title: &str, shell: Shell<'_>, body: Markup) -> Markup {
             body class=(if mini { "mini" } else { "office" }) {
                 @if let Shell::BackOffice { staff_email } = shell {
                     header class="bar" {
-                        a class="brand" href="/admin/students" { (org) }
+                        a class="brand" href="/admin" { (org) }
                         @if let Some(email) = staff_email {
-                            nav {
-                                a href="/admin/students" { "นักศึกษา" }
-                                a href="/admin/students#announce" { "ส่งประกาศ" }
-                            }
                             form method="post" action="/admin/logout" class="who" {
                                 span { (email) }
                                 button class="link" type="submit" { "ออกจากระบบ" }

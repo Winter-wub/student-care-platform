@@ -1,39 +1,61 @@
-//! LINE adapter (prototype). Platform calls are `todo!()`; rendering
-//! (`render`) and request packing (`requests`) are real code.
+//! LINE Messaging API adapter. Rendering ([`render`]) and request packing
+//! ([`requests`]) are real; the HTTP calls, signature check and webhook
+//! parsing arrive with #16 and until then return [`Error::Platform`].
 //!
-//! Capabilities: Mini App (LIFF). LINE cannot edit or delete a sent message.
-//! Metering: Reply (reply token, short window) is free, Push is metered.
+//! Capabilities: Mini App (LIFF) when a LIFF id is configured. LINE cannot
+//! edit or delete a sent message. Metering: Reply is free, Push is metered.
 
-use harpseal::Result;
-use harpseal::delivery::{
-    ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile, Metering, SendReceipt,
-    WebhookRequest,
-};
-use harpseal::message::{Locale, Menu, Message};
-use harpseal::render::RenderCx;
-use serde_json::{Value, json};
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
 pub mod render;
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use harpseal::{
+    Channel, ChannelAccountId, ChannelKind, Delivery, Error, HttpClient, Inbound, IncomingFile,
+    Locale, Menu, Message, Metering, MiniApp, RenderCx, Result, SendReceipt, WebhookRequest,
+};
+use serde_json::{Value, json};
+
+/// LINE's Channel kind.
 pub const KIND: ChannelKind = ChannelKind("line");
 
-#[derive(Debug, Clone)]
+/// Secrets and ids of one LINE Official Account. Read from the environment
+/// or Worker secrets, never from TOML.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LineConfig {
+    /// Channel secret, for `x-line-signature`.
     pub channel_secret: String,
+    /// Long-lived channel access token.
     pub access_token: String,
+    /// LIFF app id; empty when the Deployment has no Mini App on LINE.
     pub liff_id: String,
+}
+
+impl LineConfig {
+    /// A configuration; pass an empty `liff_id` for no Mini App.
+    pub fn new(
+        channel_secret: impl Into<String>,
+        access_token: impl Into<String>,
+        liff_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            channel_secret: channel_secret.into(),
+            access_token: access_token.into(),
+            liff_id: liff_id.into(),
+        }
+    }
 }
 
 /// LINE meters Push only.
 pub fn metering(d: &Delivery) -> Metering {
     match d {
         Delivery::Reply(_) => Metering::Free,
-        Delivery::Push => Metering::Metered,
+        _ => Metering::Metered,
     }
-}
-
-fn liff_url(cfg: &LineConfig, path: &str) -> String {
-    format!("https://liff.line.me/{}{path}", cfg.liff_id)
 }
 
 /// One HTTP call: endpoint path and JSON body.
@@ -46,8 +68,8 @@ pub fn requests(to: &ChannelAccountId, d: &Delivery, msgs: Vec<Value>) -> (Vec<R
     let mut out = Vec::new();
     let mut metering = Metering::Free;
     for (i, chunk) in msgs.chunks(render::MESSAGES_PER_REQUEST).enumerate() {
-        match d {
-            Delivery::Reply(token) if i == 0 => out.push((
+        match d.reply_token() {
+            Some(token) if i == 0 => out.push((
                 "/v2/bot/message/reply",
                 json!({ "replyToken": token.token, "messages": chunk }),
             )),
@@ -63,16 +85,32 @@ pub fn requests(to: &ChannelAccountId, d: &Delivery, msgs: Vec<Value>) -> (Vec<R
     (out, metering)
 }
 
-use std::sync::Arc;
+fn not_yet(what: &str) -> Error {
+    Error::Platform(format!(
+        "LINE {what} arrives with the LINE adapter ticket (#16)"
+    ))
+}
 
+/// The LINE Channel.
 pub struct LineChannel {
-    pub cfg: LineConfig,
-    pub http: Arc<dyn harpseal::HttpClient>,
+    cfg: LineConfig,
+    #[allow(dead_code)] // used by the HTTP calls (#16)
+    http: Arc<dyn HttpClient>,
 }
 
 impl LineChannel {
+    /// A LINE Channel sending through `http`.
+    pub fn new(cfg: LineConfig, http: Arc<dyn HttpClient>) -> Self {
+        Self { cfg, http }
+    }
+
+    fn liff_url(&self, path: &str) -> String {
+        format!("https://liff.line.me/{}{path}", self.cfg.liff_id)
+    }
+
+    /// The render context for one send.
     pub fn render_cx(&self, locale: &Locale) -> RenderCx {
-        let mini_app_base_url = (!self.cfg.liff_id.is_empty()).then(|| liff_url(&self.cfg, ""));
+        let mini_app_base_url = (!self.cfg.liff_id.is_empty()).then(|| self.liff_url(""));
         RenderCx {
             locale: locale.clone(),
             mini_app_base_url,
@@ -80,16 +118,16 @@ impl LineChannel {
     }
 }
 
-#[async_trait::async_trait]
-impl harpseal::Channel for LineChannel {
+#[async_trait]
+impl Channel for LineChannel {
     fn kind(&self) -> ChannelKind {
         KIND
     }
     async fn parse_webhook(&self, _req: WebhookRequest) -> Result<Vec<Inbound>> {
-        todo!("check x-line-signature (HMAC-SHA256 of body with channel_secret), parse events")
+        Err(not_yet("webhook parsing"))
     }
     async fn download(&self, _file: &IncomingFile) -> Result<Vec<u8>> {
-        todo!("GET api-data.line.me/v2/bot/message/{{id}}/content via self.http")
+        Err(not_yet("content download"))
     }
     async fn send(
         &self,
@@ -98,27 +136,24 @@ impl harpseal::Channel for LineChannel {
         m: &Message,
         locale: &Locale,
     ) -> Result<SendReceipt> {
-        let (calls, _metering) = requests(to, d, render::message(m, &self.render_cx(locale)));
-        let _ = calls;
-        todo!("POST each call to api.line.me via self.http with the access token")
+        let (_calls, _metering) = requests(to, d, render::message(m, &self.render_cx(locale)));
+        Err(not_yet("sending"))
     }
     async fn set_menu(&self, _to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         let _rich_menu = menu.map(render::menu);
-        todo!(
-            "create rich menu (or reuse by hash), upload its image, link to the user; None: unlink"
-        )
+        Err(not_yet("rich menus"))
     }
-    fn mini_app(&self) -> Option<&dyn harpseal::MiniApp> {
-        Some(self)
+    fn mini_app(&self) -> Option<&dyn MiniApp> {
+        (!self.cfg.liff_id.is_empty()).then_some(self as &dyn MiniApp)
     }
 }
 
-#[async_trait::async_trait]
-impl harpseal::MiniApp for LineChannel {
+#[async_trait]
+impl MiniApp for LineChannel {
     fn launch_url(&self, path: &str) -> String {
-        liff_url(&self.cfg, path)
+        self.liff_url(path)
     }
     async fn verify_session(&self, _id_token: &str) -> Result<ChannelAccountId> {
-        todo!("POST api.line.me/oauth2/v2.1/verify with the LIFF ID token")
+        Err(not_yet("LIFF id token verification"))
     }
 }

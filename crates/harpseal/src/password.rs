@@ -1,4 +1,4 @@
-//! Staff password hashing (issue #5 prototype). Every hash is a PHC string,
+//! Staff password hashing (measured in issue #5). Every hash is a PHC string,
 //! so the algorithm and its parameters travel with the hash and either
 //! runtime can verify a hash made by the other.
 //!
@@ -13,11 +13,22 @@ use crate::{Error, Result};
 
 /// A hashing scheme with its cost parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Scheme {
     /// Argon2id. OWASP minimum: `m_kib = 19456`, `t = 2`, `p = 1`.
-    Argon2id { m_kib: u32, t: u32, p: u32 },
+    Argon2id {
+        /// Memory in KiB.
+        m_kib: u32,
+        /// Iterations.
+        t: u32,
+        /// Parallelism.
+        p: u32,
+    },
     /// PBKDF2-HMAC-SHA256. OWASP: 600 000 rounds.
-    Pbkdf2Sha256 { rounds: u32 },
+    Pbkdf2Sha256 {
+        /// Iterations.
+        rounds: u32,
+    },
 }
 
 impl Scheme {
@@ -107,20 +118,6 @@ mod tests {
         assert!(h.starts_with("$pbkdf2-sha256$i=1000"), "{h}");
         assert!(verify(&h, "pw").unwrap());
         assert!(!verify(&h, "px").unwrap());
-    }
-
-    /// Prints the seed Staff hash for `deployments/example/deployment/sql/0003_seed.sql`:
-    /// `cargo test -p harpseal --release seed_hash -- --ignored --nocapture`.
-    #[test]
-    #[ignore]
-    fn seed_hash() {
-        let h = hash(
-            Scheme::ARGON2ID_OWASP,
-            "seal-bay-proto-2026",
-            b"sealbay-seed-salt",
-        )
-        .unwrap();
-        println!("{h}");
     }
 
     #[test]

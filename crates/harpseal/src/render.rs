@@ -15,17 +15,20 @@ pub struct RenderCx {
 }
 
 impl RenderCx {
+    /// The full Mini App URL for `path`, if a Mini App is configured.
     pub fn mini_app_url(&self, path: &str) -> Option<String> {
         self.mini_app_base_url
             .as_ref()
             .map(|base| format!("{base}{path}"))
     }
 
+    /// Whether degrade texts should be in Thai.
     pub fn is_thai(&self) -> bool {
         self.locale.0 == "th"
     }
 }
 
+/// Length in Unicode scalar values.
 pub fn char_len(s: &str) -> usize {
     s.chars().count()
 }
@@ -72,18 +75,10 @@ pub fn split_text(s: &str, max: usize) -> Vec<String> {
 /// Every Action id a Message carries, in order. Renderers must emit each
 /// of them exactly once (tests check this: no Action is dropped silently).
 pub fn action_ids(msg: &Message) -> Vec<String> {
-    let buttons: Vec<&Button> = match msg {
-        Message::Card(c) => c.buttons.iter().collect(),
-        Message::CardList(l) => l.0.iter().flat_map(|c| c.buttons.iter()).collect(),
-        Message::Choices(c) => c.options.iter().collect(),
-        _ => Vec::new(),
-    };
-    buttons
+    msg.buttons()
         .into_iter()
-        .filter_map(|b| match b {
-            Button::Action { action, .. } => Some(action.as_str().to_string()),
-            Button::MiniApp { .. } => None,
-        })
+        .filter_map(Button::action_id)
+        .map(|a| a.as_str().to_string())
         .collect()
 }
 
@@ -96,6 +91,7 @@ pub fn mini_app_unavailable(cx: &RenderCx, label: &str) -> String {
     }
 }
 
+/// The text an adapter sends instead of a file it cannot attach.
 pub fn file_link(cx: &RenderCx, name: &str, size_bytes: u64, url: &str) -> String {
     let mb = size_bytes as f64 / 1_048_576.0;
     if cx.is_thai() {
@@ -105,6 +101,7 @@ pub fn file_link(cx: &RenderCx, name: &str, size_bytes: u64, url: &str) -> Strin
     }
 }
 
+/// Label of a follow-up message carrying overflow buttons.
 pub fn more_label(cx: &RenderCx, part: usize, of: usize) -> String {
     if cx.is_thai() {
         format!("ตัวเลือกเพิ่มเติม ({part}/{of})")

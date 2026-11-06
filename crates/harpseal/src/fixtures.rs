@@ -8,7 +8,9 @@ use crate::message::{
 
 /// One rendered sample: a Message (`render::message`) or a Menu (`render::menu`).
 pub enum Sample {
+    /// A Message for `render::message`.
     Message(Message),
+    /// A Menu for `render::menu`.
     Menu(Menu),
 }
 
@@ -57,6 +59,7 @@ pub fn otp_ask_student_id() -> Message {
     Message::text("กรุณาพิมพ์รหัสนักศึกษา 8 หลักของคุณ เพื่อผูกบัญชีกับระบบของมหาวิทยาลัยอ่าวแมวน้ำ")
 }
 
+/// Fixture `otp_ask_code` (see `docs/prototypes/message-render/`).
 pub fn otp_ask_code() -> Message {
     Message::text(
         "เราส่งรหัส 6 หลักไปที่อีเมล s6*****12@student.sealbay.example แล้ว \
@@ -64,10 +67,12 @@ pub fn otp_ask_code() -> Message {
     )
 }
 
+/// Fixture `otp_wrong_code` (see `docs/prototypes/message-render/`).
 pub fn otp_wrong_code() -> Message {
     Message::text("รหัสไม่ถูกต้อง ลองใหม่ได้อีก 2 ครั้ง")
 }
 
+/// Fixture `otp_locked` (see `docs/prototypes/message-render/`).
 pub fn otp_locked() -> Message {
     Message::text(
         "ใส่รหัสผิดเกินจำนวนครั้งที่กำหนด ระบบล็อกการยืนยันตัวตนไว้ 30 นาที \
@@ -75,6 +80,7 @@ pub fn otp_locked() -> Message {
     )
 }
 
+/// Fixture `otp_success` (see `docs/prototypes/message-render/`).
 pub fn otp_success() -> Message {
     Message::Card(Card {
         title: "ผูกบัญชีเรียบร้อย".into(),
@@ -118,6 +124,7 @@ pub fn news_list_3() -> Message {
     news_list(3)
 }
 
+/// Fixture `news_list_15` (see `docs/prototypes/message-render/`).
 pub fn news_list_15() -> Message {
     news_list(15)
 }
@@ -191,6 +198,7 @@ pub fn degrade_long_labels() -> Message {
     })
 }
 
+/// Fixture `degrade_pdf_30mb` (see `docs/prototypes/message-render/`).
 pub fn degrade_pdf_30mb() -> Message {
     Message::Attachment(Attachment {
         file_key: "files/2026/calendar.pdf".into(),
@@ -201,6 +209,7 @@ pub fn degrade_pdf_30mb() -> Message {
     })
 }
 
+/// Fixture `degrade_image_3mb` (see `docs/prototypes/message-render/`).
 pub fn degrade_image_3mb() -> Message {
     Message::Attachment(Attachment {
         file_key: "files/2026/map.png".into(),

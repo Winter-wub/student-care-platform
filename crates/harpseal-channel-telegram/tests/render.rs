@@ -2,8 +2,8 @@
 //! JSON (`cargo test -- --nocapture`) and writes it to
 //! `docs/prototypes/message-render/telegram/<fixture>.json`.
 
+use harpseal::Locale;
 use harpseal::fixtures::{self, Sample};
-use harpseal::message::Locale;
 use harpseal::render::{RenderCx, action_ids, char_len};
 use harpseal_channel_telegram::render::{self, *};
 use serde_json::Value;
@@ -114,7 +114,7 @@ fn renders_every_fixture_within_limits() {
 
 #[test]
 fn card_is_bold_title_with_escaped_html() {
-    let card = harpseal::message::Message::Card(harpseal::message::Card {
+    let card = harpseal::Message::Card(harpseal::Card {
         title: "A <b> & co".into(),
         body: "x < y".into(),
         buttons: vec![],
@@ -195,7 +195,7 @@ fn command_names_are_valid() {
 
 #[test]
 fn calls_add_chat_id_and_move_upload_out() {
-    use harpseal::delivery::ChannelAccountId;
+    use harpseal::ChannelAccountId;
     let to = ChannelAccountId {
         channel: harpseal_channel_telegram::KIND,
         external_id: "42".into(),

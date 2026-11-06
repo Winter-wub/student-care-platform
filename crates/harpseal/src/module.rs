@@ -1,53 +1,74 @@
-//! Design A Module: `register` is called once at build time and pushes
-//! everything into a `ModuleRegistrar`; handlers are boxed closures.
+//! Module: `register` is called once at build time and pushes everything
+//! into a [`ModuleRegistrar`]; handlers are boxed closures.
 
 use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::Result;
-use crate::Services;
+use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, StudentId};
 use crate::manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 use crate::message::{ActionId, Locale, Message};
+use crate::{Result, Services};
 
 /// A switchable part of the Core or customer code.
 pub trait Module: Send + Sync + 'static {
     /// Prefix for Permission ids, catalog keys, migrations and Jobs.
     fn name(&self) -> &'static str;
-    /// Declare everything. Called once by `DeploymentBuilder::build`.
+    /// Declares everything. Called once by `DeploymentBuilder::build`.
     fn register(&self, r: &mut ModuleRegistrar);
 }
 
-/// State given to back-office axum handlers.
-pub struct BackOfficeState {
+/// State every page handler gets (back office, Mini App, public pages).
+#[non_exhaustive]
+pub struct PageState {
+    /// The runtime ports.
     pub services: Services,
+    /// Merged texts.
     pub catalog: Arc<Catalog>,
-    /// Deployment name, for page chrome.
-    pub org: String,
+    /// The Deployment's configuration.
+    pub config: Arc<DeploymentConfig>,
 }
-pub type AppState = Arc<BackOfficeState>;
 
-/// What an Action handler sees: the linked Student and the ports.
+impl PageState {
+    /// A text in the default Locale.
+    pub fn t(&self, key: &str) -> String {
+        self.catalog.t(&self.config.default_locale, key)
+    }
+}
+
+/// The axum state type of every Module router.
+pub type AppState = Arc<PageState>;
+
+/// What an Action handler sees: the linked Student and the ports. Modules
+/// never see Inbounds from accounts without a Link.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct ActionContext {
+    /// The runtime ports.
     pub services: Services,
+    /// Merged texts.
     pub catalog: Arc<Catalog>,
+    /// The linked Student.
     pub student: StudentId,
+    /// The account that pressed the button.
     pub account: ChannelAccountId,
+    /// The Student's Locale.
     pub locale: Locale,
 }
 
 impl ActionContext {
+    /// A text in the Student's Locale.
     pub fn t(&self, key: &str) -> String {
         self.catalog.t(&self.locale, key)
     }
 }
 
-/// Handles one Action id; returns the messages to send back.
+/// Handles one Action id; returns the messages to send back (one batch).
 #[async_trait]
 pub trait ActionHandler: Send + Sync {
+    /// Runs the Action.
     async fn handle(&self, cx: ActionContext) -> Result<Vec<Message>>;
 }
 
@@ -62,15 +83,20 @@ where
     }
 }
 
+/// What a Job handler sees.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct JobContext {
+    /// The runtime ports.
     pub services: Services,
+    /// Merged texts.
     pub catalog: Arc<Catalog>,
 }
 
 /// Runs one Job. Must be idempotent: a Job may run again after a crash.
 #[async_trait]
 pub trait JobHandler: Send + Sync {
+    /// Runs the Job.
     async fn run(&self, cx: JobContext, job: Job) -> Result<()>;
 }
 
@@ -86,7 +112,7 @@ where
 }
 
 /// Collects one Module's contributions. Validation (duplicate ids, unknown
-/// Permissions) happens in `build()`, so mistakes are run-time errors.
+/// Permissions, Mini App availability) happens in `build()`.
 pub struct ModuleRegistrar {
     pub(crate) module: &'static str,
     pub(crate) permissions: Vec<Permission>,
@@ -97,6 +123,7 @@ pub struct ModuleRegistrar {
     pub(crate) catalog: Vec<CatalogEntry>,
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
     pub(crate) migrations: Vec<Migration>,
+    pub(crate) mini_app_paths: Vec<&'static str>,
 }
 
 impl ModuleRegistrar {
@@ -111,9 +138,16 @@ impl ModuleRegistrar {
             catalog: Vec::new(),
             jobs: Vec::new(),
             migrations: Vec::new(),
+            mini_app_paths: Vec::new(),
         }
     }
 
+    /// The Module being registered.
+    pub fn module(&self) -> &'static str {
+        self.module
+    }
+
+    /// Declares a Permission that Roles can grant.
     pub fn permission(&mut self, p: Permission) -> &mut Self {
         self.permissions.push(p);
         self
@@ -136,7 +170,8 @@ impl ModuleRegistrar {
         self
     }
 
-    /// Back-office pages, mounted under `/admin`, guarded by `permission`.
+    /// Back-office pages, mounted under `/admin`. Every route is guarded:
+    /// only Staff holding `permission` reach it.
     pub fn back_office(
         &mut self,
         permission: &'static str,
@@ -147,23 +182,33 @@ impl ModuleRegistrar {
     }
 
     /// Pages outside `/admin` with no Staff session: Mini App pages (which
-    /// check their own App Session) and public pages such as `/notice`.
+    /// check their own App Session) and public pages.
     pub fn public(&mut self, r: axum::Router<AppState>) -> &mut Self {
         self.public.push(r);
         self
     }
 
+    /// Declares that this Module sends `Button::MiniApp` to `path`.
+    /// `build()` then requires every Channel to have a Mini App.
+    pub fn mini_app_button(&mut self, path: &'static str) -> &mut Self {
+        self.mini_app_paths.push(path);
+        self
+    }
+
+    /// Default texts.
     pub fn messages(&mut self, entries: &[CatalogEntry]) -> &mut Self {
         self.catalog.extend_from_slice(entries);
         self
     }
 
+    /// A kind of Job and its handler.
     pub fn job(&mut self, spec: JobSpec, h: impl JobHandler + 'static) -> &mut Self {
         self.jobs.push((spec, Arc::new(h)));
         self
     }
 
-    /// Pass `include_str!("../sql/0001_x.sql")`.
+    /// A migration; pass `include_str!("../migrations/0001_x.sql")`.
+    /// Applied in registration order, after the Kernel's.
     pub fn migration(&mut self, name: &'static str, sql: &'static str) -> &mut Self {
         let module = self.module;
         self.migrations.push(Migration { module, name, sql });

@@ -1,28 +1,30 @@
-//! Cloudflare Workers runtime via workers-rs (issue #5 prototype).
+//! Cloudflare Workers runtime via workers-rs.
 //!
 //! [`services`] builds the Core's `Services` from the Worker `Env`:
 //! D1 -> `Db`, `worker::Fetch` -> `HttpClient`, `Date.now` -> `Clock`,
 //! `crypto.getRandomValues` (getrandom `wasm_js`) -> `Random`. R2 ->
-//! `FileStore` is `todo!()` (no bucket in the prototype) and `EmailSender`
-//! only logs.
+//! `FileStore` and Resend email arrive with #18: until then the FileStore
+//! returns `Error::Platform` and `EmailSender` only logs.
 //!
 //! JS-backed futures are `!Send`; the Core's traits require `Send`, so every
 //! impl wraps them in `worker::send::SendFuture`. That is sound here because
 //! a Worker isolate is single-threaded.
+
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
 mod d1;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use harpseal::delivery::Timestamp;
-use harpseal::port_types::Email;
-use harpseal::{Error, Result, Services};
+use harpseal::{Email, Error, Result, Services, Timestamp};
 use worker::js_sys::{self, Uint8Array};
 use worker::send::SendFuture;
 use worker::{Env, Fetch, Headers, Method, Request, RequestInit};
 
 pub use d1::D1Db;
+/// workers-rs, re-exported so a Worker crate uses the same version.
 pub use worker;
 
 fn platform(e: impl core::fmt::Display) -> Error {
@@ -79,8 +81,7 @@ impl harpseal::HttpClient for WorkerHttp {
     }
 }
 
-/// Prototype: logs instead of sending. The real one calls an HTTP email
-/// API (or the Email Service binding) through `WorkerHttp`.
+/// Logs instead of sending. Resend over `fetch` arrives with #18.
 pub struct LogEmail;
 
 #[async_trait]
@@ -91,19 +92,23 @@ impl harpseal::EmailSender for LogEmail {
     }
 }
 
-/// R2-backed `FileStore`. Not wired in the prototype (no bucket).
+/// R2-backed `FileStore`. The bucket binding arrives with #18.
 pub struct R2Files;
+
+fn no_r2() -> Error {
+    Error::Platform("R2 FileStore arrives with #18".into())
+}
 
 #[async_trait]
 impl harpseal::FileStore for R2Files {
     async fn put(&self, _key: &str, _bytes: Vec<u8>, _ct: &str) -> Result<()> {
-        todo!("env.bucket(..).put(key, bytes)")
+        Err(no_r2())
     }
     async fn get(&self, _key: &str) -> Result<Option<Vec<u8>>> {
-        todo!("env.bucket(..).get(key)")
+        Err(no_r2())
     }
     async fn delete(&self, _key: &str) -> Result<()> {
-        todo!("env.bucket(..).delete(key)")
+        Err(no_r2())
     }
 }
 

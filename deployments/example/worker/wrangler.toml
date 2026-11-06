@@ -1,10 +1,10 @@
-# Issue #5 throwaway prototype. Workers Paid is the baseline (issue #6).
-# Delete with: npx wrangler@4 delete harpseal-proto-example
-#              npx wrangler@4 d1 delete harpseal-proto
-name = "harpseal-proto-example"
+# Seal Bay University (fictional) on Cloudflare Workers. Workers Paid is the
+# baseline (issue #6). Create the database first and paste its id below:
+#   npx wrangler@4 d1 create harpseal-example
+# Secrets: npx wrangler@4 secret put LINE_CHANNEL_SECRET (and the others in src/lib.rs).
+name = "harpseal-example"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-11-01"
-account_id = "ce591e55e40551fc70aa9020ccd73137"
 workers_dev = true
 
 [build]
@@ -12,5 +12,5 @@ command = "cargo install -q worker-build && worker-build --release"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "harpseal-proto"
-database_id = "2a809205-9ca6-4b45-ae79-8c522225d6a6"
+database_name = "harpseal-example"
+database_id = "00000000-0000-0000-0000-000000000000"

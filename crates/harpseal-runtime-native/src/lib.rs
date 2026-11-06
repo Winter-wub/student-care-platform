@@ -1,194 +1,156 @@
 //! Native runtime: a single tokio binary on the customer's own server.
-//! Implements the runtime ports : SQLite file via
-//! rusqlite, a local directory as FileStore, the OS clock and RNG. SMTP and
-//! outgoing HTTP are `todo!()` in this prototype.
+//! [`services`] builds the Core's `Services`: a SQLite file ([`SqliteDb`]),
+//! a local directory as FileStore, the OS clock and RNG. SMTP / Resend
+//! email and outgoing HTTP arrive with #18 and until then return
+//! [`Error::Platform`].
+
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
+
+mod sqlite;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::Arc;
 
-use harpseal::delivery::Timestamp;
-use harpseal::manifest::Migration;
-use harpseal::port_types::{ExecResult, Rows, Statement, Value};
-use harpseal::{Error, Result};
-use rusqlite::types::Value as SqlValue;
+use async_trait::async_trait;
+use harpseal::{
+    Clock, Email, EmailSender, Error, FileStore, HttpClient, Random, Result, Services, Timestamp,
+};
 
-pub struct SqliteDb {
-    // Prototype: blocking calls inside async fns. Real one: spawn_blocking.
-    conn: Mutex<rusqlite::Connection>,
-}
+pub use sqlite::SqliteDb;
 
-fn db_err(e: rusqlite::Error) -> Error {
-    Error::Db(e.to_string())
-}
-
-fn to_sql(v: &Value) -> SqlValue {
-    match v {
-        Value::Null => SqlValue::Null,
-        Value::Integer(i) => SqlValue::Integer(*i),
-        Value::Real(f) => SqlValue::Real(*f),
-        Value::Text(s) => SqlValue::Text(s.clone()),
-        Value::Blob(b) => SqlValue::Blob(b.clone()),
-    }
-}
-
-fn from_sql(v: SqlValue) -> Value {
-    match v {
-        SqlValue::Null => Value::Null,
-        SqlValue::Integer(i) => Value::Integer(i),
-        SqlValue::Real(f) => Value::Real(f),
-        SqlValue::Text(s) => Value::Text(s),
-        SqlValue::Blob(b) => Value::Blob(b),
-    }
-}
-
-impl SqliteDb {
-    pub fn open(path: &str) -> Result<Self> {
-        let conn = rusqlite::Connection::open(path).map_err(db_err)?;
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
-        self.conn.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
-    fn query_sync(&self, s: &Statement) -> Result<Rows> {
-        let conn = self.lock();
-        let mut st = conn.prepare(&s.sql).map_err(db_err)?;
-        let columns: Vec<String> = st.column_names().map(|c| c.to_string()).collect();
-        let n = columns.len();
-        let mut out = Rows {
-            columns,
-            rows: Vec::new(),
-        };
-        let mut rows = st
-            .query(rusqlite::params_from_iter(s.params.iter().map(to_sql)))
-            .map_err(db_err)?;
-        while let Some(row) = rows.next().map_err(db_err)? {
-            let vals = (0..n)
-                .map(|i| row.get::<_, SqlValue>(i).map(from_sql))
-                .collect::<rusqlite::Result<_>>();
-            out.rows.push(vals.map_err(db_err)?);
-        }
-        Ok(out)
-    }
-
-    fn exec_on(conn: &rusqlite::Connection, s: &Statement) -> Result<ExecResult> {
-        let n = conn
-            .execute(
-                &s.sql,
-                rusqlite::params_from_iter(s.params.iter().map(to_sql)),
-            )
-            .map_err(db_err)?;
-        Ok(ExecResult {
-            rows_affected: n as u64,
-            last_insert_rowid: Some(conn.last_insert_rowid()),
-        })
-    }
-
-    fn execute_sync(&self, s: &Statement) -> Result<ExecResult> {
-        Self::exec_on(&self.lock(), s)
-    }
-
-    fn batch_sync(&self, stmts: &[Statement]) -> Result<Vec<ExecResult>> {
-        let mut conn = self.lock();
-        let tx = conn.transaction().map_err(db_err)?;
-        let out = stmts
-            .iter()
-            .map(|s| Self::exec_on(&tx, s))
-            .collect::<Result<Vec<_>>>()?;
-        tx.commit().map_err(db_err)?;
-        Ok(out)
-    }
-
-    /// Applies migrations not yet recorded. Same for both designs.
-    pub fn migrate(&self, migrations: &[Migration]) -> Result<()> {
-        let conn = self.lock();
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS _migration (module TEXT, name TEXT, PRIMARY KEY (module, name))")
-            .map_err(db_err)?;
-        for m in migrations {
-            let done: bool = conn
-                .query_row(
-                    "SELECT 1 FROM _migration WHERE module = ?1 AND name = ?2",
-                    [m.module, m.name],
-                    |_| Ok(true),
-                )
-                .unwrap_or(false);
-            if !done {
-                conn.execute_batch(m.sql).map_err(db_err)?;
-                conn.execute("INSERT INTO _migration VALUES (?1, ?2)", [m.module, m.name])
-                    .map_err(db_err)?;
-            }
-        }
-        Ok(())
-    }
-}
-
+/// A local directory as the FileStore.
 pub struct LocalFiles {
-    pub root: PathBuf,
+    root: PathBuf,
 }
 
 impl LocalFiles {
+    /// Files live under `root`.
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
     fn path(&self, key: &str) -> Result<PathBuf> {
-        if key.contains("..") {
-            return Err(Error::Invalid("bad file key".into()));
+        if key.is_empty() || key.starts_with('/') || key.split('/').any(|p| p == "..") {
+            return Err(Error::Invalid(format!("bad file key {key:?}")));
         }
         Ok(self.root.join(key))
     }
-    fn put_sync(&self, key: &str, bytes: &[u8]) -> Result<()> {
+}
+
+fn io(e: std::io::Error) -> Error {
+    Error::Platform(e.to_string())
+}
+
+#[async_trait]
+impl FileStore for LocalFiles {
+    async fn put(&self, key: &str, bytes: Vec<u8>, _content_type: &str) -> Result<()> {
         let p = self.path(key)?;
         if let Some(dir) = p.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| Error::Platform(e.to_string()))?;
+            std::fs::create_dir_all(dir).map_err(io)?;
         }
-        std::fs::write(p, bytes).map_err(|e| Error::Platform(e.to_string()))
+        std::fs::write(p, bytes).map_err(io)
     }
-    fn get_sync(&self, key: &str) -> Result<Option<Vec<u8>>> {
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
         match std::fs::read(self.path(key)?) {
             Ok(b) => Ok(Some(b)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Error::Platform(e.to_string())),
+            Err(e) => Err(io(e)),
         }
     }
-    fn delete_sync(&self, key: &str) -> Result<()> {
-        std::fs::remove_file(self.path(key)?).or_else(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => Ok(()),
-            _ => Err(Error::Platform(e.to_string())),
-        })
+    async fn delete(&self, key: &str) -> Result<()> {
+        match std::fs::remove_file(self.path(key)?) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(io(e)),
+            _ => Ok(()),
+        }
     }
 }
 
+/// Email over SMTP. Sending arrives with #18.
 pub struct Smtp {
-    pub url: String,
+    #[allow(dead_code)] // read by the SMTP transport (#18)
+    url: String,
 }
-#[derive(Clone, Copy)]
-pub struct NativeHttp;
-pub struct SystemClock;
-pub struct OsRandom;
 
-impl SystemClock {
-    fn now_sync() -> Timestamp {
+#[async_trait]
+impl EmailSender for Smtp {
+    async fn send(&self, _email: Email) -> Result<()> {
+        Err(Error::Platform("SMTP sending arrives with #18".into()))
+    }
+}
+
+/// Outgoing HTTP. The client arrives with #18.
+pub struct NativeHttp;
+
+#[async_trait]
+impl HttpClient for NativeHttp {
+    async fn send(&self, _req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>> {
+        Err(Error::Platform(
+            "native HTTP client arrives with #18".into(),
+        ))
+    }
+}
+
+/// The OS clock.
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Timestamp {
         let d = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        Timestamp(d.as_millis() as i64)
+        Timestamp(i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
     }
 }
 
-fn fill_random(buf: &mut [u8]) -> Result<()> {
-    getrandom::fill(buf).map_err(|e| Error::Platform(e.to_string()))
+/// The OS RNG.
+pub struct OsRandom;
+
+impl Random for OsRandom {
+    fn fill(&self, buf: &mut [u8]) -> Result<()> {
+        getrandom::fill(buf).map_err(|e| Error::Platform(e.to_string()))
+    }
 }
 
 /// Settings read from the environment / CLI flags.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct NativeSettings {
+    /// SQLite file path.
     pub sqlite_path: String,
+    /// FileStore root directory.
     pub files_root: PathBuf,
+    /// SMTP URL.
     pub smtp_url: String,
 }
 
-mod a;
+impl NativeSettings {
+    /// Settings with the given paths.
+    pub fn new(
+        sqlite_path: impl Into<String>,
+        files_root: impl Into<PathBuf>,
+        smtp_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            sqlite_path: sqlite_path.into(),
+            files_root: files_root.into(),
+            smtp_url: smtp_url.into(),
+        }
+    }
+}
 
-pub use a::services;
+/// Builds `Services` for `Deployment::builder().runtime(..)`.
+pub fn services(s: &NativeSettings) -> Result<Services> {
+    Ok(Services {
+        db: Arc::new(SqliteDb::open(&s.sqlite_path)?),
+        files: Arc::new(LocalFiles::new(s.files_root.clone())),
+        email: Arc::new(Smtp {
+            url: s.smtp_url.clone(),
+        }),
+        http: Arc::new(NativeHttp),
+        clock: Arc::new(SystemClock),
+        random: Arc::new(OsRandom),
+    })
+}
 
 /// `axum::serve` on a TCP listener.
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {

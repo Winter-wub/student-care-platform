@@ -8,7 +8,6 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-harpseal.workspace = true
 harpseal-runtime-native.workspace = true
 example-deployment.workspace = true
 harpseal-channel-line.workspace = true

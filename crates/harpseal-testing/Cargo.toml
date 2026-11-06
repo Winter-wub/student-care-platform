@@ -1,0 +1,21 @@
+[package]
+name = "harpseal-testing"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+description = "Test harness for harpseal Deployments: fake Services, the Fake Channel and the axum Router."
+publish = false
+
+[dependencies]
+harpseal.workspace = true
+harpseal-channel-fake.workspace = true
+harpseal-runtime-native.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+http.workspace = true
+tower = { version = "0.5", default-features = false, features = ["util"] }
+
+[dev-dependencies]
+tokio.workspace = true

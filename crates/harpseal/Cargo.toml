@@ -16,8 +16,7 @@ toml.workspace = true
 maud.workspace = true
 argon2.workspace = true
 pbkdf2.workspace = true
-sha2.workspace = true
 
 [features]
-# Sample first-slice messages for adapter tests (issue #3). Dev-only.
+# Sample first-slice messages for adapter tests (issue #3). Test-only, not a platform flag.
 fixtures = []

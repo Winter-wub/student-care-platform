@@ -1,4 +1,5 @@
-//! `deployment.toml`: data-only configuration beside the binary.
+//! `deployment.toml`: data-only configuration beside the binary. Secrets
+//! never live here; they come from the environment or Worker secrets.
 
 use std::collections::BTreeMap;
 
@@ -7,41 +8,182 @@ use serde::Deserialize;
 use crate::manifest::Catalog;
 use crate::message::Locale;
 
-#[derive(Debug, Clone, Deserialize)]
+/// The whole `deployment.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[non_exhaustive]
 pub struct DeploymentConfig {
+    /// The customer's name, shown in page chrome.
     pub name: String,
+    /// Locale content falls back to.
     pub default_locale: Locale,
-    /// Initial Roles: role name -> Permission ids.
+    /// Fixed offset of the Deployment's time zone from UTC, `+07:00`.
+    /// Display and day buckets (`usage_daily`) use it.
+    #[serde(default = "default_offset")]
+    pub utc_offset: String,
+    /// Look of the back office and Mini App.
+    #[serde(default)]
+    pub branding: BrandingConfig,
+    /// Initial Roles: Role name -> Permission ids. `build()` rejects an id
+    /// no Module declared.
     #[serde(default)]
     pub roles: BTreeMap<String, Vec<String>>,
-    pub office_hours: OfficeHours,
-    /// Quota per metered thing, e.g. `line_push_per_month = 300`.
+    /// Per-Channel Quotas, keyed by Channel kind (`[quotas.line]`).
     #[serde(default)]
-    pub quotas: BTreeMap<String, u64>,
-    /// locale -> key -> text; overrides Module catalog defaults.
+    pub quotas: BTreeMap<String, QuotaConfig>,
+    /// Locale -> key -> text; overrides Module defaults.
     #[serde(default)]
     pub texts: BTreeMap<String, BTreeMap<String, String>>,
+    /// Email-OTP parameters.
+    #[serde(default)]
+    pub otp: OtpConfig,
+    /// How long pruned rows are kept.
+    #[serde(default)]
+    pub retention: RetentionConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct OfficeHours {
-    pub timezone: String,
-    /// day (mon..sun) -> ["08:30-16:30", ...]
-    pub days: BTreeMap<String, Vec<String>>,
+fn default_offset() -> String {
+    "+00:00".into()
+}
+
+/// `[branding]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+#[non_exhaustive]
+pub struct BrandingConfig {
+    /// Main colour, CSS hex.
+    pub primary_color: String,
+    /// Logo URL or path, if any.
+    pub logo: Option<String>,
+    /// Optional web font stylesheet URL; the system Thai font otherwise.
+    pub font_url: Option<String>,
+}
+
+impl Default for BrandingConfig {
+    fn default() -> Self {
+        Self {
+            primary_color: "#0b5cad".into(),
+            logo: None,
+            font_url: None,
+        }
+    }
+}
+
+/// `[quotas.<channel>]`: warns Staff, never stops sending.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[non_exhaustive]
+pub struct QuotaConfig {
+    /// Metered pushes allowed per calendar month.
+    pub metered_per_month: u64,
+}
+
+/// `[otp]`, defaults from the spec.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+#[non_exhaustive]
+pub struct OtpConfig {
+    /// Digits in a code.
+    pub digits: u8,
+    /// Minutes a code stays valid.
+    pub ttl_minutes: u32,
+    /// Wrong answers before the lock.
+    pub max_attempts: u8,
+    /// Codes per hour per student code.
+    pub resends_per_hour: u8,
+    /// Minutes a Student stays locked.
+    pub lock_minutes: u32,
+}
+
+impl Default for OtpConfig {
+    fn default() -> Self {
+        Self {
+            digits: 6,
+            ttl_minutes: 5,
+            max_attempts: 3,
+            resends_per_hour: 3,
+            lock_minutes: 30,
+        }
+    }
+}
+
+/// `[retention]`, in days.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+#[non_exhaustive]
+pub struct RetentionConfig {
+    /// `outbound_message` rows.
+    pub outbound_message_days: u32,
+    /// Finished `job` rows.
+    pub job_days: u32,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            outbound_message_days: 90,
+            job_days: 30,
+        }
+    }
 }
 
 impl DeploymentConfig {
+    /// Parses and checks `deployment.toml`.
     pub fn from_toml(src: &str) -> crate::Result<Self> {
-        toml::from_str(src).map_err(|e| crate::Error::Invalid(e.to_string()))
+        let c: Self = toml::from_str(src).map_err(|e| crate::Error::Invalid(e.to_string()))?;
+        c.utc_offset_minutes()?;
+        Ok(c)
+    }
+
+    /// `utc_offset` in minutes east of UTC.
+    pub fn utc_offset_minutes(&self) -> crate::Result<i32> {
+        parse_offset(&self.utc_offset)
+            .ok_or_else(|| crate::Error::Invalid(format!("utc_offset `{}`", self.utc_offset)))
     }
 
     /// Applies `texts` on top of a catalog already holding Module defaults.
-    pub fn apply_texts(&self, catalog: &mut Catalog) {
+    pub(crate) fn apply_texts(&self, catalog: &mut Catalog) {
         catalog.default_locale = Some(self.default_locale.clone());
         for (locale, entries) in &self.texts {
             for (k, v) in entries {
                 catalog.insert(locale, k, v);
             }
         }
+    }
+}
+
+/// `+07:00` / `-03:30` -> minutes.
+fn parse_offset(s: &str) -> Option<i32> {
+    let (sign, rest) = match s.as_bytes().first()? {
+        b'+' => (1, &s[1..]),
+        b'-' => (-1, &s[1..]),
+        _ => return None,
+    };
+    let (h, m) = rest.split_once(':')?;
+    if h.len() != 2 || m.len() != 2 {
+        return None;
+    }
+    let (h, m): (i32, i32) = (h.parse().ok()?, m.parse().ok()?);
+    (h <= 14 && m < 60).then_some(sign * (h * 60 + m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minimal_toml_gets_spec_defaults() {
+        let c = DeploymentConfig::from_toml("name = \"X\"\ndefault_locale = \"th\"").unwrap();
+        assert_eq!(c.otp, OtpConfig::default());
+        assert_eq!(c.retention.outbound_message_days, 90);
+        assert_eq!(c.utc_offset_minutes().unwrap(), 0);
+    }
+
+    #[test]
+    fn offsets() {
+        assert_eq!(parse_offset("+07:00"), Some(420));
+        assert_eq!(parse_offset("-03:30"), Some(-210));
+        assert_eq!(parse_offset("07:00"), None);
+        assert_eq!(parse_offset("+7:00"), None);
+        let bad = "name = \"X\"\ndefault_locale = \"th\"\nutc_offset = \"Asia/Bangkok\"";
+        assert!(DeploymentConfig::from_toml(bad).is_err());
     }
 }

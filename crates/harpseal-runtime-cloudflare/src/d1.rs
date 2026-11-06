@@ -3,8 +3,8 @@
 //! one thread, so nothing is ever moved across threads.
 
 use async_trait::async_trait;
-use harpseal::port_types::{ExecResult, Rows, Statement, Value};
 use harpseal::{Error, Result};
+use harpseal::{ExecResult, Rows, Statement, Value};
 use worker::js_sys::{self, Array, Function, Object, Reflect, Uint8Array};
 use worker::send::SendFuture;
 use worker::wasm_bindgen::{JsCast, JsValue};
@@ -17,6 +17,7 @@ pub struct D1Db {
 }
 
 impl D1Db {
+    /// Wraps a D1 binding.
     pub fn new(db: D1Database) -> Self {
         Self { db }
     }
@@ -43,6 +44,7 @@ fn to_js(v: &Value) -> JsValue {
         Value::Real(f) => JsValue::from_f64(*f),
         Value::Text(s) => JsValue::from_str(s),
         Value::Blob(b) => Uint8Array::from(b.as_slice()).into(),
+        _ => JsValue::NULL,
     }
 }
 
@@ -85,7 +87,6 @@ fn exec_result(r: &D1Result) -> Result<ExecResult> {
     let meta = r.meta().map_err(db_err)?;
     Ok(ExecResult {
         rows_affected: meta.as_ref().and_then(|m| m.changes).unwrap_or(0) as u64,
-        last_insert_rowid: meta.and_then(|m| m.last_row_id),
     })
 }
 

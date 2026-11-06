@@ -3,8 +3,8 @@
 //! `docs/prototypes/message-render/line/<fixture>.json`.
 
 use harpseal::fixtures::{self, Sample};
-use harpseal::message::{Locale, Message};
 use harpseal::render::{RenderCx, action_ids, char_len};
+use harpseal::{Locale, Message};
 use harpseal_channel_line::render::{self, *};
 use serde_json::Value;
 
@@ -213,7 +213,7 @@ fn attachments_degrade_to_links() {
 
 #[test]
 fn reply_token_covers_five_objects_then_push() {
-    use harpseal::delivery::{ChannelAccountId, Delivery, Metering, ReplyToken, Timestamp};
+    use harpseal::{ChannelAccountId, Delivery, Metering, ReplyToken, Timestamp};
     let to = ChannelAccountId {
         channel: harpseal_channel_line::KIND,
         external_id: "U0".into(),

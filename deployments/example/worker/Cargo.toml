@@ -10,22 +10,14 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-# Issue #5 measurement (e): calamine on wasm32, `POST /bench/xlsx`.
-xlsx = ["dep:calamine"]
-
 [dependencies]
-harpseal.workspace = true
 example-deployment.workspace = true
-harpseal-runtime-cloudflare = { path = "../../../crates/harpseal-runtime-cloudflare" }
-worker.workspace = true
+harpseal-runtime-cloudflare.workspace = true
 harpseal-channel-line.workspace = true
 harpseal-channel-telegram.workspace = true
-axum = { workspace = true, features = ["query"] }
+worker.workspace = true
+axum.workspace = true
 tower-service = "0.3"
-serde.workspace = true
-calamine = { workspace = true, optional = true }
-web-sys = { version = "0.3", features = ["Crypto", "SubtleCrypto", "CryptoKey", "Pbkdf2Params"] }
 
 # worker-build runs `wasm-opt -O` by default; -Oz measured smaller (issue #5).
 [package.metadata.wasm-pack.profile.release]

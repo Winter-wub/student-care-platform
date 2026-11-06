@@ -1,145 +1,84 @@
-//! The fictional "Seal Bay University" Deployment (Design A from issue #4): Thai default Locale, LINE + Telegram + Fake
-//! channels, email-OTP Verification, and a tiny `hello` Module adding one
-//! Menu entry and one back-office page, plus the issue #5 prototype
-//! [`pages`] (Staff login, Students list, announcement form, Mini App).
+//! The fictional "Seal Bay University" Deployment: Thai default Locale,
+//! LINE + Telegram + Fake Channels, email-OTP Verification and one small
+//! customer Module ([`Contact`]) adding a Menu entry. Both runtime binaries
+//! (`../native`, `../worker`) call [`deployment`] with their own Services.
 
-use harpseal::config::DeploymentConfig;
-use harpseal::manifest::{CatalogEntry, MenuEntrySpec, Permission};
-use harpseal::message::ActionId;
-use harpseal_channel_line::LineConfig;
-use harpseal_channel_telegram::TelegramConfig;
+#![warn(missing_docs)]
+#![forbid(unsafe_code)]
 
-pub mod pages;
+use harpseal::{
+    ActionContext, ActionId, BuildError, CatalogEntry, Deployment, DeploymentBuilder,
+    DeploymentConfig, EmailOtp, MenuEntrySpec, Message, Module, ModuleRegistrar, Services,
+};
+use harpseal_channel_fake::FakeChannel;
+use harpseal_channel_line::{LineChannel, LineConfig};
+use harpseal_channel_telegram::{TelegramChannel, TelegramConfig};
 
+/// `deployment.toml`, compiled in.
 pub const DEPLOYMENT_TOML: &str = include_str!("../deployment.toml");
-const HELLO_SQL: &str = include_str!("../sql/0001_hello.sql");
 
+/// The parsed `deployment.toml`.
 pub fn config() -> DeploymentConfig {
     DeploymentConfig::from_toml(DEPLOYMENT_TOML).expect("deployment.toml is valid")
 }
 
-/// Secrets come from the environment / Worker secrets, never from TOML.
+/// Secrets from the environment / Worker secrets, never from TOML.
+#[derive(Debug, Clone, Default)]
 pub struct Secrets {
+    /// LINE Official Account.
     pub line: LineConfig,
+    /// Telegram bot.
     pub telegram: TelegramConfig,
+    /// Fake Channel webhook secret (demos and e2e).
     pub fake_secret: String,
 }
 
-// Data for the `hello` Module.
-const VIEW_HELLO: Permission = Permission {
-    id: "hello.view",
-    description: "See hello stats",
-};
-const HELLO_TEXTS: &[CatalogEntry] = &[
-    CatalogEntry {
-        key: "hello.menu",
-        locale: "th",
-        text: "ทักทาย",
-    },
-    CatalogEntry {
-        key: "hello.menu",
-        locale: "en",
-        text: "Say hello",
-    },
-    CatalogEntry {
-        key: "hello.greeting",
-        locale: "th",
-        text: "สวัสดี",
-    },
-    CatalogEntry {
-        key: "hello.greeting",
-        locale: "en",
-        text: "Hello",
-    },
+/// A customer Module: a "contact Staff" Menu entry that answers with the
+/// office's details (`contact.reply`, worded in `deployment.toml`).
+pub struct Contact;
+
+const CONTACT_TEXTS: &[CatalogEntry] = &[
+    CatalogEntry::new("contact.menu", "th", "ติดต่อเจ้าหน้าที่"),
+    CatalogEntry::new("contact.menu", "en", "Contact Staff"),
+    CatalogEntry::new("contact.reply", "th", "ติดต่อกองกิจการนักศึกษา"),
+    CatalogEntry::new("contact.reply", "en", "Please contact Student Affairs."),
 ];
 
-fn say_hello() -> MenuEntrySpec {
-    let action = ActionId::new("hello.say").expect("Action id is ≤ 64 bytes");
-    MenuEntrySpec {
-        label_key: "hello.menu",
-        action,
-        order: 10,
+impl Module for Contact {
+    fn name(&self) -> &'static str {
+        "contact"
+    }
+
+    fn register(&self, r: &mut ModuleRegistrar) {
+        let entry = MenuEntrySpec {
+            label_key: "contact.menu",
+            action: ActionId::new("contact.show").expect("Action id is ≤ 64 bytes"),
+            order: 90,
+        };
+        r.messages(CONTACT_TEXTS)
+            .menu_entry(entry, |cx: ActionContext| async move {
+                Ok(vec![Message::text(cx.t("contact.reply"))])
+            });
     }
 }
 
-// ───────────────────────────── Design A ─────────────────────────────
+/// Everything but the Fake Channel: config, Services, LINE, Telegram,
+/// email OTP and the Modules. Tests add the harness's Fake Channel.
+pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
+    let config = config();
+    let otp = EmailOtp::new(config.otp.clone());
+    let http = services.http.clone();
+    Deployment::builder()
+        .config(config)
+        .runtime(services)
+        .channel(LineChannel::new(secrets.line, http.clone()))
+        .channel(TelegramChannel::new(secrets.telegram, http))
+        .verification(otp)
+        .module(Contact)
+}
 
-pub mod with_design_a {
-    use axum::extract::State;
-    use axum::response::Html;
-    use axum::routing::get;
-    use harpseal::BuildError;
-    use harpseal::message::Message;
-    use harpseal::port_types::Statement;
-    use harpseal::verification::EmailOtp;
-    use harpseal::{ActionContext, AppState, Deployment, Module, ModuleRegistrar, Services};
-    use harpseal_channel_fake::FakeChannel;
-    use harpseal_channel_line::LineChannel;
-    use harpseal_channel_telegram::TelegramChannel;
-
-    use super::*;
-
-    pub struct Hello;
-
-    impl Module for Hello {
-        fn name(&self) -> &'static str {
-            "hello"
-        }
-
-        fn register(&self, r: &mut ModuleRegistrar) {
-            r.permission(VIEW_HELLO)
-                .messages(HELLO_TEXTS)
-                .migration("0001_hello", HELLO_SQL)
-                .menu_entry(say_hello(), |cx: ActionContext| async move {
-                    let insert =
-                        Statement::new("INSERT INTO hello_greeting (student_id, at) VALUES (?, ?)")
-                            .bind(cx.student.0.clone())
-                            .bind(cx.services.clock.now().0);
-                    cx.services.db.execute(insert).await?;
-                    Ok(vec![Message::text(cx.t("hello.greeting"))])
-                })
-                .back_office(
-                    "hello.view",
-                    axum::Router::new().route("/hello", get(hello_page)),
-                );
-        }
-    }
-
-    async fn hello_page(State(s): State<AppState>) -> Html<String> {
-        let n = s
-            .services
-            .db
-            .query(Statement::new("SELECT count(*) FROM hello_greeting"))
-            .await;
-        Html(format!(
-            "<h1>hello</h1><p>{} greetings</p>",
-            n.map(|r| r.rows.len()).unwrap_or(0)
-        ))
-    }
-
-    /// The runtime crate supplies `services`; everything else is here.
-    /// `secure_cookies` is false only for plain-HTTP localhost.
-    pub fn deployment(
-        services: Services,
-        secrets: Secrets,
-        secure_cookies: bool,
-    ) -> Result<Deployment, BuildError> {
-        let http = services.http.clone();
-        Deployment::builder()
-            .config(config())
-            .runtime(services)
-            .channel(LineChannel {
-                cfg: secrets.line,
-                http: http.clone(),
-            })
-            .channel(TelegramChannel {
-                cfg: secrets.telegram,
-                http,
-            })
-            .channel(FakeChannel::new(secrets.fake_secret))
-            .verification(EmailOtp::default())
-            .module(Hello)
-            .module(crate::pages::Pages { secure_cookies })
-            .build()
-    }
+/// The whole Deployment, with a Fake Channel keyed by `secrets.fake_secret`.
+pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, BuildError> {
+    let fake = FakeChannel::new(secrets.fake_secret.clone());
+    builder(services, secrets).channel(fake).build()
 }

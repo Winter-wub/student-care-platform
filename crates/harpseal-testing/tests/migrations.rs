@@ -1,0 +1,203 @@
+//! Kernel migrations on an in-memory SQLite `Db`: every table from the data
+//! model exists, tracking makes a second run a no-op, and the ADR-0007 rules
+//! the schema can enforce are enforced.
+
+use harpseal::{Statement, Value};
+use harpseal_testing::Harness;
+
+const KERNEL_TABLES: &[&str] = &[
+    "student",
+    "tag",
+    "student_tag",
+    "channel_account",
+    "link",
+    "verification_challenge",
+    "consent",
+    "security_event",
+    "inbound_message",
+    "staff",
+    "role",
+    "role_permission",
+    "staff_role",
+    "staff_session",
+    "app_session",
+    "outbound_message",
+    "usage_daily",
+    "job",
+    "audit_log",
+    "setting",
+    "roster_import",
+    "migration",
+];
+
+async fn exec(h: &Harness, sql: &'static str) -> harpseal::Result<u64> {
+    h.db()
+        .execute(Statement::new(sql))
+        .await
+        .map(|r| r.rows_affected)
+}
+
+#[tokio::test]
+async fn every_kernel_table_exists_after_migrate() {
+    let h = Harness::new();
+    let app = h.start().await;
+    let rows = app
+        .query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .await;
+    let names: Vec<&str> = rows.rows.iter().filter_map(|r| r[0].as_text()).collect();
+    for t in KERNEL_TABLES {
+        assert!(names.contains(t), "missing table {t}; have {names:?}");
+    }
+}
+
+#[tokio::test]
+async fn migrations_apply_twice_without_error_and_are_tracked() {
+    let h = Harness::new();
+    let d = h.builder().build().unwrap();
+    let first = d.migrate().await.unwrap();
+    assert_eq!(first.applied.len(), d.migrations().len());
+    assert_eq!(first.skipped, 0);
+    let second = d.migrate().await.unwrap();
+    assert!(second.applied.is_empty());
+    assert_eq!(second.skipped, d.migrations().len());
+
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT module, name, applied_at FROM migration ORDER BY name",
+        ))
+        .await
+        .unwrap();
+    let recorded: Vec<(String, String)> = rows
+        .rows
+        .iter()
+        .map(|r| {
+            (
+                r[0].as_text().unwrap().into(),
+                r[1].as_text().unwrap().into(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        recorded,
+        vec![
+            ("kernel".into(), "0001_people".into()),
+            ("kernel".into(), "0002_channels".into()),
+            ("kernel".into(), "0003_operations".into()),
+        ]
+    );
+    assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
+}
+
+#[tokio::test]
+async fn a_module_migration_runs_after_the_kernel_and_once() {
+    struct Notes;
+    impl harpseal::Module for Notes {
+        fn name(&self) -> &'static str {
+            "notes"
+        }
+        fn register(&self, r: &mut harpseal::ModuleRegistrar) {
+            r.migration(
+                "0001_notes",
+                "CREATE TABLE note (id TEXT PRIMARY KEY, \
+                 student_id TEXT NOT NULL REFERENCES student (id));",
+            );
+        }
+    }
+    let h = Harness::new();
+    let d = h.builder().module(Notes).build().unwrap();
+    let names: Vec<&str> = d.migrations().iter().map(|m| m.module).collect();
+    assert_eq!(names, ["kernel", "kernel", "kernel", "notes"]);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 4);
+    assert!(d.migrate().await.unwrap().applied.is_empty());
+}
+
+#[tokio::test]
+async fn a_failing_migration_leaves_nothing_behind() {
+    struct Broken;
+    impl harpseal::Module for Broken {
+        fn name(&self) -> &'static str {
+            "broken"
+        }
+        fn register(&self, r: &mut harpseal::ModuleRegistrar) {
+            r.migration(
+                "0001_broken",
+                "CREATE TABLE half (x TEXT); CREATE TABLE oops (;",
+            );
+        }
+    }
+    let h = Harness::new();
+    let d = h.builder().module(Broken).build().unwrap();
+    assert!(d.migrate().await.is_err());
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT count(*) FROM sqlite_master WHERE name = 'half'",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rows.rows[0][0], Value::Integer(0), "batch rolled back");
+}
+
+#[tokio::test]
+async fn audit_log_is_append_only() {
+    let h = Harness::new();
+    let _app = h.start().await;
+    exec(
+        &h,
+        "INSERT INTO audit_log (id, at, actor_kind, action, before, after) \
+         VALUES ('019a5000-0000-7000-8000-000000000001', 1, 'system', 'test', NULL, '{\"a\":1}')",
+    )
+    .await
+    .unwrap();
+    let update = exec(&h, "UPDATE audit_log SET action = 'changed'").await;
+    assert!(update.is_err(), "update must be refused");
+    let delete = exec(&h, "DELETE FROM audit_log").await;
+    assert!(delete.is_err(), "delete must be refused");
+}
+
+#[tokio::test]
+async fn one_live_link_per_student_per_channel() {
+    let h = Harness::new();
+    let _app = h.start().await;
+    let setup = [
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s1', '68010001', 'ปลายฟ้า คลื่นเงิน', 'th', 1, 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+         VALUES ('a1', 'fake', 'u1', 1, 1), ('a2', 'fake', 'u2', 1, 1)",
+        "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, linked_at, updated_at) \
+         VALUES ('l1', 's1', 'a1', 'fake', 'active', 'email_otp', 1, 1)",
+    ];
+    for sql in setup {
+        exec(&h, sql).await.unwrap();
+    }
+    let second = "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, linked_at, updated_at) \
+                  VALUES ('l2', 's1', 'a2', 'fake', 'active', 'email_otp', 2, 2)";
+    assert!(exec(&h, second).await.is_err());
+    exec(
+        &h,
+        "UPDATE link SET status = 'revoked', revoked_at = 2 WHERE id = 'l1'",
+    )
+    .await
+    .unwrap();
+    exec(&h, second)
+        .await
+        .expect("allowed once the first is revoked");
+}
+
+#[tokio::test]
+async fn consent_rows_are_never_deleted() {
+    let h = Harness::new();
+    let _app = h.start().await;
+    for sql in [
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s1', '68010001', 'น้ำใส ดาวทะเล', 'th', 1, 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+         VALUES ('a1', 'fake', 'u1', 1, 1)",
+        "INSERT INTO consent (id, student_id, channel_account_id, notice_version, locale, accepted_at) \
+         VALUES ('c1', 's1', 'a1', '1', 'th', 1)",
+    ] {
+        exec(&h, sql).await.unwrap();
+    }
+    assert!(exec(&h, "DELETE FROM consent").await.is_err());
+}

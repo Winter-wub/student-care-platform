@@ -1,38 +1,42 @@
 //! Pure Telegram renderer (issue #3): ADR-0003 model -> Bot API JSON.
 //! Each Value is one method call with a `method` field (the form the Bot API
-//! accepts in a webhook answer: https://core.telegram.org/bots/api#making-requests-when-getting-updates).
+//! accepts in a webhook answer: <https://core.telegram.org/bots/api#making-requests-when-getting-updates>).
 //! `chat_id` is added by `send`. Degrade rules: `docs/prototypes/message-render.md`.
 
-use harpseal::message::{ActionId, Attachment, Button, Card, Choices, Menu, Message};
 use harpseal::render::{
     MENU_MORE_ACTION, RenderCx, char_len, file_link, mini_app_unavailable, more_label, split_text,
     truncate,
 };
+use harpseal::{ActionId, Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
 
-// https://core.telegram.org/bots/api#sendmessage (1-4096 chars after entity parsing)
+/// <https://core.telegram.org/bots/api#sendmessage> (1-4096 chars after entity parsing)
 pub const TEXT_MAX: usize = 4096;
-// https://core.telegram.org/bots/api#inlinekeyboardbutton
+/// <https://core.telegram.org/bots/api#inlinekeyboardbutton>
 pub const CALLBACK_DATA_MAX: usize = 64;
 /// UNCONFIRMED: the Bot API states no button count. Conservative ceiling
 /// from docs/research/first-slice-facts.md §2.1; test on a real bot.
 pub const KEYBOARD_BUTTONS_MAX: usize = 100;
-// https://core.telegram.org/bots/api#setmycommands, #botcommand
+/// <https://core.telegram.org/bots/api#setmycommands,> #botcommand
 pub const COMMANDS_MAX: usize = 100;
+/// `COMMAND_MAX`: see the platform reference cited above.
 pub const COMMAND_MAX: usize = 32;
+/// `COMMAND_DESCRIPTION_MAX`: see the platform reference cited above.
 pub const COMMAND_DESCRIPTION_MAX: usize = 256;
-// https://core.telegram.org/bots/api#sending-files
+/// <https://core.telegram.org/bots/api#sending-files>
 pub const PHOTO_BY_URL_MAX: u64 = 5 * 1_048_576;
+/// `FILE_BY_URL_MAX`: see the platform reference cited above.
 pub const FILE_BY_URL_MAX: u64 = 20 * 1_048_576;
+/// `PHOTO_UPLOAD_MAX`: see the platform reference cited above.
 pub const PHOTO_UPLOAD_MAX: u64 = 10 * 1_048_576;
-// https://core.telegram.org/bots/api#senddocument
+/// <https://core.telegram.org/bots/api#senddocument>
 pub const FILE_UPLOAD_MAX: u64 = 50 * 1_048_576;
-// https://core.telegram.org/bots/api#senddocument (caption 0-1024)
+/// <https://core.telegram.org/bots/api#senddocument> (caption 0-1024)
 pub const CAPTION_MAX: usize = 1024;
 
 const _: () = assert!(ActionId::MAX_BYTES <= CALLBACK_DATA_MAX);
 
-/// Escapes text for `parse_mode: HTML` (https://core.telegram.org/bots/api#html-style).
+/// Escapes text for `parse_mode: HTML` (<https://core.telegram.org/bots/api#html-style>).
 pub fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -46,6 +50,7 @@ pub fn escape_html(s: &str) -> String {
     out
 }
 
+/// `message`: see the platform reference cited above.
 pub fn message(msg: &Message, cx: &RenderCx) -> Vec<Value> {
     match msg {
         Message::Text(s) => split_text(s, TEXT_MAX)
@@ -123,6 +128,8 @@ fn button(b: &Button, cx: &RenderCx) -> Option<Value> {
         Button::MiniApp { label, path } => cx
             .mini_app_url(path)
             .map(|url| json!({ "text": label, "web_app": { "url": url } })),
+        // #[non_exhaustive]: a kind this adapter does not know yet.
+        _ => None,
     }
 }
 
@@ -182,7 +189,7 @@ fn attachment(a: &Attachment, cx: &RenderCx) -> Value {
 }
 
 /// A command name from an Action id: lowercase `[a-z0-9_]`, ≤ 32 chars
-/// (https://core.telegram.org/bots/api#botcommand). The inbound "/name" is
+/// (<https://core.telegram.org/bots/api#botcommand>). The inbound "/name" is
 /// mapped back through the same Menu.
 pub fn command_name(action: &str) -> String {
     let s: String = action
