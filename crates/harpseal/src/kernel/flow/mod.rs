@@ -189,14 +189,34 @@ impl Turn<'_> {
     /// Inbound loaded. `false` (and nothing will be sent) when another
     /// Inbound of the account changed it first; the other statements of
     /// the batch did run, so callers put only idempotent ones before.
-    pub(super) async fn commit(&mut self, mut stmts: Vec<Statement>, state: &str) -> Result<bool> {
-        let save = account::save(
+    pub(super) async fn commit(&mut self, stmts: Vec<Statement>, state: &str) -> Result<bool> {
+        self.commit_gated(stmts, state, None).await
+    }
+
+    /// [`Turn::commit`] whose save also needs the audit row `gate` (an
+    /// `audit_log.id` written earlier in the batch only if its condition
+    /// held, see `audit::entry_if`).
+    pub(super) async fn commit_gated(
+        &mut self,
+        mut stmts: Vec<Statement>,
+        state: &str,
+        gate: Option<String>,
+    ) -> Result<bool> {
+        let mut save = account::save(
             self.s(),
             &self.acct.id,
             &self.acct.state,
             state,
             &self.acct.flow,
         );
+        if let Some(gate) = gate {
+            save.sql = format!(
+                "{} AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+                save.sql
+            )
+            .into();
+            save = save.bind(gate);
+        }
         stmts.push(save);
         let done = self.s().db.batch(stmts).await?;
         if done.last().is_some_and(|r| r.rows_affected == 1) {

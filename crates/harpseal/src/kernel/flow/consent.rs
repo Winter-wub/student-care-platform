@@ -68,18 +68,22 @@ pub(super) async fn accept_before_link(t: &mut Turn<'_>) -> Result<()> {
 
 /// The account waits on the Card but the Student already accepted the
 /// current version (on another Channel): back to `linked` with the Menu
-/// unlocked, replaying the parked Action. `false` when a concurrent
-/// Inbound moved the state first.
-pub(super) async fn already_accepted(t: &mut Turn<'_>, link: &LinkRow) -> Result<bool> {
+/// unlocked, replaying the parked Action. `None` when a concurrent Inbound
+/// moved the state first; else the Action replayed, if any.
+pub(super) async fn already_accepted(
+    t: &mut Turn<'_>,
+    link: &LinkRow,
+) -> Result<Option<Option<ActionId>>> {
     let parked = t.acct.flow.parked.take();
     if !t.save("linked").await? {
-        return Ok(false);
+        return Ok(None);
     }
     t.set_menu(Some(&link.locale)).await?;
-    if let Some(action) = parked.and_then(|p| ActionId::new(p).ok()) {
+    let replayed = parked.and_then(|p| ActionId::new(p).ok());
+    if let Some(action) = replayed.clone() {
         linked::act(t, link, action).await?;
     }
-    Ok(true)
+    Ok(Some(replayed))
 }
 
 /// A linked Student whose Consent is not current. Accept records it and

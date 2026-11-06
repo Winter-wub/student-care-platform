@@ -226,3 +226,41 @@ pub async fn sql(h: &Harness, sql: &str) {
         .await
         .unwrap();
 }
+
+/// The Hello Module's answer.
+pub const HELLO: &str = "สวัสดีจากโมดูล";
+/// `kernel.flow.welcome_back` in Thai.
+pub const WELCOME_BACK: &str = "ยินดีต้อนรับกลับมา บัญชีของคุณยังเชื่อมอยู่ ใช้เมนูได้ตามปกติ";
+/// `kernel.link.revoked_by_staff` in Thai.
+pub const REVOKED_NOTICE: &str = "เจ้าหน้าที่ยกเลิกการเชื่อมบัญชีนี้แล้ว หากต้องการเชื่อมใหม่ พิมพ์รหัสนักศึกษาได้ทุกเมื่อ";
+
+/// A Staff member, as the audit Actor of back-office calls.
+pub async fn officer(h: &Harness) -> harpseal::Actor {
+    let id = h
+        .create_staff("officer@sealbay.example", "correct horse battery", &[])
+        .await;
+    harpseal::Actor::Staff(id)
+}
+
+/// The id of the only live (active or unreachable) Link of `external_id`.
+pub async fn live_link(h: &Harness, external_id: &str) -> String {
+    let rows = h
+        .db()
+        .query(
+            Statement::new(
+                "SELECT l.id FROM link l JOIN channel_account ca ON ca.id = l.channel_account_id \
+                 WHERE ca.external_id = ? AND l.status <> 'revoked'",
+            )
+            .bind(external_id),
+        )
+        .await
+        .unwrap();
+    rows.get(0, "id").unwrap().as_text().unwrap().to_string()
+}
+
+/// Column `col` of the first row, as text.
+pub fn col(rows: &harpseal::Rows, col: &str) -> Option<String> {
+    rows.get(0, col)
+        .and_then(|v| v.as_text())
+        .map(str::to_string)
+}

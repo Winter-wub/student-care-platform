@@ -2,7 +2,7 @@
 //! lock, expiry), resend, cancel, and the Link itself.
 
 use super::claim::{self, StudentRow};
-use super::{Turn, account, actions, minutes_left};
+use super::{Turn, account, actions, consent, minutes_left};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::kernel::security;
 use crate::message::{Card, Choices, Message};
@@ -300,6 +300,11 @@ pub(super) async fn cancel(t: &mut Turn<'_>) -> Result<()> {
 /// shown on the Card), state `linked`, audit `link.create`. Then the Menu
 /// unlocks and the success Card and the Menu Choices go out.
 async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result<()> {
+    // The Consent written with the Link must be one this account accepted:
+    // with none remembered, the Card again (the claim starts over).
+    let Some(version) = t.acct.flow.consent_version.clone() else {
+        return consent::offer(t, false).await;
+    };
     // Another account may have linked this Student on this Channel while
     // this one waited for its code.
     if claim::duplicate(t, student).await? {
@@ -317,12 +322,6 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
     let s = t.s().clone();
     let now = s.now_ms();
     let link_id = s.new_id()?;
-    let version = t
-        .acct
-        .flow
-        .consent_version
-        .clone()
-        .unwrap_or_else(|| t.version.clone());
     let method = t.d.verification().id();
     let after = serde_json::json!({
         "channel": t.from.channel.as_str(),

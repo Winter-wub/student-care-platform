@@ -192,24 +192,77 @@ pub fn entry(
     after: Option<Json>,
     ctx: &RequestCtx,
 ) -> Result<Statement> {
+    let (stmt, _) = row(services, actor, action, target, before, after, ctx, None)?;
+    Ok(stmt)
+}
+
+/// [`entry`] that inserts its row only when `condition` (an SQL boolean
+/// expression with its own params, e.g. `EXISTS (SELECT 1 FROM link WHERE
+/// id = ? AND status <> 'revoked')`) holds when the statement runs. Also
+/// returns the row's id, so later statements of the same batch can run
+/// only if the row was written (`EXISTS (SELECT 1 FROM audit_log WHERE
+/// id = ?)`): a compare-and-set whose audit row is the gate.
+#[allow(clippy::too_many_arguments)]
+pub fn entry_if(
+    services: &Services,
+    actor: &Actor,
+    action: &str,
+    target: Option<&Target>,
+    before: Option<Json>,
+    after: Option<Json>,
+    ctx: &RequestCtx,
+    condition: Statement,
+) -> Result<(Statement, String)> {
+    row(
+        services,
+        actor,
+        action,
+        target,
+        before,
+        after,
+        ctx,
+        Some(condition),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn row(
+    services: &Services,
+    actor: &Actor,
+    action: &str,
+    target: Option<&Target>,
+    before: Option<Json>,
+    after: Option<Json>,
+    ctx: &RequestCtx,
+    condition: Option<Statement>,
+) -> Result<(Statement, String)> {
     let (actor_kind, actor_id) = actor.parts();
     let json = |v: Option<Json>| v.map(|v| redact(v).to_string());
-    Ok(Statement::new(
-        "INSERT INTO audit_log (id, at, actor_kind, actor_id, action, target_kind, target_id, \
-         before, after, ip, user_agent, request_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(services.new_id()?)
-    .bind(services.now_ms())
-    .bind(actor_kind)
-    .bind(actor_id.map(str::to_string))
-    .bind(action)
-    .bind(target.map(|t| t.kind.clone()))
-    .bind(target.map(|t| t.id.clone()))
-    .bind(json(before))
-    .bind(json(after))
-    .bind(ctx.ip.clone())
-    .bind(ctx.user_agent.clone())
-    .bind(ctx.request_id.clone()))
+    let id = services.new_id()?;
+    let head = "INSERT INTO audit_log (id, at, actor_kind, actor_id, action, target_kind, \
+        target_id, before, after, ip, user_agent, request_id)";
+    let values = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+    let sql = match &condition {
+        None => format!("{head} VALUES ({values})"),
+        Some(c) => format!("{head} SELECT {values} WHERE {}", c.sql),
+    };
+    let mut stmt = Statement::new(sql)
+        .bind(id.clone())
+        .bind(services.now_ms())
+        .bind(actor_kind)
+        .bind(actor_id.map(str::to_string))
+        .bind(action)
+        .bind(target.map(|t| t.kind.clone()))
+        .bind(target.map(|t| t.id.clone()))
+        .bind(json(before))
+        .bind(json(after))
+        .bind(ctx.ip.clone())
+        .bind(ctx.user_agent.clone())
+        .bind(ctx.request_id.clone());
+    if let Some(c) = condition {
+        stmt.params.extend(c.params);
+    }
+    Ok((stmt, id))
 }
 
 /// Writes one audit row on its own. Prefer [`entry`] inside the write's

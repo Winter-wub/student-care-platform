@@ -42,8 +42,18 @@ pub(super) async fn handle(t: &mut Turn<'_>, link: LinkRow, input: Input) -> Res
     if !link.current_consent && (parked_on_card || link.any_consent) {
         return consent::reconsent(t, link, input).await;
     }
-    if parked_on_card && !consent::already_accepted(t, &link).await? {
-        return Ok(());
+    if parked_on_card {
+        let Some(replayed) = consent::already_accepted(t, &link).await? else {
+            return Ok(());
+        };
+        // One press, one answer: the input that woke the account is
+        // dropped when it is the replayed Action again or the accept.
+        // Another Action still runs after the replay.
+        if let (Some(r), Input::Action(a)) = (&replayed, &input)
+            && (a == r || a.as_str() == actions::CONSENT_ACCEPT)
+        {
+            return Ok(());
+        }
     }
     match input {
         Input::Start => {
@@ -104,17 +114,30 @@ pub(super) async fn act(t: &mut Turn<'_>, link: &LinkRow, action: ActionId) -> R
 
 /// Revokes the Link (Consent kept) through `kernel::links` with the
 /// Student as the actor, locks the Menu, says goodbye; the account waits
-/// for a student id again.
+/// for a student id again (or on the Card, for a Link that never had
+/// Consent). The state change is gated on the revoke's audit row, so a
+/// Link revoked and replaced meanwhile is left alone.
 async fn unlink(t: &mut Turn<'_>, link: &LinkRow) -> Result<()> {
     let s = t.s().clone();
+    let consent_version = link.current_consent.then(|| t.version.clone());
+    let state = if consent_version.is_some() {
+        "awaiting_student_id"
+    } else {
+        "awaiting_consent"
+    };
     t.acct.flow = account::FlowData {
-        consent_version: Some(t.version.clone()),
+        consent_version,
         ..Default::default()
     };
     let actor = Actor::Student(link.student.clone());
-    let (stmts, _) =
-        links::revoke_statements(&s, &link.id, &link.student, &actor, &RequestCtx::default())?;
-    if !t.commit(stmts, "awaiting_student_id").await? {
+    let status = if link.unreachable {
+        "unreachable"
+    } else {
+        "active"
+    };
+    let ctx = RequestCtx::default();
+    let (stmts, gate) = links::revoke_statements(&s, &link.id, status, &actor, &ctx)?;
+    if !t.commit_gated(stmts, state, Some(gate)).await? {
         return Ok(());
     }
     t.set_menu(None).await?;

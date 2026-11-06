@@ -170,8 +170,9 @@ impl FakeChannel {
         BatchReceipt::complete(receipts)
     }
 
-    /// Makes every later send to `to` fail with `Error::Unreachable`, as a
-    /// platform does once the Student blocked the bot (`false` undoes it).
+    /// Makes every later send and Menu change for `to` fail with
+    /// `Error::Unreachable`, as a platform does once the Student blocked
+    /// the bot (`false` undoes it).
     pub fn set_unreachable(&self, to: &ChannelAccountId, unreachable: bool) {
         let mut s = self.lock();
         if unreachable {
