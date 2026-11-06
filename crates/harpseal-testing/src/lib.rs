@@ -25,16 +25,21 @@
 #![forbid(unsafe_code)]
 
 mod app;
+mod browser;
 pub mod contract;
 mod fakes;
 
 use std::sync::Arc;
 
-use harpseal::{Db, Deployment, DeploymentBuilder, DeploymentConfig, Email, EmailOtp, Services};
+use harpseal::{
+    Actor, Db, Deployment, DeploymentBuilder, DeploymentConfig, Email, EmailOtp, Locale, NewStaff,
+    RequestCtx, Services,
+};
 use harpseal_channel_fake::{FakeChannel, FakeProfile};
 use harpseal_runtime_native::SqliteDb;
 
 pub use app::{TestApp, TestResponse};
+pub use browser::{Browser, urlencode};
 pub use fakes::{
     CapturingEmail, ManualClock, MemoryFiles, RecordedRequest, RecordingHttp, SeqRandom,
 };
@@ -167,6 +172,22 @@ impl Harness {
     pub fn http_requests(&self) -> Vec<RecordedRequest> {
         self.http.requests()
     }
+    /// Creates an active Staff member holding `roles` (Role names from the
+    /// TOML seed or the database); returns `staff.id`. Call after
+    /// [`Harness::start`] / [`Harness::boot`] (the tables must exist).
+    pub async fn create_staff(&self, email: &str, password: &str, roles: &[&str]) -> String {
+        let mut s = NewStaff::new(email, "Test Staff", password, Locale::th());
+        s.roles = roles.iter().map(|r| r.to_string()).collect();
+        self.create_staff_with(s).await
+    }
+
+    /// Creates the Staff member `s` as the system; returns `staff.id`.
+    pub async fn create_staff_with(&self, s: NewStaff) -> String {
+        harpseal::create_staff(&self.services(), &Actor::System, s, &RequestCtx::default())
+            .await
+            .expect("staff is created")
+    }
+
     /// The in-memory FileStore.
     pub fn files(&self) -> &MemoryFiles {
         &self.files

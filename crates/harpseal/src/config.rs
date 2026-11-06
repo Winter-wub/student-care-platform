@@ -25,7 +25,9 @@ pub struct DeploymentConfig {
     #[serde(default)]
     pub branding: BrandingConfig,
     /// Initial Roles: Role name -> Permission ids. `build()` rejects an id
-    /// no Module declared.
+    /// no Module declared. Merged into the database on every migrate,
+    /// add-only: removing a Role or a Permission here does not remove it
+    /// from the database (do that in the back office).
     #[serde(default)]
     pub roles: BTreeMap<String, Vec<String>>,
     /// Per-Channel Quotas, keyed by Channel kind (`[quotas.line]`).
@@ -49,6 +51,9 @@ pub struct DeploymentConfig {
     /// How long pruned rows are kept.
     #[serde(default)]
     pub retention: RetentionConfig,
+    /// Staff sign-in settings.
+    #[serde(default)]
+    pub staff: StaffConfig,
 }
 
 fn default_offset() -> String {
@@ -60,20 +65,81 @@ fn default_offset() -> String {
 #[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct BrandingConfig {
-    /// Main colour, CSS hex.
+    /// Name in the bar and page titles; the Deployment `name` otherwise.
+    pub name: Option<String>,
+    /// Main colour, CSS hex (`#rgb` or `#rrggbb`).
     pub primary_color: String,
-    /// Logo URL or path, if any.
+    /// Logo URL or path, if any (shown in the bar).
     pub logo: Option<String>,
-    /// Optional web font stylesheet URL; the system Thai font otherwise.
+    /// Optional web font stylesheet URL (`https://` or a `/` path); the
+    /// system Thai font otherwise. The CSS must name the font itself.
     pub font_url: Option<String>,
 }
+
+/// Brand colour when `[branding]` gives none.
+pub(crate) const DEFAULT_PRIMARY: &str = "#0b5cad";
 
 impl Default for BrandingConfig {
     fn default() -> Self {
         Self {
-            primary_color: "#0b5cad".into(),
+            name: None,
+            primary_color: DEFAULT_PRIMARY.into(),
             logo: None,
             font_url: None,
+        }
+    }
+}
+
+impl BrandingConfig {
+    /// Refuses a colour that is not CSS hex and URLs that are not
+    /// `https://` or a `/` path (they go into the page head).
+    pub(crate) fn check(&self) -> crate::Result<()> {
+        let hex = self.primary_color.strip_prefix('#').unwrap_or("x");
+        let ok = matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit());
+        if !ok {
+            let c = &self.primary_color;
+            return Err(crate::Error::Invalid(format!(
+                "[branding] primary_color `{c}`"
+            )));
+        }
+        for (key, url) in [("logo", &self.logo), ("font_url", &self.font_url)] {
+            let url = url.as_deref().unwrap_or("/");
+            let ok =
+                url.starts_with("https://") || (url.starts_with('/') && !url.starts_with("//"));
+            if !ok {
+                return Err(crate::Error::Invalid(format!(
+                    "[branding] {key} must start with https:// or /"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `[staff]`: Staff sign-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct StaffConfig {
+    /// Mark the session cookies `Secure` (sent over HTTPS only). Default
+    /// `true`. Set `false` only for local development over plain
+    /// `http://` from another device (browsers already accept `Secure`
+    /// cookies on `http://localhost`); never in production.
+    pub cookie_secure: bool,
+    /// Take the client address from `X-Forwarded-For` (right-most public
+    /// hop) and `CF-Connecting-IP`. Default `false`. Turn it on only when a
+    /// native server is reachable solely through a proxy you run, which
+    /// appends the address it saw; otherwise clients could forge the
+    /// address in audit rows, sessions and Security Events. Workers always
+    /// use `CF-Connecting-IP`.
+    pub trust_forwarded_for: bool,
+}
+
+impl Default for StaffConfig {
+    fn default() -> Self {
+        Self {
+            cookie_secure: true,
+            trust_forwarded_for: false,
         }
     }
 }
@@ -212,6 +278,7 @@ impl DeploymentConfig {
         if c.consent.version.trim().is_empty() {
             return Err(crate::Error::Invalid("[consent] version is empty".into()));
         }
+        c.branding.check()?;
         Ok(c)
     }
 
@@ -265,6 +332,10 @@ mod tests {
             "[otp]\ndigits = 12",
             "[retention]\njobs_days = 1",
             "[quotas.line]\nmetered_per_month = 1\nper_day = 2",
+            "[staff]\ncookie_secur = false",
+            "[branding]\nprimary_color = \"red;}body{x\"",
+            "[branding]\nfont_url = \"javascript:alert(1)\"",
+            "[branding]\nlogo = \"//evil.example/x.png\"",
         ] {
             let err = DeploymentConfig::from_toml(&format!("{base}{extra}"));
             assert!(err.is_err(), "accepted: {extra}");
@@ -280,6 +351,8 @@ mod tests {
         assert_eq!(c.consent.version, "1");
         assert_eq!(c.inbound, InboundConfig::default());
         assert_eq!(c.utc_offset_minutes().unwrap(), 0);
+        assert!(c.staff.cookie_secure);
+        assert_eq!(c.branding.primary_color, DEFAULT_PRIMARY);
     }
 
     #[test]

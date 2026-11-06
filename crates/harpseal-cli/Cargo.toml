@@ -9,3 +9,7 @@ publish = false
 
 [dependencies]
 harpseal.workspace = true
+
+[dev-dependencies]
+harpseal-testing.workspace = true
+tokio.workspace = true

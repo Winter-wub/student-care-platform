@@ -1,18 +1,17 @@
 //! The Deployment's axum Router: webhooks, the shared stylesheet, public
 //! and Mini App pages at the root, and back-office pages under `/admin`,
-//! each behind a Permission guard.
+//! each behind the Staff guard.
 
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{Path, Request, State};
+use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, header};
-use axum::middleware::Next;
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{MethodRouter, get, post};
 
 use super::Deployment;
-use super::routes::{ADMIN, WEBHOOK_PATH};
+use super::routes::WEBHOOK_PATH;
+use crate::auth::{self, AdminCx, Gate};
 use crate::delivery::WebhookRequest;
 use crate::{AppState, Error, PageState};
 
@@ -25,9 +24,14 @@ impl Deployment {
     ///   Channel;
     /// - `GET /static/app.css`: the shared stylesheet;
     /// - Module public routes at the root (the Kernel's `/notice`);
+    /// - `/admin/login`, `/admin/logout`, `/admin/password` and the `/admin`
+    ///   home (Staff sign-in, see [`crate::CurrentStaff`]);
     /// - Module back-office routes under `/admin`, each guarded by its
-    ///   Permission.
+    ///   Permission: no session → 303 to `/admin/login`; a pending password
+    ///   change → 303 to `/admin/password`; Permission missing → a 403
+    ///   page; a POST without the CSRF token → 403.
     ///
+    /// Every response carries `x-request-id` (the [`crate::RequestCtx`] id).
     /// Never panics: `build()` already refused overlapping or invalid paths.
     pub fn router(self: Arc<Self>) -> axum::Router {
         let state: AppState = Arc::new(PageState {
@@ -35,16 +39,50 @@ impl Deployment {
             catalog: self.catalog.clone(),
             config: self.config.clone(),
         });
-        let mut root = axum::Router::new();
+        let cx = Arc::new(AdminCx {
+            state: state.clone(),
+            nav: self.registry.nav.clone(),
+        });
+        let guarded = |route: MethodRouter<AppState>, gate: Gate| {
+            route.layer(axum::middleware::from_fn_with_state(
+                (cx.clone(), gate),
+                auth::guard,
+            ))
+        };
+        let signed_in = Gate {
+            permission: None,
+            during_forced_change: false,
+        };
+        let any_time = Gate {
+            permission: None,
+            during_forced_change: true,
+        };
+        let mut root = axum::Router::new()
+            .route(
+                auth::LOGIN_PATH,
+                get(auth::login_form).post(auth::login_submit),
+            )
+            .route(auth::HOME_PATH, guarded(get(auth::home), signed_in))
+            .route(auth::LOGOUT_PATH, guarded(post(auth::logout), any_time))
+            .route(
+                auth::PASSWORD_PATH,
+                guarded(
+                    get(auth::password_form).post(auth::password_submit),
+                    any_time,
+                ),
+            );
         for (_module, path, route) in &self.registry.public {
             root = root.route(path, route.clone());
         }
         for (_module, permission, path, route) in &self.registry.back_office {
-            let guarded = route.clone().layer(axum::middleware::from_fn_with_state(
-                (state.clone(), *permission),
-                guard,
-            ));
-            root = root.route(&format!("{ADMIN}{path}"), guarded);
+            let gate = Gate {
+                permission: Some(*permission),
+                during_forced_change: false,
+            };
+            root = root.route(
+                &format!("{}{path}", super::routes::ADMIN),
+                guarded(route.clone(), gate),
+            );
         }
         let css = get(|| async {
             (
@@ -57,6 +95,10 @@ impl Deployment {
         });
         root.route(WEBHOOK_PATH, post(webhook))
             .route(crate::ui::CSS_PATH, css)
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                auth::request_ctx,
+            ))
             .with_state(state)
             .layer(axum::Extension(self))
     }
@@ -80,30 +122,4 @@ async fn webhook(
         Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
         Err(_) => StatusCode::BAD_REQUEST,
     }
-}
-
-/// Lets a back-office request through only for Staff holding `permission`.
-/// Staff sign-in and sessions arrive with #21; until then no request holds
-/// a session, so every guarded route answers 401 with a sign-in notice.
-async fn guard(
-    State((state, permission)): State<(AppState, &'static str)>,
-    req: Request,
-    next: Next,
-) -> Response {
-    if staff_holds(&state, &req, permission) {
-        return next.run(req).await;
-    }
-    let text = state.t("kernel.backoffice.sign_in");
-    let body = crate::ui::page(
-        &state.config.name,
-        &text,
-        crate::ui::Shell::BackOffice { staff_email: None },
-        maud::html! { div class="card" { p { (text) } } },
-    );
-    (StatusCode::UNAUTHORIZED, Html(body.into_string())).into_response()
-}
-
-/// Whether the request carries a Staff session granting `permission`.
-fn staff_holds(_state: &PageState, _req: &Request, _permission: &str) -> bool {
-    false
 }

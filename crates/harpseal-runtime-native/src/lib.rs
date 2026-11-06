@@ -87,10 +87,24 @@ pub fn services(s: &NativeSettings) -> Result<Services> {
     })
 }
 
-/// `axum::serve` on a TCP listener at `addr`.
+/// `axum::serve` on a TCP listener at `addr`. Each request carries the
+/// peer's IP as [`harpseal::PeerIp`] (audit rows fall back to it when there
+/// is no `X-Forwarded-For`).
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, router).await
+    let app = router.layer(axum::middleware::from_fn(peer_ip));
+    let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    axum::serve(listener, app).await
+}
+
+async fn peer_ip(
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    req.extensions_mut()
+        .insert(harpseal::PeerIp(addr.ip().to_string()));
+    next.run(req).await
 }
 
 /// Calls [`Deployment::tick`] every `period` (one minute in production)
