@@ -45,7 +45,7 @@ pub struct TickReport {
     /// Expired Staff sessions deleted (#21).
     pub sessions_pruned: u64,
     /// Scheduled Jobs this tick enqueued (0 when another tick in the same
-    /// minute already did).
+    /// minute already did), the Quota watch (#26) included.
     pub scheduled: usize,
     /// Old `done` and `failed` Job rows deleted.
     pub jobs_pruned: u64,
@@ -137,7 +137,8 @@ impl Deployment {
     /// Runs the per-minute work at `now`. First, Staff sessions past their
     /// sliding or absolute limit are deleted, and the scheduled Jobs due in
     /// this minute (or the one before) are enqueued, once per minute
-    /// however many ticks run. Then `running` Jobs whose lock
+    /// however many ticks run; with `[quotas]` set, the Quota watch
+    /// `kernel.usage.watch` is enqueued once per 10-minute window (#26). Then `running` Jobs whose lock
     /// expired (their runtime died mid-run) and that have no retries left
     /// are marked `failed` with `last_error = 'lock expired'`. Then one
     /// statement claims due `queued` Jobs and expired `running` ones that
@@ -163,6 +164,13 @@ impl Deployment {
         {
             Ok(n) => report.scheduled = n,
             Err(e) => report.errors.push(format!("scheduled jobs: {e}")),
+        }
+        // Quota emails (#26): one watch per 10 minutes, only with a Quota.
+        if !self.config.quotas.is_empty() {
+            match crate::kernel::usage::enqueue_watch(self, now).await {
+                Ok(n) => report.scheduled += n,
+                Err(e) => report.errors.push(format!("usage watch: {e}")),
+            }
         }
         let expired = db
             .execute(

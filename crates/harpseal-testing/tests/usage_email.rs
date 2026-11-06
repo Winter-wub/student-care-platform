@@ -129,18 +129,29 @@ async fn runs_at_the_same_time_send_once() {
 }
 
 #[tokio::test]
-async fn the_scheduled_job_runs_every_ten_minutes() {
+async fn ticks_run_the_watch_once_per_ten_minutes() {
     let (h, app) = boot().await;
     people(&h).await;
-    use_percent(&h, 80).await;
     let d = app.deployment();
-    // 00:05 UTC: not a scheduled minute.
-    let r = d.tick(Timestamp(START_MS + 5 * 60_000)).await.unwrap();
-    assert_eq!(r.scheduled, 0);
+    // 00:03 UTC: the first tick of the 00:00 window enqueues and runs it.
+    let r = d.tick(Timestamp(START_MS + 3 * 60_000)).await.unwrap();
+    assert_eq!((r.scheduled, r.done, r.failed), (1, 1, 0));
+    assert!(h.emails().is_empty());
+    use_percent(&h, 80).await;
+    let r = d.tick(Timestamp(START_MS + 9 * 60_000)).await.unwrap();
+    assert_eq!((r.scheduled, r.claimed), (0, 0), "same window");
     assert!(h.emails().is_empty());
     let r = d.tick(Timestamp(START_MS + 10 * 60_000)).await.unwrap();
-    assert_eq!((r.scheduled, r.done, r.failed), (1, 1, 0));
+    assert_eq!((r.scheduled, r.done), (1, 1));
     assert_eq!(h.emails().len(), 2);
+}
+
+#[tokio::test]
+async fn without_any_quota_ticks_never_run_the_watch() {
+    let h = Harness::new();
+    let app = h.start().await;
+    let r = app.deployment().tick(Timestamp(START_MS)).await.unwrap();
+    assert_eq!((r.scheduled, r.claimed), (0, 0));
 }
 
 #[tokio::test]

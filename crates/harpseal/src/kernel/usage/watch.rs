@@ -1,8 +1,15 @@
-//! Job `kernel.usage.watch` (every 10 minutes): emails every active
+//! Job `kernel.usage.watch`: emails every active
 //! Administrator (Staff whose Roles grant `kernel.staff.manage`) once per
 //! calendar month per Channel per level: at `Warn`, then again at `Over`.
 //! A Channel that jumps past 100 % between two runs gets the `Over` email
 //! only.
+//!
+//! [`Deployment::tick`] enqueues it ([`enqueue`]) on its first tick of
+//! each 10-minute window (UTC-aligned), only when the TOML has
+//! `[quotas]`: a Deployment without a Quota never runs it, so its ticks
+//! stay as they were. It is not a cron `JobSpec::schedule` for that
+//! reason, and because a missed cron minute is skipped while a window is
+//! caught up by any later tick in it.
 //!
 //! No migration: the record is a `setting` row `kernel.usage.notified.<kind>`
 //! (Locale `''`, never shown on the Texts page) holding
@@ -20,6 +27,7 @@ use serde_json::{Value as Json, json};
 use super::quota::{ChannelMonth, Level};
 use super::{FULL_PATH, store};
 use crate::audit::{self, Actor, RequestCtx, Target};
+use crate::delivery::Timestamp;
 use crate::kernel::students::view::channel_label;
 use crate::kernel::text::Texts;
 use crate::manifest::Job;
@@ -29,8 +37,8 @@ use crate::{Deployment, JobContext, Result};
 
 /// The Job kind.
 pub(super) const KIND: &str = "kernel.usage.watch";
-/// Every 10 minutes, in the Deployment's `utc_offset`.
-pub(super) const SCHEDULE: &str = "*/10 * * * *";
+/// One watch per window of this length.
+const EVERY_MS: i64 = 10 * 60_000;
 /// `setting` key prefix of the notification records.
 pub(super) const KEY_PREFIX: &str = "kernel.usage.notified.";
 
@@ -74,6 +82,17 @@ impl Record {
 struct Admin {
     email: String,
     locale: Locale,
+}
+
+/// Enqueues the watch for the 10-minute window of `now`, once however
+/// many ticks run in it (a `job.unique_key` per window). Returns the Jobs
+/// enqueued (0 or 1).
+pub(crate) async fn enqueue(d: &Deployment, now: Timestamp) -> Result<usize> {
+    let window = now.ms().div_euclid(EVERY_MS);
+    let key = format!("{KIND}:{window}");
+    let at = json!({ "window_at": window * EVERY_MS });
+    let id = d.enqueue_unique(&key, KIND, at, Some(now)).await?;
+    Ok(usize::from(id.is_some()))
 }
 
 pub(super) async fn run(cx: JobContext, _job: Job) -> Result<()> {

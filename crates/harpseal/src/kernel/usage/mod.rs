@@ -6,7 +6,7 @@
 //! |---|---|
 //! | Usage page, `GET /admin/usage` | `kernel.usage.view`, nav order 85 |
 //! | Quota banner in the `#usage-banner` slot of every back-office page | any Staff; links to the page only for holders of `kernel.usage.view` |
-//! | Quota emails to every active Administrator | Job `kernel.usage.watch`, every 10 minutes |
+//! | Quota emails to every active Administrator | Job `kernel.usage.watch`, every 10 minutes when `[quotas]` is set |
 //!
 //! Levels ([`quota::Level`]): `Warn` at 80 % of the cap, `Over` at 100 %.
 //! Sending is never blocked. The banner is rendered server-side: the Staff
@@ -28,6 +28,7 @@ use axum::routing::get;
 
 pub(crate) use banner::banner;
 pub(crate) use quota::Level;
+pub(crate) use watch::enqueue as enqueue_watch;
 
 use crate::manifest::JobSpec;
 use crate::module::ModuleRegistrar;
@@ -44,7 +45,7 @@ pub(crate) const FULL_PATH: &str = "/admin/usage";
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .back_office_page(VIEW, PATH, "kernel.usage.title", 85, get(page::page))
-        .job(JobSpec::scheduled(watch::KIND, watch::SCHEDULE), watch::run);
+        .job(JobSpec::new(watch::KIND), watch::run);
 }
 
 /// One Channel's metered Pushes this calendar month against its Quota.
