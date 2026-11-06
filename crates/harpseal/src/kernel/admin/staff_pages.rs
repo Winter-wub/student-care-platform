@@ -114,7 +114,7 @@ async fn render(v: &View<'_>, f: &Fields, error: Option<&str>, status: StatusCod
     };
     let title = v.t("kernel.admin.staff.create");
     let l = |k: &str| v.t(k);
-    let locales = ["th", "en"];
+    let locales = super::settings::locales(&v.s.catalog, &v.s.config);
     let body = html! {
         p { a href="/admin/staff" { "← " (l("kernel.admin.staff.back")) } }
         h1 { (title) }
@@ -132,7 +132,7 @@ async fn render(v: &View<'_>, f: &Fields, error: Option<&str>, status: StatusCod
             div class="field" {
                 label for="staff-locale" { (l("kernel.admin.staff.locale")) }
                 select id="staff-locale" name="locale" {
-                    @for loc in locales { option value=(loc) selected[f.locale == loc] { (loc) } }
+                    @for loc in &locales { option value=(loc) selected[&f.locale == loc] { (loc) } }
                 }
             }
             div class="field" {
@@ -158,7 +158,9 @@ pub(super) async fn create(
         match k.as_str() {
             "email" => f.email = cut(&val, 254),
             "display_name" => f.display_name = cut(&val, 200),
-            "locale" if matches!(val.as_str(), "th" | "en") => f.locale = val,
+            "locale" if super::settings::locales(&s.catalog, &s.config).contains(&val) => {
+                f.locale = val
+            }
             "role" => f.roles.push(val),
             _ => {}
         }
@@ -188,35 +190,33 @@ pub(super) async fn create(
     let actor = Actor::staff(&staff);
     match create_staff(&s.services, &actor, new, &ctx).await {
         Ok(id) => shown_once(&v, &id, &f.email.trim().to_lowercase(), &password, false),
-        Err(Error::Invalid(m)) if m.contains("in use") => {
-            render(
-                &v,
-                &f,
-                Some("kernel.admin.staff.err_taken"),
-                StatusCode::UNPROCESSABLE_ENTITY,
-            )
-            .await
-        }
-        Err(Error::Invalid(m)) if m.contains("role") => {
-            render(
-                &v,
-                &f,
-                Some("kernel.admin.staff.err_roles"),
-                StatusCode::UNPROCESSABLE_ENTITY,
-            )
-            .await
-        }
         Err(Error::Invalid(_)) => {
-            render(
-                &v,
-                &f,
-                Some("kernel.admin.staff.err_email"),
-                StatusCode::UNPROCESSABLE_ENTITY,
-            )
-            .await
+            let key = match refusal(&s.services, &f).await {
+                Ok(k) => k,
+                Err(e) => return v.error(&e),
+            };
+            render(&v, &f, Some(key), StatusCode::UNPROCESSABLE_ENTITY).await
         }
         Err(e) => v.error(&e),
     }
+}
+
+/// Why `create_staff` refused `f` (`Error::Invalid`), read from the
+/// database rather than from the error text: a Role gone, the email
+/// taken, else the email itself.
+async fn refusal(s: &crate::Services, f: &Fields) -> crate::Result<&'static str> {
+    if roles::check_exist(s, &f.roles).await.is_err() {
+        return Ok("kernel.admin.staff.err_roles");
+    }
+    let email = f.email.trim().to_lowercase();
+    let taken =
+        s.db.query(crate::Statement::new("SELECT 1 FROM staff WHERE email = ?").bind(email))
+            .await?;
+    Ok(if taken.is_empty() {
+        "kernel.admin.staff.err_email"
+    } else {
+        "kernel.admin.staff.err_taken"
+    })
 }
 
 /// The page showing a temporary password once (create or reset).

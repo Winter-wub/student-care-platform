@@ -21,7 +21,8 @@ use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 pub(super) struct Posted {
     version: i64,
     roles: Vec<String>,
-    active: bool,
+    /// `None` when the field is missing or not `0` / `1`.
+    active: Option<bool>,
 }
 
 fn posted(pairs: Vec<(String, String)>) -> Posted {
@@ -30,7 +31,13 @@ fn posted(pairs: Vec<(String, String)>) -> Posted {
         match k.as_str() {
             "version" => p.version = v.parse().unwrap_or(-1),
             "role" => p.roles.push(v),
-            "active" => p.active = v == "1",
+            "active" => {
+                p.active = match v.as_str() {
+                    "1" => Some(true),
+                    "0" => Some(false),
+                    _ => None,
+                }
+            }
             _ => {}
         }
     }
@@ -155,7 +162,10 @@ pub(super) async fn set_status(
     let p = posted(pairs);
     let back = format!("/admin/staff/{id}");
     let actor = Actor::staff(&staff);
-    match staff_admin::set_active(&s.services, &actor, &id, p.active, p.version, &ctx).await {
+    let Some(active) = p.active else {
+        return v.bad_form();
+    };
+    match staff_admin::set_active(&s.services, &actor, &id, active, p.version, &ctx).await {
         Ok(o) => refused(&v, &back, o),
         Err(e) => v.error(&e),
     }

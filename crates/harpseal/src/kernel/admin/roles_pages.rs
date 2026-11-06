@@ -190,6 +190,7 @@ fn render_edit(
         h1 { (role.name) }
         @if from_toml(v, &role.name) { p class="muted" { (l("kernel.admin.roles.toml_help")) } }
         p class="muted" { (l("kernel.admin.roles.holders")) " " (role.holders) }
+        p class="muted" { (l("kernel.admin.roles.undeclared")) }
         form method="post" action=(base) class="card" {
             (v.staff.csrf_field())
             input type="hidden" name="version" value=(role.version());

@@ -83,6 +83,16 @@ impl<'a> View<'a> {
         self.page(StatusCode::NOT_FOUND, &text, body)
     }
 
+    /// 422 inside the layout: a form arrived without a field it needs.
+    pub(super) fn bad_form(&self) -> Response {
+        let text = self.t("kernel.admin.bad_form");
+        self.page(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &text,
+            html! { div class="card" { p { (text) } } },
+        )
+    }
+
     /// 500 inside the layout; the error text is never shown.
     pub(super) fn error(&self, _e: &Error) -> Response {
         let text = self.t("kernel.auth.error");

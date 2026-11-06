@@ -186,7 +186,13 @@ fn role_rows(rows: &Rows) -> Vec<RoleRow> {
         .map(|i| RoleRow {
             id: text(i, "id"),
             name: text(i, "name"),
-            permissions: serde_json::from_str(&text(i, "perms")).unwrap_or_default(),
+            permissions: {
+                // json_group_array keeps no guaranteed order.
+                let mut p: Vec<String> =
+                    serde_json::from_str(&text(i, "perms")).unwrap_or_default();
+                p.sort();
+                p
+            },
             holders: rows.get(i, "holders").and_then(|v| v.as_i64()).unwrap_or(0),
         })
         .collect()

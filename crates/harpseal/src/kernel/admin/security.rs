@@ -261,7 +261,7 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Event], total: i64, page: i64, pag
                                 }
                                 td data-label=(label("kernel.admin.security.account")) {
                                     @if let Some((ch, ext)) = &e.account {
-                                        (channel_label(ch)) " " span class="code" title=(ext) { (short_id(ext)) }
+                                        (channel_label(ch)) " " span class="code" { (short_id(ext)) }
                                     } @else { span class="muted" { "–" } }
                                 }
                                 td data-label=(label("kernel.admin.security.staff")) {

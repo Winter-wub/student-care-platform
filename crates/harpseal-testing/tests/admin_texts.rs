@@ -5,7 +5,7 @@
 mod admin_support;
 mod support;
 
-use admin_support::{audits, boot, flash, htmx_get, signed_in, text};
+use admin_support::{audits, boot, flash, hidden, htmx_get, signed_in, text};
 use harpseal::Message;
 use harpseal_testing::urlencode;
 use support::{Chat, text_of};
@@ -13,13 +13,23 @@ use support::{Chat, text_of};
 const WELCOME: &str = "/admin/texts/kernel.flow.welcome";
 const DEFAULT_WELCOME: &str = "สวัสดีครับ ยินดีต้อนรับสู่ช่องทางบริการนักศึกษา";
 
-fn save(locale: &str, value: &str, current: Option<&str>) -> String {
+/// The form of `locale`, as a browser posts it: `version` is the token
+/// the page showed (`-` when no `setting` row existed).
+fn save(locale: &str, value: &str, version: &str) -> String {
     format!(
-        "locale={locale}&value={}&current={}&had={}&op=save",
+        "locale={locale}&value={}&version={}&op=save",
         urlencode(value),
-        urlencode(current.unwrap_or_default()),
-        if current.is_some() { 1 } else { 0 }
+        urlencode(version)
     )
+}
+
+/// The `version` token of the `locale` form on the edit page at `path`.
+async fn token(b: &harpseal_testing::Browser<'_>, path: &str, locale: &str) -> String {
+    let body = b.get(path).await.body;
+    let at = body
+        .find(&format!("name=\"locale\" value=\"{locale}\""))
+        .expect("the Locale's form");
+    hidden(&body[at..], "version")
 }
 
 #[tokio::test]
@@ -27,7 +37,7 @@ async fn an_edited_welcome_is_what_the_next_follower_receives_until_reset() {
     let (h, app) = boot().await;
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
     let new = "ยินดีต้อนรับสู่ Seal Bay! อ่านประกาศด้านล่างก่อนนะ";
-    let r = admin.post(WELCOME, &save("th", new, None)).await;
+    let r = admin.post(WELCOME, &save("th", new, "-")).await;
     assert_eq!(r.status, 303, "{}", r.body);
     assert_eq!(flash(&admin), "ok:kernel.admin.saved");
     assert_eq!(audits(&h, "setting.update").await, 1);
@@ -51,10 +61,11 @@ async fn an_edited_welcome_is_what_the_next_follower_receives_until_reset() {
     // The page shows the source; a stale form is refused.
     let page = admin.get(WELCOME).await.body;
     assert!(page.contains("แก้ในหลังบ้าน"));
-    admin.post(WELCOME, &save("th", "อีกแบบ", None)).await;
+    admin.post(WELCOME, &save("th", "อีกแบบ", "-")).await;
     assert_eq!(flash(&admin), "err:kernel.admin.conflict");
 
-    let reset = format!("locale=th&value=&current={}&had=1&op=reset", urlencode(new));
+    let v = token(&admin, WELCOME, "th").await;
+    let reset = format!("locale=th&value=&version={v}&op=reset");
     admin.post(WELCOME, &reset).await;
     assert_eq!(flash(&admin), "ok:kernel.admin.texts.reset_done");
     assert_eq!(app.count("SELECT count(*) FROM setting").await, 0);
@@ -74,7 +85,7 @@ async fn placeholders_must_match_the_default() {
         "placeholders listed"
     );
 
-    let dropped = admin.post(path, &save("th", "ไฟล์ใหญ่เกินไป", None)).await;
+    let dropped = admin.post(path, &save("th", "ไฟล์ใหญ่เกินไป", "-")).await;
     assert_eq!(dropped.status, 422);
     assert!(dropped.body.contains("ข้อความขาดตัวแทนค่า"));
     assert!(
@@ -82,41 +93,63 @@ async fn placeholders_must_match_the_default() {
         "the value is kept in the form"
     );
     let added = admin
-        .post(path, &save("en", "Over {mb} MB ({gb} GB)", None))
+        .post(path, &save("en", "Over {mb} MB ({gb} GB)", "-"))
         .await;
     assert_eq!(added.status, 422);
     assert!(added.body.contains("<code>{gb}</code>"));
-    assert_eq!(admin.post(path, &save("th", "  ", None)).await.status, 422);
+    assert_eq!(admin.post(path, &save("th", "  ", "-")).await.status, 422);
     assert_eq!(app.count("SELECT count(*) FROM setting").await, 0);
 
     let ok = admin
-        .post(path, &save("en", "Files over {mb} MB are not kept.", None))
+        .post(path, &save("en", "Files over {mb} MB are not kept.", "-"))
         .await;
     assert_eq!(ok.status, 303);
     assert_eq!(admin.get("/admin/texts/kernel.nope").await.status, 404);
-    assert_eq!(
-        admin.post(path, &save("xx", "{mb}", None)).await.status,
-        404
-    );
+    assert_eq!(admin.post(path, &save("xx", "{mb}", "-")).await.status, 404);
 }
 
 #[tokio::test]
 async fn the_list_shows_every_key_with_its_source_and_searches() {
     let (h, app) = boot().await;
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
-    admin.post(WELCOME, &save("en", "Hi there", None)).await;
+    admin.post(WELCOME, &save("en", "Hi there", "-")).await;
     let list = admin.get("/admin/texts").await;
     assert_eq!(list.status, 200);
     for key in [
         "kernel.flow.welcome",
-        "kernel.admin.texts.title",
-        "kernel.students.title",
+        "kernel.notice.body",
+        "kernel.link.ask_student_id",
     ] {
         assert!(
             list.body.contains(&format!("href=\"/admin/texts/{key}\"")),
             "{key}"
         );
     }
+    // Back-office page texts are read at build time: not offered.
+    for key in [
+        "kernel.admin.texts.title",
+        "kernel.students.title",
+        "kernel.auth.sign_in",
+    ] {
+        assert!(
+            !list.body.contains(&format!("/admin/texts/{key}\"")),
+            "{key}"
+        );
+        assert_eq!(admin.get(&format!("/admin/texts/{key}")).await.status, 404);
+    }
+    let r = admin
+        .post("/admin/texts/kernel.students.title", &save("th", "x", "-"))
+        .await;
+    assert_eq!(r.status, 404);
+    // A history restore gets the whole page.
+    let req = http::Request::get("/admin/texts?q=welcome")
+        .header("hx-request", "true")
+        .header("hx-history-restore-request", "true")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let restored = admin.send(req).await;
+    assert!(restored.body.contains("<html"), "full page");
+    assert_eq!(restored.header("vary"), Some("HX-Request"));
     assert!(list.body.contains("deployment.toml"), "TOML source");
     assert!(list.body.contains("edited here") || list.body.contains("แก้ในหลังบ้าน"));
     let found = htmx_get(&admin, "/admin/texts?q=Hi+there").await;
@@ -151,16 +184,16 @@ async fn bumping_the_consent_version_asks_a_linked_student_again() {
             .contains("<strong class=\"code\">1</strong>")
     );
     let same = admin
-        .post("/admin/texts/consent", "version=1&current=&had=0")
+        .post("/admin/texts/consent", "version=1&expected=-")
         .await;
     assert_eq!(same.status, 303);
     assert_eq!(flash(&admin), "err:kernel.admin.texts.consent_same");
     admin
-        .post("/admin/texts/consent", "version=2+0&current=&had=0")
+        .post("/admin/texts/consent", "version=2+0&expected=-")
         .await;
     assert_eq!(flash(&admin), "err:kernel.admin.texts.consent_invalid");
     admin
-        .post("/admin/texts/consent", "version=2&current=&had=0")
+        .post("/admin/texts/consent", "version=2&expected=-")
         .await;
     assert_eq!(flash(&admin), "ok:kernel.admin.texts.consent_saved");
     let stored = text(
@@ -190,7 +223,51 @@ async fn bumping_the_consent_version_asks_a_linked_student_again() {
     );
     // A stale form (it still thinks there is no row) is refused.
     admin
-        .post("/admin/texts/consent", "version=3&current=&had=0")
+        .post("/admin/texts/consent", "version=3&expected=-")
         .await;
     assert_eq!(flash(&admin), "err:kernel.admin.conflict");
+}
+
+#[tokio::test]
+async fn a_multi_line_text_is_saved_twice_and_reset_from_a_browser_and_notice_shows_it() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let path = "/admin/texts/kernel.notice.body";
+    // Browsers send CRLF in every field.
+    let first = "เราเก็บรหัสนักศึกษาเท่านั้น\r\n\r\nติดต่อเจ้าหน้าที่ได้ที่ห้อง 101";
+    let v = token(&admin, path, "th").await;
+    assert_eq!(v, "-");
+    admin.post(path, &save("th", first, &v)).await;
+    assert_eq!(flash(&admin), "ok:kernel.admin.saved");
+    let notice = app.get("/notice").await;
+    assert!(
+        notice.body.contains("<p>ติดต่อเจ้าหน้าที่ได้ที่ห้อง 101</p>"),
+        "{}",
+        notice.body
+    );
+
+    let second = "ฉบับแก้ไข\r\n\r\nติดต่อห้อง 202";
+    let v = token(&admin, path, "th").await;
+    admin.post(path, &save("th", second, &v)).await;
+    assert_eq!(
+        flash(&admin),
+        "ok:kernel.admin.saved",
+        "a second save is not a conflict"
+    );
+    let stored = text(
+        &h,
+        "SELECT value FROM setting WHERE key = ?",
+        "kernel.notice.body",
+        "value",
+    )
+    .await
+    .unwrap();
+    assert_eq!(stored, "ฉบับแก้ไข\n\nติดต่อห้อง 202");
+
+    let v = token(&admin, path, "th").await;
+    let reset = format!("locale=th&value={}&version={v}&op=reset", urlencode(second));
+    admin.post(path, &reset).await;
+    assert_eq!(flash(&admin), "ok:kernel.admin.texts.reset_done");
+    assert_eq!(app.count("SELECT count(*) FROM setting").await, 0);
+    assert!(!app.get("/notice").await.body.contains("ห้อง 202"));
 }

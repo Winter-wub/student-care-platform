@@ -154,26 +154,55 @@ async fn the_detail_diffs_before_and_after_and_never_shows_a_secret() {
 async fn a_viewer_is_refused_every_manage_and_edit_route() {
     let (h, app) = boot().await;
     let (b, id) = signed_in(&h, &app, "Viewer").await;
-    for path in [
-        "/admin/staff",
-        "/admin/staff/new",
-        &format!("/admin/staff/{id}"),
-        "/admin/roles",
-        "/admin/texts",
-        "/admin/texts/kernel.flow.welcome",
-    ] {
-        assert_eq!(b.get(path).await.status, 403, "GET {path}");
+    let roles = app.query("SELECT id FROM role WHERE name = 'Viewer'").await;
+    let role = roles.get(0, "id").unwrap().as_text().unwrap().to_string();
+    let forbidden = |body: &str, permission: &str| {
+        // The 403 page of the guard, not the CSRF refusal.
+        body.contains("ไม่มีสิทธิ์เข้าหน้านี้") && body.contains(&format!("<code>{permission}</code>"))
+    };
+    let (staff, setting) = ("kernel.staff.manage", "kernel.setting.edit");
+    let gets = [
+        ("/admin/staff".to_string(), staff),
+        ("/admin/staff/new".into(), staff),
+        (format!("/admin/staff/{id}"), staff),
+        ("/admin/roles".into(), staff),
+        (format!("/admin/roles/{role}"), staff),
+        ("/admin/texts".into(), setting),
+        ("/admin/texts/kernel.flow.welcome".into(), setting),
+    ];
+    for (path, p) in &gets {
+        let r = b.get(path).await;
+        assert_eq!(r.status, 403, "GET {path}");
+        assert!(forbidden(&r.body, p), "GET {path}: {}", r.body);
     }
-    for path in [
-        "/admin/staff/new",
-        &format!("/admin/staff/{id}/status"),
-        &format!("/admin/staff/{id}/roles"),
-        "/admin/roles",
-        "/admin/texts/consent",
-        "/admin/texts/kernel.flow.welcome",
-    ] {
-        assert_eq!(b.post(path, "").await.status, 403, "POST {path}");
+    let posts = [
+        ("/admin/staff/new".to_string(), staff),
+        (format!("/admin/staff/{id}/status"), staff),
+        (format!("/admin/staff/{id}/roles"), staff),
+        (format!("/admin/staff/{id}/password"), staff),
+        (format!("/admin/staff/{id}/unlock"), staff),
+        ("/admin/roles".into(), staff),
+        (format!("/admin/roles/{role}"), staff),
+        (format!("/admin/roles/{role}/delete"), staff),
+        ("/admin/texts/consent".into(), setting),
+        ("/admin/texts/kernel.flow.welcome".into(), setting),
+    ];
+    for (path, p) in &posts {
+        let r = b.post(path, "").await;
+        assert_eq!(r.status, 403, "POST {path}");
+        assert!(forbidden(&r.body, p), "POST {path}: {}", r.body);
     }
     assert_eq!(b.get("/admin/security").await.status, 200);
     assert_eq!(b.get("/admin/audit").await.status, 200);
+    assert_eq!(audits(&h, "staff.password_reset").await, 0);
+    assert_eq!(audits(&h, "role.delete").await, 0);
+
+    // Without kernel.audit.view, no audit row detail either.
+    let (reader, _) = signed_in(&h, &app, "Reader").await;
+    let any = app.query("SELECT id FROM audit_log").await;
+    let row = any.get(0, "id").unwrap().as_text().unwrap().to_string();
+    let r = reader.get(&format!("/admin/audit/{row}")).await;
+    assert_eq!(r.status, 403);
+    assert!(forbidden(&r.body, "kernel.audit.view"));
+    assert_eq!(audits(&h, "audit.detail").await, 0);
 }

@@ -68,7 +68,13 @@ fn rows_to_staff(rows: &Rows) -> Vec<StaffRow> {
             failed_logins: int(i, "failed_logins").unwrap_or(0),
             locked_until: int(i, "locked_until"),
             updated_at: int(i, "updated_at").unwrap_or(0),
-            roles: serde_json::from_str(&text(i, "roles")).unwrap_or_default(),
+            roles: {
+                // json_group_array keeps no guaranteed order.
+                let mut r: Vec<String> =
+                    serde_json::from_str(&text(i, "roles")).unwrap_or_default();
+                r.sort();
+                r
+            },
         })
         .collect()
 }
@@ -99,6 +105,26 @@ pub(crate) fn other_manager(staff_id: &str) -> Statement {
     )
     .bind(MANAGE)
     .bind(staff_id)
+}
+
+/// `(a Role among names grants kernel.staff.manage OR other_manager)`.
+fn keeps_manager(staff_id: &str, names: &[String]) -> Statement {
+    let marks = vec!["?"; names.len().max(1)].join(", ");
+    let other = other_manager(staff_id);
+    let mut st = Statement::new(format!(
+        "(EXISTS (SELECT 1 FROM role r JOIN role_permission rp ON rp.role_id = r.id \
+         WHERE rp.permission_id = ? AND r.name IN ({marks})) OR {})",
+        other.sql
+    ))
+    .bind(MANAGE);
+    if names.is_empty() {
+        st = st.bind(Value::Null);
+    }
+    for n in names {
+        st = st.bind(n.as_str());
+    }
+    st.params.extend(other.params);
+    st
 }
 
 /// `cond AND cond2`, params in order.
@@ -167,7 +193,12 @@ pub(crate) async fn set_active(
     } else {
         ("active", "disabled")
     };
-    let mut cond = unchanged(staff_id, version);
+    // The expected from-status is part of the compare-and-set, so the
+    // audit row never claims a change that did not happen.
+    let status = Statement::new("EXISTS (SELECT 1 FROM staff WHERE id = ? AND status = ?)")
+        .bind(staff_id)
+        .bind(from);
+    let mut cond = and(unchanged(staff_id, version), status);
     if !active {
         if !exists(s, other_manager(staff_id)).await? {
             return Ok(Outcome::LastManager);
@@ -233,13 +264,15 @@ pub(crate) async fn set_roles(
     let Some(cur) = get(s, staff_id).await? else {
         return Ok(Outcome::Stale);
     };
-    let mut cond = unchanged(staff_id, version);
-    if !roles::grant_any(s, &after, MANAGE).await? {
-        if !exists(s, other_manager(staff_id)).await? {
-            return Ok(Outcome::LastManager);
-        }
-        cond = and(cond, other_manager(staff_id));
+    if !roles::grant_any(s, &after, MANAGE).await? && !exists(s, other_manager(staff_id)).await? {
+        return Ok(Outcome::LastManager);
     }
+    // Always checked again inside the batch: a Role among `after` may
+    // lose the Permission between the read above and this write.
+    let cond = and(
+        unchanged(staff_id, version),
+        keeps_manager(staff_id, &after),
+    );
     let (row, gate) = audit::entry_if(
         s,
         actor,

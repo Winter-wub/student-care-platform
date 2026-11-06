@@ -39,6 +39,11 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "ข้อมูลถูกแก้ไขไปแล้วระหว่างนี้ กรุณาตรวจสอบแล้วลองอีกครั้ง",
         "Someone changed this in the meantime. Please check and try again."
     ),
+    (
+        "kernel.admin.bad_form",
+        "แบบฟอร์มไม่ครบ กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง",
+        "The form is incomplete. Please reload the page and try again."
+    ),
     // Security Events
     (
         "kernel.admin.security.title",
@@ -176,8 +181,8 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.admin.texts.consent_help",
-        "เมื่อเปลี่ยนฉบับ นักศึกษาที่เชื่อมบัญชีแล้วจะได้รับประกาศให้ยอมรับใหม่ในข้อความถัดไป",
-        "After a change, every linked Student is asked to accept the notice again with their next message."
+        "เมื่อเปลี่ยนฉบับ นักศึกษาที่เชื่อมบัญชีแล้วจะได้รับประกาศให้ยอมรับใหม่ในข้อความถัดไป ยกเว้นฉบับที่นักศึกษาเคยยอมรับแล้ว ระบบจะไม่ถามซ้ำ",
+        "After a change, every linked Student is asked to accept the notice again with their next message. A version a Student already accepted will not ask them again."
     ),
     ("kernel.admin.texts.consent_new", "ฉบับใหม่", "New version"),
     (

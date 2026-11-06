@@ -302,3 +302,48 @@ async fn posts_without_the_csrf_token_are_refused_and_write_nothing() {
     assert_eq!(app.count("SELECT count(*) FROM setting").await, 0);
     assert_eq!(audits(&h, "staff.create").await, 2);
 }
+
+#[tokio::test]
+async fn the_status_form_needs_its_field_and_a_matching_status_and_own_reset_is_refused() {
+    let (h, app) = boot().await;
+    let (admin, admin_id) = signed_in(&h, &app, "Administrator").await;
+    let (_, officer_id) = signed_in(&h, &app, "Officer").await;
+    let path = format!("/admin/staff/{officer_id}/status");
+    let v = staff_version(&admin, &officer_id).await;
+    // No `active` field: refused, never read as "disable".
+    let r = admin.post(&path, &format!("version={v}")).await;
+    assert_eq!(r.status, 422);
+    assert_eq!(
+        admin
+            .post(&path, &format!("active=yes&version={v}"))
+            .await
+            .status,
+        422
+    );
+    // Enabling an active account changes nothing and logs nothing.
+    admin.post(&path, &format!("active=1&version={v}")).await;
+    assert_eq!(flash(&admin), "err:kernel.admin.conflict");
+    assert_eq!(audits(&h, "staff.enable").await, 0);
+    assert_eq!(audits(&h, "staff.disable").await, 0);
+    assert_eq!(
+        app.count("SELECT count(*) FROM staff WHERE status = 'disabled'")
+            .await,
+        0
+    );
+
+    // One's own temporary password is refused (no form, and a forged POST).
+    let own = admin.get(&format!("/admin/staff/{admin_id}")).await.body;
+    assert!(
+        !own.contains("/password\""),
+        "no reset form on one's own page"
+    );
+    let v = staff_version(&admin, &admin_id).await;
+    admin
+        .post(
+            &format!("/admin/staff/{admin_id}/password"),
+            &format!("version={v}"),
+        )
+        .await;
+    assert_eq!(flash(&admin), "err:kernel.admin.staff.own_refused");
+    assert_eq!(audits(&h, "staff.password_reset").await, 0);
+}

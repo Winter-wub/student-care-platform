@@ -178,6 +178,11 @@ pub(crate) const STAFF: &[E] = th_en![
         "A Role with this name already exists"
     ),
     (
+        "kernel.admin.roles.undeclared",
+        "สิทธิ์ที่ไม่มีโมดูลใดประกาศแล้วจะไม่แสดงที่นี่ และจะถูกนำออกเมื่อกดบันทึก",
+        "Permissions no Module declares any more are not shown here and are removed when you save."
+    ),
+    (
         "kernel.admin.roles.err_permission",
         "มีสิทธิ์ที่ระบบไม่รู้จัก",
         "Unknown Permission"

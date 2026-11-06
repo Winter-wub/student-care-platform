@@ -139,8 +139,7 @@ fn consent_card(v: &View<'_>, stored: Option<&str>) -> Markup {
             p class="muted" { (v.t("kernel.admin.texts.consent_help")) }
             form method="post" action="/admin/texts/consent" {
                 (v.staff.csrf_field())
-                input type="hidden" name="current" value=(stored.unwrap_or_default());
-                input type="hidden" name="had" value=(if stored.is_some() { "1" } else { "0" });
+                input type="hidden" name="expected" value=(settings::version(stored));
                 div class="field" {
                     label for="consent-version" { (v.t("kernel.admin.texts.consent_new")) }
                     input id="consent-version" name="version" required maxlength="32"
@@ -158,9 +157,7 @@ pub(super) struct VersionForm {
     #[serde(default)]
     version: String,
     #[serde(default)]
-    current: String,
-    #[serde(default)]
-    had: String,
+    expected: String,
 }
 
 pub(super) async fn consent(
@@ -172,7 +169,14 @@ pub(super) async fn consent(
     let v = View::new(&s, &staff);
     let back = "/admin/texts#consent";
     let new = f.version.trim();
-    let expected = (f.had == "1").then_some(f.current.as_str());
+    let stored = match settings::stored_version(&s.services).await {
+        Ok(v) => v,
+        Err(e) => return v.error(&e),
+    };
+    if settings::version(stored.as_deref()) != f.expected {
+        return v.redirect(back, false, "kernel.admin.conflict");
+    }
+    let expected = stored.as_deref();
     let before = expected.unwrap_or(&s.config.consent.version);
     if !settings::valid_version(new) {
         return v.redirect(back, false, "kernel.admin.texts.consent_invalid");
@@ -206,7 +210,7 @@ async fn render(
     rejected: Option<Rejected<'_>>,
     status: StatusCode,
 ) -> Response {
-    if !v.s.catalog.knows(key) {
+    if !settings::editable(&v.s.catalog, key) {
         return v.not_found("/admin/texts");
     }
     let stored = match settings::settings(&v.s.services).await {
@@ -234,8 +238,7 @@ async fn render(
                 form method="post" action=(action) {
                     (v.staff.csrf_field())
                     input type="hidden" name="locale" value=(loc);
-                    input type="hidden" name="current" value=(r.setting.clone().unwrap_or_default());
-                    input type="hidden" name="had" value=(if r.setting.is_some() { "1" } else { "0" });
+                    input type="hidden" name="version" value=(settings::version(r.setting.as_deref()));
                     div class="field" {
                         label for=(format!("text-{loc}")) { (l("kernel.admin.texts.value")) }
                         textarea id=(format!("text-{loc}")) name="value"
@@ -270,9 +273,7 @@ pub(super) struct TextForm {
     #[serde(default)]
     value: String,
     #[serde(default)]
-    current: String,
-    #[serde(default)]
-    had: String,
+    version: String,
     #[serde(default)]
     op: String,
 }
@@ -286,11 +287,21 @@ pub(super) async fn submit(
 ) -> Response {
     let v = View::new(&s, &staff);
     let locales = settings::locales(&s.catalog, &s.config);
-    if !s.catalog.knows(&key) || !locales.contains(&f.locale) {
+    if !settings::editable(&s.catalog, &key) || !locales.contains(&f.locale) {
         return v.not_found("/admin/texts");
     }
     let back = format!("/admin/texts/{key}");
-    let expected = (f.had == "1").then_some(f.current.as_str());
+    let stored = match settings::settings(&s.services).await {
+        Ok(r) => r,
+        Err(e) => return v.error(&e),
+    };
+    let current = stored.get(&(key.clone(), f.locale.clone())).cloned();
+    // The form must have been rendered from what is stored now; the
+    // write itself is still a compare-and-set on that value.
+    if settings::version(current.as_deref()) != f.version {
+        return v.redirect(&back, false, "kernel.admin.conflict");
+    }
+    let expected = current.as_deref();
     // Browsers send textarea line breaks as CRLF.
     let value = f.value.replace("\r\n", "\n");
     let row = settings::row(&s.catalog, &s.config, &Default::default(), &key, &f.locale);

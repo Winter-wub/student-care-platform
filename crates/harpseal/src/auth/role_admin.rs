@@ -90,15 +90,27 @@ fn grant(role_id: &str, permission: &str, gate: &str) -> Statement {
     )
 }
 
-/// `EXISTS`: the Permissions of `role_id` are still `version` (sorted,
-/// comma-joined).
+/// The Permissions of `role_id` are still exactly `version` (the sorted,
+/// comma-joined list the form showed), compared as a set: no reliance on
+/// `group_concat` order.
 fn same_permissions(role_id: &str, version: &str) -> Statement {
-    Statement::new(
-        "(SELECT coalesce(group_concat(permission_id, ','), '') FROM (SELECT permission_id \
-         FROM role_permission WHERE role_id = ? ORDER BY permission_id)) = ?",
-    )
+    let expected: Vec<&str> = version.split(',').filter(|p| !p.is_empty()).collect();
+    let marks = vec!["?"; expected.len().max(1)].join(", ");
+    let mut st = Statement::new(format!(
+        "(SELECT count(*) FROM role_permission WHERE role_id = ?) = ? \
+         AND NOT EXISTS (SELECT 1 FROM role_permission WHERE role_id = ? \
+         AND permission_id NOT IN ({marks}))"
+    ))
     .bind(role_id)
-    .bind(version)
+    .bind(expected.len() as i64)
+    .bind(role_id);
+    if expected.is_empty() {
+        st = st.bind(crate::port_types::Value::Null);
+    }
+    for p in expected {
+        st = st.bind(p);
+    }
+    st
 }
 
 /// `EXISTS`: an active Staff member holds `kernel.staff.manage` through a
