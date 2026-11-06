@@ -8,11 +8,11 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
 
-use super::form::{FormErrors, FormMap, attr_input, parse_edit};
+use super::form::{FormErrors, FormMap, attr_input, parse_edit, rendered};
 use super::read::{self, StudentRow};
 use super::view::View;
-use super::{StudentFields, attribute_field, service};
-use crate::config::{AttributeSpec, AttributeType};
+use super::{attribute_field, service};
+use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 pub(super) async fn form(
@@ -23,7 +23,7 @@ pub(super) async fn form(
     let v = View::new(&s, &staff);
     match read::student(&s.services, &id).await {
         Ok(Some(row)) => {
-            let values = values_of(&v, &row.fields);
+            let values = rendered(&s.config.roster, &row.fields);
             render(&v, &row, &values, &FormErrors::new(), StatusCode::OK)
         }
         Ok(None) => v.not_found(),
@@ -45,20 +45,25 @@ pub(super) async fn submit(
         Err(e) => return v.error(&e),
     };
     let values: FormMap = pairs.into_iter().collect();
+    let detail = format!("/admin/students/{id}");
+    let edit = format!("{detail}/edit");
+    // The form must have been rendered from what is stored now; otherwise
+    // its untouched fields would write back stale values.
+    let version = values.get("version").cloned().unwrap_or_default();
+    if version != row.version() {
+        return v.redirect(&edit, false, "kernel.students.conflict");
+    }
     let fields = match parse_edit(&s.config.roster, &row.fields, &values) {
         Ok(f) => f,
         Err(errors) => {
             return render(&v, &row, &values, &errors, StatusCode::UNPROCESSABLE_ENTITY);
         }
     };
-    let detail = format!("/admin/students/{id}");
     let actor = Actor::staff(&staff);
-    match service::update(&s.deployment, &id, &fields, &actor, &ctx).await {
+    match service::update(&s.deployment, &id, &fields, Some(&version), &actor, &ctx).await {
         Ok(changed) if changed.is_empty() => v.redirect(&detail, true, "kernel.students.no_change"),
         Ok(_) => v.redirect(&detail, true, "kernel.students.saved"),
-        Err(Error::Conflict(_)) => {
-            v.redirect(&format!("{detail}/edit"), false, "kernel.students.conflict")
-        }
+        Err(Error::Conflict(_)) => v.redirect(&edit, false, "kernel.students.conflict"),
         Err(Error::Invalid(_)) => v.not_found(),
         Err(e) => v.error(&e),
     }
@@ -90,19 +95,6 @@ pub(super) async fn clear(
     }
 }
 
-/// The stored fields as form values.
-fn values_of(v: &View<'_>, f: &StudentFields) -> FormMap {
-    let mut m = FormMap::new();
-    m.insert("display_name".into(), f.display_name.clone());
-    m.insert("email".into(), f.email.clone().unwrap_or_default());
-    m.insert("locale".into(), f.locale.0.clone());
-    for key in v.s.config.roster.attributes.keys() {
-        let value = AttributeSpec::display(f.attributes.get(key));
-        m.insert(attr_input(key), value);
-    }
-    m
-}
-
 /// One labelled field: override badge, the input, its error and, when
 /// overridden, the "ใช้ค่าจากทะเบียน" button.
 struct Field<'a> {
@@ -127,10 +119,11 @@ fn render(
                 aria-invalid=[err.then_some("true")];
         }
     };
-    let (t_name, t_email, t_locale) = (
+    let (t_name, t_email, t_locale, t_status) = (
         v.t("kernel.students.name"),
         v.t("kernel.students.email"),
         v.t("kernel.students.locale"),
+        v.t("kernel.students.status"),
     );
     let mut locales: Vec<String> = vec!["th".into(), "en".into()];
     for l in [v.s.config.default_locale.0.clone(), value("locale")] {
@@ -153,6 +146,12 @@ fn render(
             control: text_input("email", "email"),
         },
         Field {
+            input: "status".into(),
+            override_key: "status".into(),
+            label: &t_status,
+            control: html! { p id="status" { (v.status_chip(&row.status)) } },
+        },
+        Field {
             input: "locale".into(),
             override_key: "locale".into(),
             label: &t_locale,
@@ -173,6 +172,10 @@ fn render(
                 html! {
                     select id=(name) name=(name) {
                         @if spec.optional || cur.is_empty() { option value="" { "-" } }
+                        // A stored value no longer listed stays as it is.
+                        @if !cur.is_empty() && !spec.values.contains(&cur) {
+                            option value=(cur) selected { (cur) }
+                        }
                         @for opt in &spec.values {
                             option value=(opt) selected[*opt == cur] { (opt) }
                         }
@@ -203,6 +206,7 @@ fn render(
         }
         form method="post" action=(format!("/admin/students/{}/edit", row.id)) class="card" {
             (v.staff.csrf_field())
+            input type="hidden" name="version" value=(row.version());
             // Enter in a field submits the first submit button: make it Save.
             button class="sr-default" type="submit" tabindex="-1" aria-hidden="true" { (v.t("kernel.students.save")) }
             p class="muted" { (v.t("kernel.students.override_help")) }

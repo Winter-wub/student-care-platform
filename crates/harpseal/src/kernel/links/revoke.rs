@@ -80,9 +80,11 @@ pub(crate) fn staff_revoke_statements(
     Ok(stmts)
 }
 
-/// After a committed revoke: locks the account's Menu and Pushes
-/// `kernel.link.revoked_by_staff` in the Student's Locale. `true` when the
-/// Student was told.
+/// After a committed revoke: Pushes `kernel.link.revoked_by_staff` in the
+/// Student's Locale through [`notify`], which is also what locks the
+/// account's Menu (it is called with no Menu). `true` when the Student was
+/// told; `Err` when the Link's Channel is not registered (any more) or the
+/// texts cannot be read.
 pub(crate) async fn notify_revoked(d: &Deployment, link: LinkInfo) -> R<bool> {
     let s = d.services();
     let to = ChannelAccountId::new(d.channel_or_err(&link.channel)?.kind(), link.external_id);

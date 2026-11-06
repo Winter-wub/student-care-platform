@@ -46,6 +46,25 @@ pub(crate) struct StudentRow {
     pub(crate) raw_overrides: String,
 }
 
+impl StudentRow {
+    /// A token of everything the edit form shows (core fields, status,
+    /// attributes and overrides as stored). The form carries it in the
+    /// hidden field `version`; a save whose token no longer matches is a
+    /// conflict, so a stale form never writes back values nobody edited.
+    pub(crate) fn version(&self) -> String {
+        let f = &self.fields;
+        let parts = [
+            f.display_name.as_str(),
+            f.email.as_deref().unwrap_or("\u{1}"),
+            f.locale.as_str(),
+            self.status.as_str(),
+            self.raw_attributes.as_str(),
+            self.raw_overrides.as_str(),
+        ];
+        crate::auth::sha256_hex(parts.join("\u{0}").as_bytes())
+    }
+}
+
 /// The Student `id`, if any.
 pub(crate) async fn student(s: &Services, id: &str) -> Result<Option<StudentRow>> {
     let stmt = Statement::new(
@@ -67,6 +86,7 @@ pub(crate) async fn student(s: &Services, id: &str) -> Result<Option<StudentRow>
             display_name: t("display_name"),
             email: text(&rows, 0, "email"),
             locale: Locale(t("locale")),
+            status: t("status"),
             attributes: object(&raw_attributes),
         },
         overrides: string_list(&raw_overrides),
@@ -99,15 +119,28 @@ fn like(q: &str) -> String {
     p
 }
 
+/// One page of [`search`].
+pub(crate) struct Found {
+    pub(crate) rows: Vec<ListRow>,
+    /// Students matching in all.
+    pub(crate) total: i64,
+    /// The page shown: the one asked for, clamped to `1..=pages`.
+    pub(crate) page: i64,
+    /// Pages in all (at least 1).
+    pub(crate) pages: i64,
+}
+
 /// Students whose name or code contains `q` (all when empty), page
-/// `page` (from 1) by student code, and how many match in all.
-pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<(Vec<ListRow>, i64)> {
+/// `page` (from 1, clamped to the pages there are) by student code.
+pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<Found> {
     let pattern = like(q.trim());
     let filter = "WHERE display_name LIKE ? ESCAPE '\\' OR student_code LIKE ? ESCAPE '\\'";
     let count = Statement::new(format!("SELECT count(*) AS n FROM student {filter}"))
         .bind(pattern.clone())
         .bind(pattern.clone());
-    let total = int(&s.db.query(count).await?, 0, "n").unwrap_or(0);
+    let total = int(&s.db.query(count).await?, 0, "n").unwrap_or(0).max(0);
+    let pages = ((total + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
+    let page = page.clamp(1, pages);
     let stmt = Statement::new(format!(
         "SELECT id, student_code, display_name, status, attributes FROM student {filter} \
          ORDER BY student_code, id LIMIT ? OFFSET ?"
@@ -115,7 +148,7 @@ pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<(Vec<List
     .bind(pattern.clone())
     .bind(pattern)
     .bind(PAGE_SIZE)
-    .bind((page.max(1) - 1) * PAGE_SIZE);
+    .bind((page - 1) * PAGE_SIZE);
     let rows = s.db.query(stmt).await?;
     let mut out: Vec<ListRow> = (0..rows.len())
         .map(|i| {
@@ -130,8 +163,14 @@ pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<(Vec<List
             }
         })
         .collect();
+    let found = |rows| Found {
+        rows,
+        total,
+        page,
+        pages,
+    };
     if out.is_empty() {
-        return Ok((out, total));
+        return Ok(found(out));
     }
     let marks = vec!["?"; out.len()].join(", ");
     let mut stmt = Statement::new(format!(
@@ -150,7 +189,7 @@ pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<(Vec<List
                 .push((ch, text(&links, i, "status").unwrap_or_default()));
         }
     }
-    Ok((out, total))
+    Ok(found(out))
 }
 
 /// One Link, live or past.

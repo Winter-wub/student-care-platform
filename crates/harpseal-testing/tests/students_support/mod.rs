@@ -131,3 +131,11 @@ pub async fn audit_json(h: &Harness, action: &str) -> (serde_json::Value, serde_
 pub fn flash(b: &Browser<'_>) -> String {
     b.cookie("hs_flash").unwrap_or_default()
 }
+
+/// The `version` token of the edit form of Student `id` (a fresh GET).
+pub async fn version(b: &Browser<'_>, id: &str) -> String {
+    let body = b.get(&format!("/admin/students/{id}/edit")).await.body;
+    let key = "name=\"version\" value=\"";
+    let at = body.find(key).expect("a version field") + key.len();
+    body[at..at + 64].to_string()
+}

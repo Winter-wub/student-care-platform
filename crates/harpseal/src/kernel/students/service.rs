@@ -45,19 +45,36 @@ fn changed_elsewhere() -> Error {
 /// values before and after (plus the override list). Returns the changed
 /// fields (`display_name`, `email`, `locale`, `attributes.<key>`); none
 /// means nothing was written. `fields` is not validated here: the edit
-/// form checks it against the `[roster.attributes]` schema.
+/// form checks it against the `[roster.attributes]` schema. The status is
+/// not changed here ([`set_status`] revokes Links).
 ///
-/// `Err(Error::Invalid)` for an unknown Student, `Err(Error::Conflict)`
-/// when the Student changed since it was read.
+/// `version` is the token of the Student the caller started from (the edit
+/// form's hidden `version` field): when given and the Student no longer
+/// matches it, nothing is written, so fields the caller did not touch are
+/// never written back stale. `None` skips that check (the write is still a
+/// compare-and-set against this function's own read).
+///
+/// `Err(Error::Invalid)` for an unknown Student or a status change,
+/// `Err(Error::Conflict)` when the Student changed since `version` or
+/// since it was read.
 pub async fn update(
     d: &Deployment,
     student_id: &str,
     fields: &StudentFields,
+    version: Option<&str>,
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<Vec<String>> {
     let s = d.services();
     let cur = load(s, student_id).await?;
+    if version.is_some_and(|v| v != cur.version()) {
+        return Err(changed_elsewhere());
+    }
+    if fields.status != cur.status {
+        return Err(Error::Invalid(
+            "the status changes through set_status".into(),
+        ));
+    }
     let mut keys: Vec<String> = CORE_OVERRIDES.iter().map(|f| f.to_string()).collect();
     let attr_keys = cur.fields.attributes.keys().chain(fields.attributes.keys());
     for k in attr_keys {
@@ -185,10 +202,15 @@ pub struct StatusChange {
     pub revoked: usize,
     /// Of those, how many accounts were told.
     pub notified: usize,
+    /// Notices (or revokes of a racing Manual Link) that failed after the
+    /// change was committed. The change stands; the Core has no logger, so
+    /// this count is how the failure is reported (the page shows it).
+    pub failures: usize,
 }
 
 /// Sets the Student's status by hand to `active` or `left` (audit
-/// `student.status`). Setting `left` revokes every live Link in the same
+/// `student.status`) and adds `status` to `manual_overrides`, so a roster
+/// import keeps it until "ใช้ค่าจากทะเบียน". Setting `left` revokes every live Link in the same
 /// batch (each with its own `link.revoke` audit row, as
 /// [`crate::links::revoke_by_staff`] does), then locks those accounts'
 /// Menus and Pushes the revoked notice. Setting `active` re-creates no
@@ -211,24 +233,32 @@ pub async fn set_status(
     if cur.status == status {
         return Ok(StatusChange::default());
     }
-    let same = Statement::new("EXISTS (SELECT 1 FROM student WHERE id = ? AND status = ?)")
-        .bind(student_id)
-        .bind(cur.status.clone());
+    let mut overrides = cur.overrides.clone();
+    if !overrides.iter().any(|o| o == "status") {
+        overrides.push("status".into());
+    }
+    let same = Statement::new(
+        "EXISTS (SELECT 1 FROM student WHERE id = ? AND status = ? AND manual_overrides = ?)",
+    )
+    .bind(student_id)
+    .bind(cur.status.clone())
+    .bind(cur.raw_overrides.clone());
     let (audit, gate) = audit::entry_if(
         s,
         actor,
         "student.status",
         Some(&target(student_id)),
-        Some(json!({ "status": cur.status })),
-        Some(json!({ "status": status })),
+        Some(json!({ "status": cur.status, "manual_overrides": cur.overrides })),
+        Some(json!({ "status": status, "manual_overrides": overrides })),
         ctx,
         same,
     )?;
     let update = gated_stmt(
-        "UPDATE student SET status = ?, updated_at = ? WHERE id = ?",
+        "UPDATE student SET status = ?, manual_overrides = ?, updated_at = ? WHERE id = ?",
         &gate,
         vec![
             crate::Value::from(status),
+            crate::Value::from(json!(overrides).to_string()),
             crate::Value::from(s.now_ms()),
             crate::Value::from(student_id),
         ],
@@ -257,23 +287,29 @@ pub async fn set_status(
         changed: true,
         ..StatusChange::default()
     };
+    // Committed: from here on a failure is counted, never returned.
     for (i, l) in live.into_iter().enumerate() {
         // Each Link adds three statements; its update is the second.
         if affected(&done, 2 + 3 * i + 1) == 1 {
             out.revoked += 1;
-            out.notified += usize::from(links::notify_revoked(d, l).await?);
+            match links::notify_revoked(d, l).await {
+                Ok(true) => out.notified += 1,
+                Ok(false) => {}
+                Err(_) => out.failures += 1,
+            }
         }
     }
     if status == "left" {
         // A Manual Link that raced the change: revoke it too.
-        for l in links::live_links_of(s, student_id, default).await? {
+        let raced = links::live_links_of(s, student_id, default).await;
+        for l in raced.unwrap_or_default() {
             match links::revoke_by_staff(d, &l.id, actor, ctx).await {
                 Ok(c) => {
                     out.revoked += 1;
                     out.notified += usize::from(c.notified);
                 }
                 Err(Error::Conflict(_)) => {}
-                Err(e) => return Err(e),
+                Err(_) => out.failures += 1,
             }
         }
     }

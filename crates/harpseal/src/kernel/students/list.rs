@@ -4,12 +4,12 @@
 //! (`table.rows`).
 
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 
-use super::read::{self, ListRow, PAGE_SIZE};
+use super::read::{self, Found};
 use super::view::{View, is_htmx};
 use crate::config::AttributeSpec;
 use crate::{AppState, CurrentStaff};
@@ -31,15 +31,26 @@ pub(super) async fn page(
 ) -> Response {
     let v = View::new(&s, &staff);
     let query = q.q.trim().chars().take(100).collect::<String>();
-    let page = q.page.parse::<i64>().unwrap_or(1).max(1);
-    let (rows, total) = match read::search(&s.services, &query, page).await {
+    let page = q.page.parse::<i64>().unwrap_or(1);
+    let found = match read::search(&s.services, &query, page).await {
         Ok(r) => r,
         Err(e) => return v.error(&e),
     };
-    let results = results(&v, &query, page, &rows, total);
-    if is_htmx(&headers) {
-        return (StatusCode::OK, Html(results.into_string())).into_response();
-    }
+    let results = results(&v, &query, &found);
+    // A history restore after a cache miss also carries HX-Request but
+    // swaps the whole body: it gets the full page.
+    let restore = headers.contains_key("hx-history-restore-request");
+    let mut resp = if is_htmx(&headers) && !restore {
+        (StatusCode::OK, Html(results.into_string())).into_response()
+    } else {
+        full(&v, &query, results)
+    };
+    resp.headers_mut()
+        .insert(header::VARY, HeaderValue::from_static("HX-Request"));
+    resp
+}
+
+fn full(v: &View<'_>, query: &str, results: Markup) -> Response {
     let title = v.t("kernel.students.title");
     let body = html! {
         h1 { (title) }
@@ -55,7 +66,8 @@ pub(super) async fn page(
 }
 
 /// The fragment HTMX swaps: count, rows, pager.
-fn results(v: &View<'_>, query: &str, page: i64, rows: &[ListRow], total: i64) -> Markup {
+fn results(v: &View<'_>, query: &str, found: &Found) -> Markup {
+    let (rows, total, page, pages) = (&found.rows, found.total, found.page, found.pages);
     let attrs: Vec<(&str, &AttributeSpec)> =
         v.s.config
             .roster
@@ -64,7 +76,6 @@ fn results(v: &View<'_>, query: &str, page: i64, rows: &[ListRow], total: i64) -
             .filter(|(_, a)| a.shown_in_list)
             .collect();
     let kinds = v.s.deployment.channel_kinds();
-    let pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
     let href = |p: i64| {
         let q = super::form::urlencode(query);
         format!("/admin/students?q={q}&page={p}")

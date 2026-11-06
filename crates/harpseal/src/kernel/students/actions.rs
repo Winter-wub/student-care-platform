@@ -119,6 +119,9 @@ pub(super) async fn status(
     }
     let actor = Actor::staff(&staff);
     match service::set_status(&s.deployment, &id, to, &actor, &ctx).await {
+        Ok(c) if c.changed && c.revoked > c.notified => {
+            v.redirect(&back(&id), true, "kernel.students.status_saved_unnotified")
+        }
         Ok(c) if c.changed => v.redirect(&back(&id), true, "kernel.students.status_saved"),
         Ok(_) => v.redirect(&back(&id), true, "kernel.students.no_change"),
         Err(Error::Conflict(_)) => v.redirect(&back(&id), false, "kernel.students.conflict"),

@@ -167,6 +167,8 @@ async fn a_viewer_gets_403_on_edit_and_manual_link() {
     let posts = [
         ("/admin/students/s1/edit", "display_name=X&email=&locale=th"),
         ("/admin/students/s1/tags", "name=X"),
+        ("/admin/students/s1/tags/remove", "tag_id=t1"),
+        ("/admin/students/s1/override", "field=email"),
         ("/admin/students/s1/status", "status=left&confirm=yes"),
         ("/admin/students/s1/links", "channel=fake&external_id=u1"),
         ("/admin/students/s1/links/l1/revoke", "confirm=yes"),
@@ -227,5 +229,72 @@ async fn a_post_without_the_csrf_token_is_refused_and_writes_nothing() {
         app.count("SELECT count(*) FROM student WHERE display_name = 'Hacked'")
             .await,
         0
+    );
+}
+
+#[tokio::test]
+async fn a_history_restore_gets_the_full_page_and_responses_vary_on_hx_request() {
+    let (h, app) = boot().await;
+    let (b, _) = signed_in(&h, &app, "Viewer").await;
+    let fragment = htmx_get(&b, "/admin/students?q=Nok").await;
+    assert!(fragment.body.starts_with("<div id=\"student-results\">"));
+    assert_eq!(fragment.header("vary"), Some("HX-Request"));
+    let req = http::Request::get("/admin/students?q=Nok")
+        .header("hx-request", "true")
+        .header("hx-history-restore-request", "true")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let restore = b.send(req).await;
+    assert_eq!(restore.status, 200);
+    assert!(restore.body.contains("<html"), "the whole page");
+    assert!(restore.body.contains("Nok Thale"));
+    assert_eq!(restore.header("vary"), Some("HX-Request"));
+    assert_eq!(
+        b.get("/admin/students").await.header("vary"),
+        Some("HX-Request")
+    );
+}
+
+#[tokio::test]
+async fn a_huge_page_number_shows_the_last_page() {
+    let (h, app) = boot().await;
+    seed_120(&h).await;
+    let (b, _) = signed_in(&h, &app, "Viewer").await;
+    for page in ["999999999999999999", "-999999999999999999", "0"] {
+        let r = b.get(&format!("/admin/students?page={page}")).await;
+        assert_eq!(r.status, 200, "{page}");
+        let shown = rows_shown(&r.body);
+        assert!(shown == 24 || shown == 50, "{page}: {shown}");
+    }
+    let last = b.get("/admin/students?page=999999999999999999").await;
+    assert_eq!(rows_shown(&last.body), 24);
+    assert!(last.body.contains("หน้า 3 / 3"));
+}
+
+#[tokio::test]
+async fn a_deployment_without_a_roster_section_serves_the_pages() {
+    let h = harpseal_testing::Harness::new();
+    let app = h.start().await;
+    for sql in support::ROSTER {
+        run(&h, sql).await;
+    }
+    let (b, _) = signed_in(&h, &app, "Viewer").await;
+    let list = b.get("/admin/students").await;
+    assert_eq!(list.status, 200);
+    assert_eq!(rows_shown(&list.body), 4);
+    let detail = b.get("/admin/students/s1").await;
+    assert_eq!(detail.status, 200);
+    assert!(detail.body.contains("Nok Thale"));
+}
+
+#[tokio::test]
+async fn build_refuses_a_roster_schema_set_in_code_that_from_toml_would_refuse() {
+    let h = harpseal_testing::Harness::new();
+    let mut config = harpseal::DeploymentConfig::from_toml(students_support::CONFIG).unwrap();
+    config.roster.email = config.roster.student_code.clone();
+    let err = h.builder().config(config).build().unwrap_err();
+    assert!(
+        matches!(err, harpseal::BuildError::InvalidConfig(ref m) if m.contains("[roster]")),
+        "{err:?}"
     );
 }

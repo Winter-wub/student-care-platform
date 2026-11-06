@@ -117,7 +117,10 @@ pub struct AttributeSpec {
     /// none fits.
     #[serde(default)]
     pub label: BTreeMap<String, String>,
-    /// May be empty. Default `false`: a required attribute.
+    /// May be empty. Default `false`: a required attribute. A required
+    /// attribute must have a value in every roster row and whenever Staff
+    /// edit that field; the edit form re-checks only the fields Staff
+    /// changed, so a Student stored without it can still be edited.
     #[serde(default)]
     pub optional: bool,
     /// Shown on the Students list (cards and table). Default `false`.

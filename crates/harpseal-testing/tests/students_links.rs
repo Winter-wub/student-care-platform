@@ -6,7 +6,7 @@ mod support;
 
 use harpseal::Message;
 use serde_json::json;
-use students_support::{audit_json, boot, flash, one, signed_in};
+use students_support::{audit_json, boot, flash, one, run, signed_in};
 use support::{Chat, REVOKED_NOTICE, live_link};
 
 #[tokio::test]
@@ -55,7 +55,11 @@ async fn setting_left_asks_first_then_revokes_every_link_and_keeps_history() {
     assert!(matches!(c.menu(), Some(None)), "Menu locked");
     assert_eq!(
         audit_json(&h, "student.status").await.0,
-        json!({ "status": "active" })
+        json!({ "status": "active", "manual_overrides": [] })
+    );
+    assert_eq!(
+        audit_json(&h, "student.status").await.1,
+        json!({ "status": "left", "manual_overrides": ["status"] })
     );
     assert_eq!(
         audit_json(&h, "link.revoke").await.1,
@@ -178,4 +182,49 @@ async fn revoke_asks_for_confirmation_then_notifies() {
         )
         .await;
     assert_eq!(other.status, 404);
+}
+
+#[tokio::test]
+async fn setting_left_revokes_two_links_and_survives_a_failed_notice() {
+    let (h, app) = boot().await;
+    let mut c = Chat::new(&h, &app, "u1");
+    c.link("68010001").await;
+    // A second live Link on a Channel this Deployment no longer has: its id
+    // sorts first, so the Fake Link is the second one in the batch.
+    run(
+        &h,
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+         VALUES ('00000000-ghost-account', 'ghost', 'g1', 1, 1)",
+    )
+    .await;
+    run(
+        &h,
+        "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+         linked_at, updated_at) VALUES ('00000000-ghost-link', 's1', '00000000-ghost-account', \
+         'ghost', 'active', 'manual', 1, 1)",
+    )
+    .await;
+    let (b, _) = signed_in(&h, &app, "Officer").await;
+    h.fake_channel().take_sent();
+
+    let r = b
+        .post("/admin/students/s1/status", "status=left&confirm=yes")
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(flash(&b), "ok:kernel.students.status_saved_unnotified");
+    assert_eq!(
+        app.count("SELECT count(*) FROM link WHERE status = 'revoked'")
+            .await,
+        2
+    );
+    assert_eq!(
+        app.count("SELECT count(*) FROM audit_log WHERE action = 'link.revoke'")
+            .await,
+        2
+    );
+    let seen = c.seen_since();
+    assert!(
+        matches!(&seen[..], [Message::Text(t)] if t == REVOKED_NOTICE),
+        "the Fake account is told although the first notice failed: {seen:?}"
+    );
 }

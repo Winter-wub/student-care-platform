@@ -228,6 +228,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Status changed"
     ),
     (
+        "kernel.students.status_saved_unnotified",
+        "เปลี่ยนสถานะแล้ว แต่แจ้งนักศึกษาได้ไม่ครบทุกบัญชี",
+        "Status changed, but not every chat account could be notified"
+    ),
+    (
         "kernel.students.linked",
         "ผูกบัญชีแล้ว และแจ้งนักศึกษาแล้ว",
         "Linked, and the Student was notified"

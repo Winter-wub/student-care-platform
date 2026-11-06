@@ -9,7 +9,7 @@
 //!
 //! **Manual edits win over the roster** (#8): a field Staff edit by hand is
 //! listed in `student.manual_overrides` (`display_name`, `email`,
-//! `locale`, `attributes.<key>`) and a roster import keeps its value: the
+//! `locale`, `status`, `attributes.<key>`) and a roster import keeps its value: the
 //! import calls [`merge_import`]. [`clear_override`] takes a field off the
 //! list, so the next import sets it again.
 //!
@@ -39,7 +39,7 @@ use crate::message::Locale;
 use crate::module::ModuleRegistrar;
 
 /// Core fields that can be overridden, besides `attributes.<key>`.
-pub const CORE_OVERRIDES: [&str; 3] = ["display_name", "email", "locale"];
+pub const CORE_OVERRIDES: [&str; 4] = ["display_name", "email", "locale", "status"];
 
 /// The `manual_overrides` entry of attribute `key`.
 pub fn attribute_field(key: &str) -> String {
@@ -47,8 +47,7 @@ pub fn attribute_field(key: &str) -> String {
 }
 
 /// The fields of a Student a roster row sets and Staff may edit.
-/// `student_code` is the identity and `status` follows the roster mode,
-/// so neither is here.
+/// `student_code` is the identity, so it is not here.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct StudentFields {
@@ -58,19 +57,30 @@ pub struct StudentFields {
     pub email: Option<String>,
     /// `student.locale`.
     pub locale: Locale,
+    /// `student.status`: `active` or `left`. An import sets `active` for a
+    /// listed Student and `left` (full mode) for a missing one; Staff
+    /// change it with [`set_status`], never with [`update`].
+    pub status: String,
     /// `student.attributes`, per the `[roster.attributes]` schema.
     pub attributes: Map<String, Json>,
 }
 
 impl StudentFields {
-    /// Fields with no attributes.
+    /// Fields of an `active` Student with no attributes.
     pub fn new(display_name: impl Into<String>, email: Option<String>, locale: Locale) -> Self {
         Self {
             display_name: display_name.into(),
             email,
             locale,
+            status: "active".into(),
             attributes: Map::new(),
         }
+    }
+
+    /// The same fields with `status` set (`active` / `left`).
+    pub fn with_status(mut self, status: &str) -> Self {
+        self.status = status.into();
+        self
     }
 
     /// The same fields with attribute `key` set to `value`.
@@ -86,6 +96,7 @@ impl StudentFields {
             "display_name" => Json::from(self.display_name.clone()),
             "email" => self.email.clone().map_or(Json::Null, Json::from),
             "locale" => Json::from(self.locale.0.clone()),
+            "status" => Json::from(self.status.clone()),
             other => other
                 .strip_prefix("attributes.")
                 .and_then(|k| self.attributes.get(k).cloned())
@@ -107,7 +118,8 @@ pub struct Merge {
 
 /// The rule "manual edits win" (#8), as a pure function: the `incoming`
 /// roster row replaces `existing`, except the fields listed in
-/// `overrides`, which keep their `existing` value. Attributes are merged
+/// `overrides`, which keep their `existing` value (a `status` set by hand
+/// included: a Student Staff marked `left` stays left while listed). Attributes are merged
 /// per key the same way (`attributes.<key>`): a non-overridden attribute
 /// missing from the row is dropped, an overridden one is kept even when the
 /// row lacks it. Entries of `overrides` that name no field are ignored.
@@ -135,6 +147,10 @@ pub fn merge_import(
     if held("locale") {
         fields.locale = existing.locale.clone();
         note("locale");
+    }
+    if held("status") {
+        fields.status = existing.status.clone();
+        note("status");
     }
     for o in overrides {
         let Some(key) = o.strip_prefix("attributes.") else {
@@ -220,6 +236,19 @@ mod tests {
         let m = merge_import(&existing, &incoming, &[]);
         assert_eq!(m.fields, incoming);
         assert!(m.skipped.is_empty());
+    }
+
+    #[test]
+    fn a_status_set_by_hand_survives_the_import() {
+        let existing = row("Nok", "nok@sealbay.example", 2).with_status("left");
+        let incoming = row("Nok", "nok@sealbay.example", 2);
+        let m = merge_import(&existing, &incoming, &["status".into()]);
+        assert_eq!(m.fields.status, "left");
+        assert_eq!(m.skipped, vec!["status".to_string()]);
+        assert_eq!(
+            merge_import(&existing, &incoming, &[]).fields.status,
+            "active"
+        );
     }
 
     #[test]
