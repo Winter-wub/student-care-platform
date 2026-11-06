@@ -1,0 +1,147 @@
+<!-- Tracker copy: https://github.com/Winter-wub/student-care-platform/issues/13 -->
+Spec for the first slice of the harpseal Core, synthesised from the wayfinder map [Map: spec of the first slice](https://github.com/Winter-wub/student-care-platform/issues/1) (11 resolved tickets, 3 prototype branches). Vocabulary is `GLOSSARY.md`; decisions in `docs/adr/0001`, `0003`, `0005`, `0006`, `0007` apply. Thai terms follow the English ones on first use.
+
+## Problem Statement
+
+A faculty office wants to reach its students over the chat apps the students already use (LINE and Telegram), know that each chat account really belongs to a given Student (นักศึกษา), send announcements to the right group and see who has read them, within the free/paid message limits of those platforms, under PDPA (consent, audit, data stays with the customer). Today this is done by hand in group chats: no identity, no targeting, no acknowledgement, no record.
+
+The team building it wants a **reusable Core** so that the next customer is a configuration and a few Modules, not a rewrite, and so that one codebase runs both on Cloudflare Workers (cheap, no servers) and self-hosted on a single binary.
+
+## Solution
+
+`harpseal`: an open-source Rust Core (Apache-2.0) that a Deployment (การติดตั้งของลูกค้า) assembles from Channels, Modules and a runtime. The first slice proves the channel layer end to end:
+
+roster import → Consent → email OTP Verification → Link → Menu → announcements to an Audience with acknowledgement → usage/quota page → one Mini App page → the minimum back office with Staff login and audit log → Job runner → `deployments/example` (a fictional university) → CI, on LINE, Telegram and a Fake Channel through one contract test suite.
+
+## User Stories
+
+Students (นักศึกษา)
+1. As a Student, I want to add the faculty's LINE account or open its Telegram bot and be greeted in Thai, so that I know I am in the right place.
+2. As a Student, I want to read a short privacy notice with a link to the full text before giving any data, so that I can decide whether to continue.
+3. As a Student, I want to type my student ID and receive a one-time code at my university email, so that nobody else can claim my identity.
+4. As a Student, I want clear messages when my ID is malformed, not on the roster, has no email on file, or is already linked elsewhere, so that I know what to do next.
+5. As a Student, I want to resend the code or cancel while waiting for it, so that a lost email does not block me.
+6. As a Student, I want to be told how many attempts remain and when a lockout ends, so that I am not confused by silence.
+7. As a Student, I want the chat Menu to unlock the moment Verification succeeds and to see the Menu entries once in the chat, so that I can start using it without searching.
+8. As a Student, I want to receive announcements for my programme/year/group in my own language (Thai by default), so that I only get what concerns me.
+9. As a Student, I want a "รับทราบ" button on announcements that require it, and a confirmation when I press it again, so that I can prove I read it.
+10. As a Student, I want a Menu entry showing my 5 latest announcements with unacknowledged ones first, and a way to see all of them, so that I can catch up.
+11. As a Student, I want a Mini App page (LIFF / Telegram Web App) showing my Link status and my announcements with acknowledge buttons, so that I can read long content comfortably.
+12. As a Student, I want to unlink my account from the chat Menu after a confirmation, so that I control my data.
+13. As a Student who blocked and later unblocked the bot, I want to be welcomed back without redoing Verification, so that I do not lose access.
+14. As a Student, I want to be shown a new privacy notice version before continuing when it changes, so that my consent is current.
+15. As a Student who types free text or sends a file, I want one polite reply pointing at the Menu (not one per message), so that I am not spammed.
+16. As a Student with a linked account on another channel, I want a warning when someone tries to link my ID from a new account, so that I can report misuse.
+
+Staff (เจ้าหน้าที่)
+17. As a Staff member, I want to log in with email and password and stay logged in for a work day, so that I can do my job without friction.
+18. As a Staff member, I want to upload the roster as CSV or XLSX, see a preview of what will change (new/updated/left/skipped) and the rows that are invalid, so that I never corrupt the roster.
+19. As a Staff member, I want to choose "whole roster" or "add/update only" at upload, so that a partial file does not mark everyone as left.
+20. As a Staff member, I want a progress page for a running import and to be prevented from starting a second one, so that large files are safe.
+21. As a Staff member, I want to see the roster, search by name or code, open a Student and see their Links per Channel, Tags, Consent and attributes, so that I can help students.
+22. As a Staff member, I want to edit a Student's fields by hand and have my edits survive the next import until I say otherwise, so that corrections stick.
+23. As a Staff member, I want to attach or remove Tags by hand and have roster Tags refreshed on import, so that groups stay correct.
+24. As a Staff member, I want to create a Manual Link or revoke a Link after checking identity myself, so that students without email are not stuck.
+25. As a Staff member, I want to write an announcement in Thai (and optionally English), pick an Audience by attributes, Tags and Link status, see the live recipient count and the number of metered pushes it will cost, and send now or at a scheduled time, so that I send the right message to the right people at a known cost.
+26. As a Staff member, I want to see per-announcement delivery and acknowledgement statistics (acknowledged / in Audience, sent / failed / skipped per Channel), so that I can follow up.
+27. As a Staff member, I want to edit an announcement (updating it on channels that allow edits), re-send it explicitly, or retract it, so that mistakes are fixable.
+28. As a Staff member, I want a usage page per Channel showing metered pushes this month against the cap, a 30-day chart and failures, and a banner when 80% or 100% is reached, so that I never hit the limit by surprise.
+29. As a Staff member, I want to see Security Events (lockouts, duplicate link attempts, Staff lockouts), so that I can spot abuse.
+30. As a Staff member, I want the back office to be usable on a phone, so that I can act from anywhere.
+
+Administrators (ผู้ดูแลระบบ)
+31. As an Administrator, I want to create Staff accounts, define Roles from the Permissions Modules declare, assign several Roles per Staff, and set temporary passwords, so that access matches duties.
+32. As an Administrator, I want every Staff write, export, login and sensitive read in an immutable audit log with before/after values, so that I can answer "who changed what".
+33. As an Administrator, I want to edit user-facing texts and bump the privacy notice version from the back office without a deploy, so that wording stays correct.
+34. As an Administrator, I want to create the first Administrator, run migrations and back up/restore from a CLI, so that I can bootstrap and recover.
+35. As an Administrator, I want an email when a Channel reaches 80% and 100% of its monthly quota, so that I can act before messages fail.
+
+Deployment author / Core maintainer
+36. As a Deployment author, I want to assemble a Deployment from a builder (config, runtime services, Channels, Verification Method, Modules) and get every misconfiguration at build time, so that bad setups never run.
+37. As a Deployment author, I want to declare roster columns, Student attributes, Roles, quotas, texts, branding and OTP parameters in one TOML file, so that customer specifics never touch the Core.
+38. As a Deployment author, I want to write a Module with Permissions, Menu entries, Actions, back-office pages, texts, Jobs and migrations through one registrar, so that customer features plug in cleanly.
+39. As a Deployment author, I want the same code to run on Cloudflare Workers and on a native binary, so that hosting is a customer choice.
+40. As a Core maintainer, I want one contract test suite that every Channel adapter must pass, so that a new Channel is proven the same way.
+41. As a Core maintainer, I want a Fake Channel that drives the whole flow in tests and e2e, so that no test needs LINE or Telegram credentials.
+42. As a Core maintainer, I want CI (fmt, clippy, tests, wasm32 check) and release-plz publishing to crates.io, so that releases are routine.
+43. As a Core maintainer, I want a fictional example Deployment with seeded data, so that the repo is demonstrable and the customer's repo stays private.
+
+## Implementation Decisions
+
+### Architecture (ADR-0001, 0005, 0006, 0007)
+- Core = platform-neutral Rust library `harpseal` plus crates `harpseal-channel-line`, `-channel-telegram`, `-channel-fake`, `-runtime-cloudflare` (workers-rs, wasm32, D1, R2, Cron), `-runtime-native` (tokio, rusqlite, S3-compatible storage, timer, SMTP), `-cli`. `deployments/example/{deployment,native,worker}` is a fictional university. Edition 2024, MSRV 1.91, no platform feature flags in Core or channel crates, every Core crate compiles to wasm32.
+- Web: axum everywhere (workers-rs `http` feature on Workers), maud + HTMX server-rendered pages, one shared layout and CSS for back office and Mini App, HTMX from a pinned CDN, system Thai font, `[branding] name, primary_color, logo` from the Deployment TOML (optional `font_url`).
+- Persistence: SQL written once in SQLite dialect behind a `Db { query, execute, batch }` port; `batch` is all-or-nothing and the only transaction primitive (D1 has none). `.sql` migrations per crate and per Module, tracked in a `migration` table.
+- Keys and time (ADR-0007): UUIDv7 as 36-char text primary keys generated from Clock + Random; natural keys are unique columns only; timestamps are integer milliseconds UTC; display converts to the Deployment time zone. Never measure durations with Clock on Workers (frozen within a request).
+- Public API surface (ticket "Cargo workspace"): re-exports from the crate root, `pub(crate)` or `#[doc(hidden)] __internal` elsewhere, `#![warn(missing_docs)]`, `#[non_exhaustive]` on public enums; Kernel schema is not public API; Modules may call each other directly.
+- Design A seam (prototype `prototype/core-traits`, chosen in ticket #4): trait objects plus a runtime registry. `Services` is a cloneable struct of six `Arc<dyn _>` ports: Db, FileStore, EmailSender, HttpClient, Clock, Random. The runtime crate returns a `Services`; the Core never names a runtime type.
+
+```rust
+// Channel: 5 required methods + Capability accessors (from the prototype; edit/delete/mini_app default to None)
+trait Channel: Send + Sync {
+    fn kind(&self) -> ChannelKind;
+    async fn parse_webhook(&self, req: WebhookRequest) -> Result<Vec<Inbound>>; // BadSignature before parsing
+    async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>>;
+    async fn send(&self, to: &ChannelAccountId, delivery: &Delivery, msg: &Message, locale: &Locale) -> Result<SendReceipt>;
+    async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()>; // None = locked Menu
+    fn editor(&self) -> Option<&dyn EditMessage>; fn deleter(&self) -> Option<&dyn DeleteMessage>;
+    fn mini_app(&self) -> Option<&dyn MiniApp>; fn attachments(&self) -> Option<&dyn SendAttachment>;
+    fn capabilities(&self) -> Capabilities; // derived from the accessors
+}
+enum Inbound { Follow, Text, File, Action, Blocked, Unblocked /* each with ChannelAccountId + Option<ReplyToken> */ }
+// Module: name() + register(&mut ModuleRegistrar) with permission, menu_entry, action, back_office(permission, Router), messages, job, migration, import_format, export_format
+// Deployment::builder().config(..).runtime(services).channel(..)*.verification(..).module(..)*.build() -> Result<Deployment, BuildError>
+```
+- `build()` validates: missing config/runtime/verification/channel, duplicate channel kinds, duplicate Action ids, Role naming an unknown Permission, back-office route with unknown Permission, `Button::MiniApp` used on a Channel without a Mini App URL (new), unknown catalog keys referenced by Menu entries.
+- Reply vs Push: `Delivery::select(reply_token, now)` is the only place the choice is made; the Kernel sends a handler's whole `Vec<Message>` as one batch per reply token (LINE tokens are single-use; > 5 objects → the rest go as Push and are metered). Adapters report `SendReceipt { message_id, metering: Metered | Free }`; the Kernel writes an Outbound Message row per send and upserts `usage_daily` in the same batch.
+- Message model (ADR-0003, confirmed by prototype `prototype/message-render`): `Message::{Text, Card, CardList, Choices, Attachment}`, `Button::{Action, MiniApp}`, `Menu`, `ActionId` ≤ 64 bytes enforced by its only constructor. No image, date, Markdown, silent flag, URL button or Menu icon in the first slice. Outbound `Attachment` (with `size_bytes`, `url`) is a Capability, not part of the Channel minimum (receive text/files, send Text/Card/CardList/Choices, set Menu, report metering).
+- Rendering and degrade rules are owned per adapter and documented with it (`docs/prototypes/message-render.md` tables are the spec): LINE = Flex bubble/carousel, quick reply, postback `data` = ActionId, rich menu per Menu with an image from the LINE channel config, > 12 Cards → several carousels, quick reply > 13 or label > 20 → one bubble with all buttons, text > 5000 split; Telegram = HTML text (escaped) + inline keyboard, one message per Card (no carousel), text > 4096 split with the keyboard on the last part, `setMyCommands` scope chat + `setChatMenuButton`, commands mapped back to Actions through the account's current Menu, inline keyboard capped at 100 buttons with follow-up messages. No Action button may ever be dropped silently.
+- Email: `EmailSender` first adapter = Resend HTTP API (both runtimes via `HttpClient`); runtime-native also offers SMTP.
+- Jobs: single `job` table; a per-minute ticker (Cron trigger on Workers, timer on native) claims with one UPDATE (`state='queued' AND run_at<=now`, limit n, lock token, `locked_until`), stale locks are re-claimed, retry 3 with backoff 1/5/30 min, handlers idempotent, done rows pruned after 30 days.
+
+### Kernel data model (ticket #7 plus deltas from #8, #9, #10)
+Kernel tables: `student` (student_code unique, display_name, email, locale, status active/left, attributes JSON per the TOML schema, manual_overrides JSON, verification_locked_until, roster_imported_at), `tag`, `student_tag` (source roster/manual), `channel_account` (channel + external_id unique, first_seen_at, platform_locale, blocked_at, flow_state, flow_data JSON, consent_pending_version), `link` (status active/unreachable/revoked, method email_otp/manual, verified_by_staff_id, linked_at, revoked_at, revoked_by; at most one active per (student, channel) and per channel_account; history kept), `verification_challenge`, `consent` (per Student per notice version, never deleted), `security_event`, `inbound_message`, `staff`, `role`, `role_permission` (permission ids are code-declared, no table), `staff_role`, `staff_session` (id = token hash), `app_session`, `outbound_message` (pruned after 90 days, configurable), `usage_daily` (forever), `job`, `audit_log` (append-only, actor/action/target/before/after/ip/user_agent/request_id, secrets redacted, forever), `setting` (catalog text overrides and the Consent notice version only), `roster_import`, `migration`.
+Module tables (announcements): `announcement`, `announcement_text` (per Locale), `announcement_delivery` (per Student per Link: pending/sent/failed/skipped, acked_at).
+Precedence for texts: Module default (Thai + English shipped in Core, keys `kernel.<area>.<name>`, `announcements.<name>`) < `[texts]` in TOML < `setting` row.
+
+### Chat flow (ticket #9), owned by the Kernel; Modules never see pre-Link Inbounds
+State on `channel_account.flow_state`: `new → awaiting_consent → awaiting_student_id → awaiting_otp → linked`, plus `awaiting_reconsent`. Steps: welcome Text + Consent Card (accept / read full in Mini App `/notice`, no decline button; any other input re-sends the Card) → ask student id (pattern from TOML; not found and `left` share one text; no email → contact Staff; id already linked on this Channel → refuse, Push a warning to the old account, Security Event; locked → minutes left) → Verification Method `start` → Choices with masked email and buttons resend / cancel → `check` (digits only after stripping spaces/dashes, wrong = attempts left, 3 wrong = 30-minute lock on the Student + Security Event + Push to the Student's other Links, expired = resend, resend > 3/hour = wait) → on success, in one batch: active `link`, `consent` row (version remembered from the Card), Menu unlocked, success Card + Choices listing the Menu once; audit `link.create`.
+Locked Menu: LINE rich menu with one "เริ่มใช้งาน" area; Telegram `/start` only. After Link, free text/file → one fallback Text + Menu Choices per hour, input stored as `inbound_message`, files downloaded at once (20 MB default). Unlink by Student (config default on): Menu entry → confirm Choices → revoke, locked Menu, goodbye Text, state back to `awaiting_student_id` (Consent kept). Unlink by Staff → Push notice + locked Menu. Manual Link → Push notice + Consent Card; Menu unlocks after accept. Blocked (LINE unfollow or a 403 on send) → `unreachable`, skipped by sends; any Inbound → `active`, welcome-back Text, Menu unlocked, no new OTP. Re-consent: next Inbound gets the new Consent Card, the Action is parked and replayed after accept; Pushes continue meanwhile.
+OTP defaults (TOML): 6 digits, 5 minutes, 3 wrong attempts, 3 resends per hour per student id, 30-minute lock.
+
+### Roster import (ticket #8)
+CSV (UTF-8, BOM tolerated, `,`/`;` auto-detected) or XLSX first sheet (calamine, accepted +460 KB wasm). Mapping declared once in `[roster]` of the TOML (headers must match exactly; template download). Modes `full` (missing Students become `left`: all Links revoked, rows kept) or `upsert`. Preview first with counts (new / updated / unchanged / will-become-left / returning / skipped-by-manual-override), names that will become left, red warning when left > 20% or the file is smaller than the roster. Whole file rejected on any row error with a downloadable report; empty email allowed with a warning. Import runs as a Job in chunks of 500 rows (one `batch` each, idempotent), last chunk applies `left`; only one import at a time; file kept in FileStore for one year. Manual edits win: each hand-edited field is listed in `student.manual_overrides` and skipped by imports until "ใช้ค่าจากทะเบียน" clears it. `roster` Tags are replaced per Student on import; `manual` Tags are kept. No promotion feature: the new term's file carries the new year.
+
+### Announcements Module, back office, Mini App (ticket #10, look & feel from ticket #5)
+Announcement fields: title + body per Locale (Thai required), Audience JSON (AND of attribute filters where multi-value = OR, Tags, Link status; live count; not saved separately), send now or scheduled, expires_at, require_ack. Sending: parent Job snapshots the Audience into delivery rows (one per active Link) and spawns child Jobs per Channel (LINE multicast 500 per call, Telegram chunks of 25 paced to the limits); `unreachable` → skipped, never re-sent; the send page shows the pushes it will cost. Acknowledge: Action `announcements.ack.<id>` or the Mini App button sets `acked_at` on all of that Student's delivery rows (idempotent, second tap answers "รับทราบแล้ว"); stats = Students acked / Students in Audience plus per-Channel counts. Edit updates text and calls EditMessage where available; "ส่งซ้ำ" is a separate counted send; retract hides from Mini App and Menu, deletes where DeleteMessage exists, no notice; a tap on a retracted Card answers "ข่าวนี้ถูกถอนแล้ว". Menu entry "ข่าวล่าสุด" = Card List of the 5 newest unexpired, unacknowledged first, plus "ดูทั้งหมด" (Mini App).
+Back office (9 pages): Login; Students (card list on phones with name, code, programme/year, Link icons per Channel; table at ≥ 900 px; detail with Links, Manual Link/revoke, edit, Tags); Roster import; Announcements (list, create, detail + stats, resend, retract); Usage; Security Events; Audit; Staff & Roles; Texts. Permissions: `kernel.student.view/edit`, `kernel.link.manage`, `kernel.roster.view/edit/import`, `announcements.view/send/retract`, `kernel.usage.view`, `kernel.security.view`, `kernel.audit.view`, `kernel.staff.manage`, `kernel.setting.edit`. Example Roles: Administrator (all), Officer, Viewer.
+Staff auth: email + password ≥ 12 chars, Argon2id m=19456 t=2 p=1 as a PHC string (measured ~55 ms CPU on Workers), cookie HttpOnly + Secure + SameSite=Lax, 12-hour sliding session, 7-day absolute, 5 failures → 15-minute lock + Security Event, first Administrator via `harpseal staff create --admin`, password reset = Administrator sets a temporary password that must be changed at next login.
+Usage: per Channel metered pushes this calendar month vs the TOML cap, 30-day chart, failures, all from `usage_daily`; 80% → banner on every page + one email to Administrators per month; 100% → red banner + second email; sending is never blocked automatically.
+Mini App: one page (Link status + my announcements with expandable bodies and one-way acknowledge, unacknowledged first) plus public `/notice`; not linked → page says to go back to chat; App Session = exchange LIFF id token / Telegram `initData` for a 1-hour cookie bound to the Channel Account.
+
+### Runtimes, example Deployment, delivery process (tickets #6, #5, #11)
+- Workers Paid is required (Free's 10 ms CPU fails logins and imports); release profile `opt-level="z"`, `lto`, `codegen-units=1`, `panic="abort"` + panic hook; worker-build with `wasm-opt -Oz`; measured 0.8 MB wasm, 4–7 ms startup.
+- `deployments/example`: fictional "Seal Bay University", Thai default Locale, 50 Students, 3 Roles, sample announcements, LINE + Telegram + Fake channels.
+- Implementation starts from branch `prototype/workers-pages` (phase 1 removes the bench/seed toys and applies the API rules), lands on main by PR. Nine phases, at most two workers in parallel on disjoint crates: 1 Kernel base → 2 Channels ∥ runtimes → 3 identity flow ∥ 4 Staff auth + shell → 5 roster import ∥ 6 Jobs + announcements → 7 usage/security/audit pages ∥ 8 Mini App → 9 example data + e2e + CI + release-plz + CLI.
+- Owner checklist (blocking phase): reserve `harpseal*` crate names [1]; `CARGO_REGISTRY_TOKEN` secret [9]; Workers Paid [2]; LINE OA + Messaging API + LIFF + rich menu images [3]; Telegram bot + Web App URL [3]; Resend account + domain [3]; delete `harpseal-proto-*` [now]; remove the customer name from CLAUDE.md and add LICENSE [before public]; install `just` [9].
+
+## Testing Decisions
+
+- A good test drives the system through the seam a caller uses and asserts on what a Student or Staff member would observe (messages sent, pages rendered, rows a later request reads back), never on internal structs or SQL.
+- **One seam:** a `Deployment` built with the Fake Channel and fake Services (in-memory SQLite `Db`, an `EmailSender` that captures the OTP, a controllable `Clock`, a recording `HttpClient`), exercised through its axum Router: Fake Channel webhook calls for the chat flow, HTTP requests for back-office and Mini App pages. Every flow in this spec has a test at this seam; the Fake Channel exposes what the Student saw (messages, Menu state, metering).
+- **Contract tests:** one suite generic over `dyn Channel`, run against the Fake Channel and against the LINE and Telegram adapters with the recording `HttpClient` (signatures, parse of recorded webhooks, send/menu payloads, metering, degrade rules, Capability accessors agreeing with `capabilities()`).
+- **Unit tests** only for pure functions: renderers (snapshot JSON as in `prototype/message-render`), roster validators and mapping, Audience filter resolution, degrade helpers, password hashing, Delivery selection.
+- Runtime crates: `cargo check --target wasm32-unknown-unknown` in CI; behaviour on Workers proven by the owner's manual check on a preview and the measurements already recorded.
+- `just e2e` (outside CI) boots `deployments/example/native` with the Fake Channel, imports the example roster (CSV and XLSX), walks Consent → OTP → Link → Menu → announcement → acknowledge → unlink and prints pass/fail; the coordinator runs it before merging flow/announcement/import tickets, the owner before every release. The Mini App ticket also requires a manual check inside real LIFF and Telegram webviews.
+- Prior art: the three prototype branches (`prototype/core-traits`, `prototype/message-render`, `prototype/workers-pages`) hold the snapshot-JSON tests and the Fake Channel shape to build from.
+- CI per PR: rustfmt, clippy `-D warnings`, `cargo test --workspace`, wasm32 check; definition of done adds new-behaviour tests, contract suite green, docs/GLOSSARY/ADR updated, no customer name, `missing_docs` clean.
+
+## Out of Scope
+
+Exam results / fees / request Modules, FAQ, Staff inbox / Handoff / Conversation / Queue / Office Hours (free text is stored only), backups to S3 and restore, Excel export, Staff SSO/TOTP, Cloudflare usage module, image/attachment/URL/category on announcements, `Button::Url`, saved Audiences, LINE quota lookup via API, PDPA erasure command, email-link password reset, the first customer's repository and its open questions, nextest/cargo-deny/semver-checks/e2e-in-CI/preview deploys.
+
+## Further Notes
+
+- Unconfirmed platform facts carried as risks: Telegram's inline-keyboard button ceiling (100 assumed), LINE's counting of Thai characters, workers-rs gaps (D1 column names via `Reflect`, `SendFuture` wrappers) that the runtime crate papers over.
+- The chat flow, the Announcement render and every degrade rule have concrete JSON payloads on `prototype/message-render` under `docs/prototypes/message-render/`; use them as fixtures.
+- Hard-to-reverse choices are ADRs 0001–0007; anything else here can change by editing the ticket that decided it (linked from the map's "Decisions so far").
