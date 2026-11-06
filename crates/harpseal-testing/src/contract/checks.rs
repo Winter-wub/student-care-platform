@@ -3,10 +3,12 @@
 
 use harpseal::{
     ActionId, Attachment, Button, Capability, Card, CardList, Choices, Delivery, Error, Inbound,
-    Locale, Menu, MenuEntry, Message, ReplyToken, SendReceipt, Timestamp,
+    Locale, Menu, MenuEntry, Message, Metering, ReplyToken, SendReceipt, Timestamp,
 };
 
-use super::Target;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use super::{Call, Target};
 
 fn id(s: &str) -> ActionId {
     ActionId::new(s).expect("contract Action ids are short")
@@ -29,35 +31,86 @@ fn choices(text: String, n: usize, prefix: &str) -> Message {
     })
 }
 
-/// A reply token that never expires during the suite.
+/// A fresh reply token (never expiring during the suite) for each Reply
+/// send: platforms such as LINE accept a token once.
 fn reply() -> Delivery {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
     Delivery::Reply(ReplyToken {
-        token: "contract-reply".into(),
+        token: format!("contract-reply-{n}"),
         expires_at: Timestamp(i64::MAX),
     })
 }
 
-/// The Delivery an object really went out with, from its receipt.
-fn effective(asked: &Delivery, r: &SendReceipt) -> Delivery {
-    if r.pushed {
-        Delivery::Push
-    } else {
-        asked.clone()
+/// The requests of one send are consistent with its receipts: at most
+/// one reply call, only with the given token and within the reply limit;
+/// exactly one metered receipt per metered Push request.
+fn check_calls(t: &Target, delivery: &Delivery, receipts: &[SendReceipt], what: &str) {
+    let kind = t.channel.kind();
+    let log = t.wire.take();
+    let replies: Vec<&Call> = log
+        .calls
+        .iter()
+        .filter(|c| c.reply_token.is_some())
+        .collect();
+    assert!(
+        replies.len() <= 1,
+        "{kind}: {what}: one reply call per token, got {replies:?}"
+    );
+    if let Some(c) = replies.first() {
+        let given = delivery.reply_token().map(|r| r.token.as_str());
+        assert_eq!(
+            c.reply_token.as_deref(),
+            given,
+            "{kind}: {what}: the given token"
+        );
+        let limit = t.wire.reply_limit().unwrap_or(usize::MAX);
+        assert!(
+            c.objects <= limit,
+            "{kind}: {what}: {} objects in one reply",
+            c.objects
+        );
     }
+    let pushes = log.calls.iter().filter(|c| c.reply_token.is_none()).count();
+    let per_push = usize::from(t.wire.metering(&Delivery::Push) == Metering::Metered);
+    let metered = receipts
+        .iter()
+        .filter(|r| r.metering == Metering::Metered)
+        .count();
+    assert_eq!(
+        metered,
+        pushes * per_push,
+        "{kind}: {what}: one metered unit per Push request"
+    );
+    let any_pushed = receipts.iter().any(|r| r.pushed);
+    assert_eq!(
+        any_pushed,
+        pushes > 0,
+        "{kind}: {what}: `pushed` matches the Push requests"
+    );
 }
 
-/// A bad signature is `BadSignature` even over an unparseable body; a good
-/// signature over the same kind of body is a parse error instead.
+/// A bad signature is `BadSignature` even over an unparseable body, and
+/// over a valid one; so is a missing signature. A good signature over an
+/// unparseable body is a parse error instead.
 pub async fn signature_is_checked_before_parsing(t: &Target) {
     let kind = t.channel.kind();
-    let bad = t
-        .channel
-        .parse_webhook(t.fixtures.bad_signature.clone())
-        .await;
-    assert!(
-        matches!(bad, Err(Error::BadSignature)),
-        "{kind}: a bad signature must be rejected before parsing, got {bad:?}"
-    );
+    let f = &t.fixtures;
+    let refused = [
+        ("a bad signature over an unparseable body", &f.bad_signature),
+        (
+            "a bad signature over a valid body",
+            &f.bad_signature_valid_body,
+        ),
+        ("a missing signature", &f.missing_signature),
+    ];
+    for (what, req) in refused {
+        let got = t.channel.parse_webhook(req.clone()).await;
+        assert!(
+            matches!(got, Err(Error::BadSignature)),
+            "{kind}: {what} must be BadSignature, got {got:?}"
+        );
+    }
     let garbage = t
         .channel
         .parse_webhook(t.fixtures.signed_garbage.clone())
@@ -127,39 +180,31 @@ pub async fn sends_the_minimum(t: &Target) {
         Message::CardList(CardList(vec![card(2), card(3)])),
         choices("เลือกหนึ่งข้อ".into(), 3, "contract.min"),
     ];
-    for delivery in [Delivery::Push, reply()] {
+    for push in [true, false] {
         for msg in &minimum {
+            let delivery = if push { Delivery::Push } else { reply() };
             let r = t
                 .channel
                 .send(to, &delivery, msg, &locale)
                 .await
                 .unwrap_or_else(|e| panic!("{kind}: sending a {} failed: {e}", msg.kind()));
-            assert_eq!(
-                r.metering,
-                t.wire.metering(&effective(&delivery, &r)),
-                "{kind}: metering of a {} sent as {delivery:?}",
-                msg.kind()
-            );
+            let what = format!("a {} sent as {delivery:?}", msg.kind());
+            check_calls(t, &delivery, std::slice::from_ref(&r), &what);
         }
     }
     let batch: Vec<Message> = (0..7)
         .map(|i| Message::text(format!("ข้อความ {i}")))
         .collect();
+    let delivery = reply();
     let receipts = t
         .channel
-        .send_batch(to, &reply(), &batch, &locale)
+        .send_batch(to, &delivery, &batch, &locale)
         .await
         .into_result()
         .unwrap_or_else(|e| panic!("{kind}: a batch of 7 failed: {e}"));
     assert_eq!(receipts.len(), 7, "{kind}: one receipt per Message");
-    for r in &receipts {
-        assert_eq!(
-            r.metering,
-            t.wire.metering(&effective(&reply(), r)),
-            "{kind}"
-        );
-    }
-    t.wire.take_action_payloads();
+    check_calls(t, &delivery, &receipts, "a batch of 7 sent as Reply");
+    t.wire.take();
 }
 
 /// The Menu can be set and reset to the locked Menu.
@@ -174,8 +219,10 @@ pub async fn menu_set_and_unset(t: &Target) {
     let to = &t.fixtures.to;
     let set = t.channel.set_menu(to, Some(&menu)).await;
     assert!(set.is_ok(), "{kind}: setting a Menu failed: {set:?}");
+    assert_eq!(t.wire.menu_entries(to), Some(1), "{kind}: the Menu is set");
     let unset = t.channel.set_menu(to, None).await;
     assert!(unset.is_ok(), "{kind}: locking the Menu failed: {unset:?}");
+    assert_eq!(t.wire.menu_entries(to), None, "{kind}: the Menu is locked");
 }
 
 /// `capabilities()` matches the accessors, and an attachment without the
@@ -238,7 +285,7 @@ pub async fn degrade_keeps_every_action(t: &Target) {
             .await
             .unwrap_or_else(|e| panic!("{kind}: sending a long {} failed: {e}", msg.kind()));
         let mut got = Vec::new();
-        for payload in t.wire.take_action_payloads() {
+        for payload in t.wire.take().action_payloads {
             got.push(press(t, &payload).await.as_str().to_string());
         }
         for a in &want {
@@ -264,7 +311,7 @@ pub async fn action_ids_round_trip(t: &Target) {
         .send(&t.fixtures.to, &Delivery::Push, &msg, &Locale::th())
         .await
         .unwrap_or_else(|e| panic!("{kind}: send failed: {e}"));
-    let payloads = t.wire.take_action_payloads();
+    let payloads = t.wire.take().action_payloads;
     assert_eq!(payloads.len(), 1, "{kind}: one button, one payload");
     assert_eq!(press(t, &payloads[0]).await, want, "{kind}: round trip");
 }

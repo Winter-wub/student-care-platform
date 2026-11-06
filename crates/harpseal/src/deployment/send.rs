@@ -76,18 +76,21 @@ impl Deployment {
         let delivery = Delivery::select(reply, self.services.clock.now());
         let batch = channel.send_batch(to, &delivery, msgs, locale).await;
         if !batch.receipts.is_empty() {
-            let stmts = self.outbound_rows(to, msgs, &batch.receipts, module)?;
+            let stmts = self.outbound_rows(to, &delivery, msgs, &batch.receipts, module)?;
+            // Follow-up: when the Channel stopped part-way and this write
+            // also fails, the Db error is returned and the Channel's error
+            // is lost.
             self.services.db.batch(stmts).await?;
         }
         batch.into_result()
     }
 
-    /// Ensures the `channel_account` row, then per Message the usage upsert
-    /// followed by its `outbound_message` row: if any insert fails, the
-    /// whole batch (usage included) rolls back.
+    /// Ensures the `channel_account` row, then per Message its usage upsert
+    /// and `outbound_message` row. One `Db::batch`: all commit or none do.
     fn outbound_rows(
         &self,
         to: &ChannelAccountId,
+        delivery: &Delivery,
         msgs: &[Message],
         receipts: &[SendReceipt],
         module: Option<&str>,
@@ -131,7 +134,7 @@ impl Deployment {
                 .bind(channel)
                 .bind(channel)
                 .bind(to.external_id.clone())
-                .bind(r.pushed)
+                .bind(r.pushed || matches!(delivery, Delivery::Push))
                 .bind(if metered { "metered" } else { "free" })
                 .bind(r.message_id.as_ref().map(|m| m.0.clone()))
                 .bind(module.map(str::to_string))

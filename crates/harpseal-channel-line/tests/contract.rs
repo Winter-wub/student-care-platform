@@ -11,7 +11,7 @@ use std::sync::Arc;
 use harpseal::{ActionId, ChannelAccountId, Delivery, Metering, WebhookRequest};
 use harpseal_channel_line::{KIND, LineChannel, LineConfig, metering};
 use harpseal_testing::RecordingHttp;
-use harpseal_testing::contract::{Fixtures, Target, Wire, run};
+use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -93,15 +93,28 @@ fn postbacks(v: &Value, out: &mut Vec<String>) {
     }
 }
 
+fn json(body: &[u8]) -> Value {
+    serde_json::from_slice(body).unwrap_or(Value::Null)
+}
+
 impl Wire for LineWire {
-    fn take_action_payloads(&self) -> Vec<String> {
-        let mut out = Vec::new();
+    fn take(&self) -> WireLog {
+        let mut payloads = Vec::new();
+        let mut calls = Vec::new();
         for r in self.0.take_requests() {
-            if let Ok(v) = serde_json::from_slice::<Value>(&r.body) {
-                postbacks(&v, &mut out);
+            let v = json(&r.body);
+            let objects = v["messages"].as_array().map_or(0, Vec::len);
+            if r.uri.ends_with("/v2/bot/message/reply") {
+                let token = v["replyToken"].as_str().unwrap_or_default();
+                calls.push(Call::reply(token, objects));
+            } else if r.uri.ends_with("/v2/bot/message/push") {
+                calls.push(Call::push(objects));
+            } else {
+                continue; // rich menu calls carry Menu postbacks, not messages
             }
+            postbacks(&v, &mut payloads);
         }
-        out
+        WireLog::new(payloads, calls)
     }
     fn press(&self, from: &ChannelAccountId, payload: &str) -> WebhookRequest {
         let body = json!({ "destination": "Useal0bay0bot", "events": [{
@@ -115,23 +128,46 @@ impl Wire for LineWire {
     fn metering(&self, d: &Delivery) -> Metering {
         metering(d)
     }
+    fn reply_limit(&self) -> Option<usize> {
+        Some(5)
+    }
+    /// The last per-user rich menu call decides: an unlink (DELETE) is the
+    /// locked Menu; a link shows the areas of the last rich menu created.
+    /// #16 may adjust this to the rich menu flow it implements.
+    fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
+        let reqs = self.0.requests();
+        let user = format!("/v2/bot/user/{}/richmenu", to.external_id);
+        let last = reqs.iter().rev().find(|r| r.uri.contains(&user))?;
+        if last.method == http::Method::DELETE {
+            return None;
+        }
+        let created = reqs
+            .iter()
+            .rev()
+            .find(|r| r.uri.ends_with("/v2/bot/richmenu"))?;
+        json(&created.body)["areas"].as_array().map(Vec::len)
+    }
 }
 
 fn target() -> Target {
     let http = RecordingHttp::default();
     let cfg = LineConfig::new(SECRET, "seal-bay-access-token", "");
     let channel = LineChannel::new(cfg, Arc::new(http.clone()));
-    let fixtures = Fixtures::new(
-        fixture("follow"),
-        fixture("text"),
-        fixture("file"),
-        (fixture("postback"), ActionId::new("news.ack.1042").unwrap()),
-        fixture("unfollow"),
-        fixture("refollow"),
-        signed(b"{not json", "wrong-secret"),
-        signed(b"{not json", SECRET),
-        ChannelAccountId::new(KIND, USER),
-    );
+    let follow = fixture("follow");
+    let mut missing = follow.clone();
+    missing.headers.remove("x-line-signature");
+    let fixtures = Fixtures::builder(ChannelAccountId::new(KIND, USER))
+        .follow(follow.clone())
+        .text(fixture("text"))
+        .file(fixture("file"))
+        .action(fixture("postback"), ActionId::new("news.ack.1042").unwrap())
+        .blocked(fixture("unfollow"))
+        .unblocked(fixture("refollow"))
+        .bad_signature(signed(b"{not json", "wrong-secret"))
+        .bad_signature_valid_body(signed(&follow.body, "wrong-secret"))
+        .missing_signature(missing)
+        .signed_garbage(signed(b"{not json", SECRET))
+        .build();
     Target::new(Arc::new(channel), fixtures, Arc::new(LineWire(http)))
 }
 

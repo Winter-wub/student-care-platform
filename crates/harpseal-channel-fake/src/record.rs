@@ -1,7 +1,7 @@
 //! What the Fake Channel remembers, how a batch is recorded, and the
 //! read-back API tests use.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use harpseal::{
@@ -20,22 +20,41 @@ pub struct Sent {
     /// Recipient.
     pub to: ChannelAccountId,
     /// How this object went out: the Core's Reply turns into Push past
-    /// the profile's reply limit, or on a profile without reply tokens.
+    /// the profile's reply limit, once the token is spent, or on a profile
+    /// without reply tokens.
     pub delivery: Delivery,
     /// The object as the Student saw it.
     pub message: Message,
     /// The id the Fake Channel gave it.
     pub id: PlatformMessageId,
-    /// Whether it counted against the Quota.
+    /// `Metered` only for the first object of a metered Push request: the
+    /// Quota counts one unit per Push request to one recipient.
     pub metering: Metering,
     /// Index of the Core Message it came from within its batch.
     pub source: usize,
+}
+
+/// One platform request the Fake Channel made (a reply call or a push
+/// call), as a real adapter would send it over HTTP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Call {
+    /// Recipient.
+    pub to: ChannelAccountId,
+    /// The reply token spent, `None` for a Push.
+    pub reply_token: Option<String>,
+    /// Objects in the request.
+    pub objects: usize,
+    /// Whether the request counted against the Quota.
+    pub metering: Metering,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct State {
     pub(crate) files: HashMap<String, Vec<u8>>,
     pub(crate) sent: Vec<Sent>,
+    pub(crate) calls: Vec<Call>,
+    pub(crate) used_tokens: HashSet<String>,
     pub(crate) menus: HashMap<ChannelAccountId, Option<Menu>>,
     pub(crate) edited: Vec<(PlatformMessageId, Message)>,
     pub(crate) deleted: Vec<PlatformMessageId>,
@@ -43,9 +62,12 @@ pub(crate) struct State {
 }
 
 impl FakeChannel {
-    /// Renders and records a batch: object `n` of the batch (counting
-    /// every rendered part) uses the reply token while `n` is below the
-    /// profile's reply limit; the rest are Pushes.
+    /// Renders and records a batch. Objects (every rendered part counts)
+    /// go into requests like a platform's: while the reply token is usable
+    /// and the profile's reply limit is not reached, into the one reply
+    /// request; the rest into Push requests of at most the profile's
+    /// request size. A LINE-like token works once: a later batch with the
+    /// same token is all Push.
     pub(crate) fn record_batch(
         &self,
         to: &ChannelAccountId,
@@ -54,11 +76,21 @@ impl FakeChannel {
         locale: &Locale,
     ) -> BatchReceipt {
         let profile = self.profile;
+        let attachments_off = self.attachments_off();
         let mut s = self.lock();
+        let token = match d {
+            Delivery::Reply(t) if profile.reply_tokens() && !s.used_tokens.contains(&t.token) => {
+                Some(t.token.clone())
+            }
+            _ => None,
+        };
+        let reply_limit = profile.reply_limit().unwrap_or(usize::MAX);
         let mut receipts = Vec::with_capacity(msgs.len());
-        let mut objects = 0usize;
+        let mut reply_objects = 0usize;
+        // Index into `s.calls` of the open Push request.
+        let mut open_push: Option<usize> = None;
         for (source, msg) in msgs.iter().enumerate() {
-            if matches!(msg, Message::Attachment(_)) && self.attachments_off() {
+            if matches!(msg, Message::Attachment(_)) && attachments_off {
                 return BatchReceipt::partial(
                     receipts,
                     Error::Unsupported(Capability::SendAttachment),
@@ -70,17 +102,48 @@ impl FakeChannel {
             }
             let mut receipt = SendReceipt::new(None, Metering::Free, false);
             for part in parts {
-                let reply_ok = profile.reply_tokens()
-                    && profile.reply_limit().is_none_or(|limit| objects < limit);
-                let delivery = match d {
-                    Delivery::Reply(_) if reply_ok => d.clone(),
-                    _ => Delivery::Push,
-                };
-                let push = delivery.reply_token().is_none();
-                let metering = if push && profile.push_metered() {
-                    Metering::Metered
-                } else {
-                    Metering::Free
+                let (delivery, metering) = match &token {
+                    Some(t) if reply_objects < reply_limit => {
+                        if reply_objects == 0 {
+                            s.used_tokens.insert(t.clone());
+                            s.calls.push(Call {
+                                to: to.clone(),
+                                reply_token: Some(t.clone()),
+                                objects: 0,
+                                metering: Metering::Free,
+                            });
+                        }
+                        let last = s.calls.len() - 1;
+                        s.calls[last].objects += 1;
+                        reply_objects += 1;
+                        (d.clone(), Metering::Free)
+                    }
+                    _ => {
+                        receipt.pushed = true;
+                        let fits =
+                            open_push.is_some_and(|i| s.calls[i].objects < profile.request_size());
+                        let metering = if fits {
+                            Metering::Free
+                        } else {
+                            let metering = if profile.push_metered() {
+                                Metering::Metered
+                            } else {
+                                Metering::Free
+                            };
+                            s.calls.push(Call {
+                                to: to.clone(),
+                                reply_token: None,
+                                objects: 0,
+                                metering,
+                            });
+                            open_push = Some(s.calls.len() - 1);
+                            metering
+                        };
+                        if let Some(i) = open_push {
+                            s.calls[i].objects += 1;
+                        }
+                        (Delivery::Push, metering)
+                    }
                 };
                 s.next_id += 1;
                 let id = PlatformMessageId(format!("fake-{}", s.next_id));
@@ -95,13 +158,20 @@ impl FakeChannel {
                 if metering == Metering::Metered {
                     receipt.metering = Metering::Metered;
                 }
-                receipt.pushed |= push;
                 receipt.message_id = Some(id);
-                objects += 1;
             }
             receipts.push(receipt);
         }
         BatchReceipt::complete(receipts)
+    }
+
+    /// Every platform request so far, in order.
+    pub fn calls(&self) -> Vec<Call> {
+        self.lock().calls.clone()
+    }
+    /// Every platform request so far, and forgets them.
+    pub fn take_calls(&self) -> Vec<Call> {
+        std::mem::take(&mut self.lock().calls)
     }
 
     fn attachments_off(&self) -> bool {

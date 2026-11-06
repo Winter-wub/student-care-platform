@@ -136,8 +136,9 @@ impl Deployment {
         };
         for ev in events {
             let ev_kind = ev.kind();
+            let from = ev.from().clone();
             if let Err(e) = self.handle_inbound(ev).await {
-                self.log_failed_event(kind, ev_kind, &e).await;
+                self.log_failed_event(&from, ev_kind, &e).await;
                 report.failed.push((ev_kind, e));
             }
         }
@@ -145,19 +146,26 @@ impl Deployment {
     }
 
     /// Best effort: if even this write fails there is nowhere left to log.
-    async fn log_failed_event(&self, channel: &str, event: &str, e: &Error) {
+    /// The account is linked when its `channel_account` row exists; the
+    /// error text is cut to 200 chars.
+    async fn log_failed_event(&self, from: &ChannelAccountId, event: &str, e: &Error) {
         let Ok(id) = self.services.new_id() else {
             return;
         };
+        let error: String = e.to_string().chars().take(200).collect();
         let stmt = Statement::new(
-            "INSERT INTO security_event (id, at, kind, details) VALUES (?, ?, 'inbound.failed', \
+            "INSERT INTO security_event (id, at, kind, channel_account_id, details) VALUES \
+             (?, ?, 'inbound.failed', \
+             (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
              json_object('channel', ?, 'event', ?, 'error', ?))",
         )
         .bind(id)
         .bind(self.services.now_ms())
-        .bind(channel.to_string())
+        .bind(from.channel.as_str())
+        .bind(from.external_id.clone())
+        .bind(from.channel.as_str())
         .bind(event)
-        .bind(e.to_string());
+        .bind(error);
         let _ = self.services.db.execute(stmt).await;
     }
 

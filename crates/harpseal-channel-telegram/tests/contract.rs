@@ -10,7 +10,7 @@ use std::sync::Arc;
 use harpseal::{ActionId, ChannelAccountId, Delivery, Metering, WebhookRequest};
 use harpseal_channel_telegram::{KIND, TelegramChannel, TelegramConfig, metering};
 use harpseal_testing::RecordingHttp;
-use harpseal_testing::contract::{Fixtures, Target, Wire, run};
+use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
 use serde_json::{Value, json};
 
 const SECRET: &str = "seal-bay-webhook-secret";
@@ -50,15 +50,24 @@ fn callbacks(v: &Value, out: &mut Vec<String>) {
     }
 }
 
+fn json(body: &[u8]) -> Value {
+    serde_json::from_slice(body).unwrap_or(Value::Null)
+}
+
+/// Bot API methods that send one message each.
+const SENDS: &[&str] = &["/sendMessage", "/sendDocument", "/sendPhoto"];
+
 impl Wire for TelegramWire {
-    fn take_action_payloads(&self) -> Vec<String> {
-        let mut out = Vec::new();
+    fn take(&self) -> WireLog {
+        let mut payloads = Vec::new();
+        let mut calls = Vec::new();
         for r in self.0.take_requests() {
-            if let Ok(v) = serde_json::from_slice::<Value>(&r.body) {
-                callbacks(&v, &mut out);
+            if SENDS.iter().any(|m| r.uri.ends_with(m)) {
+                calls.push(Call::push(1));
+                callbacks(&json(&r.body), &mut payloads);
             }
         }
-        out
+        WireLog::new(payloads, calls)
     }
     fn press(&self, from: &ChannelAccountId, payload: &str) -> WebhookRequest {
         let id: i64 = from.external_id.parse().unwrap_or(0);
@@ -73,26 +82,52 @@ impl Wire for TelegramWire {
     fn metering(&self, d: &Delivery) -> Metering {
         metering(d)
     }
+    fn reply_limit(&self) -> Option<usize> {
+        None
+    }
+    /// The last `setMyCommands` / `deleteMyCommands` scoped to this chat
+    /// decides. #17 may adjust this to the calls it implements.
+    fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
+        let reqs = self.0.requests();
+        let last = reqs.iter().rev().find(|r| {
+            (r.uri.ends_with("/setMyCommands") || r.uri.ends_with("/deleteMyCommands"))
+                && json(&r.body)["scope"]["chat_id"]
+                    .to_string()
+                    .trim_matches('"')
+                    == to.external_id
+        })?;
+        if last.uri.ends_with("/deleteMyCommands") {
+            return None;
+        }
+        json(&last.body)["commands"]
+            .as_array()
+            .map(Vec::len)
+            .filter(|n| *n > 0)
+    }
 }
 
 fn target() -> Target {
     let http = RecordingHttp::default();
     let cfg = TelegramConfig::new("8000000001:SEALBAY", SECRET, "");
     let channel = TelegramChannel::new(cfg, Arc::new(http.clone()));
-    let fixtures = Fixtures::new(
-        fixture("start"),
-        fixture("text"),
-        fixture("document"),
-        (
+    let start = fixture("start");
+    let mut missing = start.clone();
+    missing.headers.remove(HEADER);
+    let fixtures = Fixtures::builder(ChannelAccountId::new(KIND, CHAT))
+        .follow(start.clone())
+        .text(fixture("text"))
+        .file(fixture("document"))
+        .action(
             fixture("callback_query"),
             ActionId::new("news.ack.1042").unwrap(),
-        ),
-        fixture("kicked"),
-        fixture("member"),
-        signed(b"{not json", "wrong-secret"),
-        signed(b"{not json", SECRET),
-        ChannelAccountId::new(KIND, CHAT),
-    );
+        )
+        .blocked(fixture("kicked"))
+        .unblocked(fixture("member"))
+        .bad_signature(signed(b"{not json", "wrong-secret"))
+        .bad_signature_valid_body(signed(&start.body, "wrong-secret"))
+        .missing_signature(missing)
+        .signed_garbage(signed(b"{not json", SECRET))
+        .build();
     Target::new(Arc::new(channel), fixtures, Arc::new(TelegramWire(http)))
 }
 

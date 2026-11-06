@@ -44,12 +44,15 @@ pub trait Channel: Send + Sync {
     /// at most 5 objects) can spend the token on the first objects and send
     /// the rest as Pushes, reporting that in each [`SendReceipt`].
     ///
-    /// The default sends each Message in order with the same Delivery
-    /// (right for Channels whose tokens can be reused or that never issue
-    /// one) and routes [`Message::Attachment`] through
-    /// [`Channel::attachments`], or stops with
-    /// `Error::Unsupported(SendAttachment)` when that Capability is absent.
-    /// It stops at the first error.
+    /// The default treats a reply token as single-use: the first Message
+    /// goes with the given Delivery and every later one as
+    /// [`Delivery::Push`]. A Channel without reply tokens (Telegram) is
+    /// unaffected; an adapter that can put several objects in one reply
+    /// (LINE) must override this, or the rest of each batch costs metered
+    /// Pushes (never a lost message). It routes [`Message::Attachment`]
+    /// through [`Channel::attachments`], or stops with
+    /// `Error::Unsupported(SendAttachment)` when that Capability is absent,
+    /// and stops at the first error.
     async fn send_batch(
         &self,
         to: &ChannelAccountId,
@@ -58,13 +61,14 @@ pub trait Channel: Send + Sync {
         locale: &Locale,
     ) -> BatchReceipt {
         let mut receipts = Vec::with_capacity(msgs.len());
-        for msg in msgs {
+        for (i, msg) in msgs.iter().enumerate() {
+            let d = if i == 0 { delivery } else { &Delivery::Push };
             let sent = match msg {
                 Message::Attachment(file) => match self.attachments() {
-                    Some(a) => a.send_attachment(to, delivery, file, locale).await,
+                    Some(a) => a.send_attachment(to, d, file, locale).await,
                     None => Err(Error::Unsupported(Capability::SendAttachment)),
                 },
-                _ => self.send(to, delivery, msg, locale).await,
+                _ => self.send(to, d, msg, locale).await,
             };
             match sent {
                 Ok(r) => receipts.push(r),

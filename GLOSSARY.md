@@ -73,7 +73,7 @@ A swappable way of doing Verification, such as email OTP. Chosen per Deployment.
 The record that a Student accepted a given version of the Deployment's privacy notice, when, and through which Channel Account. The notice is shown before Verification; the acceptance is recorded once Verification identifies the Student, and counts for every Channel. Asked again when the notice version changes.
 
 **Security Event** (เหตุการณ์ความปลอดภัย):
-A record of a suspicious act around Verification or data access, such as an OTP lockout or a request to see another Student's data, shown to Staff.
+A record of a suspicious act around Verification or data access, such as an OTP lockout or a request to see another Student's data, shown to Staff. It also records an Inbound event the system failed to handle, so a lost message is never silent.
 
 **Manual Link** (ผูกบัญชีโดยเจ้าหน้าที่):
 A Link that Staff creates or removes directly, after checking the Student's identity themselves. Always available regardless of the Verification Method.
@@ -95,7 +95,7 @@ An outgoing message the system starts on its own, such as an announcement or a r
 _Avoid_: notification, broadcast, multicast
 
 **Outbound Message** (ข้อความขาออก):
-The record of any message sent to a Channel Account, with whether it was metered on that Channel. Usage figures come from these records.
+The record of any message sent to a Channel Account, with whether it was metered on that Channel. Usage figures come from these records. A metered unit is one Push request to one recipient, however many messages it carries (LINE puts up to 5 in one request), so usage counts Push requests, not messages.
 
 **Card** (การ์ด):
 A structured message with a title, body and optional buttons. A **Card List** (ชุดการ์ด) is several Cards shown together.

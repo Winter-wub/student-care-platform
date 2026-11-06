@@ -2,12 +2,14 @@
 //! records every object the Core sends (degraded the way the chosen
 //! [`FakeProfile`] would show it, with its Delivery and Metering), the
 //! Menu per account, edits and deletes, so a test can read back what the
-//! Student saw.
+//! Student saw. [`FakeChannel::calls`] lists the platform requests (reply
+//! or push, objects per request, metering) a real adapter would have made.
 //!
 //! Profiles: [`FakeProfile::Full`] (the default: every Capability, no
-//! limits, Reply free and Push metered), [`FakeProfile::LineLike`] (reply
-//! token covers 5 objects, Push metered, LINE's degrade limits, no
-//! attachments, no edit or delete) and [`FakeProfile::TelegramLike`] (no
+//! limits, Reply free and Push metered), [`FakeProfile::LineLike`] (a
+//! single-use reply token covers 5 objects, then Push requests of 5, each
+//! one metered unit; LINE's degrade limits, no attachments, no edit or
+//! delete) and [`FakeProfile::TelegramLike`] (no
 //! reply tokens, everything free, one message per Card, 100 buttons per
 //! message).
 //!
@@ -32,8 +34,8 @@ use harpseal::{
     SendReceipt, WebhookRequest,
 };
 
-pub use record::Sent;
 use record::State;
+pub use record::{Call, Sent};
 use render::Limits;
 
 /// The Fake Channel's kind.
@@ -48,11 +50,13 @@ pub const MINI_APP_BASE: &str = "https://fake.invalid/app";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum FakeProfile {
-    /// Every Capability, no limits; Reply free, Push metered.
+    /// Every Capability, no limits; a reply token works once and covers
+    /// its whole batch; one Push request per batch, metered.
     #[default]
     Full,
-    /// LINE: one reply token covers the first 5 objects, the rest are
-    /// metered Pushes; text over 5000 chars split, over 12 Cards several
+    /// LINE: a reply token works once and covers the first 5 objects of
+    /// its batch; the rest go in Push requests of 5, each request one
+    /// metered unit; text over 5000 chars split, over 12 Cards several
     /// carousels, over 13 quick replies (or a label over 20) one Card with
     /// every button; no attachments, edit or delete.
     LineLike,
@@ -76,11 +80,21 @@ impl FakeProfile {
             _ => None,
         }
     }
+    /// Most objects in one Push request: 5 on LINE, 1 on Telegram (one
+    /// call per message), unlimited for `Full`.
+    pub fn request_size(self) -> usize {
+        match self {
+            FakeProfile::Full => usize::MAX,
+            FakeProfile::LineLike => 5,
+            FakeProfile::TelegramLike => 1,
+        }
+    }
     /// Whether webhooks carry reply tokens.
     pub fn reply_tokens(self) -> bool {
         self != FakeProfile::TelegramLike
     }
-    /// Whether a Push counts against a Quota.
+    /// Whether a Push request counts against a Quota (one unit per request
+    /// to one recipient, whatever the number of objects in it).
     pub fn push_metered(self) -> bool {
         self != FakeProfile::TelegramLike
     }

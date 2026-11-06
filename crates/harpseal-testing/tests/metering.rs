@@ -136,7 +136,7 @@ async fn usage_rolls_back_when_the_outbound_insert_fails() {
     assert_eq!(
         (app.count(OUTBOUND).await, app.count(METERED).await),
         (1, 1),
-        "the usage upsert ran before the failing insert and was rolled back with it"
+        "the usage upsert in the same batch as the failing insert was rolled back"
     );
 
     db.execute(Statement::new("DROP TRIGGER fail_outbound"))
@@ -185,10 +185,19 @@ async fn seven_messages_go_as_five_replies_and_two_metered_pushes() {
         .iter()
         .filter(|s| matches!(s.delivery, Delivery::Reply(_)));
     assert_eq!(replies.count(), 5, "one reply token covers 5 objects");
-    assert!(seen[5..].iter().all(|s| s.metering == Metering::Metered));
-    assert!(seen[..5].iter().all(|s| s.metering == Metering::Free));
+    assert!(
+        seen[5..]
+            .iter()
+            .all(|s| matches!(s.delivery, Delivery::Push))
+    );
+    // The 2 spill-over objects go in one Push request: one metered unit.
+    let calls = h.fake_channel().calls();
+    assert_eq!(calls.len(), 2, "one reply call, one push call");
+    assert_eq!((calls[0].objects, calls[1].objects), (5, 2));
+    assert_eq!(seen[5].metering, Metering::Metered);
+    assert_eq!(seen[6].metering, Metering::Free);
     assert_eq!(app.count(OUTBOUND).await, 7);
-    assert_eq!((app.count(FREE).await, app.count(METERED).await), (5, 2));
+    assert_eq!((app.count(FREE).await, app.count(METERED).await), (6, 1));
     let module = app
         .count("SELECT count(*) FROM outbound_message WHERE module = 'bulk' AND push = 1")
         .await;
@@ -290,4 +299,48 @@ async fn every_inbound_kind_can_be_posted_through_the_fake_channel() {
         "the reply token survives the wire"
     );
     assert_eq!(app.fake_webhook(events).await.status, 200);
+}
+
+#[tokio::test]
+async fn a_reply_token_works_once_on_a_line_like_channel() {
+    let (_h, app) = linked(FakeProfile::LineLike).await;
+    let d = app.deployment();
+    let to = FakeChannel::account("u1");
+    let token = token(START_MS + 60_000);
+    let first = d
+        .send(&to, token.as_ref(), &Message::text("ครั้งแรก"), &Locale::th())
+        .await
+        .unwrap();
+    let second = d
+        .send(
+            &to,
+            token.as_ref(),
+            &Message::text("ครั้งที่สอง"),
+            &Locale::th(),
+        )
+        .await
+        .unwrap();
+    assert_eq!((first.metering, first.pushed), (Metering::Free, false));
+    assert_eq!(
+        (second.metering, second.pushed),
+        (Metering::Metered, true),
+        "a spent token turns the second send into a metered Push"
+    );
+    let rows = app
+        .count("SELECT count(*) FROM outbound_message WHERE push = 1 AND metering = 'metered'")
+        .await;
+    assert_eq!(rows, 1);
+}
+
+#[tokio::test]
+async fn a_failed_event_is_logged_against_its_account() {
+    let (_h, app) = linked(FakeProfile::LineLike).await;
+    app.fake_webhook([press("u1", "bulk.fail")]).await;
+    let account = app
+        .count(
+            "SELECT count(*) FROM security_event \
+             WHERE kind = 'inbound.failed' AND channel_account_id = 'a1'",
+        )
+        .await;
+    assert_eq!(account, 1);
 }

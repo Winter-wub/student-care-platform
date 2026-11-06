@@ -119,10 +119,14 @@ pub struct SendReceipt {
     /// The platform's id, when it gives one (the last part's id when the
     /// adapter split the Message into several platform messages).
     pub message_id: Option<PlatformMessageId>,
-    /// Whether the send was metered: `Metered` when any part was.
+    /// Whether this Message counted against the Quota. The metered unit is
+    /// one Push request to one recipient (LINE): only the receipt of the
+    /// Message that opens a Push request is `Metered`; the other Messages
+    /// in that request, and every Reply, are `Free`.
     pub metering: Metering,
-    /// Whether any part went out as a Push, even when the Core chose Reply
-    /// (a reply token covers only the first few objects on some Channels).
+    /// True when any part of this Message did not use the reply token: it
+    /// went out by Push, whether the Core chose Push or the token was spent
+    /// (used up by an earlier part, or past the Channel's reply limit).
     pub pushed: bool,
 }
 
