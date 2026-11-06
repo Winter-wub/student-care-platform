@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+mod roster;
+
+pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
+
 use crate::manifest::Catalog;
 use crate::message::Locale;
 
@@ -54,6 +58,10 @@ pub struct DeploymentConfig {
     /// Staff sign-in settings.
     #[serde(default)]
     pub staff: StaffConfig,
+    /// Roster columns and the `student.attributes` schema
+    /// ([`RosterConfig`]).
+    #[serde(default)]
+    pub roster: RosterConfig,
 }
 
 fn default_offset() -> String {
@@ -280,6 +288,7 @@ impl DeploymentConfig {
             return Err(crate::Error::Invalid("[consent] version is empty".into()));
         }
         c.branding.check()?;
+        c.roster.check()?;
         Ok(c)
     }
 
