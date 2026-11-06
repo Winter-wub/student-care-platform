@@ -102,7 +102,7 @@ impl<'a> View<'a> {
 }
 
 /// A Channel kind as shown to Staff (`line` → `LINE`).
-pub(super) fn channel_label(kind: &str) -> String {
+pub(crate) fn channel_label(kind: &str) -> String {
     match kind {
         "line" => "LINE".into(),
         "telegram" => "Telegram".into(),
@@ -111,12 +111,12 @@ pub(super) fn channel_label(kind: &str) -> String {
 }
 
 /// `true` for an HTMX request (`HX-Request` header).
-pub(super) fn is_htmx(headers: &axum::http::HeaderMap) -> bool {
+pub(crate) fn is_htmx(headers: &axum::http::HeaderMap) -> bool {
     headers.get("hx-request") == Some(&HeaderValue::from_static("true"))
 }
 
 /// `ms` (UTC) at `offset_minutes` east, as `YYYY-MM-DD HH:MM`.
-pub(super) fn format_ms(ms: i64, offset_minutes: i32) -> String {
+pub(crate) fn format_ms(ms: i64, offset_minutes: i32) -> String {
     let local = ms.div_euclid(1000) + i64::from(offset_minutes) * 60;
     let (days, secs) = (local.div_euclid(86_400), local.rem_euclid(86_400));
     // Howard Hinnant's civil-from-days.
