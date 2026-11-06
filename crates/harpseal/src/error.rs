@@ -32,6 +32,11 @@ pub enum Error {
     /// (`outbound_message` rows and `usage_daily`), as were the parts of
     /// Message `sent` that went out before the failure, if any. A retry
     /// resumes with Messages `sent..`; nothing before `sent` is sent again.
+    /// The parts of Message `sent` that were already delivered may be
+    /// delivered twice, on any Channel (Telegram cannot de-duplicate, and
+    /// a LINE resume packs its requests differently, so the retry keys
+    /// differ). That is the accepted trade-off: a repeated Card beats a
+    /// lost one.
     PartialSend {
         /// Messages wholly sent and recorded.
         sent: usize,

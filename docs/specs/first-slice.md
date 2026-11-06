@@ -88,7 +88,7 @@ trait Channel: Send + Sync {
     fn mini_app(&self) -> Option<&dyn MiniApp>; fn attachments(&self) -> Option<&dyn SendAttachment>;
     fn capabilities(&self) -> Capabilities; // derived from the accessors
 }
-enum Inbound { Follow, Text, File, Action, Blocked, Unblocked /* each with ChannelAccountId + Option<ReplyToken> */ }
+enum Inbound { Follow, Text, File, Action, Blocked, Unblocked /* each with ChannelAccountId, Option<ReplyToken> (none on Blocked), event_id: Option<String> (LINE webhookEventId, Telegram update_id; the Kernel handles each id once per Channel) and redelivery: bool (LINE isRedelivery, informational) — #35 */ }
 // Module: name() + register(&mut ModuleRegistrar) with permission, menu_entry, action, back_office(permission, path, MethodRouter), public(path, MethodRouter) (overlaps refused at build time), messages, job, migration, import_format, export_format
 // Deployment::builder().config(..).runtime(services).channel(..)*.verification(..).module(..)*.build() -> Result<Deployment, BuildError>
 ```

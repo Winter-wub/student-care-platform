@@ -179,3 +179,34 @@ async fn a_bad_signature_is_401_and_nothing_happens() {
     assert!(h.http_requests().is_empty());
     assert_eq!(app.count("SELECT count(*) FROM outbound_message").await, 0);
 }
+
+#[tokio::test]
+async fn ten_identical_texts_are_two_pushes_with_different_retry_keys() {
+    // Two identical 5-object Pushes in one batch: with one shared retry key
+    // LINE would answer 409 to the second and the Student would get 5.
+    let (h, app) = linked().await;
+    let to = harpseal::ChannelAccountId::new(harpseal_channel_line::KIND, USER);
+    let msgs = vec![
+        Message::text("ประกาศ: หยุดเรียนวันศุกร์");
+        10
+    ];
+    let run = || async {
+        app.deployment()
+            .send_batch_with_key(&to, None, &msgs, &harpseal::Locale::th(), "job-3/a1")
+            .await
+            .unwrap();
+        let reqs = h.http().take_requests();
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(json(&reqs[0].body), json(&reqs[1].body), "identical");
+        reqs.iter()
+            .map(|r| r.headers[harpseal_channel_line::RETRY_KEY_HEADER].clone())
+            .collect::<Vec<_>>()
+    };
+    let keys = run().await;
+    assert_ne!(keys[0], keys[1]);
+    assert_eq!(run().await, keys, "a retry of the whole batch reuses them");
+    let metered = app
+        .count("SELECT coalesce(sum(metered), 0) FROM usage_daily WHERE channel = 'line'")
+        .await;
+    assert_eq!(metered, 4, "two Push requests per send");
+}

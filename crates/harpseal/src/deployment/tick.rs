@@ -49,6 +49,9 @@ pub struct TickReport {
     pub scheduled: usize,
     /// Old `done` and `failed` Job rows deleted.
     pub jobs_pruned: u64,
+    /// Webhook event claims (`inbound_event`) older than 7 days deleted,
+    /// at most 500 per tick (#35).
+    pub events_pruned: u64,
 }
 
 impl core::fmt::Display for TickReport {
@@ -142,7 +145,8 @@ impl Deployment {
     /// `done`, `queued` again after 1, 5 or 30 minutes, or `failed` once
     /// `attempts > max_attempts`; a handler panic (native) is a failed run.
     /// Last, `done` rows older than `[retention] job_days` and `failed`
-    /// rows older than 90 days are deleted. Handlers must be idempotent: a
+    /// rows older than 90 days are deleted, then webhook event claims older
+    /// than 7 days (at most 500). Handlers must be idempotent: a
     /// Cron Trigger may fire twice, and an expired lock re-runs a Job.
     pub async fn tick(&self, now: Timestamp) -> Result<TickReport> {
         let db = self.services.db.as_ref();
@@ -234,6 +238,10 @@ impl Deployment {
         match crate::jobs::prune(&self.services, now, self.config.retention.job_days).await {
             Ok(n) => report.jobs_pruned = n,
             Err(e) => report.errors.push(format!("job prune: {e}")),
+        }
+        match self.prune_inbound_events(now.ms()).await {
+            Ok(n) => report.events_pruned = n,
+            Err(e) => report.errors.push(format!("webhook event prune: {e}")),
         }
         Ok(report)
     }

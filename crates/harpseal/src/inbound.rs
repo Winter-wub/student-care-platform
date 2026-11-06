@@ -34,7 +34,8 @@ pub struct IncomingFile {
 /// none) and whether the platform says this is a redelivery (`redelivery`:
 /// LINE `deliveryContext.isRedelivery`; `false` elsewhere). The Kernel
 /// handles each event id at most once per Channel, so a platform retry
-/// never answers twice.
+/// never answers twice. `redelivery` is informational: the Kernel does not
+/// use it (the event id alone decides), it is there for logs and Modules.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Inbound {
@@ -148,7 +149,8 @@ impl Inbound {
         }
     }
 
-    /// Whether the platform marked the event as a redelivery.
+    /// Whether the platform marked the event as a redelivery. Informational
+    /// only: de-duplication uses [`Inbound::event_id`].
     pub fn redelivery(&self) -> bool {
         match self {
             Inbound::Follow { redelivery, .. }

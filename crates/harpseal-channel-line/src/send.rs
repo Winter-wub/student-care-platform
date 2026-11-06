@@ -20,7 +20,7 @@ use harpseal::{
 use serde_json::{Value, json};
 
 use crate::api::{API, Failure};
-use crate::retry_key::retry_key;
+use crate::retry_key::RetryKeys;
 use crate::{LineChannel, render};
 
 /// Most objects in one reply, push or multicast request.
@@ -141,16 +141,19 @@ impl LineChannel {
         } = render_batch(self, msgs, locale);
         let mut receipts = vec![SendReceipt::new(None, Metering::Free, false); messages];
         let token = d.reply_token().map(|t| t.token.as_str());
+        let mut keys = key.map(RetryKeys::new);
         for req in plan(parts.len(), token) {
             let chunk = &parts[req.parts.clone()];
             let objects: Vec<&Value> = chunk.iter().map(|p| &p.object).collect();
             let sent = match &req.reply {
                 Some(t) => match self.reply_call(t, &objects).await {
                     // Expired or spent token: the same objects go by Push.
-                    Ok(Err(f)) if f.bad_reply_token() => self.push_call(to, &objects, key).await,
+                    Ok(Err(f)) if f.bad_reply_token() => {
+                        self.push_call(to, &objects, keys.as_mut()).await
+                    }
                     other => other.map(|r| r.map(|ids| (ids, false))),
                 },
-                None => self.push_call(to, &objects, key).await,
+                None => self.push_call(to, &objects, keys.as_mut()).await,
             };
             let sent = match sent {
                 Ok(Ok(v)) => Ok(v),
@@ -210,10 +213,10 @@ impl LineChannel {
         &self,
         to: &ChannelAccountId,
         objects: &[&Value],
-        key: Option<&str>,
+        keys: Option<&mut RetryKeys>,
     ) -> Result<std::result::Result<(Vec<Option<String>>, bool), Failure>> {
         let body = json!({ "to": to.external_id, "messages": objects });
-        let retry = key.map(|k| retry_key(k, &[to.external_id.as_str()], objects));
+        let retry = keys.map(|k| k.next(&[to.external_id.as_str()], objects));
         let got = self
             .post_json_keyed(
                 &format!("{API}/v2/bot/message/push"),

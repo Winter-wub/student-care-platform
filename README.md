@@ -116,12 +116,18 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   of its parts gets a row with `error = 'partly sent: …'`) and
   `Deployment::send_batch` returns `Error::PartialSend { sent, total, source
   }`. A Job resumes with `msgs[sent..]`; `Error::root()` gives the cause
-  (`RateLimited`, `Unreachable`). Only the Message it stopped in may repeat
-  its delivered parts on Telegram.
+  (`RateLimited`, `Unreachable`). Nothing before Message `sent` goes out
+  again, but the parts of Message `sent` that were already delivered may
+  be delivered twice, on any Channel: Telegram has no request
+  de-duplication, and on LINE the resumed batch packs its requests
+  differently, so their retry keys differ. That is the accepted trade-off:
+  a repeated Card beats a lost one.
 - **Idempotency keys.** `Deployment::send_batch_with_key(to, reply, msgs,
   locale, key)` passes a stable key (e.g. `<job id>/<account>`); LINE turns it
   into one `X-Line-Retry-Key` per Push or multicast request (a UUID derived
-  from the key, the recipients and the objects), so a retry of a request
+  from the key, the recipients, the objects and how often that same request
+  already occurred in the batch, so identical requests in one batch never
+  share a key), so a retry of a request
   that already went out is answered 409 by LINE and counted as sent. Without
   a key every batch gets a fresh one. `Multicast::send_many` takes the key
   too and reports whole groups of 500 on failure.
@@ -131,7 +137,8 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   `inbound_event` with one conditional insert before handling an event and
   skips an id it has seen (still 200; counted in `WebhookReport::duplicates`),
   so a redelivered LINE event can no longer fall back to a second, metered
-  Push. Claims are kept 7 days.
+  Push. `redelivery` is informational. `Deployment::tick` deletes claims
+  older than 7 days, at most 500 per tick.
 - **Transport errors.** `ReqwestHttp` strips the request URL from every
   reqwest error (`without_url`), so bot tokens in URLs never reach logs or
   `security_event`; the Telegram adapter still redacts its token too.

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use crate::LineChannel;
 use crate::api::API;
-use crate::retry_key::retry_key;
+use crate::retry_key::RetryKeys;
 use crate::send::{Rendered, plan, render_batch};
 
 /// Most recipients in one multicast request.
@@ -31,6 +31,14 @@ impl Multicast for LineChannel {
     /// opening a request gets one unit per request it opens (N recipients
     /// in one request are N units). A failed request ends the send with
     /// the receipts of every recipient in the groups before it.
+    ///
+    /// A group whose first requests went out before a later one failed is
+    /// not reported (no receipts, no `unfinished`): those Messages did
+    /// reach its recipients, but nothing records them yet. A retry with the
+    /// same key and Messages rebuilds those requests with the same retry
+    /// keys; LINE answers 409, they count as sent, and their receipts and
+    /// units are recorded then. Retry with a different key and they are
+    /// delivered again.
     async fn send_many(
         &self,
         to: &[ChannelAccountId],
@@ -60,13 +68,14 @@ impl Multicast for LineChannel {
         }
         let url = format!("{API}/v2/bot/message/multicast");
         let mut receipts = Vec::with_capacity(to.len() * msgs.len());
+        let mut keys = RetryKeys::new(key);
         for group in to.chunks(MULTICAST_MAX) {
             let ids: Vec<&str> = group.iter().map(|a| a.external_id.as_str()).collect();
             for req in &requests {
                 let objects: Vec<&Value> =
                     parts[req.parts.clone()].iter().map(|p| &p.object).collect();
                 let body = json!({ "to": ids, "messages": objects });
-                let retry = retry_key(key, &ids, &objects);
+                let retry = keys.next(&ids, &objects);
                 let sent = match self.post_json_keyed(&url, &body, Some(&retry)).await {
                     Ok(Ok(_)) => Ok(()),
                     Ok(Err(f)) => Err(f.into_error(false)),

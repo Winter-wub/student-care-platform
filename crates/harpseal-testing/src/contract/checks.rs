@@ -236,7 +236,16 @@ pub async fn metering_counts_push_requests(t: &Target) {
             .iter()
             .filter(|c| c.reply_token.is_none())
             .count();
-        assert!(pushes >= 1, "{kind}: a long {} went out", msg.kind());
+        // A Channel with a reply limit packs a few objects per request
+        // (LINE: 5), and both cases render to more than that (7 text
+        // objects, 6 carousels), so they need at least 2 Push requests;
+        // otherwise a rendering change could make this check trivial.
+        let least = if t.wire.reply_limit().is_some() { 2 } else { 1 };
+        assert!(
+            pushes >= least,
+            "{kind}: a long {} went out in {pushes} Push requests",
+            msg.kind()
+        );
         assert_eq!(
             r.metered_units as usize,
             pushes * per_push,

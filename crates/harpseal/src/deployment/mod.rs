@@ -72,6 +72,8 @@ pub struct WebhookReport {
 
 /// Days a handled webhook event id is remembered (`inbound_event`).
 pub(crate) const INBOUND_EVENT_DAYS: i64 = 7;
+/// Most `inbound_event` rows one tick deletes.
+pub(crate) const INBOUND_EVENT_PRUNE_LIMIT: i64 = 500;
 
 impl Deployment {
     /// Starts assembling a Deployment.
@@ -170,7 +172,8 @@ impl Deployment {
     /// sent (counted in [`WebhookReport::duplicates`]), so a retried or
     /// redelivered event is answered once. The claim stays even when
     /// handling fails: the event was logged, and answering it twice is
-    /// worse than once.
+    /// worse than once. Claims older than 7 days are deleted by
+    /// [`Deployment::tick`], never on the webhook path.
     pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
         let channel = self.channel_or_err(kind)?;
         let channel_kind = channel.kind().as_str();
@@ -180,13 +183,12 @@ impl Deployment {
             failed: Vec::new(),
             duplicates: 0,
         };
-        let mut claimed = false;
         for ev in events {
             let ev_kind = ev.kind();
             let from = ev.from().clone();
             if let Some(id) = ev.event_id() {
                 match self.claim_event(channel_kind, id).await {
-                    Ok(true) => claimed = true,
+                    Ok(true) => {}
                     Ok(false) => {
                         report.duplicates += 1;
                         continue;
@@ -202,9 +204,6 @@ impl Deployment {
                 self.log_failed_event(&from, ev_kind, &e).await;
                 report.failed.push((ev_kind, e));
             }
-        }
-        if claimed {
-            self.forget_old_events().await;
         }
         Ok(report)
     }
@@ -229,11 +228,18 @@ impl Deployment {
         Ok(done.rows_affected == 1)
     }
 
-    /// Best effort: drops claims older than [`INBOUND_EVENT_DAYS`].
-    async fn forget_old_events(&self) {
-        let cutoff = self.services.now_ms() - INBOUND_EVENT_DAYS * 86_400_000;
-        let stmt = Statement::new("DELETE FROM inbound_event WHERE received_at < ?").bind(cutoff);
-        let _ = self.services.db.execute(stmt).await;
+    /// Deletes claims older than [`INBOUND_EVENT_DAYS`], at most
+    /// [`INBOUND_EVENT_PRUNE_LIMIT`] per call (run by [`Deployment::tick`],
+    /// so a backlog drains over several ticks). Returns the rows deleted.
+    pub(crate) async fn prune_inbound_events(&self, now_ms: i64) -> Result<u64> {
+        let cutoff = now_ms - INBOUND_EVENT_DAYS * 86_400_000;
+        let stmt = Statement::new(
+            "DELETE FROM inbound_event WHERE rowid IN (SELECT rowid FROM inbound_event \
+             WHERE received_at < ? LIMIT ?)",
+        )
+        .bind(cutoff)
+        .bind(INBOUND_EVENT_PRUNE_LIMIT);
+        Ok(self.services.db.execute(stmt).await?.rows_affected)
     }
 
     /// Best effort: if even this write fails there is nowhere left to log.

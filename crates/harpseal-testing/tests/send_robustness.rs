@@ -278,12 +278,26 @@ async fn the_same_event_id_on_another_channel_is_another_event() {
 }
 
 #[tokio::test]
-async fn handled_event_ids_are_forgotten_after_a_week() {
+async fn a_tick_forgets_event_ids_older_than_a_week_and_keeps_younger_ones() {
     let (h, app) = linked(FakeProfile::Full).await;
     app.fake_webhook([ping(Some("old"), false)]).await;
-    h.clock().advance_ms(8 * 86_400_000);
+    h.clock().advance_ms(2 * 86_400_000);
+    app.fake_webhook([ping(Some("young"), false)]).await;
+    h.clock().advance_ms(6 * 86_400_000);
+    // 8 and 6 days old: the webhook path never prunes.
     app.fake_webhook([ping(Some("new"), false)]).await;
-    let rows = app.query("SELECT event_id FROM inbound_event").await;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows.get(0, "event_id").unwrap().as_text(), Some("new"));
+    assert_eq!(app.count("SELECT count(*) FROM inbound_event").await, 3);
+    let report = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(report.events_pruned, 1);
+    let rows = app
+        .query("SELECT event_id FROM inbound_event ORDER BY event_id")
+        .await;
+    let ids: Vec<&str> = (0..rows.len())
+        .map(|i| rows.get(i, "event_id").unwrap().as_text().unwrap())
+        .collect();
+    assert_eq!(ids, ["new", "young"]);
 }

@@ -99,7 +99,7 @@ impl FakeChannel {
             _ => None,
         };
         let reply_limit = profile.reply_limit().unwrap_or(usize::MAX);
-        let fail_at = s.fail_at.take();
+        let fail_at = s.fail_at;
         let mut objects = 0usize;
         let mut receipts = Vec::with_capacity(msgs.len());
         let mut reply_objects = 0usize;
@@ -119,6 +119,7 @@ impl FakeChannel {
             let mut receipt = SendReceipt::new(None, Metering::Free, false);
             for (k, part) in parts.into_iter().enumerate() {
                 if fail_at == Some(objects) {
+                    s.fail_at = None;
                     let e = Error::RateLimited {
                         retry_after_secs: FAILURE_RETRY_AFTER_SECS,
                     };
@@ -204,10 +205,12 @@ impl FakeChannel {
         }
     }
 
-    /// Makes the next batch fail with `Error::RateLimited` (retry after
-    /// [`FAILURE_RETRY_AFTER_SECS`]) just before its object `part`
-    /// (0-based, counting every rendered object): the objects before it go
-    /// out and are reported as a partial [`BatchReceipt`].
+    /// Makes the next batch that reaches its object `part` (0-based,
+    /// counting every rendered object) fail there with
+    /// `Error::RateLimited` (retry after [`FAILURE_RETRY_AFTER_SECS`]): the
+    /// objects before it go out and are reported as a partial
+    /// [`BatchReceipt`]. Shorter batches go out whole and leave the failure
+    /// armed; it fires once.
     pub fn fail_next_batch_at(&self, part: usize) {
         self.lock().fail_at = Some(part);
     }
@@ -297,5 +300,29 @@ impl SendAttachment for FakeChannel {
         receipts
             .pop()
             .ok_or_else(|| Error::Platform("fake: no receipt".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use harpseal::{Error, Locale, Message};
+
+    use crate::FakeChannel;
+
+    #[test]
+    fn an_injected_failure_waits_for_a_batch_long_enough() {
+        let ch = FakeChannel::new("s").unwrap().telegram_like();
+        let to = FakeChannel::account("u1");
+        let push = harpseal::Delivery::Push;
+        let texts =
+            |n: usize| -> Vec<Message> { (0..n).map(|i| Message::text(format!("{i}"))).collect() };
+        ch.fail_next_batch_at(2);
+        let short = ch.record_batch(&to, &push, &texts(2), &Locale::th());
+        assert!(short.error.is_none(), "too short to reach part 2");
+        let long = ch.record_batch(&to, &push, &texts(3), &Locale::th());
+        assert_eq!(long.receipts.len(), 2);
+        assert!(matches!(long.error, Some(Error::RateLimited { .. })));
+        let after = ch.record_batch(&to, &push, &texts(3), &Locale::th());
+        assert!(after.error.is_none(), "it fires once");
     }
 }
