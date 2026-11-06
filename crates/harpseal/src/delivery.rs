@@ -112,13 +112,69 @@ pub enum Metering {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlatformMessageId(pub String);
 
-/// What a Channel returns for each send.
+/// What a Channel returns for each Message it sent.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct SendReceipt {
-    /// The platform's id, when it gives one.
+    /// The platform's id, when it gives one (the last part's id when the
+    /// adapter split the Message into several platform messages).
     pub message_id: Option<PlatformMessageId>,
-    /// Whether the send was metered.
+    /// Whether this Message counted against the Quota. The metered unit is
+    /// one Push request to one recipient (LINE): only the receipt of the
+    /// Message that opens a Push request is `Metered`; the other Messages
+    /// in that request, and every Reply, are `Free`.
     pub metering: Metering,
+    /// True when any part of this Message did not use the reply token: it
+    /// went out by Push, whether the Core chose Push or the token was spent
+    /// (used up by an earlier part, or past the Channel's reply limit).
+    pub pushed: bool,
+}
+
+impl SendReceipt {
+    /// A receipt for one Message.
+    pub fn new(message_id: Option<PlatformMessageId>, metering: Metering, pushed: bool) -> Self {
+        Self {
+            message_id,
+            metering,
+            pushed,
+        }
+    }
+}
+
+/// What [`crate::Channel::send_batch`] returns. `receipts[i]` belongs to
+/// the batch's `i`-th Message; when `error` is set, the Messages after the
+/// last receipt were not sent.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct BatchReceipt {
+    /// One receipt per Message sent, in order.
+    pub receipts: Vec<SendReceipt>,
+    /// Why the batch stopped early, if it did.
+    pub error: Option<crate::Error>,
+}
+
+impl BatchReceipt {
+    /// Every Message sent.
+    pub fn complete(receipts: Vec<SendReceipt>) -> Self {
+        Self {
+            receipts,
+            error: None,
+        }
+    }
+    /// The batch stopped at `error` after sending `receipts.len()` Messages.
+    pub fn partial(receipts: Vec<SendReceipt>, error: crate::Error) -> Self {
+        Self {
+            receipts,
+            error: Some(error),
+        }
+    }
+    /// The receipts, or the error when the batch stopped early.
+    pub fn into_result(self) -> crate::Result<Vec<SendReceipt>> {
+        match self.error {
+            Some(e) => Err(e),
+            None => Ok(self.receipts),
+        }
+    }
 }
 
 /// A raw webhook call, already read from the HTTP layer.
@@ -207,6 +263,31 @@ impl Inbound {
             | Inbound::Action { from, .. }
             | Inbound::Blocked { from }
             | Inbound::Unblocked { from, .. } => from,
+        }
+    }
+
+    /// The reply token, when the event carries one.
+    pub fn reply(&self) -> Option<&ReplyToken> {
+        match self {
+            Inbound::Follow { reply, .. }
+            | Inbound::Text { reply, .. }
+            | Inbound::File { reply, .. }
+            | Inbound::Action { reply, .. }
+            | Inbound::Unblocked { reply, .. } => reply.as_ref(),
+            Inbound::Blocked { .. } => None,
+        }
+    }
+
+    /// A short name of the event kind (`follow`, `text`, `file`, `action`,
+    /// `blocked`, `unblocked`), for logs.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Inbound::Follow { .. } => "follow",
+            Inbound::Text { .. } => "text",
+            Inbound::File { .. } => "file",
+            Inbound::Action { .. } => "action",
+            Inbound::Blocked { .. } => "blocked",
+            Inbound::Unblocked { .. } => "unblocked",
         }
     }
 }

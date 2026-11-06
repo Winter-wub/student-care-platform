@@ -85,11 +85,23 @@ login lands (#21).
 let h = harpseal_testing::Harness::new();     // in-memory SQLite, fake email/HTTP/clock/random
 let app = h.start().await;                    // build + migrate + Router
 assert_eq!(app.get("/notice").await.status, 200);
-app.fake_webhook([inbound]).await;            // signed Fake Channel webhook
-h.fake_channel().sent_to(&account);           // what the Student saw
+app.fake_webhook([inbound]).await;            // signed Fake Channel webhook (text, file, Action, follow, blocked, unblocked)
+h.fake_channel().seen_by(&account);           // what the Student saw, with Delivery and Metering
+app.count("SELECT count(*) FROM outbound_message").await;  // rows a later request reads back
 h.clock().advance_minutes(5);                 // time only moves when told
 h.emails();  h.http_requests();               // captured, never sent
 ```
+
+`Harness::new().with_fake_profile(FakeProfile::LineLike)` makes the Fake
+Channel imitate LINE (one reply token covers 5 objects, Push metered, LINE's
+degrade limits, no attachments); `FakeProfile::TelegramLike` has no reply
+tokens, meters nothing and sends one message per Card.
+
+The Channel contract suite lives in `harpseal_testing::contract`: an adapter
+crate adds `harpseal-testing` as a dev-dependency and calls
+`contract::run(|| target)` with its Channel, recorded webhooks (`Fixtures`) and
+a `Wire` reading its `RecordingHttp`. It runs green against the Fake Channel in
+every profile; the LINE and Telegram runs are `#[ignore]` until #16/#17.
 
 Use `h.builder()` to add Modules before booting, or pass any Deployment to
 `h.boot(d)` (the example's tests do `example_deployment::builder(h.services(),

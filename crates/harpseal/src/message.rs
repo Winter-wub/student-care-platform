@@ -174,6 +174,17 @@ impl Message {
     pub fn text(s: impl Into<String>) -> Self {
         Message::Text(s.into())
     }
+    /// A short name of the kind (`text`, `card`, `card_list`, `choices`,
+    /// `attachment`), as stored in `outbound_message.kind`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Message::Text(_) => "text",
+            Message::Card(_) => "card",
+            Message::CardList(_) => "card_list",
+            Message::Choices(_) => "choices",
+            Message::Attachment(_) => "attachment",
+        }
+    }
     /// Every button the message carries, in order.
     pub fn buttons(&self) -> Vec<&Button> {
         match self {

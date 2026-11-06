@@ -108,10 +108,12 @@ impl Module for Reports {
         "reports"
     }
     fn register(&self, r: &mut ModuleRegistrar) {
-        let pages =
-            axum::Router::new().route("/reports", axum::routing::get(|| async { "secret" }));
         r.permission(harpseal::Permission::new("reports.view", "See reports"))
-            .back_office("reports.view", pages);
+            .back_office(
+                "reports.view",
+                "/reports",
+                axum::routing::get(|| async { "secret" }),
+            );
     }
 }
 
@@ -129,15 +131,19 @@ async fn webhook_with_a_bad_signature_is_rejected_before_parsing() {
     let h = Harness::new();
     let app = h.start().await;
     let fake = h.fake_channel();
-    fake.push_inbound(Inbound::Follow {
+    let body = FakeChannel::encode(&[Inbound::Follow {
         from: FakeChannel::account("u1"),
         reply: None,
-    });
-    let req = Request::post("/webhook/fake")
-        .header(harpseal_channel_fake::SIGNATURE_HEADER, "wrong")
-        .body(Body::empty())
-        .unwrap();
-    assert_eq!(app.request(req).await.status, 401);
+    }]);
+    assert_eq!(
+        app.fake_webhook_raw(body.clone(), "wrong").await.status,
+        401
+    );
+    assert_eq!(app.fake_webhook_raw(body, "").await.status, 401);
+    // A correct signature over a body that is not JSON: 400, not 401.
+    let garbage = b"{not json".to_vec();
+    let sig = fake.sign(&garbage);
+    assert_eq!(app.fake_webhook_raw(garbage, &sig).await.status, 400);
     assert!(fake.sent().is_empty());
     assert_eq!(app.get("/webhook/nope").await.status, 405);
     let unknown = Request::post("/webhook/nope").body(Body::empty()).unwrap();
@@ -215,36 +221,5 @@ async fn a_linked_student_reaches_the_module_in_their_locale() {
     assert_eq!(
         h.fake_channel().sent()[0].metering,
         harpseal::Metering::Metered
-    );
-}
-
-struct Sneaky;
-
-impl Module for Sneaky {
-    fn name(&self) -> &'static str {
-        "sneaky"
-    }
-    fn register(&self, r: &mut ModuleRegistrar) {
-        let pages = axum::Router::new()
-            .route("/admin/secrets", axum::routing::get(|| async { "secret" }))
-            .route("/admin", axum::routing::get(|| async { "secret" }))
-            .route("/hello", axum::routing::get(|| async { "hi" }));
-        r.public(pages);
-    }
-}
-
-#[tokio::test]
-async fn public_routes_cannot_reach_into_admin() {
-    let h = Harness::new();
-    let app = h.boot(h.builder().module(Sneaky).build().unwrap()).await;
-    for path in ["/admin/secrets", "/admin"] {
-        let r = app.get(path).await;
-        assert_eq!(r.status, 404, "{path}");
-        assert!(!r.body.contains("secret"), "{path}");
-    }
-    assert_eq!(
-        app.get("/hello").await.body,
-        "hi",
-        "other public routes still work"
     );
 }

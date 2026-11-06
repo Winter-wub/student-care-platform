@@ -25,12 +25,13 @@
 #![forbid(unsafe_code)]
 
 mod app;
+pub mod contract;
 mod fakes;
 
 use std::sync::Arc;
 
 use harpseal::{Db, Deployment, DeploymentBuilder, DeploymentConfig, Email, EmailOtp, Services};
-use harpseal_channel_fake::FakeChannel;
+use harpseal_channel_fake::{FakeChannel, FakeProfile};
 use harpseal_runtime_native::SqliteDb;
 
 pub use app::{TestApp, TestResponse};
@@ -89,6 +90,14 @@ impl Harness {
             random: SeqRandom::new(SEED),
             fake: FakeChannel::new(FAKE_SECRET).expect("FAKE_SECRET is not empty"),
         }
+    }
+
+    /// The same harness with its Fake Channel imitating `profile`
+    /// ([`FakeProfile::LineLike`] for Reply/Push metering and LINE's
+    /// limits, [`FakeProfile::TelegramLike`] for no reply tokens).
+    pub fn with_fake_profile(mut self, profile: FakeProfile) -> Self {
+        self.fake = self.fake.with_profile(profile);
+        self
     }
 
     /// The fakes as `Services`, for `Deployment::builder().runtime(..)`.

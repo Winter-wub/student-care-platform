@@ -1,59 +1,109 @@
 //! Fake Channel: an in-memory Channel adapter for tests and demos. It
-//! records everything the Core sends, so a test can read back what the
-//! Student saw, and declares every Channel Capability (Mini App can be
-//! switched off) so the Core's optional paths can be exercised.
+//! records every object the Core sends (degraded the way the chosen
+//! [`FakeProfile`] would show it, with its Delivery and Metering), the
+//! Menu per account, edits and deletes, so a test can read back what the
+//! Student saw. [`FakeChannel::calls`] lists the platform requests (reply
+//! or push, objects per request, metering) a real adapter would have made.
 //!
-//! Metering mimics LINE: Reply is free, Push is metered.
+//! Profiles: [`FakeProfile::Full`] (the default: every Capability, no
+//! limits, Reply free and Push metered), [`FakeProfile::LineLike`] (a
+//! single-use reply token covers 5 objects, then Push requests of 5, each
+//! one metered unit; LINE's degrade limits, no attachments, no edit or
+//! delete) and [`FakeProfile::TelegramLike`] (no
+//! reply tokens, everything free, one message per Card, 100 buttons per
+//! message).
 //!
-//! Webhooks: queue events with [`FakeChannel::push_inbound`], then POST
-//! anything to `/webhook/fake` with header [`SIGNATURE_HEADER`] set to the
-//! secret; the call drains the queue. A wrong or missing header is
-//! rejected with `BadSignature` before the queue is touched.
+//! Webhooks: the body is a JSON array of events ([`FakeChannel::encode`])
+//! and header [`SIGNATURE_HEADER`] carries [`FakeChannel::sign`] of it.
+//! [`FakeChannel::webhook`] builds a signed call. A wrong or missing
+//! signature is rejected with `BadSignature` before the body is read.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
+mod record;
+mod render;
+mod wire;
+
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use harpseal::{
-    Attachment, Channel, ChannelAccountId, ChannelKind, DeleteMessage, Delivery, EditMessage,
-    Error, Inbound, IncomingFile, Locale, Menu, Message, Metering, MiniApp, PlatformMessageId,
-    Result, SendAttachment, SendReceipt, WebhookRequest,
+    BatchReceipt, Channel, ChannelAccountId, ChannelKind, DeleteMessage, Delivery, EditMessage,
+    Error, Inbound, IncomingFile, Locale, Menu, Message, MiniApp, Result, SendAttachment,
+    SendReceipt, WebhookRequest,
 };
+
+use record::State;
+pub use record::{Call, Sent};
+use render::Limits;
 
 /// The Fake Channel's kind.
 pub const KIND: ChannelKind = ChannelKind("fake");
-/// Header that must carry the secret on every webhook call.
+/// Header that must carry [`FakeChannel::sign`] of the body.
 pub const SIGNATURE_HEADER: &str = "x-fake-signature";
 /// Base of the Fake Channel's Mini App URLs.
 pub const MINI_APP_BASE: &str = "https://fake.invalid/app";
 
-/// One message the Core sent through the Fake Channel.
-#[derive(Debug, Clone)]
+/// Which platform the Fake Channel imitates (metering, reply limit,
+/// Capabilities and degrade rules).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
-pub struct Sent {
-    /// Recipient.
-    pub to: ChannelAccountId,
-    /// Reply or Push, as the Core chose.
-    pub delivery: Delivery,
-    /// The message as the Core built it.
-    pub message: Message,
-    /// The id the Fake Channel gave it.
-    pub id: PlatformMessageId,
-    /// What the receipt reported.
-    pub metering: Metering,
+pub enum FakeProfile {
+    /// Every Capability, no limits; a reply token works once and covers
+    /// its whole batch; one Push request per batch, metered.
+    #[default]
+    Full,
+    /// LINE: a reply token works once and covers the first 5 objects of
+    /// its batch; the rest go in Push requests of 5, each request one
+    /// metered unit; text over 5000 chars split, over 12 Cards several
+    /// carousels, over 13 quick replies (or a label over 20) one Card with
+    /// every button; no attachments, edit or delete.
+    LineLike,
+    /// Telegram: no reply tokens, every send free, one message per Card,
+    /// text over 4096 chars split, at most 100 buttons per message.
+    TelegramLike,
 }
 
-#[derive(Debug, Default)]
-struct State {
-    inbox: Vec<Inbound>,
-    files: HashMap<String, Vec<u8>>,
-    sent: Vec<Sent>,
-    menus: HashMap<ChannelAccountId, Option<Menu>>,
-    edited: Vec<(PlatformMessageId, Message)>,
-    deleted: Vec<PlatformMessageId>,
+impl FakeProfile {
+    fn limits(self) -> Limits {
+        match self {
+            FakeProfile::Full => Limits::NONE,
+            FakeProfile::LineLike => Limits::LINE,
+            FakeProfile::TelegramLike => Limits::TELEGRAM,
+        }
+    }
+    /// Objects one reply token covers (`None`: no limit).
+    pub fn reply_limit(self) -> Option<usize> {
+        match self {
+            FakeProfile::LineLike => Some(5),
+            _ => None,
+        }
+    }
+    /// Most objects in one Push request: 5 on LINE, 1 on Telegram (one
+    /// call per message), unlimited for `Full`.
+    pub fn request_size(self) -> usize {
+        match self {
+            FakeProfile::Full => usize::MAX,
+            FakeProfile::LineLike => 5,
+            FakeProfile::TelegramLike => 1,
+        }
+    }
+    /// Whether webhooks carry reply tokens.
+    pub fn reply_tokens(self) -> bool {
+        self != FakeProfile::TelegramLike
+    }
+    /// Whether a Push request counts against a Quota (one unit per request
+    /// to one recipient, whatever the number of objects in it).
+    pub fn push_metered(self) -> bool {
+        self != FakeProfile::TelegramLike
+    }
+    fn attachments(self) -> bool {
+        self != FakeProfile::LineLike
+    }
+    fn edit_delete(self) -> bool {
+        self != FakeProfile::LineLike
+    }
 }
 
 /// Cloning shares the recorded state, so a test keeps a handle after
@@ -62,12 +112,13 @@ struct State {
 pub struct FakeChannel {
     secret: String,
     mini_app: bool,
+    profile: FakeProfile,
     state: Arc<Mutex<State>>,
 }
 
 impl FakeChannel {
-    /// A Fake Channel whose webhooks must carry `secret`. An empty secret
-    /// is refused, so an unsigned call can never pass.
+    /// A [`FakeProfile::Full`] Fake Channel whose webhooks must be signed
+    /// with `secret`. An empty secret is refused.
     pub fn new(secret: impl Into<String>) -> Result<Self> {
         let secret = secret.into();
         if secret.is_empty() {
@@ -78,10 +129,24 @@ impl FakeChannel {
         Ok(Self {
             secret,
             mini_app: true,
+            profile: FakeProfile::Full,
             state: Arc::default(),
         })
     }
 
+    /// The same Channel imitating `profile` (recorded state is shared).
+    pub fn with_profile(mut self, profile: FakeProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+    /// [`FakeProfile::LineLike`].
+    pub fn line_like(self) -> Self {
+        self.with_profile(FakeProfile::LineLike)
+    }
+    /// [`FakeProfile::TelegramLike`].
+    pub fn telegram_like(self) -> Self {
+        self.with_profile(FakeProfile::TelegramLike)
+    }
     /// The same Channel without the Mini App Capability (as if no Mini App
     /// URL were configured).
     pub fn without_mini_app(mut self) -> Self {
@@ -89,19 +154,39 @@ impl FakeChannel {
         self
     }
 
-    /// The secret webhook calls must carry.
+    /// The profile imitated.
+    pub fn profile(&self) -> FakeProfile {
+        self.profile
+    }
+    /// The secret webhook calls are signed with.
     pub fn secret(&self) -> &str {
         &self.secret
     }
-
     /// An account on this Channel.
     pub fn account(external_id: impl Into<String>) -> ChannelAccountId {
         ChannelAccountId::new(KIND, external_id)
     }
 
-    /// Queues an event for the next webhook call.
-    pub fn push_inbound(&self, ev: Inbound) {
-        self.lock().inbox.push(ev);
+    /// `events` in the webhook wire format (a JSON array). An Action's
+    /// payload on the wire is its id, unchanged.
+    pub fn encode(events: &[Inbound]) -> Vec<u8> {
+        wire::encode(events)
+    }
+    /// The signature header value for `body`.
+    pub fn sign(&self, body: &[u8]) -> String {
+        wire::sign(&self.secret, body)
+    }
+    /// A correctly signed webhook call carrying `body` as is.
+    pub fn signed(&self, body: Vec<u8>) -> WebhookRequest {
+        let mut headers = http::HeaderMap::new();
+        if let Ok(v) = http::HeaderValue::from_str(&self.sign(&body)) {
+            headers.insert(SIGNATURE_HEADER, v);
+        }
+        WebhookRequest { headers, body }
+    }
+    /// A correctly signed webhook call carrying `events`.
+    pub fn webhook(&self, events: &[Inbound]) -> WebhookRequest {
+        self.signed(Self::encode(events))
     }
 
     /// Makes `bytes` downloadable as `platform_file_id`.
@@ -109,58 +194,8 @@ impl FakeChannel {
         self.lock().files.insert(platform_file_id.into(), bytes);
     }
 
-    /// Every message sent so far, in order.
-    pub fn sent(&self) -> Vec<Sent> {
-        self.lock().sent.clone()
-    }
-
-    /// The messages one account received, in order.
-    pub fn sent_to(&self, to: &ChannelAccountId) -> Vec<Message> {
-        let s = self.lock();
-        s.sent
-            .iter()
-            .filter(|m| &m.to == to)
-            .map(|m| m.message.clone())
-            .collect()
-    }
-
-    /// The account's Menu: `None` if never set, `Some(None)` when locked.
-    pub fn menu(&self, to: &ChannelAccountId) -> Option<Option<Menu>> {
-        self.lock().menus.get(to).cloned()
-    }
-
-    /// Edits made through the EditMessage Capability.
-    pub fn edited(&self) -> Vec<(PlatformMessageId, Message)> {
-        self.lock().edited.clone()
-    }
-
-    /// Deletions made through the DeleteMessage Capability.
-    pub fn deleted(&self) -> Vec<PlatformMessageId> {
-        self.lock().deleted.clone()
-    }
-
     fn lock(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
-    fn record(&self, to: &ChannelAccountId, d: &Delivery, m: Message) -> SendReceipt {
-        let mut s = self.lock();
-        let id = PlatformMessageId(format!("fake-{}", s.sent.len() + 1));
-        let metering = match d {
-            Delivery::Reply(_) => Metering::Free,
-            _ => Metering::Metered,
-        };
-        s.sent.push(Sent {
-            to: to.clone(),
-            delivery: d.clone(),
-            message: m,
-            id: id.clone(),
-            metering,
-        });
-        SendReceipt {
-            message_id: Some(id),
-            metering,
-        }
     }
 }
 
@@ -173,11 +208,12 @@ impl Channel for FakeChannel {
         let sig = req
             .headers
             .get(SIGNATURE_HEADER)
-            .and_then(|v| v.to_str().ok());
-        if self.secret.is_empty() || sig != Some(self.secret.as_str()) {
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if sig.is_empty() || !wire::same(sig, &self.sign(&req.body)) {
             return Err(Error::BadSignature);
         }
-        Ok(std::mem::take(&mut self.lock().inbox))
+        wire::decode(KIND, &req.body, self.profile.reply_tokens())
     }
     async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
         self.lock()
@@ -191,47 +227,46 @@ impl Channel for FakeChannel {
         to: &ChannelAccountId,
         d: &Delivery,
         m: &Message,
-        _: &Locale,
+        locale: &Locale,
     ) -> Result<SendReceipt> {
-        Ok(self.record(to, d, m.clone()))
+        let mut receipts = self
+            .send_batch(to, d, std::slice::from_ref(m), locale)
+            .await
+            .into_result()?;
+        receipts
+            .pop()
+            .ok_or_else(|| Error::Platform("fake: no receipt".into()))
+    }
+    async fn send_batch(
+        &self,
+        to: &ChannelAccountId,
+        d: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+    ) -> BatchReceipt {
+        self.record_batch(to, d, msgs, locale)
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         self.lock().menus.insert(to.clone(), menu.cloned());
         Ok(())
     }
     fn editor(&self) -> Option<&dyn EditMessage> {
-        Some(self)
+        self.profile
+            .edit_delete()
+            .then_some(self as &dyn EditMessage)
     }
     fn deleter(&self) -> Option<&dyn DeleteMessage> {
-        Some(self)
+        self.profile
+            .edit_delete()
+            .then_some(self as &dyn DeleteMessage)
     }
     fn mini_app(&self) -> Option<&dyn MiniApp> {
         self.mini_app.then_some(self as &dyn MiniApp)
     }
     fn attachments(&self) -> Option<&dyn SendAttachment> {
-        Some(self)
-    }
-}
-
-#[async_trait]
-impl EditMessage for FakeChannel {
-    async fn edit(
-        &self,
-        _: &ChannelAccountId,
-        id: &PlatformMessageId,
-        m: &Message,
-        _: &Locale,
-    ) -> Result<()> {
-        self.lock().edited.push((id.clone(), m.clone()));
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl DeleteMessage for FakeChannel {
-    async fn delete(&self, _: &ChannelAccountId, id: &PlatformMessageId) -> Result<()> {
-        self.lock().deleted.push(id.clone());
-        Ok(())
+        self.profile
+            .attachments()
+            .then_some(self as &dyn SendAttachment)
     }
 }
 
@@ -247,18 +282,5 @@ impl MiniApp for FakeChannel {
             return Err(Error::BadSignature);
         }
         Ok(Self::account(token))
-    }
-}
-
-#[async_trait]
-impl SendAttachment for FakeChannel {
-    async fn send_attachment(
-        &self,
-        to: &ChannelAccountId,
-        d: &Delivery,
-        file: &Attachment,
-        _: &Locale,
-    ) -> Result<SendReceipt> {
-        Ok(self.record(to, d, Message::Attachment(file.clone())))
     }
 }

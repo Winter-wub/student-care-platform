@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Deployment, Registry};
+use super::routes::Routes;
+use super::{Deployment, Registry, Route};
 use crate::config::DeploymentConfig;
 use crate::error::{BuildError, Part};
 use crate::kernel::Kernel;
@@ -105,29 +106,56 @@ impl DeploymentBuilder {
     }
 }
 
-type BackOffice = Vec<(&'static str, &'static str, axum::Router<crate::AppState>)>;
+type BackOffice = Vec<(&'static str, &'static str, &'static str, Route)>;
+type Actions = HashMap<crate::ActionId, (&'static str, Arc<dyn crate::ActionHandler>)>;
 
 /// Everything every Module registered, merged.
-#[derive(Default)]
 struct Collected {
     permissions: Vec<Permission>,
     menu: Vec<(&'static str, MenuEntrySpec)>,
-    actions: HashMap<crate::ActionId, Arc<dyn crate::ActionHandler>>,
+    actions: Actions,
     jobs: HashMap<&'static str, (crate::JobSpec, Arc<dyn crate::JobHandler>)>,
     migrations: Vec<crate::Migration>,
     back_office: BackOffice,
-    public: Vec<axum::Router<crate::AppState>>,
+    public: Vec<(&'static str, &'static str, Route)>,
+    routes: Routes,
     mini_app_users: Vec<&'static str>,
     catalog: Catalog,
 }
 
+impl Default for Collected {
+    fn default() -> Self {
+        Self {
+            permissions: Vec::new(),
+            menu: Vec::new(),
+            actions: HashMap::new(),
+            jobs: HashMap::new(),
+            migrations: Vec::new(),
+            back_office: Vec::new(),
+            public: Vec::new(),
+            routes: Routes::new(),
+            mini_app_users: Vec::new(),
+            catalog: Catalog::default(),
+        }
+    }
+}
+
 impl Collected {
     fn absorb(&mut self, r: ModuleRegistrar) -> Result<(), BuildError> {
+        let module = r.module;
         for (id, h) in r.actions {
             if self.actions.contains_key(&id) {
                 return Err(BuildError::DuplicateAction(id));
             }
-            self.actions.insert(id, h);
+            self.actions.insert(id, (module, h));
+        }
+        for (path, route) in r.public {
+            self.routes.public(module, path)?;
+            self.public.push((module, path, route));
+        }
+        for (permission, path, route) in r.back_office {
+            self.routes.back_office(module, path)?;
+            self.back_office.push((module, permission, path, route));
         }
         for (spec, h) in r.jobs {
             if self.jobs.insert(spec.kind, (spec, h)).is_some() {
@@ -143,15 +171,8 @@ impl Collected {
         for e in r.catalog {
             self.catalog.insert(e.locale, e.key, e.text);
         }
-        let module = r.module;
         self.menu.extend(r.menu.into_iter().map(|e| (module, e)));
         self.migrations.extend(r.migrations);
-        self.public.extend(r.public);
-        self.back_office.extend(
-            r.back_office
-                .into_iter()
-                .map(|(p, router)| (module, p, router)),
-        );
         if !r.mini_app_paths.is_empty() {
             self.mini_app_users.push(module);
         }
@@ -165,7 +186,7 @@ impl Collected {
         channels: &[Arc<dyn Channel>],
     ) -> Result<(), BuildError> {
         let known = |id: &str| self.permissions.iter().any(|p| p.id == id);
-        for (module, permission, _) in &self.back_office {
+        for (module, permission, _, _) in &self.back_office {
             if !known(permission) {
                 return Err(BuildError::UnguardedRoute { module, permission });
             }
