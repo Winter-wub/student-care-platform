@@ -1,16 +1,22 @@
-//! `Db` over rusqlite. `batch` is one transaction. Foreign keys are on, as
-//! on D1.
+//! `Db` over rusqlite. `batch` is one transaction, rolled back on any
+//! failure. Foreign keys are on, as on D1. Every call runs on tokio's
+//! blocking pool so a slow query never stalls the async workers; the
+//! connection is shared behind a mutex (SQLite serialises writers anyway).
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use harpseal::{Db, Error, ExecResult, Result, Rows, Statement, Value};
 use rusqlite::types::Value as SqlValue;
 
 /// A SQLite database file (or an in-memory database for tests).
+///
+/// Values come back typed as SQLite stored them (`INTEGER` -> `Integer`,
+/// `REAL` -> `Real`), which is exact; D1 cannot tell whole `REAL`s from
+/// `INTEGER`s, so code must read integers with [`Value::as_i64`].
+#[derive(Clone)]
 pub struct SqliteDb {
-    // Calls block inside async fns; #18 moves them to `spawn_blocking`.
-    conn: Mutex<rusqlite::Connection>,
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 fn db_err(e: rusqlite::Error) -> Error {
@@ -51,8 +57,10 @@ impl SqliteDb {
     fn with(conn: rusqlite::Connection) -> Result<Self> {
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(db_err)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(db_err)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         })
     }
 
@@ -95,6 +103,7 @@ impl SqliteDb {
 
     fn batch_sync(&self, stmts: &[Statement]) -> Result<Vec<ExecResult>> {
         let mut conn = self.lock();
+        // Dropping `tx` without commit (the `?` below) rolls everything back.
         let tx = conn.transaction().map_err(db_err)?;
         let out = stmts
             .iter()
@@ -103,17 +112,28 @@ impl SqliteDb {
         tx.commit().map_err(db_err)?;
         Ok(out)
     }
+
+    /// Runs `f` on tokio's blocking pool.
+    async fn blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&SqliteDb) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || f(&db))
+            .await
+            .map_err(|e| Error::Db(format!("sqlite task failed: {e}")))?
+    }
 }
 
 #[async_trait]
 impl Db for SqliteDb {
     async fn query(&self, s: Statement) -> Result<Rows> {
-        self.query_sync(&s)
+        self.blocking(move |db| db.query_sync(&s)).await
     }
     async fn execute(&self, s: Statement) -> Result<ExecResult> {
-        Self::exec_on(&self.lock(), &s)
+        self.blocking(move |db| Self::exec_on(&db.lock(), &s)).await
     }
     async fn batch(&self, s: Vec<Statement>) -> Result<Vec<ExecResult>> {
-        self.batch_sync(&s)
+        self.blocking(move |db| db.batch_sync(&s)).await
     }
 }

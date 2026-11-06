@@ -33,6 +33,7 @@ mod migrate;
 mod module;
 mod port_types;
 mod ports;
+mod resend;
 mod sql_split;
 mod verification;
 
@@ -50,7 +51,7 @@ pub use delivery::{
     IncomingFile, Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp,
     WebhookRequest,
 };
-pub use deployment::{Deployment, DeploymentBuilder, WebhookReport};
+pub use deployment::{Deployment, DeploymentBuilder, TickReport, WebhookReport};
 pub use error::{BuildError, Error, Part, Result};
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{
@@ -64,4 +65,5 @@ pub use module::{
 pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};
 pub use render::RenderCx;
+pub use resend::{RESEND_ENDPOINT, ResendEmail};
 pub use verification::{Challenge, EmailOtp, StudentClaim, VerificationMethod};

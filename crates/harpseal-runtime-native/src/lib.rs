@@ -1,96 +1,44 @@
 //! Native runtime: a single tokio binary on the customer's own server.
-//! [`services`] builds the Core's `Services`: a SQLite file ([`SqliteDb`]),
-//! a local directory as FileStore, the OS clock and RNG. SMTP / Resend
-//! email and outgoing HTTP arrive with #18 and until then return
-//! [`Error::Platform`].
+//!
+//! [`services`] builds the Core's `Services` from [`NativeSettings`]
+//! (usually [`NativeSettings::from_env`]):
+//!
+//! | Port | Implementation |
+//! |---|---|
+//! | `Db` | [`SqliteDb`] (rusqlite, bundled SQLite; `batch` = one transaction) |
+//! | `FileStore` | [`LocalFiles`] (a directory) or [`S3Files`] (S3-compatible, SigV4) |
+//! | `EmailSender` | [`Smtp`] (lettre) or [`harpseal::ResendEmail`] (Resend HTTP API) |
+//! | `HttpClient` | [`ReqwestHttp`] (reqwest, rustls) |
+//! | `Clock` | [`SystemClock`] |
+//! | `Random` | [`OsRandom`] (getrandom) |
+//!
+//! [`serve`] runs the Router with `axum::serve`; [`spawn_ticker`] calls
+//! [`Deployment::tick`] once a minute.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod email;
+mod files;
+mod http;
+mod s3;
+mod settings;
 mod sqlite;
 
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
-use async_trait::async_trait;
-use harpseal::{
-    Clock, Email, EmailSender, Error, FileStore, HttpClient, Random, Result, Services, Timestamp,
-};
+use harpseal::{Clock, Deployment, Error, Random, Result, Services, Timestamp};
 
+pub use email::Smtp;
+pub use files::LocalFiles;
+pub use http::ReqwestHttp;
+pub use s3::{S3Files, S3Settings};
+pub use settings::{EmailSettings, FilesSettings, NativeSettings};
 pub use sqlite::SqliteDb;
 
-/// A local directory as the FileStore.
-pub struct LocalFiles {
-    root: PathBuf,
-}
-
-impl LocalFiles {
-    /// Files live under `root`.
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
-    }
-    fn path(&self, key: &str) -> Result<PathBuf> {
-        if key.is_empty() || key.starts_with('/') || key.split('/').any(|p| p == "..") {
-            return Err(Error::Invalid(format!("bad file key {key:?}")));
-        }
-        Ok(self.root.join(key))
-    }
-}
-
-fn io(e: std::io::Error) -> Error {
-    Error::Platform(e.to_string())
-}
-
-#[async_trait]
-impl FileStore for LocalFiles {
-    async fn put(&self, key: &str, bytes: Vec<u8>, _content_type: &str) -> Result<()> {
-        let p = self.path(key)?;
-        if let Some(dir) = p.parent() {
-            std::fs::create_dir_all(dir).map_err(io)?;
-        }
-        std::fs::write(p, bytes).map_err(io)
-    }
-    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        match std::fs::read(self.path(key)?) {
-            Ok(b) => Ok(Some(b)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(io(e)),
-        }
-    }
-    async fn delete(&self, key: &str) -> Result<()> {
-        match std::fs::remove_file(self.path(key)?) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(io(e)),
-            _ => Ok(()),
-        }
-    }
-}
-
-/// Email over SMTP. Sending arrives with #18.
-pub struct Smtp {
-    #[allow(dead_code)] // read by the SMTP transport (#18)
-    url: String,
-}
-
-#[async_trait]
-impl EmailSender for Smtp {
-    async fn send(&self, _email: Email) -> Result<()> {
-        Err(Error::Platform("SMTP sending arrives with #18".into()))
-    }
-}
-
-/// Outgoing HTTP. The client arrives with #18.
-pub struct NativeHttp;
-
-#[async_trait]
-impl HttpClient for NativeHttp {
-    async fn send(&self, _req: http::Request<Vec<u8>>) -> Result<http::Response<Vec<u8>>> {
-        Err(Error::Platform(
-            "native HTTP client arrives with #18".into(),
-        ))
-    }
-}
-
 /// The OS clock.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SystemClock;
 
 impl Clock for SystemClock {
@@ -103,6 +51,7 @@ impl Clock for SystemClock {
 }
 
 /// The OS RNG.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct OsRandom;
 
 impl Random for OsRandom {
@@ -111,49 +60,54 @@ impl Random for OsRandom {
     }
 }
 
-/// Settings read from the environment / CLI flags.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct NativeSettings {
-    /// SQLite file path.
-    pub sqlite_path: String,
-    /// FileStore root directory.
-    pub files_root: PathBuf,
-    /// SMTP URL.
-    pub smtp_url: String,
-}
-
-impl NativeSettings {
-    /// Settings with the given paths.
-    pub fn new(
-        sqlite_path: impl Into<String>,
-        files_root: impl Into<PathBuf>,
-        smtp_url: impl Into<String>,
-    ) -> Self {
-        Self {
-            sqlite_path: sqlite_path.into(),
-            files_root: files_root.into(),
-            smtp_url: smtp_url.into(),
-        }
-    }
-}
-
-/// Builds `Services` for `Deployment::builder().runtime(..)`.
+/// Builds `Services` for `Deployment::builder().runtime(..)`. Opens (or
+/// creates) the SQLite file; nothing else connects until first use.
 pub fn services(s: &NativeSettings) -> Result<Services> {
+    let http: Arc<dyn harpseal::HttpClient> = Arc::new(ReqwestHttp::new()?);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let files: Arc<dyn harpseal::FileStore> = match &s.files {
+        FilesSettings::Local(root) => Arc::new(LocalFiles::new(root.clone())),
+        FilesSettings::S3(s3) => Arc::new(S3Files::new(s3.clone(), http.clone(), clock.clone())),
+    };
+    let email: Arc<dyn harpseal::EmailSender> = match &s.email {
+        EmailSettings::Smtp { url, from } => Arc::new(Smtp::new(url, from)?),
+        EmailSettings::Resend { api_key, from } => Arc::new(harpseal::ResendEmail::new(
+            http.clone(),
+            api_key.clone(),
+            from.clone(),
+        )),
+    };
     Ok(Services {
         db: Arc::new(SqliteDb::open(&s.sqlite_path)?),
-        files: Arc::new(LocalFiles::new(s.files_root.clone())),
-        email: Arc::new(Smtp {
-            url: s.smtp_url.clone(),
-        }),
-        http: Arc::new(NativeHttp),
-        clock: Arc::new(SystemClock),
+        files,
+        email,
+        http,
+        clock,
         random: Arc::new(OsRandom),
     })
 }
 
-/// `axum::serve` on a TCP listener.
+/// `axum::serve` on a TCP listener at `addr`.
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router).await
+}
+
+/// Calls [`Deployment::tick`] every `period` (one minute in production)
+/// with the Deployment's Clock, starting one period from now. Errors are
+/// printed to stderr and the next tick runs anyway; a tick that overruns
+/// delays the next one instead of piling up. Abort the handle to stop.
+pub fn spawn_ticker(d: Arc<Deployment>, period: Duration) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let start = tokio::time::Instant::now() + period;
+        let mut every = tokio::time::interval_at(start, period);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            let now = d.services().clock.now();
+            if let Err(e) = d.tick(now).await {
+                eprintln!("tick failed: {e}");
+            }
+        }
+    })
 }

@@ -3,12 +3,14 @@
 mod builder;
 mod routes;
 mod send;
+mod tick;
 mod web;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 pub use builder::DeploymentBuilder;
+pub use tick::TickReport;
 
 use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, Inbound, PlatformMessageId, WebhookRequest};
