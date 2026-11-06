@@ -20,7 +20,7 @@ use crate::{CurrentStaff, PageState};
 pub const CSS: &str = include_str!("ui.css");
 /// Bump the query string when `ui.css` changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=6";
+const CSS_HREF: &str = "/static/app.css?v=7";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).
@@ -129,8 +129,8 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
                 }
             }
         }
-        // Filled by the usage warnings (#26); empty until then.
-        div id="usage-banner" {}
+        // The Quota banner (#26): empty below 80 % of every Quota.
+        div id="usage-banner" { @if let Some(b) = &staff.usage_banner { (b) } }
         main {
             @if let Some((ok, text)) = &staff.flash { (flash(&Flash { ok: *ok, text })) }
             (body)

@@ -29,7 +29,10 @@ Officer = [
 ]
 Viewer = ["kernel.student.view", "kernel.usage.view", "announcements.view"]
 
-# Warn Staff at 80% and 100% of metered pushes per month; never stops sending.
+# Warn Staff at 80% and 100% of metered pushes per calendar month (local
+# days in utc_offset): a banner on every back-office page and one email per
+# level per month to every Administrator. Never stops sending. A Channel
+# without [quotas.<kind>] (or with 0) shows its usage and never warns.
 [quotas.line]
 metered_per_month = 300
 

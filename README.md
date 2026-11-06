@@ -107,10 +107,13 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
 ### Sends, retries and webhook duplicates
 
 - **Metering.** Each `SendReceipt` carries `metered_units`: one per Push
-  request to one recipient, charged to the Message that opens the request.
-  A Message the adapter spreads over several Push requests (a long text, a
-  Card List of 61 on LINE) costs one unit per request, and
-  `usage_daily.metered` adds the units. Telegram is always 0.
+  request to one recipient (a long text split over requests costs one per
+  request; Telegram 0). `usage_daily` adds them to `metered`, and Messages
+  a Channel fails on to `failed` (a blocked-account skip counts nowhere).
+- **Quotas (#26).** `/admin/usage` charts each Channel's month against
+  `[quotas.<kind>]`; from 80 % every Staff page shows a banner (red at 100
+  %) and the tick's `kernel.usage.watch` (every 10 minutes, only with
+  `[quotas]`) emails active Administrators once per month per level.
 - **Partial sends.** When a Channel stops part-way, what went out is
   recorded (`outbound_message` rows and usage; a Message cut off after some
   of its parts gets a row with `error = 'partly sent: …'`) and

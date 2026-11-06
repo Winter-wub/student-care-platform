@@ -13,6 +13,7 @@ pub mod students;
 pub(crate) mod text;
 mod texts;
 mod texts_link;
+pub(crate) mod usage;
 
 use axum::routing::get;
 
@@ -91,6 +92,7 @@ impl Module for Kernel {
         students::register(r);
         roster::register(r);
         admin::register(r);
+        usage::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))
