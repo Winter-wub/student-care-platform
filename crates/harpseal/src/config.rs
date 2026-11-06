@@ -37,6 +37,15 @@ pub struct DeploymentConfig {
     /// Email-OTP parameters.
     #[serde(default)]
     pub otp: OtpConfig,
+    /// How the chat flow reads a student id and whether Students may unlink.
+    #[serde(default)]
+    pub student: StudentConfig,
+    /// The privacy notice version the Consent Card asks for.
+    #[serde(default)]
+    pub consent: ConsentConfig,
+    /// What happens to free text and files after Link.
+    #[serde(default)]
+    pub inbound: InboundConfig,
     /// How long pruned rows are kept.
     #[serde(default)]
     pub retention: RetentionConfig,
@@ -107,6 +116,69 @@ impl Default for OtpConfig {
     }
 }
 
+/// `[student]`: the chat flow's student-id step and self-unlink.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct StudentConfig {
+    /// Shape of a student id, regex-free: `#` is an ASCII digit, `@` an
+    /// ASCII letter, `?` either, any other character must match itself;
+    /// `|` separates alternatives (`"########|@#######"`). `None` (the
+    /// default): 4 to 20 letters, digits or `-`. Spaces typed by the
+    /// Student are removed before the check.
+    pub id_pattern: Option<String>,
+    /// Whether the Menu offers "unlink" to the Student (spec: default on).
+    pub self_unlink: bool,
+}
+
+impl Default for StudentConfig {
+    fn default() -> Self {
+        Self {
+            id_pattern: None,
+            self_unlink: true,
+        }
+    }
+}
+
+/// `[consent]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct ConsentConfig {
+    /// The current privacy notice version. A `setting` row
+    /// `kernel.consent.version` (Locale `''`) overrides it, so Staff can
+    /// bump it without a deploy. Any change asks linked Students again.
+    pub version: String,
+}
+
+impl Default for ConsentConfig {
+    fn default() -> Self {
+        Self {
+            version: "1".into(),
+        }
+    }
+}
+
+/// `[inbound]`: free text and files a linked Student sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
+pub struct InboundConfig {
+    /// Minutes between two fallback answers to one account (spec: 60).
+    pub fallback_cooldown_minutes: u32,
+    /// Largest file copied into the FileStore, in MB (spec: 20).
+    pub max_file_mb: u32,
+}
+
+impl Default for InboundConfig {
+    fn default() -> Self {
+        Self {
+            fallback_cooldown_minutes: 60,
+            max_file_mb: 20,
+        }
+    }
+}
+
 /// `[retention]`, in days.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -132,6 +204,14 @@ impl DeploymentConfig {
     pub fn from_toml(src: &str) -> crate::Result<Self> {
         let c: Self = toml::from_str(src).map_err(|e| crate::Error::Invalid(e.to_string()))?;
         c.utc_offset_minutes()?;
+        if !(4..=9).contains(&c.otp.digits) || c.otp.max_attempts == 0 {
+            return Err(crate::Error::Invalid(
+                "[otp] digits must be 4..=9 and max_attempts at least 1".into(),
+            ));
+        }
+        if c.consent.version.trim().is_empty() {
+            return Err(crate::Error::Invalid("[consent] version is empty".into()));
+        }
         Ok(c)
     }
 
@@ -179,6 +259,10 @@ mod tests {
             "nmae = \"typo\"",
             "[branding]\nprimary_colour = \"#000\"",
             "[otp]\ndigit = 6",
+            "[student]\npattern = \"#\"",
+            "[consent]\nversoin = \"2\"",
+            "[inbound]\nmax_file = 1",
+            "[otp]\ndigits = 12",
             "[retention]\njobs_days = 1",
             "[quotas.line]\nmetered_per_month = 1\nper_day = 2",
         ] {
@@ -192,6 +276,9 @@ mod tests {
         let c = DeploymentConfig::from_toml("name = \"X\"\ndefault_locale = \"th\"").unwrap();
         assert_eq!(c.otp, OtpConfig::default());
         assert_eq!(c.retention.outbound_message_days, 90);
+        assert!(c.student.self_unlink && c.student.id_pattern.is_none());
+        assert_eq!(c.consent.version, "1");
+        assert_eq!(c.inbound, InboundConfig::default());
         assert_eq!(c.utc_offset_minutes().unwrap(), 0);
     }
 

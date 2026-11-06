@@ -12,7 +12,7 @@
 //!   Workers it is per isolate; the `with_menu` map is the reliable source.
 //!   Mapping a command for an account that has no Link is safe: the
 //!   Kernel never dispatches an Action from an unlinked account to a
-//!   Module (it answers `kernel.link.required`).
+//!   Module (the chat flow answers it with the Consent / Link steps).
 //! - **Sending** ([`render`]): per `docs/prototypes/message-render.md`.
 //!   Every send is [`Metering::Free`] and, as Telegram has no reply tokens,
 //!   a Push; the default [`Channel::send_batch`] (one `send` per Message)

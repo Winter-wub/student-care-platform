@@ -46,7 +46,10 @@ pub mod ui;
 pub mod fixtures;
 
 pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
-pub use config::{BrandingConfig, DeploymentConfig, OtpConfig, QuotaConfig, RetentionConfig};
+pub use config::{
+    BrandingConfig, ConsentConfig, DeploymentConfig, InboundConfig, OtpConfig, QuotaConfig,
+    RetentionConfig, StudentConfig,
+};
 pub use delivery::{
     BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,
     IncomingFile, Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp,
@@ -68,4 +71,6 @@ pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};
 pub use render::RenderCx;
 pub use resend::{RESEND_ENDPOINT, ResendEmail};
-pub use verification::{Challenge, EmailOtp, StudentClaim, VerificationMethod};
+pub use verification::{
+    Challenge, EmailOtp, StudentClaim, Verdict, VerificationMethod, VerifyContext,
+};

@@ -110,6 +110,7 @@ impl FakeProfile {
 /// handing one to the Deployment builder.
 #[derive(Debug, Clone)]
 pub struct FakeChannel {
+    kind: ChannelKind,
     secret: String,
     mini_app: bool,
     profile: FakeProfile,
@@ -127,6 +128,7 @@ impl FakeChannel {
             ));
         }
         Ok(Self {
+            kind: KIND,
             secret,
             mini_app: true,
             profile: FakeProfile::Full,
@@ -151,6 +153,14 @@ impl FakeChannel {
     /// URL were configured).
     pub fn without_mini_app(mut self) -> Self {
         self.mini_app = false;
+        self
+    }
+
+    /// The same Channel under another kind (default [`KIND`]), so a test
+    /// can register two Fake Channels in one Deployment. Its webhook path
+    /// is `/webhook/<kind>`; recorded state is shared with `self`.
+    pub fn with_kind(mut self, kind: &'static str) -> Self {
+        self.kind = ChannelKind(kind);
         self
     }
 
@@ -202,7 +212,7 @@ impl FakeChannel {
 #[async_trait]
 impl Channel for FakeChannel {
     fn kind(&self) -> ChannelKind {
-        KIND
+        self.kind
     }
     async fn parse_webhook(&self, req: WebhookRequest) -> Result<Vec<Inbound>> {
         let sig = req
@@ -213,7 +223,7 @@ impl Channel for FakeChannel {
         if sig.is_empty() || !wire::same(sig, &self.sign(&req.body)) {
             return Err(Error::BadSignature);
         }
-        wire::decode(KIND, &req.body, self.profile.reply_tokens())
+        wire::decode(self.kind, &req.body, self.profile.reply_tokens())
     }
     async fn download(&self, file: &IncomingFile) -> Result<Vec<u8>> {
         self.lock()
