@@ -74,33 +74,52 @@ impl Random for SeqRandom {
     }
 }
 
-/// An EmailSender that keeps every email instead of sending it.
+/// An EmailSender that keeps every email instead of sending it. Addresses
+/// marked with [`CapturingEmail::fail_for`] are refused (not kept).
 #[derive(Debug, Clone, Default)]
-pub struct CapturingEmail(Arc<Mutex<Vec<Email>>>);
+pub struct CapturingEmail {
+    sent: Arc<Mutex<Vec<Email>>>,
+    failing: Arc<Mutex<Vec<String>>>,
+}
 
 impl CapturingEmail {
     /// Every email sent so far, in order.
     pub fn sent(&self) -> Vec<Email> {
-        lock(&self.0).clone()
+        lock(&self.sent).clone()
     }
     /// The most recent email, if any.
     pub fn last(&self) -> Option<Email> {
-        lock(&self.0).last().cloned()
+        lock(&self.sent).last().cloned()
     }
     /// Emails sent to `to`.
     pub fn to(&self, to: &str) -> Vec<Email> {
-        lock(&self.0)
+        lock(&self.sent)
             .iter()
             .filter(|e| e.to == to)
             .cloned()
             .collect()
+    }
+    /// Makes every later send to `to` fail with `Error::Platform`
+    /// (`false` undoes it).
+    pub fn fail_for(&self, to: &str, failing: bool) {
+        let mut f = lock(&self.failing);
+        f.retain(|a| a != to);
+        if failing {
+            f.push(to.to_string());
+        }
     }
 }
 
 #[async_trait]
 impl EmailSender for CapturingEmail {
     async fn send(&self, email: Email) -> Result<()> {
-        lock(&self.0).push(email);
+        if lock(&self.failing).contains(&email.to) {
+            return Err(Error::Platform(format!(
+                "refused by the test: {}",
+                email.to
+            )));
+        }
+        lock(&self.sent).push(email);
         Ok(())
     }
 }

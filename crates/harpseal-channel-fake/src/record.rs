@@ -71,9 +71,24 @@ pub(crate) struct State {
     pub(crate) blocked: HashSet<ChannelAccountId>,
     /// The next batch fails with `Error::RateLimited` before object `n`.
     pub(crate) fail_at: Option<usize>,
+    /// When set, that armed failure is `Error::Platform(this)` instead.
+    pub(crate) fail_with: Option<String>,
     /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).
     pub(crate) keys: Vec<String>,
     pub(crate) next_id: u64,
+}
+
+impl State {
+    /// Disarms the armed failure and returns its error.
+    pub(crate) fn take_failure(&mut self) -> Error {
+        self.fail_at = None;
+        match self.fail_with.take() {
+            Some(m) => Error::Platform(m),
+            None => Error::RateLimited {
+                retry_after_secs: FAILURE_RETRY_AFTER_SECS,
+            },
+        }
+    }
 }
 
 impl FakeChannel {
@@ -123,10 +138,7 @@ impl FakeChannel {
             let mut receipt = SendReceipt::new(None, Metering::Free, false);
             for (k, part) in parts.into_iter().enumerate() {
                 if fail_at == Some(objects) {
-                    s.fail_at = None;
-                    let e = Error::RateLimited {
-                        retry_after_secs: FAILURE_RETRY_AFTER_SECS,
-                    };
+                    let e = s.take_failure();
                     return match k {
                         0 => BatchReceipt::partial(receipts, e),
                         _ => BatchReceipt::part_way(receipts, receipt, e),
@@ -220,7 +232,17 @@ impl FakeChannel {
     /// recipients instead: group `part` fails and the groups before it go
     /// out.
     pub fn fail_next_batch_at(&self, part: usize) {
-        self.lock().fail_at = Some(part);
+        let mut s = self.lock();
+        s.fail_at = Some(part);
+        s.fail_with = None;
+    }
+
+    /// Like [`FakeChannel::fail_next_batch_at`], but the failure is
+    /// `Error::Platform(message)`: not a "try later".
+    pub fn fail_next_batch_at_with(&self, part: usize, message: &str) {
+        let mut s = self.lock();
+        s.fail_at = Some(part);
+        s.fail_with = Some(message.to_string());
     }
 
     /// The idempotency key of every keyed batch so far, in order.

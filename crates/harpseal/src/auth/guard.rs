@@ -69,6 +69,8 @@ pub struct CurrentStaff {
     pub(crate) nav: Arc<[(String, String)]>,
     pub(crate) flash: Option<(bool, String)>,
     pub(crate) must_change_password: bool,
+    /// The Quota banner for the `#usage-banner` slot (#26), if any.
+    pub(crate) usage_banner: Option<Markup>,
 }
 
 impl CurrentStaff {
@@ -192,6 +194,11 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     let flash = cookies::read_flash(req.headers())
         .map(|(ok, key)| (ok, state.catalog.t(&live.locale, &key)));
     let had_flash = cookies::get(req.headers(), FLASH_COOKIE).is_some();
+    let usage_view = held(crate::kernel::usage::VIEW);
+    let usage_banner = match renders_a_page(&req) {
+        true => crate::kernel::usage::banner(state, &live.locale, usage_view).await,
+        false => None,
+    };
     let staff = CurrentStaff {
         id: live.staff_id,
         email: live.email,
@@ -202,6 +209,7 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         csrf,
         nav,
         flash,
+        usage_banner,
     };
     if let Some(p) = forbidden_permission {
         return Ok(Err(forbidden(state, &staff, p)));
@@ -214,6 +222,16 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
 /// Safe methods pass. Otherwise the `X-CSRF-Token` header or the `_csrf`
 /// field of a urlencoded body must equal `expected`; the body is read and
 /// put back for the handler.
+/// Only a full-page GET shows the usage banner: POST redirects, HTMX
+/// fragments and `.json`/`.csv` downloads skip its `usage_daily` read.
+fn renders_a_page(req: &Request) -> bool {
+    let path = req.uri().path();
+    *req.method() == Method::GET
+        && !req.headers().contains_key("hx-request")
+        && !path.ends_with(".json")
+        && !path.ends_with(".csv")
+}
+
 pub(crate) async fn check_csrf(req: Request, expected: &str) -> (Request, bool) {
     if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
         return (req, true);

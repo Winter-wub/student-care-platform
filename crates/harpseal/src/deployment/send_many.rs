@@ -44,7 +44,10 @@ impl Deployment {
     ///
     /// Every recipient reached gets one `outbound_message` row per Message
     /// (`module` stored on it) and the metered units count in
-    /// `usage_daily`, written in one `Db::batch` for a multicast.
+    /// `usage_daily`, written in one `Db::batch` for a multicast. A failed
+    /// multicast group adds `msgs.len()` per recipient in it to
+    /// `usage_daily.failed` (one at a time, [`Deployment::send_batch`]
+    /// counts each account's failures).
     /// `Err` only when nothing could be tried (unknown Channel, an
     /// account on another Channel, a Message needing a Capability the
     /// Channel lacks: `Error::Unsupported`) or the write failed after a
@@ -85,9 +88,28 @@ impl Deployment {
         };
         let batch = multi.send_many(to, msgs, locale, key).await;
         let reached = batch.receipts.len() / msgs.len();
+        // A failed group: each of its recipients missed every Message
+        // (`usage_daily.failed`, #26; a 429 is retried, not counted).
+        let failed = match &batch.error {
+            Some(e) if !matches!(e.root(), Error::RateLimited { .. }) => {
+                let group = multi.max_recipients().max(1).min(to.len() - reached);
+                group * msgs.len()
+            }
+            _ => 0,
+        };
         if reached > 0 {
-            let stmts = self.many_rows(&to[..reached], msgs, &batch, module)?;
+            let mut stmts = self.many_rows(&to[..reached], msgs, &batch, module)?;
+            if failed > 0 {
+                stmts.push(self.failed_usage(channel, failed));
+            }
             self.services.db.batch(stmts).await?;
+        } else if failed > 0 {
+            // Best effort: the Channel's error is what the caller needs.
+            let _ = self
+                .services
+                .db
+                .execute(self.failed_usage(channel, failed))
+                .await;
         }
         let mut chunks = batch.receipts.chunks(msgs.len());
         let results = (0..reached)
