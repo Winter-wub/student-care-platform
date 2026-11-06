@@ -2,15 +2,16 @@
 //! migrations and public pages. Registered first by every Deployment. Not
 //! public API: the schema and these queries may change without notice.
 
-mod notice;
+pub(crate) mod flow;
+pub(crate) mod notice;
+pub(crate) mod security;
+pub(crate) mod text;
 mod texts;
+mod texts_link;
 
 use axum::routing::get;
 
-use crate::delivery::{ChannelAccountId, StudentId};
 use crate::manifest::Permission;
-use crate::message::Locale;
-use crate::port_types::{Rows, Statement, Value};
 use crate::{Module, ModuleRegistrar};
 
 /// Module name of the Kernel; its migrations are recorded under it.
@@ -71,25 +72,7 @@ impl Module for Kernel {
             r.migration(name, sql);
         }
         r.messages(texts::DEFAULTS)
+            .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page));
-    }
-}
-
-/// The active Link of an account: the Student and their Locale.
-pub(crate) fn find_link(account: &ChannelAccountId) -> Statement {
-    Statement::new(
-        "SELECT l.student_id, s.locale FROM channel_account ca \
-         JOIN link l ON l.channel_account_id = ca.id AND l.status = 'active' \
-         JOIN student s ON s.id = l.student_id \
-         WHERE ca.channel = ? AND ca.external_id = ?",
-    )
-    .bind(account.channel.as_str())
-    .bind(account.external_id.clone())
-}
-
-pub(crate) fn parse_link(rows: &Rows) -> Option<(StudentId, Locale)> {
-    match rows.rows.first()?.as_slice() {
-        [Value::Text(s), Value::Text(l)] => Some((StudentId(s.clone()), Locale(l.clone()))),
-        _ => None,
     }
 }

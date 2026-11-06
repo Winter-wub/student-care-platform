@@ -19,8 +19,8 @@ use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
 use crate::migrate::MigrationReport;
 use crate::port_types::Statement;
 use crate::{
-    ActionContext, ActionHandler, Channel, Error, JobContext, JobHandler, Result, Services,
-    VerificationMethod, kernel,
+    ActionHandler, Channel, Error, JobContext, JobHandler, Result, Services, VerificationMethod,
+    kernel,
 };
 
 /// One customer's running system: the Core, its configuration, Channels and
@@ -108,20 +108,33 @@ impl Deployment {
             .map(|c| c.as_ref())
     }
 
-    fn channel_or_err(&self, kind: &str) -> Result<&dyn Channel> {
+    pub(crate) fn channel_or_err(&self, kind: &str) -> Result<&dyn Channel> {
         self.channel(kind)
             .ok_or_else(|| Error::Invalid(format!("no channel {kind}")))
     }
 
-    /// The unlocked Menu in `locale`.
+    /// The unlocked Menu in `locale`: the Modules' entries by `order`,
+    /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
+    /// `[student] self_unlink` is on.
     pub fn menu_for(&self, locale: &Locale) -> Menu {
-        let entries = self.registry.menu.iter().map(|e| MenuEntry {
-            label: self.catalog.t(locale, e.label_key),
-            action: e.action.clone(),
-        });
-        Menu {
-            entries: entries.collect(),
+        let mut entries: Vec<MenuEntry> = self
+            .registry
+            .menu
+            .iter()
+            .map(|e| MenuEntry {
+                label: self.catalog.t(locale, e.label_key),
+                action: e.action.clone(),
+            })
+            .collect();
+        if self.config.student.self_unlink
+            && let Ok(action) = ActionId::new(kernel::flow::actions::UNLINK)
+        {
+            entries.push(MenuEntry {
+                label: self.catalog.t(locale, "kernel.menu.unlink"),
+                action,
+            });
         }
+        Menu { entries }
     }
 
     /// Verifies and parses one webhook call for Channel `kind`, then
@@ -171,44 +184,27 @@ impl Deployment {
         let _ = self.services.db.execute(stmt).await;
     }
 
-    /// Dispatches an Action from a linked account to its Module and sends
-    /// its whole answer as one batch. The chat flow for unlinked accounts
-    /// (Consent, Verification) arrives with #19; until then they get the
-    /// `kernel.link.required` text.
+    /// Answers one event: the Kernel's chat flow (`kernel::flow`) handles
+    /// Consent, Verification, Link, re-consent, unlink and fallback, and
+    /// hands Actions of linked, consenting Students to their Module.
     async fn handle_inbound(&self, ev: Inbound) -> Result<()> {
-        let Inbound::Action {
-            from,
-            action,
-            reply,
-        } = ev
-        else {
-            return Ok(());
-        };
-        let reply = reply.as_ref();
-        let kernel = Some(kernel::NAME);
-        let rows = self.services.db.query(kernel::find_link(&from)).await?;
-        let Some((student, locale)) = kernel::parse_link(&rows) else {
-            let locale = self.config.default_locale.clone();
-            let msg = Message::text(self.catalog.t(&locale, "kernel.link.required"));
-            self.deliver(&from, reply, &[msg], &locale, kernel).await?;
-            return Ok(());
-        };
-        let Some((module, handler)) = self.registry.actions.get(&action) else {
-            let msg = Message::text(self.catalog.t(&locale, "kernel.action.expired"));
-            self.deliver(&from, reply, &[msg], &locale, kernel).await?;
-            return Ok(());
-        };
-        let cx = ActionContext {
-            services: self.services.clone(),
-            catalog: self.catalog.clone(),
-            student,
-            account: from.clone(),
-            locale: locale.clone(),
-        };
-        let msgs = handler.handle(cx).await?;
-        self.deliver(&from, reply, &msgs, &locale, Some(module))
-            .await?;
-        Ok(())
+        kernel::flow::handle(self, ev).await
+    }
+
+    /// The Module and handler registered for `action`.
+    pub(crate) fn module_action(
+        &self,
+        action: &ActionId,
+    ) -> Option<(&'static str, Arc<dyn ActionHandler>)> {
+        self.registry
+            .actions
+            .get(action)
+            .map(|(m, h)| (*m, h.clone()))
+    }
+
+    /// The merged catalog, shared.
+    pub(crate) fn catalog_arc(&self) -> Arc<Catalog> {
+        self.catalog.clone()
     }
 
     /// Uses the edit Capability when present, otherwise sends a new message.

@@ -162,7 +162,7 @@ fn press(account: &str, action: &str, reply_expires_at: i64) -> Inbound {
 }
 
 #[tokio::test]
-async fn an_unlinked_account_is_asked_to_verify_first() {
+async fn an_unlinked_account_is_greeted_with_the_consent_card() {
     let h = Harness::new();
     let app = h.start().await;
     let r = app
@@ -170,8 +170,8 @@ async fn an_unlinked_account_is_asked_to_verify_first() {
         .await;
     assert_eq!(r.status, 200);
     let sent = h.fake_channel().sent();
-    assert_eq!(sent.len(), 1);
-    assert!(matches!(&sent[0].message, Message::Text(t) if t == "กรุณายืนยันตัวตนก่อนใช้งาน"));
+    assert_eq!(sent.len(), 2, "welcome Text + Consent Card");
+    assert!(matches!(&sent[1].message, Message::Card(c) if c.title == "ประกาศความเป็นส่วนตัว"));
     assert_eq!(
         sent[0].metering,
         harpseal::Metering::Free,
