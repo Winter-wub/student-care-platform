@@ -1,16 +1,13 @@
 //! The Channel contract suite against the Telegram adapter, through a
-//! `RecordingHttp` (nothing leaves the process).
-//!
-//! `#[ignore]` until #17: the adapter's update parsing and Bot API calls
-//! still return `Error::Platform`. #17 removes the `#[ignore]`; the
-//! recorded updates and the wire reader are ready.
+//! `RecordingHttp` (nothing leaves the process). The wire reader also
+//! checks the JSON of every Bot API call it reads.
 
 use std::sync::Arc;
 
 use harpseal::{ActionId, ChannelAccountId, Delivery, Metering, WebhookRequest};
 use harpseal_channel_telegram::{KIND, TelegramChannel, TelegramConfig, metering};
-use harpseal_testing::RecordingHttp;
 use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
+use harpseal_testing::{RecordedRequest, RecordingHttp};
 use serde_json::{Value, json};
 
 const SECRET: &str = "seal-bay-webhook-secret";
@@ -57,11 +54,33 @@ fn json(body: &[u8]) -> Value {
 /// Bot API methods that send one message each.
 const SENDS: &[&str] = &["/sendMessage", "/sendDocument", "/sendPhoto"];
 
+const BOT: &str = "https://api.telegram.org/bot8000000001:SEALBAY/";
+
+/// Every call is a JSON `POST` to the bot's URL; a send names the chat and
+/// has a text or a file.
+fn assert_request(r: &RecordedRequest) {
+    assert_eq!(r.method, http::Method::POST, "{}", r.uri);
+    assert!(r.uri.starts_with(BOT), "{}", r.uri);
+    assert_eq!(r.headers["content-type"], "application/json");
+    let body = json(&r.body);
+    assert!(body.is_object(), "{}: JSON object body", r.uri);
+    if SENDS.iter().any(|m| r.uri.ends_with(m)) {
+        assert_eq!(body["chat_id"], CHAT, "{}", r.uri);
+        assert!(body.get("method").is_none(), "method is in the URL");
+        let content = ["text", "document", "photo"];
+        assert!(content.iter().any(|k| body[k].is_string()), "{body}");
+    }
+    if r.uri.ends_with("/answerCallbackQuery") {
+        assert!(body["callback_query_id"].is_string(), "{body}");
+    }
+}
+
 impl Wire for TelegramWire {
     fn take(&self) -> WireLog {
         let mut payloads = Vec::new();
         let mut calls = Vec::new();
         for r in self.0.take_requests() {
+            assert_request(&r);
             if SENDS.iter().any(|m| r.uri.ends_with(m)) {
                 calls.push(Call::push(1));
                 callbacks(&json(&r.body), &mut payloads);
@@ -85,8 +104,9 @@ impl Wire for TelegramWire {
     fn reply_limit(&self) -> Option<usize> {
         None
     }
-    /// The last `setMyCommands` / `deleteMyCommands` scoped to this chat
-    /// decides. #17 may adjust this to the calls it implements.
+    /// The last `setMyCommands` scoped to this chat decides; `/start`
+    /// alone is the locked Menu. Each one is followed by a
+    /// `setChatMenuButton` for the same chat.
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
         let reqs = self.0.requests();
         let last = reqs.iter().rev().find(|r| {
@@ -96,13 +116,18 @@ impl Wire for TelegramWire {
                     .trim_matches('"')
                     == to.external_id
         })?;
+        let button = reqs
+            .last()
+            .filter(|r| r.uri.ends_with("/setChatMenuButton"));
+        let button = json(&button.expect("a menu button call last").body);
+        assert_eq!(button["chat_id"], CHAT);
+        assert_eq!(button["menu_button"]["type"], "commands");
         if last.uri.ends_with("/deleteMyCommands") {
             return None;
         }
-        json(&last.body)["commands"]
-            .as_array()
-            .map(Vec::len)
-            .filter(|n| *n > 0)
+        let commands = json(&last.body)["commands"].as_array().cloned()?;
+        let locked = commands.len() == 1 && commands[0]["command"] == "start";
+        (!locked && !commands.is_empty()).then_some(commands.len())
     }
 }
 
@@ -132,7 +157,6 @@ fn target() -> Target {
 }
 
 #[tokio::test]
-#[ignore = "Telegram update parsing and Bot API calls arrive with #17; remove this then"]
 async fn telegram_passes_the_channel_contract() {
     run(target).await;
 }
