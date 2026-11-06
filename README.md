@@ -281,6 +281,7 @@ multicast group of 500 (LINE) or 25 accounts (Telegram, paced). The Card has
 "ข่าวล่าสุด". The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`, "ส่งซ้ำ" is a new round,
 and a retract deletes where the Channel can (Telegram, within 48 h).
+Mini App `/app`: LIFF endpoint and Telegram Web App URL = the origin (`/` forwards to `/app`); 1-hour `app_session` cookie; `/notice` is public.
 
 Administrators also get `/admin/security` (Security Events, `kernel.security.view`)
 and `/admin/audit` (the audit log with a before/after diff, `kernel.audit.view`);
