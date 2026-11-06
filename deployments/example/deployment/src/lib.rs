@@ -33,6 +33,39 @@ pub struct Secrets {
     pub fake_secret: String,
 }
 
+impl Secrets {
+    /// Every variable [`Secrets::from_lookup`] reads.
+    pub const VARS: [&'static str; 7] = [
+        "LINE_CHANNEL_SECRET",
+        "LINE_ACCESS_TOKEN",
+        "LINE_LIFF_ID",
+        "TELEGRAM_BOT_TOKEN",
+        "TELEGRAM_WEBHOOK_SECRET",
+        "TELEGRAM_WEB_APP_URL",
+        "FAKE_SECRET",
+    ];
+
+    /// Reads [`Secrets::VARS`] through `get`: the process environment on
+    /// the native binary, Worker secrets and vars on Workers. Missing values
+    /// are empty; [`deployment`] refuses an empty `FAKE_SECRET`.
+    pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
+        let v = |k: &str| get(k).unwrap_or_default();
+        Secrets {
+            line: LineConfig::new(
+                v("LINE_CHANNEL_SECRET"),
+                v("LINE_ACCESS_TOKEN"),
+                v("LINE_LIFF_ID"),
+            ),
+            telegram: TelegramConfig::new(
+                v("TELEGRAM_BOT_TOKEN"),
+                v("TELEGRAM_WEBHOOK_SECRET"),
+                v("TELEGRAM_WEB_APP_URL"),
+            ),
+            fake_secret: v("FAKE_SECRET"),
+        }
+    }
+}
+
 /// A customer Module: a "contact Staff" Menu entry that answers with the
 /// office's details (`contact.reply`, worded in `deployment.toml`).
 pub struct Contact;

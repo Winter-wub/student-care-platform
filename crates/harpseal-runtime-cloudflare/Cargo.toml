@@ -11,5 +11,7 @@ publish = false
 harpseal.workspace = true
 worker.workspace = true
 async-trait.workspace = true
+axum.workspace = true
 http.workspace = true
+tower-service = "0.3"
 getrandom = { workspace = true, features = ["wasm_js"] }
