@@ -186,3 +186,15 @@ label.choice input { width: auto; min-height: 0; margin-top: 4px; flex: none; }
 input[type="file"] { padding: 8px; }
 progress { width: 100%; height: 16px; accent-color: var(--brand); }
 .names { columns: 14rem auto; margin: 0; padding-left: 1.25rem; }
+
+/* Admin pages (#27) */
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 8px; margin: 0; font-size: .875rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.checks { border: 0; margin: 0 0 12px; padding: 0; }
+.checks legend { font-weight: 600; margin-bottom: 4px; }
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; min-height: var(--tap); margin: 0; }
+label.check input { width: auto; min-height: 0; }
+tr.changed td { background: #fff8e6; }
+.secret { font-size: 1.25rem; letter-spacing: .05em; user-select: all; }
+.default-text { white-space: pre-wrap; color: var(--muted); }
