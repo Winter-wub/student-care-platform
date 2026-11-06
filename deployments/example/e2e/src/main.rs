@@ -12,6 +12,12 @@
 //! (the Fake Channel's record) and `/dev/email` (the captured OTP email);
 //! Jobs run through `/dev/tick` instead of waiting for the minute ticker.
 //! Database assertions read the SQLite file directly, read-only.
+//!
+//! The temporary directory (SQLite file, uploaded files, `server.log`) is
+//! removed when every step passes and kept on failure, with its path and the
+//! log's tail printed, for debugging. The server is killed when the walk
+//! ends or fails; a Ctrl-C kills the walk but may leave the server running
+//! (it is a plain child process, not a process group): stop it by hand.
 
 #![forbid(unsafe_code)]
 

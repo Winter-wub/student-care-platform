@@ -1,21 +1,81 @@
-//! Text overrides from code: the same path the back office's Texts page
-//! uses (`POST /admin/texts/{key}`), for a CLI or a seed. The acting Staff
-//! member must be active and hold `kernel.setting.edit`, as on the page;
-//! the write is audited as `setting.update` by that Staff member.
+//! Writing one text: the single path the Texts page (`POST
+//! /admin/texts/{key}`, save) and the public [`set_override`] share, so the
+//! two cannot drift. The public function checks the acting Staff member's
+//! `kernel.setting.edit` (the page's guard does it for the page) and
+//! audits the write as `setting.update` by that Staff member.
 
-use super::settings;
+use super::settings::{self, Refused};
 use crate::audit::{Actor, RequestCtx};
-use crate::{Deployment, Error, Result};
+use crate::manifest::Catalog;
+use crate::{Deployment, DeploymentConfig, Error, Result, Services};
 
 /// The Permission [`set_override`] requires.
 pub const SETTING_PERMISSION: &str = "kernel.setting.edit";
 
+/// What [`write`] did.
+#[derive(Debug)]
+pub(super) enum Written {
+    /// Not a key the Texts page edits, or a Locale it does not offer.
+    NotEditable,
+    /// The form was rendered from another stored value (stale version).
+    Stale,
+    /// The stored override already is the value: nothing written.
+    Unchanged,
+    /// The value breaks a rule (empty, too long, placeholders).
+    Refused(Refused),
+    /// Written (`true`), or the row changed meanwhile (`false`).
+    Saved(bool),
+}
+
+/// Stores `value` (CRLF made LF) as the text of `key` in `locale`.
+/// `version`, when given, is the form's compare-and-set token
+/// ([`settings::version`] of the value it was rendered from).
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn write(
+    s: &Services,
+    catalog: &Catalog,
+    config: &DeploymentConfig,
+    key: &str,
+    locale: &str,
+    value: &str,
+    version: Option<&str>,
+    actor: &Actor,
+    ctx: &RequestCtx,
+) -> Result<Written> {
+    if !settings::editable(catalog, key)
+        || !settings::locales(catalog, config)
+            .iter()
+            .any(|l| l == locale)
+    {
+        return Ok(Written::NotEditable);
+    }
+    let stored = settings::settings(s).await?;
+    let current = stored.get(&(key.to_string(), locale.to_string()));
+    if version.is_some_and(|v| settings::version(current.map(String::as_str)) != v) {
+        return Ok(Written::Stale);
+    }
+    // Browsers send textarea line breaks as CRLF.
+    let value = value.replace("\r\n", "\n");
+    if current.is_some_and(|c| *c == value) {
+        return Ok(Written::Unchanged);
+    }
+    let row = settings::row(catalog, config, &Default::default(), key, locale);
+    if let Err(why) = settings::check(&row.base, &value) {
+        return Ok(Written::Refused(why));
+    }
+    let expected = current.map(String::as_str);
+    let before = expected.unwrap_or(&row.base);
+    let done = settings::save(s, actor, key, locale, &value, expected, before, ctx).await?;
+    Ok(Written::Saved(done))
+}
+
 /// Stores `value` as the text of `key` in `locale` (a `setting` row; live
-/// on the next message). Refused like on the page: the key must be one
-/// the Texts page edits, the Locale one it offers, and `value` must keep
-/// the `{name}` placeholders of the text it replaces, be non-empty and at
-/// most 5 000 characters. Returns `false`, writing nothing, when the
-/// stored override already is `value` or the row changed meanwhile.
+/// on the next message): the same path as the Texts page. Refused like on
+/// the page: the key must be one the Texts page edits, the Locale one it
+/// offers, and `value` must keep the `{name}` placeholders of the text it
+/// replaces, be non-empty and at most 5 000 characters. Returns `false`,
+/// writing nothing, when the stored override already is `value` or the row
+/// changed meanwhile.
 pub async fn set_override(
     d: &Deployment,
     key: &str,
@@ -26,40 +86,28 @@ pub async fn set_override(
 ) -> Result<bool> {
     crate::auth::roles::require(d.services(), actor, SETTING_PERMISSION).await?;
     let (catalog, config) = (d.catalog(), d.config());
-    if !settings::editable(catalog, key) {
-        return Err(Error::Invalid(format!("`{key}` is not an editable text")));
-    }
-    if !settings::locales(catalog, config)
-        .iter()
-        .any(|l| l == locale)
+    match write(
+        d.services(),
+        catalog,
+        config,
+        key,
+        locale,
+        value,
+        None,
+        actor,
+        ctx,
+    )
+    .await?
     {
-        return Err(Error::Invalid(format!("Locale `{locale}` is not offered")));
-    }
-    let value = value.replace("\r\n", "\n");
-    let stored = settings::settings(d.services()).await?;
-    let current = stored.get(&(key.to_string(), locale.to_string()));
-    if current.is_some_and(|c| *c == value) {
-        return Ok(false);
-    }
-    let row = settings::row(catalog, config, &Default::default(), key, locale);
-    if let Err(why) = settings::check(&row.base, &value) {
-        return Err(Error::Invalid(format!(
+        Written::Saved(done) => Ok(done),
+        Written::Unchanged | Written::Stale => Ok(false),
+        Written::NotEditable => Err(Error::Invalid(format!(
+            "`{key}` in Locale `{locale}` is not an editable text"
+        ))),
+        Written::Refused(why) => Err(Error::Invalid(format!(
             "text `{key}` refused: {} {}",
             why.key,
             why.names.join(", ")
-        )));
+        ))),
     }
-    let expected = current.map(String::as_str);
-    let before = expected.unwrap_or(&row.base);
-    settings::save(
-        d.services(),
-        actor,
-        key,
-        locale,
-        &value,
-        expected,
-        before,
-        ctx,
-    )
-    .await
 }

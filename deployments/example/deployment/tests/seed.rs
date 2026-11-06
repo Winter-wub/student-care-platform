@@ -110,3 +110,65 @@ async fn seeding_needs_an_administrator() {
     assert!(matches!(err, SeedError::NoAdministrator), "{err}");
     assert_eq!(int(&h, "SELECT count(*) FROM student").await, 0);
 }
+
+#[tokio::test]
+async fn a_customised_text_survives_a_forced_reseed() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let admin = h
+        .create_staff(
+            "admin@sealbay.example",
+            "kelp forest at dawn",
+            &["Administrator"],
+        )
+        .await;
+    let d = app.deployment();
+    let custom = "สวัสดีครับ ข้อความที่ผู้ดูแลแก้เอง กรุณายอมรับประกาศด้านล่าง";
+    let actor = harpseal::Actor::Staff(admin);
+    let ctx = harpseal::RequestCtx::cli();
+    assert!(
+        harpseal::texts::set_override(d, "kernel.flow.welcome", "th", custom, &actor, &ctx)
+            .await
+            .unwrap()
+    );
+    let first = seed(d, None, false).await.unwrap();
+    assert_eq!(first.texts_written, 1, "only the English text was free");
+    let forced = seed(d, None, true).await.unwrap();
+    assert_eq!(forced.texts_written, 0);
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT value FROM setting WHERE key = 'kernel.flow.welcome' AND locale = 'th'",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rows.get(0, "value").and_then(|v| v.as_text()), Some(custom));
+}
+
+#[tokio::test]
+async fn seeding_as_a_named_administrator() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    h.create_staff(
+        "first@sealbay.example",
+        "kelp forest at dawn",
+        &["Administrator"],
+    )
+    .await;
+    let second = h
+        .create_staff(
+            "second@sealbay.example",
+            "kelp forest at dawn",
+            &["Administrator"],
+        )
+        .await;
+    let report = seed(app.deployment(), Some("Second@SealBay.example "), false)
+        .await
+        .unwrap();
+    assert_eq!(report.acting_as, "second@sealbay.example");
+    let by_second = format!(
+        "SELECT count(*) FROM audit_log WHERE actor_id = '{second}' \
+         AND json_extract(after, '$.seed') = 1"
+    );
+    assert_eq!(int(&h, &by_second).await, 2 + 4 + 1 + 2);
+}

@@ -200,17 +200,18 @@ fn role_rows(rows: &Rows) -> Vec<RoleRow> {
 
 /// The public write functions (`roster::upload`, …) check what the page
 /// guard checks: `actor` is an active Staff member holding `permission`.
-/// Returns the Staff id; anything else is `Error::Invalid` naming the
-/// Permission, so a CLI cannot bypass Roles.
+/// Returns the Staff id; anything else is [`Error::Forbidden`], so a CLI
+/// cannot bypass Roles.
 pub(crate) async fn require(
     services: &Services,
     actor: &crate::Actor,
     permission: &str,
 ) -> Result<String> {
+    let forbidden = || Error::Forbidden {
+        permission: permission.to_string(),
+    };
     let crate::Actor::Staff(id) = actor else {
-        return Err(Error::Invalid(format!(
-            "only a Staff member holding `{permission}` may do this"
-        )));
+        return Err(forbidden());
     };
     let rows = services
         .db
@@ -223,9 +224,7 @@ pub(crate) async fn require(
             .iter()
             .any(|p| p == permission)
     {
-        return Err(Error::Invalid(format!(
-            "Staff {id} is not active or lacks Permission `{permission}`"
-        )));
+        return Err(forbidden());
     }
     Ok(id.clone())
 }

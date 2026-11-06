@@ -4,6 +4,11 @@
 # .github/workflows/release-plz.yml).
 
 [workspace]
+# Publish only when the commit on main is a merged Release PR. Without this
+# (release-plz's default is true) the first push after the owner adds
+# CARGO_REGISTRY_TOKEN would publish every crate with no Release PR merge:
+# crates.io versions cannot be deleted.
+release_always = false
 # One CHANGELOG.md per crate, next to its Cargo.toml (the Core's is the
 # repository's CHANGELOG.md, below).
 changelog_update = true

@@ -1,6 +1,6 @@
 # Deploying to Cloudflare Workers
 
-Back to the [README](../../README.md).
+Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 Workers Paid is required (Free's 10 ms CPU fails logins and imports). The
 build needs `worker-build` (`cargo install worker-build`) and binaryen's

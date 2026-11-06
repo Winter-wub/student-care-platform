@@ -677,8 +677,10 @@ dependencies = [
  "harpseal-channel-fake",
  "harpseal-cli",
  "harpseal-runtime-native",
+ "harpseal-testing",
  "serde_json",
  "tokio",
+ "tower",
 ]
 
 [[package]]

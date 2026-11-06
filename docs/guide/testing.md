@@ -1,7 +1,7 @@
 # Testing
 
 The in-process harness, the Channel contract suite and the e2e walk. Back
-to the [README](../../README.md).
+to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ## The harness
 
@@ -60,7 +60,10 @@ Card, the ack in chat twice ("รับทราบแล้ว" the second time
 showing it acknowledged, `/admin/usage`, `/admin/security`, `/admin/audit`,
 and the self-unlink from the Menu (Link revoked, Menu locked). It prints one
 row per step with its time, exits 1 on any failure (with the server log's
-tail) and kills the server.
+tail) and kills the server. The temporary directory (SQLite file, files,
+`server.log`) is removed when every step passes and kept on failure for
+debugging. A Ctrl-C stops the walk but may leave the server running (a
+plain child process, not a process group): stop it by hand.
 
 What the Student saw comes from the dev routes (`/dev/outbox`,
 `/dev/email`, `/dev/tick`, see [self-hosting](self-hosting.md#dev-mode-harpseal_dev_routes1));

@@ -13,7 +13,9 @@
 //! Every route needs header `x-dev-secret: <FAKE_SECRET>` (compared in
 //! constant time) and answers 404 without it, so the routes look absent.
 //! The OTP itself is unchanged: same length, expiry and attempt limit; dev
-//! mode only changes where the email goes. Never enable it in production.
+//! mode only changes where the email goes. Never enable it in production:
+//! [`check_safe`] refuses to start it on a non-loopback address or with a
+//! weak `FAKE_SECRET`.
 
 use std::sync::{Arc, Mutex};
 
@@ -29,9 +31,42 @@ use serde_json::{Value, json};
 /// Header carrying `FAKE_SECRET`.
 pub const SECRET_HEADER: &str = "x-dev-secret";
 
-/// Keeps every email instead of sending it.
+/// Shortest `FAKE_SECRET` dev mode accepts.
+pub const MIN_SECRET_CHARS: usize = 16;
+/// The documented placeholder, refused in dev mode.
+pub const PLACEHOLDER_SECRET: &str = "change-me";
+/// Emails kept; older ones are dropped.
+pub const KEPT_EMAILS: usize = 50;
+
+/// Dev mode exposes OTP emails to whoever knows `FAKE_SECRET`, so it starts
+/// only on a loopback address (`127.0.0.0/8`, `::1`, `localhost`) and with a
+/// secret of at least [`MIN_SECRET_CHARS`] characters that is not
+/// [`PLACEHOLDER_SECRET`]. The error names the rule broken.
+pub fn check_safe(addr: &str, secret: &str) -> Result<(), String> {
+    let host = addr.rsplit_once(':').map_or(addr, |(h, _)| h);
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if !loopback {
+        return Err(format!(
+            "HARPSEAL_DEV_ROUTES=1 needs a loopback HARPSEAL_ADDR (127.0.0.1, ::1, localhost), \
+             not {addr}: dev mode shows OTP emails"
+        ));
+    }
+    if secret == PLACEHOLDER_SECRET || secret.chars().count() < MIN_SECRET_CHARS {
+        return Err(format!(
+            "HARPSEAL_DEV_ROUTES=1 needs a FAKE_SECRET of at least {MIN_SECRET_CHARS} characters \
+             other than `{PLACEHOLDER_SECRET}` (e.g. `openssl rand -hex 16`): it guards the /dev routes"
+        ));
+    }
+    Ok(())
+}
+
+/// Keeps the last [`KEPT_EMAILS`] emails instead of sending them.
 #[derive(Debug, Default, Clone)]
-pub struct CapturingEmail(Arc<Mutex<Vec<Email>>>);
+pub struct CapturingEmail(Arc<Mutex<std::collections::VecDeque<Email>>>);
 
 impl CapturingEmail {
     fn last_to(&self, to: &str) -> Option<Email> {
@@ -46,8 +81,13 @@ impl CapturingEmail {
 #[async_trait]
 impl EmailSender for CapturingEmail {
     async fn send(&self, email: Email) -> harpseal::Result<()> {
-        eprintln!("dev: email to {} captured: {}", email.to, email.subject);
-        self.0.lock().unwrap_or_else(|p| p.into_inner()).push(email);
+        // Never the subject or body: the OTP is in them.
+        eprintln!("dev: captured email to {}", email.to);
+        let mut kept = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if kept.len() >= KEPT_EMAILS {
+            kept.pop_front();
+        }
+        kept.push_back(email);
         Ok(())
     }
 }
@@ -229,24 +269,5 @@ impl Dev {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn query_params_are_decoded() {
-        let q = "to=s68010001%40sealbay.example&x=a+b";
-        assert_eq!(query_param(q, "to").unwrap(), "s68010001@sealbay.example");
-        assert_eq!(query_param(q, "x").unwrap(), "a b");
-        assert_eq!(query_param(q, "y"), None);
-        assert_eq!(query_param("to=%E0%B8%81", "to").unwrap(), "ก");
-        assert_eq!(query_param("to=50%", "to").unwrap(), "50%");
-    }
-
-    #[test]
-    fn the_secret_must_match_exactly() {
-        assert!(same("abc", "abc"));
-        assert!(!same("abc", "abd"));
-        assert!(!same("abc", "ab"));
-        assert!(!same("", "abc"));
-    }
-}
+#[path = "dev_tests.rs"]
+mod tests;

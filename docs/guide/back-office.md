@@ -1,7 +1,7 @@
 # The back office
 
 What Staff see under `/admin`, and the Permission each page needs. Back to
-the [README](../../README.md).
+the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 `/admin/students` lists the roster (50 per page, HTMX search by name or code)
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and

@@ -62,8 +62,14 @@ impl World {
         }
     }
 
-    /// One integer from `sql` with `params`, read straight from the file.
+    /// One integer from `sql` with `params`.
     pub(crate) fn int(&self, sql: &str, params: &[&str]) -> R<i64> {
+        self.scalar(sql, params)
+    }
+
+    /// The first column of the first row of `sql`, read straight from the
+    /// SQLite file (read-only, waiting up to 5 s for the server's writes).
+    fn scalar<T: rusqlite::types::FromSql>(&self, sql: &str, params: &[&str]) -> R<T> {
         let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY;
         let conn =
             rusqlite::Connection::open_with_flags(&self.db, flags).map_err(|e| e.to_string())?;
@@ -145,7 +151,9 @@ impl World {
             .ok_or(format!("upload went to {to}"))?
             .to_string();
         self.c.get(&to).await?.expect(200, "preview")?;
-        let state = |w: &Self| w.int_text("SELECT state FROM roster_import WHERE id = ?", &id);
+        let state = |w: &Self| -> R<String> {
+            w.scalar("SELECT state FROM roster_import WHERE id = ?", &[&id])
+        };
         ensure(
             state(self)? == "previewed",
             format!("import {id} is {}", state(self)?),
@@ -164,16 +172,6 @@ impl World {
             self.c.get(&to).await?.expect(200, "progress")?;
         }
         Err(format!("import {id} never finished"))
-    }
-
-    fn int_text(&self, sql: &str, id: &str) -> R<String> {
-        let flags = rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY;
-        let conn =
-            rusqlite::Connection::open_with_flags(&self.db, flags).map_err(|e| e.to_string())?;
-        conn.busy_timeout(Duration::from_secs(5))
-            .map_err(|e| e.to_string())?;
-        conn.query_row(sql, [id], |r| r.get(0))
-            .map_err(|e| format!("{sql}: {e}"))
     }
 
     fn students(&self) -> R<(i64, i64, i64)> {

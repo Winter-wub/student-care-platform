@@ -12,6 +12,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 
 use super::settings::{self, Refused, TextRow};
+use super::texts_api::Written;
 use super::view::{View, cut};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx};
 
@@ -286,8 +287,52 @@ pub(super) async fn submit(
     Form(f): Form<TextForm>,
 ) -> Response {
     let v = View::new(&s, &staff);
+    let back = format!("/admin/texts/{key}");
+    let actor = Actor::staff(&staff);
+    if f.op == "reset" {
+        return reset(&s, &v, &key, &f, &actor, &ctx).await;
+    }
+    let written = super::texts_api::write(
+        &s.services,
+        &s.catalog,
+        &s.config,
+        &key,
+        &f.locale,
+        &f.value,
+        Some(&f.version),
+        &actor,
+        &ctx,
+    )
+    .await;
+    match written {
+        Ok(Written::NotEditable) => v.not_found("/admin/texts"),
+        Ok(Written::Stale | Written::Saved(false)) => {
+            v.redirect(&back, false, "kernel.admin.conflict")
+        }
+        Ok(Written::Unchanged | Written::Saved(true)) => {
+            v.redirect(&back, true, "kernel.admin.saved")
+        }
+        Ok(Written::Refused(why)) => {
+            let value = f.value.replace("\r\n", "\n");
+            let rejected = Some((f.locale.as_str(), value.as_str(), why));
+            render(&v, &key, rejected, StatusCode::UNPROCESSABLE_ENTITY).await
+        }
+        Err(e) => v.error(&e),
+    }
+}
+
+/// "Reset to default": deletes the `setting` row the form was rendered
+/// from (a compare-and-set on that value).
+async fn reset(
+    s: &AppState,
+    v: &View<'_>,
+    key: &str,
+    f: &TextForm,
+    actor: &Actor,
+    ctx: &RequestCtx,
+) -> Response {
     let locales = settings::locales(&s.catalog, &s.config);
-    if !settings::editable(&s.catalog, &key) || !locales.contains(&f.locale) {
+    if !settings::editable(&s.catalog, key) || !locales.contains(&f.locale) {
         return v.not_found("/admin/texts");
     }
     let back = format!("/admin/texts/{key}");
@@ -295,43 +340,13 @@ pub(super) async fn submit(
         Ok(r) => r,
         Err(e) => return v.error(&e),
     };
-    let current = stored.get(&(key.clone(), f.locale.clone())).cloned();
-    // The form must have been rendered from what is stored now; the
-    // write itself is still a compare-and-set on that value.
-    if settings::version(current.as_deref()) != f.version {
+    let current = stored.get(&(key.to_string(), f.locale.clone()));
+    let Some(old) = current.filter(|c| settings::version(Some(c.as_str())) == f.version) else {
         return v.redirect(&back, false, "kernel.admin.conflict");
-    }
-    let expected = current.as_deref();
-    // Browsers send textarea line breaks as CRLF.
-    let value = f.value.replace("\r\n", "\n");
-    let row = settings::row(&s.catalog, &s.config, &Default::default(), &key, &f.locale);
-    let actor = Actor::staff(&staff);
-    let done = if f.op == "reset" {
-        let Some(old) = expected else {
-            return v.redirect(&back, false, "kernel.admin.conflict");
-        };
-        settings::reset(&s.services, &actor, &key, &f.locale, old, &row.base, &ctx).await
-    } else {
-        if let Err(why) = settings::check(&row.base, &value) {
-            let rejected = Some((f.locale.as_str(), value.as_str(), why));
-            return render(&v, &key, rejected, StatusCode::UNPROCESSABLE_ENTITY).await;
-        }
-        let before = expected.unwrap_or(&row.base);
-        settings::save(
-            &s.services,
-            &actor,
-            &key,
-            &f.locale,
-            &value,
-            expected,
-            before,
-            &ctx,
-        )
-        .await
     };
-    match done {
-        Ok(true) if f.op == "reset" => v.redirect(&back, true, "kernel.admin.texts.reset_done"),
-        Ok(true) => v.redirect(&back, true, "kernel.admin.saved"),
+    let row = settings::row(&s.catalog, &s.config, &Default::default(), key, &f.locale);
+    match settings::reset(&s.services, actor, key, &f.locale, old, &row.base, ctx).await {
+        Ok(true) => v.redirect(&back, true, "kernel.admin.texts.reset_done"),
         Ok(false) => v.redirect(&back, false, "kernel.admin.conflict"),
         Err(e) => v.error(&e),
     }

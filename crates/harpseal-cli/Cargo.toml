@@ -9,7 +9,7 @@ readme.workspace = true
 homepage.workspace = true
 description = "The harpseal command line as a library each Deployment's binary calls: migrate, create Staff."
 keywords = ["cli", "admin", "migrate", "student", "harpseal"]
-categories = ["command-line-utilities"]
+categories = ["development-tools"]
 
 [dependencies]
 harpseal.workspace = true

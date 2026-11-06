@@ -35,16 +35,32 @@ ci: check
 fmt:
     cargo fmt --all
 
-# Serve the example on 127.0.0.1:8080 in dev mode (needs FAKE_SECRET).
+# Serve the example on 127.0.0.1:8080 in dev mode (needs a FAKE_SECRET of 16+ characters).
 run:
-    @test -n "${FAKE_SECRET:-}" || { echo "set FAKE_SECRET first: FAKE_SECRET=change-me just run"; exit 1; }
+    @test -n "${FAKE_SECRET:-}" || { echo 'set FAKE_SECRET first (16+ characters, not change-me): FAKE_SECRET=$(openssl rand -hex 16) just run'; exit 1; }
     HARPSEAL_DEV_ROUTES=1 cargo run -p harpseal-example-native
 
-# Demo data: first Administrator, 50 Students, 4 announcements, 2 texts (`--force` to reseed).
+# Demo data: first Administrator, 50 Students, 4 announcements, 2 texts (`--force` to reseed; demo databases only).
 seed *args:
-    cargo run -q -p harpseal-example-native --bin harpseal -- migrate
-    cargo run -q -p harpseal-example-native --bin harpseal -- staff create --admin --email admin@sealbay.example || echo "(Staff exist already: seeding as the oldest Administrator)"
-    cargo run -q -p harpseal-example-native --bin harpseal -- seed-example {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cli="cargo run -q -p harpseal-example-native --bin harpseal --"
+    echo "+ $cli migrate"
+    $cli migrate
+    # Only "Staff already exist" (a re-seed) is fine; any other failure stops here.
+    echo "+ $cli staff create --admin --email admin@sealbay.example"
+    if ! out="$(cargo run -q -p harpseal-example-native --bin harpseal -- staff create --admin --email admin@sealbay.example 2>&1)"; then
+        if grep -q "Staff already exist" <<<"$out"; then
+            echo "(Staff exist already: seeding as the oldest Administrator)"
+        else
+            echo "$out" >&2
+            exit 1
+        fi
+    else
+        echo "$out"
+    fi
+    echo "+ $cli seed-example {{args}}"
+    $cli seed-example {{args}}
 
 # Boot the example on a free port and walk the first slice over HTTP (not in CI).
 e2e:

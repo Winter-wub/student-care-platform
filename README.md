@@ -16,22 +16,22 @@ What the first slice does, end to end:
   the audit log, manage Staff, Roles and texts.
 - **Every write is audited** and every Staff page checks a Permission.
 
-Vocabulary is in [`GLOSSARY.md`](GLOSSARY.md), decisions in
-[`docs/adr/`](docs/adr/), the first slice's spec in
-[`docs/specs/first-slice.md`](docs/specs/first-slice.md).
+Vocabulary is in [`GLOSSARY.md`](https://github.com/Winter-wub/student-care-platform/blob/main/GLOSSARY.md), decisions in
+[`docs/adr/`](https://github.com/Winter-wub/student-care-platform/tree/main/docs/adr/), the first slice's spec in
+[`docs/specs/first-slice.md`](https://github.com/Winter-wub/student-care-platform/blob/main/docs/specs/first-slice.md).
 
 ## Crates
 
 | Crate | What it is | Targets |
 |---|---|---|
-| [`harpseal`](crates/harpseal) | The Core: message model, `Channel` and `Module` traits, the six runtime ports (`Db`, `FileStore`, `EmailSender`, `HttpClient`, `Clock`, `Random`) in `Services`, `Deployment::builder()` with build-time validation, the Kernel (identity flow, roster, Students, Staff auth, admin pages, Jobs, usage, Mini App), the Announcements Module, the axum `Router`. | native + wasm32 |
-| [`harpseal-channel-line`](crates/harpseal-channel-line) | LINE adapter: signed webhooks, Flex rendering with degrade rules, Reply/Push/multicast, rich menus, LIFF. | native + wasm32 |
-| [`harpseal-channel-telegram`](crates/harpseal-channel-telegram) | Telegram adapter: secret-token webhook, Updates → Inbound, commands as Actions, `setMyCommands` Menus, edit/delete, Web App `initData`. | native + wasm32 |
-| [`harpseal-channel-fake`](crates/harpseal-channel-fake) | Fake Channel: in-memory, records what the Student saw; for tests, demos and `just e2e`. | native + wasm32 |
-| [`harpseal-runtime-native`](crates/harpseal-runtime-native) | Native runtime: SQLite, local or S3-compatible files, SMTP or Resend, `axum::serve`, a per-minute ticker. | native |
-| [`harpseal-runtime-cloudflare`](crates/harpseal-runtime-cloudflare) | Workers runtime: D1, R2, Resend over `fetch`, Cron, the `fetch` / `scheduled` entry points. | wasm32 |
-| [`harpseal-cli`](crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`. | native |
-| [`harpseal-testing`](crates/harpseal-testing) | Test harness (dev-dependency): fake Services, the Fake Channel and the Router in-process, a cookie-keeping `Browser`, the Channel contract suite. | native |
+| [`harpseal`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal) | The Core: message model, `Channel` and `Module` traits, the six runtime ports (`Db`, `FileStore`, `EmailSender`, `HttpClient`, `Clock`, `Random`) in `Services`, `Deployment::builder()` with build-time validation, the Kernel (identity flow, roster, Students, Staff auth, admin pages, Jobs, usage, Mini App), the Announcements Module, the axum `Router`. | native + wasm32 |
+| [`harpseal-channel-line`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-channel-line) | LINE adapter: signed webhooks, Flex rendering with degrade rules, Reply/Push/multicast, rich menus, LIFF. | native + wasm32 |
+| [`harpseal-channel-telegram`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-channel-telegram) | Telegram adapter: secret-token webhook, Updates → Inbound, commands as Actions, `setMyCommands` Menus, edit/delete, Web App `initData`. | native + wasm32 |
+| [`harpseal-channel-fake`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-channel-fake) | Fake Channel: in-memory, records what the Student saw; for tests, demos and `just e2e`. | native + wasm32 |
+| [`harpseal-runtime-native`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-native) | Native runtime: SQLite, local or S3-compatible files, SMTP or Resend, `axum::serve`, a per-minute ticker. | native |
+| [`harpseal-runtime-cloudflare`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-cloudflare) | Workers runtime: D1, R2, Resend over `fetch`, Cron, the `fetch` / `scheduled` entry points. | wasm32 |
+| [`harpseal-cli`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`. | native |
+| [`harpseal-testing`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-testing) | Test harness (dev-dependency): fake Services, the Fake Channel and the Router in-process, a cookie-keeping `Browser`, the Channel contract suite. | native |
 
 The example, never published:
 
@@ -60,17 +60,19 @@ just seed                         # migrate, first Administrator, demo data
 # created staff admin@sealbay.example (01a1…)
 # temporary password (shown once, change it at first sign-in): 839c9e-c8b47a-1015c8-ad0fe8
 # seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts written
-FAKE_SECRET=change-me just run    # http://127.0.0.1:8080/notice
+FAKE_SECRET=$(openssl rand -hex 16) just run   # http://127.0.0.1:8080/notice
 ```
 
 Sign in at <http://127.0.0.1:8080/admin/login> with the temporary password
 and choose a new one. `just run` starts the example in dev mode: email is
 captured instead of sent, and `/dev/outbox`, `/dev/email` and `/dev/tick`
 (header `x-dev-secret: <FAKE_SECRET>`) show what a Student would see on
-their phone. Without `just`:
+their phone. Dev mode refuses to start on a non-loopback address or with a
+`FAKE_SECRET` shorter than 16 characters or equal to the `change-me`
+placeholder. Without `just`:
 
 ```sh
-export FAKE_SECRET=change-me LINE_LIFF_ID=0000000000-devDummy \
+export FAKE_SECRET=$(openssl rand -hex 16) LINE_LIFF_ID=0000000000-devDummy \
        TELEGRAM_WEB_APP_URL=https://dev.sealbay.invalid/tg
 cargo run -p harpseal-example-native --bin harpseal -- staff create --admin --email admin@sealbay.example
 cargo run -p harpseal-example-native --bin harpseal -- seed-example
@@ -78,8 +80,8 @@ HARPSEAL_DEV_ROUTES=1 cargo run -p harpseal-example-native
 ```
 
 All settings come from the environment (see
-[`deployments/example/native/.env.example`](deployments/example/native/.env.example)
-and [self-hosting](docs/guide/self-hosting.md)).
+[`deployments/example/native/.env.example`](https://github.com/Winter-wub/student-care-platform/blob/main/deployments/example/native/.env.example)
+and [self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md)).
 
 ## Quick start: Cloudflare Workers
 
@@ -93,7 +95,7 @@ npx wrangler@4 dev --local        # http://localhost:8787/notice
 ```
 
 Creating the D1 database, secrets and the deploy are in
-[Deploying to Workers](docs/guide/workers.md).
+[Deploying to Workers](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/workers.md).
 
 ## `just` recipes
 
@@ -118,16 +120,16 @@ A customer Deployment is a repository of its own (ADR-0001) shaped like
    `[roster]` mapping, `[roles]`, `[otp]`, `[quotas]`, `[texts.<locale>]`)
    and a `builder()` that adds the Channels, `EmailOtp`, the Announcements
    Module and the customer's own Modules
-   ([Building a Deployment](docs/guide/deployment.md)).
+   ([Building a Deployment](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/deployment.md)).
 2. A runtime binary: `harpseal-runtime-native` on a server of your own
-   ([self-hosting](docs/guide/self-hosting.md)) or
-   `harpseal-runtime-cloudflare` on Workers ([Workers](docs/guide/workers.md)),
+   ([self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md)) or
+   `harpseal-runtime-cloudflare` on Workers ([Workers](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/workers.md)),
    plus a `harpseal` CLI binary calling `harpseal_cli::run`.
 3. The Channels: a LINE Official Account with a LIFF app, a Telegram bot
-   with a Web App URL ([Channels](docs/guide/channels.md)), and an email
+   with a Web App URL ([Channels](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/channels.md)), and an email
    sender (Resend, or SMTP natively).
 4. Tests that boot it on `harpseal-testing`
-   ([Testing](docs/guide/testing.md)).
+   ([Testing](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/testing.md)).
 
 Depend on the published crates (a `git` or `path` dependency while
 developing) and pin a released version before handing over. Secrets live
@@ -135,26 +137,28 @@ only in the environment or Worker secrets, never in TOML.
 
 ## Documentation
 
-- [Building a Deployment](docs/guide/deployment.md): the builder, what
+- [Building a Deployment](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/deployment.md): the builder, what
   `build()` refuses, Jobs, sends, retries, webhook duplicates, writing from code
-- [Self-hosting](docs/guide/self-hosting.md): settings, the CLI, the demo
+- [Self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md): settings, the CLI, the demo
   seed, dev mode, reverse proxies
-- [The back office](docs/guide/back-office.md): every page and its Permission
-- [Channels](docs/guide/channels.md): LINE, Telegram, the Mini App
-- [Deploying to Workers](docs/guide/workers.md)
-- [Testing](docs/guide/testing.md): the harness, the contract suite, `just e2e`
-- [`GLOSSARY.md`](GLOSSARY.md), [`docs/adr/`](docs/adr/),
-  [`docs/specs/first-slice.md`](docs/specs/first-slice.md)
+- [The back office](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/back-office.md): every page and its Permission
+- [Channels](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/channels.md): LINE, Telegram, the Mini App
+- [Deploying to Workers](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/workers.md)
+- [Testing](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/testing.md): the harness, the contract suite, `just e2e`
+- [Releasing](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/releasing.md): release-plz, the Release PR, crates.io and the owner's setup
+- [`GLOSSARY.md`](https://github.com/Winter-wub/student-care-platform/blob/main/GLOSSARY.md), [`docs/adr/`](https://github.com/Winter-wub/student-care-platform/tree/main/docs/adr/),
+  [`docs/specs/first-slice.md`](https://github.com/Winter-wub/student-care-platform/blob/main/docs/specs/first-slice.md)
 
 ## Contributing, security, releases
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) (one pull request per ticket,
-Conventional Commits, `just check`) and [`SECURITY.md`](SECURITY.md) (report
+See [`CONTRIBUTING.md`](https://github.com/Winter-wub/student-care-platform/blob/main/CONTRIBUTING.md) (one pull request per ticket,
+Conventional Commits, `just check`) and [`SECURITY.md`](https://github.com/Winter-wub/student-care-platform/blob/main/SECURITY.md) (report
 vulnerabilities privately). Releases are cut by
 [release-plz](https://release-plz.dev): Release PRs from Conventional
-Commits, tags `<crate>-v<version>`, changelogs in [`CHANGELOG.md`](CHANGELOG.md)
+Commits; only merging a Release PR tags `<crate>-v<version>` and publishes
+(see [Releasing](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/releasing.md)). Changelogs: [`CHANGELOG.md`](https://github.com/Winter-wub/student-care-platform/blob/main/CHANGELOG.md)
 (the Core) and each crate's own `CHANGELOG.md`.
 
 ## License
 
-[Apache-2.0](LICENSE) (ADR-0005). Copyright 2026 harpseal contributors.
+[Apache-2.0](https://github.com/Winter-wub/student-care-platform/blob/main/LICENSE) (ADR-0005). Copyright 2026 harpseal contributors.

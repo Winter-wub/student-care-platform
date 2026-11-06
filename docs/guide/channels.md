@@ -1,7 +1,7 @@
 # Channels: LINE and Telegram
 
 Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
-Back to the [README](../../README.md).
+Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ## Mini App (LIFF and Telegram Web App)
 

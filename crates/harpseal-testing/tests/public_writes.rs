@@ -1,6 +1,7 @@
 //! The public write functions (`harpseal::roster`, `harpseal::texts`,
 //! `harpseal::modules::announcements`) check the acting Staff member's
-//! Permission like the pages do: no Permission, no write, no audit row.
+//! Permission like the pages do: no Permission (or a disabled account),
+//! no write, no audit row.
 
 use harpseal::modules::announcements::{self, Announcements, NewAnnouncement};
 use harpseal::roster::{self, Confirmed, Uploaded};
@@ -52,7 +53,7 @@ async fn boot() -> (Harness, TestApp, Actor, Actor) {
 
 fn refused<T: std::fmt::Debug>(r: harpseal::Result<T>, permission: &str) {
     match r {
-        Err(Error::Invalid(m)) => assert!(m.contains(permission), "{m}"),
+        Err(Error::Forbidden { permission: p }) => assert_eq!(p, permission),
         other => panic!("expected a refusal naming {permission}, got {other:?}"),
     }
 }
@@ -163,4 +164,44 @@ async fn text_overrides_need_kernel_setting_edit() {
         )
         .await;
     assert_eq!(seeded, 1);
+}
+
+#[tokio::test]
+async fn a_disabled_staff_member_is_refused_by_every_write() {
+    let (h, app, officer, _) = boot().await;
+    let Actor::Staff(id) = &officer else {
+        unreachable!()
+    };
+    let st = harpseal::Statement::new("UPDATE staff SET status = 'disabled' WHERE id = ?")
+        .bind(id.as_str());
+    h.db().execute(st).await.unwrap();
+    let d = app.deployment();
+    let ctx = RequestCtx::cli();
+    let csv = CSV.as_bytes().to_vec();
+    refused(
+        roster::upload(d, "a.csv", csv, "upsert", &officer, &ctx).await,
+        "kernel.roster.import",
+    );
+    refused(
+        roster::confirm(d, "x", &officer, &ctx).await,
+        "kernel.roster.import",
+    );
+    let new = NewAnnouncement::new("ประกาศ", "เนื้อหา");
+    refused(
+        announcements::create_draft(d, &new, &officer, &ctx).await,
+        "announcements.send",
+    );
+    refused(
+        announcements::confirm(d, "x", 0, &officer, &ctx).await,
+        "announcements.send",
+    );
+    refused(
+        harpseal::texts::set_override(d, "kernel.flow.welcome", "th", "สวัสดี", &officer, &ctx).await,
+        "kernel.setting.edit",
+    );
+    assert_eq!(
+        app.count("SELECT count(*) FROM audit_log WHERE actor_kind = 'staff'")
+            .await,
+        0
+    );
 }

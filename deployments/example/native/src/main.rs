@@ -7,7 +7,9 @@
 //! `HARPSEAL_DEV_ROUTES=1` turns on dev mode for demos and `just e2e`:
 //! email is captured instead of sent and `/dev/*` routes, guarded by
 //! `FAKE_SECRET`, show the Fake Channel's outbox and the last email and
-//! run a tick on demand (see [`dev`]). Never set it in production.
+//! run a tick on demand (see [`dev`]). It refuses to start on a
+//! non-loopback address or with a `FAKE_SECRET` shorter than 16 characters
+//! or equal to `change-me`. Never set it in production.
 
 #![forbid(unsafe_code)]
 
@@ -38,6 +40,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut services = services(&settings)?;
     let captured = dev::CapturingEmail::default();
     if dev_mode {
+        dev::check_safe(&settings.addr, &secret)?;
         services.email = Arc::new(captured.clone());
     }
     let (d, fake) = deployment_with_fake(services, secrets)?;

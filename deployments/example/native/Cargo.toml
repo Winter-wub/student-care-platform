@@ -27,3 +27,7 @@ async-trait.workspace = true
 name = "harpseal"
 path = "src/bin/harpseal.rs"
 doc = false
+
+[dev-dependencies]
+harpseal-testing.workspace = true
+tower = { version = "0.5", default-features = false, features = ["util"] }

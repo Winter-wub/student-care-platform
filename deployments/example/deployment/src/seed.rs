@@ -8,10 +8,18 @@
 //! at once by running the import Jobs), creates 3 draft announcements and
 //! 1 scheduled a week ahead, and overrides 2 texts. Re-running adds
 //! nothing twice: the import is an upsert, announcements are matched by
-//! their Thai title and an override already in place is left alone. It is
-//! refused on a database that already has Students unless `force`, and it
-//! never creates Staff or writes a password: create the Administrator
-//! first with `harpseal staff create --admin`.
+//! their Thai title, and a text that already has any override (the seed's
+//! or one an Administrator customised) is left alone. It is refused on a
+//! database that already has Students unless `force`, and it never creates
+//! Staff or writes a password: create the Administrator first with
+//! `harpseal staff create --admin`.
+//!
+//! **Demo databases only.** While it waits for the roster import, the seed
+//! calls `Deployment::tick`, which runs *every* due Job in the CLI's
+//! Deployment: one built without the Fake Channel and with the real
+//! EmailSender. On a live database pending announcement deliveries would run
+//! there (with no Fake Channel) and Quota emails could go out. Never run
+//! `seed-example --force` against a production database.
 
 use harpseal::audience::Audience;
 use harpseal::modules::announcements::{self, NewAnnouncement};
@@ -60,7 +68,8 @@ pub struct SeedReport {
     pub students: i64,
     /// Announcements created now (0 on a re-run).
     pub announcements_created: usize,
-    /// Text overrides written now (0 on a re-run).
+    /// Text overrides written now (0 on a re-run, and for every text that
+    /// already had an override).
     pub texts_written: usize,
 }
 
@@ -162,6 +171,9 @@ pub async fn seed(
     let announcements_created = announce(d, &actor, &ctx).await?;
     let mut texts_written = 0;
     for (key, locale, value) in TEXT_OVERRIDES {
+        if has_override(d, key, locale).await? {
+            continue;
+        }
         if harpseal::texts::set_override(d, key, locale, value, &actor, &ctx).await? {
             texts_written += 1;
         }
@@ -173,6 +185,15 @@ pub async fn seed(
         announcements_created,
         texts_written,
     })
+}
+
+/// Whether `key` in `locale` already has a `setting` row (any value).
+async fn has_override(d: &Deployment, key: &str, locale: &str) -> Result<bool, SeedError> {
+    let st = Statement::new("SELECT count(*) FROM setting WHERE key = ? AND locale = ?")
+        .bind(key)
+        .bind(locale);
+    let rows = query(d, st).await?;
+    Ok(rows.rows[0][0].as_i64().unwrap_or(0) > 0)
 }
 
 /// Uploads, confirms and applies the roster (upsert); returns the import id.

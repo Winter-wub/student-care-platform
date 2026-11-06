@@ -2,7 +2,7 @@
 
 How a Deployment is assembled from the Core, what `build()` refuses, how
 Jobs run, and how sends, retries and webhook duplicates behave. Back to the
-[README](../../README.md).
+[README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ### Public API rules
 

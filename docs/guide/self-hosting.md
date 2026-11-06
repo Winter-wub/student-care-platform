@@ -2,7 +2,7 @@
 
 Running a Deployment as one binary on your own server: its settings, the
 `harpseal` CLI, dev mode and the demo seed. Back to the
-[README](../../README.md).
+[README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ### Running the example natively
 
@@ -86,10 +86,18 @@ cargo run -p harpseal-example-native --bin harpseal -- seed-example [--as EMAIL]
 # seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts written
 ```
 
+**Demo databases only.** While it waits for the roster import it runs
+`Deployment::tick` in the CLI, which runs every due Job there, with no Fake
+Channel and the real EmailSender: on a live database pending announcement
+deliveries would run from the CLI and Quota emails could go out.
+`seed-example --force` prints a warning to that effect; never point it at
+production.
+
 It imports `deployments/example/data/roster.csv` (50 fictional Students,
 upsert mode, applied at once by running the import Jobs), creates three
 draft announcements and one scheduled a week ahead, and overrides
-`kernel.flow.welcome` in Thai and English. Every audit row it writes names
+`kernel.flow.welcome` in Thai and English, unless that text already has an
+override (an Administrator's customisation is never overwritten). Every audit row it writes names
 that Administrator and carries `"seed": true`. Running it again adds
 nothing; it refuses a database that already has Students unless `--force`,
 and it never creates Staff or writes a password. `just seed` runs
@@ -108,8 +116,13 @@ memory instead of sent, and three routes answer only with header
 | `GET /dev/email?to=<address>` | JSON: the last email to that address (the OTP is in the subject) |
 | `POST /dev/tick` | runs `Deployment::tick` now instead of waiting for the minute timer |
 
-The OTP is not weakened: same length, expiry and attempt limit. `just run`
-starts the example in dev mode with dummy Mini App ids.
+The OTP is not weakened: same length, expiry and attempt limit. Dev mode
+refuses to start unless `HARPSEAL_ADDR` is a loopback address (`127.x`,
+`::1`, `localhost`) and `FAKE_SECRET` has at least 16 characters and is not
+the `change-me` placeholder; the error names the rule. Captured emails are
+kept in memory (the last 50) and only "captured email to <address>" is
+logged, never the subject (it holds the OTP). `just run` starts the example
+in dev mode with dummy Mini App ids.
 
 ## Hosting your own Deployment
 

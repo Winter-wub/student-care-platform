@@ -24,6 +24,13 @@ pub enum Error {
     Db(String),
     /// Any other platform / IO failure, with the adapter's message.
     Platform(String),
+    /// The acting Staff member is not active or lacks this Permission (the
+    /// public write functions, e.g. `harpseal::roster::upload`, check it
+    /// as the pages do).
+    Forbidden {
+        /// The Permission id required.
+        permission: String,
+    },
     /// The change clashes with the current state (e.g. a live Link already
     /// exists, or the Link is already revoked).
     Conflict(String),
@@ -63,6 +70,12 @@ impl core::fmt::Display for Error {
             Error::Db(m) => write!(f, "database: {m}"),
             Error::Platform(m) => write!(f, "platform: {m}"),
             Error::Conflict(m) => write!(f, "conflict: {m}"),
+            Error::Forbidden { permission } => {
+                write!(
+                    f,
+                    "forbidden: needs an active Staff member holding `{permission}`"
+                )
+            }
             Error::PartialSend {
                 sent,
                 total,
