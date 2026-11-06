@@ -15,6 +15,8 @@ use super::{page_detail, service};
 use crate::audience::{self, Counts};
 use crate::config::AttributeType;
 use crate::kernel::students::channel_label;
+use crate::kernel::text::fill;
+use crate::kernel::usage::{self, MonthSummary};
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 type Posted = Form<Vec<(String, String)>>;
@@ -138,10 +140,20 @@ pub(super) async fn audience_fragment(
 ) -> Response {
     let v = View::new(&s, &staff);
     let a = Fields::from_pairs(&pairs).audience();
-    let counts = audience::count(&s.deployment, &a).await;
+    let counts = audience::count(&s.deployment, &a).await.ok();
+    let kinds: Vec<String> = counts
+        .iter()
+        .flat_map(|c| c.per_channel.iter().map(|(k, _)| k.to_string()))
+        .collect();
+    let mut used = Vec::new();
+    for kind in kinds {
+        if let Ok(m) = usage::month_summary(&s.deployment, &kind).await {
+            used.push((kind, m));
+        }
+    }
     (
         StatusCode::OK,
-        Html(count_box(&v, counts.ok().as_ref()).into_string()),
+        Html(count_box(&v, counts.as_ref(), &used).into_string()),
     )
         .into_response()
 }
@@ -156,7 +168,8 @@ fn editable(row: &Row) -> bool {
 
 /// Count, per Channel, and "จะใช้ push ประมาณ x ครั้ง": one metered unit per
 /// recipient on a metered Channel (one Card is one Push request).
-fn count_box(v: &View<'_>, counts: Option<&Counts>) -> Markup {
+/// `used`: this month's usage per Channel (#26), shown beside the estimate.
+fn count_box(v: &View<'_>, counts: Option<&Counts>, used: &[(String, MonthSummary)]) -> Markup {
     let Some(c) = counts else {
         return html! {
             div id="audience-count" class="card count" hx-post=(AUDIENCE_PATH)
@@ -192,11 +205,26 @@ fn count_box(v: &View<'_>, counts: Option<&Counts>) -> Markup {
                         @if metered(kind) {
                             " · " (v.t("announcements.form.estimate_channel")) " " (active)
                         }
+                        @if let Some((_, m)) = used.iter().find(|(k, _)| k == kind) {
+                            " · " span class="month-used" { (month_used(v, m)) }
+                        }
                     }
                 }
             }
             p class="estimate" { (v.t("announcements.form.estimate")) " " (units) " " (v.t("announcements.form.times")) }
         }
+    }
+}
+
+/// "ใช้ไปแล้ว X/Y เดือนนี้" (or without a Quota, "ใช้ไปแล้ว X เดือนนี้").
+fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
+    let used = m.used.to_string();
+    match m.cap {
+        Some(cap) => fill(
+            &v.t("kernel.usage.send_used"),
+            &[("used", &used), ("cap", &cap.to_string())],
+        ),
+        None => fill(&v.t("kernel.usage.send_used_no_cap"), &[("used", &used)]),
     }
 }
 

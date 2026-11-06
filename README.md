@@ -107,27 +107,13 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
 ### Sends, retries and webhook duplicates
 
 - **Metering.** Each `SendReceipt` carries `metered_units`: one per Push
-  request to one recipient, charged to the Message that opens the request.
-  A Message the adapter spreads over several Push requests (a long text, a
-  Card List of 61 on LINE) costs one unit per request, and
-  `usage_daily.metered` adds the units. Telegram is always 0. When the
-  Channel returns an error, every Message that did not wholly go out (the
-  one it stopped in included) adds 1 to `usage_daily.failed`; a Push
-  skipped because the account blocked the bot never reaches the platform
-  and counts nowhere.
-- **Usage and Quotas (#26).** `/admin/usage` (`kernel.usage.view`) shows
-  per Channel the metered Pushes this calendar month (local days in
-  `utc_offset`) against `[quotas.<kind>] metered_per_month`, free replies,
-  failed sends, a 30-day SVG chart with a table, and the last 6 months,
-  all from `usage_daily` (never a platform API). From 80 % every Staff
-  member sees a yellow banner on every back-office page, red from 100 %
-  (it links to the page only for holders of `kernel.usage.view`). The Job
-  `kernel.usage.watch` (every 10 minutes) emails every active
-  Administrator (Roles granting `kernel.staff.manage`) once per month per
-  Channel at 80 % and again at 100 %, so the email lags the banner by at
-  most 10 minutes; failed addresses are retried on the next run. No Quota,
-  or a cap of 0, means usage is shown and never warned about. Sending is
-  never blocked.
+  request to one recipient (a long text split over requests costs one per
+  request; Telegram 0). `usage_daily` adds them to `metered`, and Messages
+  a Channel fails on to `failed` (a blocked-account skip counts nowhere).
+- **Quotas (#26).** `/admin/usage` charts each Channel's month against
+  `[quotas.<kind>]`; from 80 % every Staff page shows a banner (red at 100
+  %) and the tick's `kernel.usage.watch` (every 10 minutes, only with
+  `[quotas]`) emails active Administrators once per month per level.
 - **Partial sends.** When a Channel stops part-way, what went out is
   recorded (`outbound_message` rows and usage; a Message cut off after some
   of its parts gets a row with `error = 'partly sent: …'`) and

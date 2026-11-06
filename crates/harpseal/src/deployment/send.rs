@@ -208,7 +208,7 @@ impl Deployment {
     }
 
     /// Adds `n` failed Messages to today's `usage_daily` row of `channel`.
-    fn failed_usage(&self, channel: &str, n: usize) -> Statement {
+    pub(super) fn failed_usage(&self, channel: &str, n: usize) -> Statement {
         let offset = self.config.utc_offset_minutes().unwrap_or(0);
         Statement::new(
             "INSERT INTO usage_daily (channel, day, failed) VALUES (?, ?, ?) \
