@@ -9,8 +9,10 @@ use axum::routing::MethodRouter;
 
 use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, StudentId};
+use crate::jobs::Jobs;
 use crate::manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 use crate::message::{ActionId, Locale, Message};
+use crate::port_types::Statement;
 use crate::{Result, Services};
 
 /// A switchable part of the Core or customer code.
@@ -30,6 +32,8 @@ pub struct PageState {
     pub catalog: Arc<Catalog>,
     /// The Deployment's configuration.
     pub config: Arc<DeploymentConfig>,
+    /// Enqueues Jobs (e.g. a send started from a back-office page).
+    pub jobs: Jobs,
 }
 
 impl PageState {
@@ -92,6 +96,30 @@ pub struct JobContext {
     pub services: Services,
     /// Merged texts.
     pub catalog: Arc<Catalog>,
+    /// The Deployment's configuration.
+    pub config: Arc<DeploymentConfig>,
+    /// Enqueues follow-up Jobs (e.g. one child Job per chunk).
+    pub jobs: Jobs,
+    /// This run's `job.id` and lock token (`None` outside a tick).
+    pub(crate) run: Option<(String, String)>,
+}
+
+impl JobContext {
+    /// Saves a short progress note on this Job (`job.progress`, shown by
+    /// `/admin/jobs.json`; cut to 200 characters). Written only while this
+    /// run still holds the lock; a no-op outside a tick.
+    pub async fn progress(&self, note: &str) -> Result<()> {
+        let Some((id, token)) = &self.run else {
+            return Ok(());
+        };
+        let stmt = Statement::new(
+            "UPDATE job SET progress = ? WHERE id = ? AND lock_token = ? AND state = 'running'",
+        )
+        .bind(crate::jobs::cut(note, 200))
+        .bind(id.as_str())
+        .bind(token.as_str());
+        self.services.db.execute(stmt).await.map(|_| ())
+    }
 }
 
 /// Runs one Job. Must be idempotent: a Job may run again after a crash.
@@ -244,7 +272,11 @@ impl ModuleRegistrar {
         self
     }
 
-    /// A kind of Job and its handler.
+    /// A kind of Job and its handler. `spec.kind` must be unique across the
+    /// Deployment ([`crate::BuildError::DuplicateJob`]); a `schedule` must
+    /// be in the cron subset documented on [`crate::JobSpec::schedule`]
+    /// ([`crate::BuildError::InvalidSchedule`]). Only registered kinds can
+    /// be enqueued.
     pub fn job(&mut self, spec: JobSpec, h: impl JobHandler + 'static) -> &mut Self {
         self.jobs.push((spec, Arc::new(h)));
         self

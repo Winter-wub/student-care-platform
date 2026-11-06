@@ -252,7 +252,8 @@ impl Default for InboundConfig {
 pub struct RetentionConfig {
     /// `outbound_message` rows.
     pub outbound_message_days: u32,
-    /// Finished `job` rows.
+    /// `done` Job rows (spec: 30). `failed` rows are kept 90 days, or
+    /// `job_days` if longer.
     pub job_days: u32,
 }
 

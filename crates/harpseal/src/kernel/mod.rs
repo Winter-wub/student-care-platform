@@ -58,6 +58,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0004_inbound_file_error",
         include_str!("../../migrations/0004_inbound_file_error.sql"),
     ),
+    (
+        "0005_job_unique_key",
+        include_str!("../../migrations/0005_job_unique_key.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.
@@ -77,6 +81,11 @@ impl Module for Kernel {
         }
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
-            .public(notice::PATH, get(notice::page));
+            .public(notice::PATH, get(notice::page))
+            .back_office(
+                "kernel.audit.view",
+                crate::jobs::status::PATH,
+                get(crate::jobs::status::page),
+            );
     }
 }

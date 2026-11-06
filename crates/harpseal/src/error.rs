@@ -76,6 +76,15 @@ pub enum BuildError {
     DuplicatePermission(String),
     /// Two handlers registered for one Job kind.
     DuplicateJob(String),
+    /// A [`crate::JobSpec::schedule`] outside the supported cron subset.
+    InvalidSchedule {
+        /// The Job kind.
+        kind: String,
+        /// The expression as registered.
+        schedule: String,
+        /// What is wrong with it.
+        reason: String,
+    },
     /// A Role in `deployment.toml` names a Permission no Module declared.
     UnknownPermission {
         /// The Role.
@@ -141,6 +150,14 @@ impl core::fmt::Display for BuildError {
             BuildError::DuplicateAction(a) => write!(f, "action `{a}` has two handlers"),
             BuildError::DuplicatePermission(p) => write!(f, "permission `{p}` declared twice"),
             BuildError::DuplicateJob(j) => write!(f, "job kind `{j}` has two handlers"),
+            BuildError::InvalidSchedule {
+                kind,
+                schedule,
+                reason,
+            } => write!(
+                f,
+                "job kind `{kind}` has an unsupported schedule `{schedule}`: {reason}"
+            ),
             BuildError::UnknownPermission { role, permission } => {
                 write!(f, "role `{role}` names unknown permission `{permission}`")
             }
