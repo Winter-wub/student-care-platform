@@ -371,6 +371,9 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "harpseal",
+ "http",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -379,7 +382,11 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "harpseal",
+ "harpseal-testing",
+ "http",
  "serde_json",
+ "sha2",
+ "tokio",
 ]
 
 [[package]]
@@ -388,7 +395,10 @@ version = "0.0.0"
 dependencies = [
  "async-trait",
  "harpseal",
+ "harpseal-testing",
+ "http",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -443,6 +453,7 @@ dependencies = [
  "harpseal-channel-fake",
  "harpseal-runtime-native",
  "http",
+ "serde_json",
  "tokio",
  "tower",
 ]

@@ -89,7 +89,7 @@ trait Channel: Send + Sync {
     fn capabilities(&self) -> Capabilities; // derived from the accessors
 }
 enum Inbound { Follow, Text, File, Action, Blocked, Unblocked /* each with ChannelAccountId + Option<ReplyToken> */ }
-// Module: name() + register(&mut ModuleRegistrar) with permission, menu_entry, action, back_office(permission, Router), messages, job, migration, import_format, export_format
+// Module: name() + register(&mut ModuleRegistrar) with permission, menu_entry, action, back_office(permission, path, MethodRouter), public(path, MethodRouter) (overlaps refused at build time), messages, job, migration, import_format, export_format
 // Deployment::builder().config(..).runtime(services).channel(..)*.verification(..).module(..)*.build() -> Result<Deployment, BuildError>
 ```
 - `build()` validates: missing config/runtime/verification/channel, duplicate channel kinds, duplicate Action ids, Role naming an unknown Permission, back-office route with unknown Permission, `Button::MiniApp` used on a Channel without a Mini App URL (new), unknown catalog keys referenced by Menu entries.

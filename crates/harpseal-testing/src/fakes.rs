@@ -146,6 +146,10 @@ impl RecordingHttp {
     pub fn requests(&self) -> Vec<RecordedRequest> {
         lock(&self.0).requests.clone()
     }
+    /// Every request so far, and forgets them.
+    pub fn take_requests(&self) -> Vec<RecordedRequest> {
+        std::mem::take(&mut lock(&self.0).requests)
+    }
 }
 
 #[async_trait]

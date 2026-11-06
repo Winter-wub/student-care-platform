@@ -165,8 +165,7 @@ fn role_with_unknown_permission() {
 fn back_office_route_with_unknown_permission() {
     let h = Harness::new();
     let b = h.builder().module(module("reports", |r| {
-        let pages = axum::Router::new().route("/reports", get(|| async { "secret" }));
-        r.back_office("reports.view", pages);
+        r.back_office("reports.view", "/reports", get(|| async { "secret" }));
     }));
     assert_eq!(
         build_err(b),
@@ -283,4 +282,60 @@ fn build_errors_explain_themselves() {
         e.to_string(),
         "module `news` sends Mini App buttons but channel `line` has no Mini App URL"
     );
+}
+
+#[test]
+fn overlapping_routes_are_refused_at_build_time() {
+    let h = Harness::new();
+    let b = h
+        .builder()
+        .module(module("news", |r| {
+            r.public("/news/{id}", get(|| async { "a" }));
+        }))
+        .module(module("events", |r| {
+            r.public("/news/{slug}", get(|| async { "b" }));
+        }));
+    assert_eq!(
+        build_err(b),
+        BuildError::DuplicateRoute {
+            module: "events",
+            path: "/news/{slug}".into(),
+            first: "news",
+        }
+    );
+    let kernel = h.builder().module(module("hooks", |r| {
+        r.public("/webhook/{channel}", get(|| async { "x" }));
+    }));
+    assert!(matches!(
+        build_err(kernel),
+        BuildError::DuplicateRoute {
+            first: "kernel",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn public_routes_under_admin_or_in_old_syntax_are_refused() {
+    let h = Harness::new();
+    struct Sneaky(&'static str);
+    impl Module for Sneaky {
+        fn name(&self) -> &'static str {
+            "sneaky"
+        }
+        fn register(&self, r: &mut ModuleRegistrar) {
+            r.public(self.0, get(|| async { "secret" }));
+        }
+    }
+    for path in ["/admin/secrets", "/admin", "/files/:id", "relative"] {
+        let b = h.builder().module(Sneaky(path));
+        assert_eq!(
+            build_err(b),
+            BuildError::InvalidRoute {
+                module: "sneaky",
+                path: path.into(),
+            },
+            "{path}"
+        );
+    }
 }

@@ -1,6 +1,8 @@
 //! A built Deployment: dispatches through the maps the builder validated.
 
 mod builder;
+mod routes;
+mod send;
 mod web;
 
 use std::collections::HashMap;
@@ -9,12 +11,11 @@ use std::sync::Arc;
 pub use builder::DeploymentBuilder;
 
 use crate::config::DeploymentConfig;
-use crate::delivery::{
-    ChannelAccountId, Delivery, Inbound, PlatformMessageId, ReplyToken, SendReceipt, WebhookRequest,
-};
+use crate::delivery::{ChannelAccountId, Inbound, PlatformMessageId, WebhookRequest};
 use crate::manifest::{Catalog, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
 use crate::migrate::MigrationReport;
+use crate::port_types::Statement;
 use crate::{
     ActionContext, ActionHandler, Channel, Error, JobContext, JobHandler, Result, Services,
     VerificationMethod, kernel,
@@ -36,11 +37,27 @@ pub struct Deployment {
 struct Registry {
     permissions: Vec<Permission>,
     menu: Vec<MenuEntrySpec>,
-    actions: HashMap<ActionId, Arc<dyn ActionHandler>>,
+    actions: HashMap<ActionId, (&'static str, Arc<dyn ActionHandler>)>,
     jobs: HashMap<&'static str, (JobSpec, Arc<dyn JobHandler>)>,
     migrations: Vec<Migration>,
-    back_office: Vec<(&'static str, &'static str, axum::Router<crate::AppState>)>,
-    public: Vec<axum::Router<crate::AppState>>,
+    /// (module, permission, path under `/admin`, handler).
+    back_office: Vec<(&'static str, &'static str, &'static str, Route)>,
+    /// (module, path, handler).
+    public: Vec<(&'static str, &'static str, Route)>,
+}
+
+/// One registered route's handler.
+pub(crate) type Route = axum::routing::MethodRouter<crate::AppState>;
+
+/// What one webhook call did, after its signature and body were accepted.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct WebhookReport {
+    /// Events in the call.
+    pub events: usize,
+    /// The events that failed (kind and error); each was logged as a
+    /// Security Event `inbound.failed` and did not stop the others.
+    pub failed: Vec<(&'static str, Error)>,
 }
 
 impl Deployment {
@@ -105,18 +122,57 @@ impl Deployment {
         }
     }
 
-    /// Parses one webhook call for Channel `kind` and handles its events.
-    pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<()> {
+    /// Verifies and parses one webhook call for Channel `kind`, then
+    /// handles each event on its own: a failing event is logged (Security
+    /// Event `inbound.failed`) and does not stop the others. `Err` only when
+    /// the call as a whole is refused: `BadSignature`, or the body could not
+    /// be parsed.
+    pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
         let channel = self.channel_or_err(kind)?;
-        for ev in channel.parse_webhook(req).await? {
-            self.handle_inbound(ev).await?;
+        let events = channel.parse_webhook(req).await?;
+        let mut report = WebhookReport {
+            events: events.len(),
+            failed: Vec::new(),
+        };
+        for ev in events {
+            let ev_kind = ev.kind();
+            let from = ev.from().clone();
+            if let Err(e) = self.handle_inbound(ev).await {
+                self.log_failed_event(&from, ev_kind, &e).await;
+                report.failed.push((ev_kind, e));
+            }
         }
-        Ok(())
+        Ok(report)
     }
 
-    /// Dispatches an Action from a linked account to its Module. The chat
-    /// flow for unlinked accounts (Consent, Verification) arrives with #19;
-    /// until then they get the `kernel.link.required` text.
+    /// Best effort: if even this write fails there is nowhere left to log.
+    /// The account is linked when its `channel_account` row exists; the
+    /// error text is cut to 200 chars.
+    async fn log_failed_event(&self, from: &ChannelAccountId, event: &str, e: &Error) {
+        let Ok(id) = self.services.new_id() else {
+            return;
+        };
+        let error: String = e.to_string().chars().take(200).collect();
+        let stmt = Statement::new(
+            "INSERT INTO security_event (id, at, kind, channel_account_id, details) VALUES \
+             (?, ?, 'inbound.failed', \
+             (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
+             json_object('channel', ?, 'event', ?, 'error', ?))",
+        )
+        .bind(id)
+        .bind(self.services.now_ms())
+        .bind(from.channel.as_str())
+        .bind(from.external_id.clone())
+        .bind(from.channel.as_str())
+        .bind(event)
+        .bind(error);
+        let _ = self.services.db.execute(stmt).await;
+    }
+
+    /// Dispatches an Action from a linked account to its Module and sends
+    /// its whole answer as one batch. The chat flow for unlinked accounts
+    /// (Consent, Verification) arrives with #19; until then they get the
+    /// `kernel.link.required` text.
     async fn handle_inbound(&self, ev: Inbound) -> Result<()> {
         let Inbound::Action {
             from,
@@ -126,16 +182,18 @@ impl Deployment {
         else {
             return Ok(());
         };
+        let reply = reply.as_ref();
+        let kernel = Some(kernel::NAME);
         let rows = self.services.db.query(kernel::find_link(&from)).await?;
         let Some((student, locale)) = kernel::parse_link(&rows) else {
             let locale = self.config.default_locale.clone();
             let msg = Message::text(self.catalog.t(&locale, "kernel.link.required"));
-            self.send(&from, reply.as_ref(), &msg, &locale).await?;
+            self.deliver(&from, reply, &[msg], &locale, kernel).await?;
             return Ok(());
         };
-        let Some(handler) = self.registry.actions.get(&action) else {
+        let Some((module, handler)) = self.registry.actions.get(&action) else {
             let msg = Message::text(self.catalog.t(&locale, "kernel.action.expired"));
-            self.send(&from, reply.as_ref(), &msg, &locale).await?;
+            self.deliver(&from, reply, &[msg], &locale, kernel).await?;
             return Ok(());
         };
         let cx = ActionContext {
@@ -145,25 +203,10 @@ impl Deployment {
             account: from.clone(),
             locale: locale.clone(),
         };
-        for msg in handler.handle(cx).await? {
-            self.send(&from, reply.as_ref(), &msg, &locale).await?;
-        }
+        let msgs = handler.handle(cx).await?;
+        self.deliver(&from, reply, &msgs, &locale, Some(module))
+            .await?;
         Ok(())
-    }
-
-    /// Picks Reply or Push ([`Delivery::select`]) and sends one message.
-    /// The `outbound_message` row and `usage_daily` upsert arrive with #15.
-    pub async fn send(
-        &self,
-        to: &ChannelAccountId,
-        reply: Option<&ReplyToken>,
-        msg: &Message,
-        locale: &Locale,
-    ) -> Result<SendReceipt> {
-        let delivery = Delivery::select(reply, self.services.clock.now());
-        self.channel_or_err(to.channel.as_str())?
-            .send(to, &delivery, msg, locale)
-            .await
     }
 
     /// Uses the edit Capability when present, otherwise sends a new message.

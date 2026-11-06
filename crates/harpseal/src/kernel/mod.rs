@@ -71,7 +71,7 @@ impl Module for Kernel {
             r.migration(name, sql);
         }
         r.messages(texts::DEFAULTS)
-            .public(axum::Router::new().route(notice::PATH, get(notice::page)));
+            .public(notice::PATH, get(notice::page));
     }
 }
 

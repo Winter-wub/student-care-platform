@@ -5,6 +5,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use axum::routing::MethodRouter;
 
 use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, StudentId};
@@ -118,8 +119,8 @@ pub struct ModuleRegistrar {
     pub(crate) permissions: Vec<Permission>,
     pub(crate) menu: Vec<MenuEntrySpec>,
     pub(crate) actions: Vec<(ActionId, Arc<dyn ActionHandler>)>,
-    pub(crate) back_office: Vec<(&'static str, axum::Router<AppState>)>,
-    pub(crate) public: Vec<axum::Router<AppState>>,
+    pub(crate) back_office: Vec<(&'static str, &'static str, MethodRouter<AppState>)>,
+    pub(crate) public: Vec<(&'static str, MethodRouter<AppState>)>,
     pub(crate) catalog: Vec<CatalogEntry>,
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
     pub(crate) migrations: Vec<Migration>,
@@ -170,22 +171,28 @@ impl ModuleRegistrar {
         self
     }
 
-    /// Back-office pages, mounted under `/admin`. Every route is guarded:
-    /// only Staff holding `permission` reach it.
+    /// A back-office page at `/admin{path}` (e.g. `path = "/reports"`),
+    /// guarded: only Staff holding `permission` reach it. Chain methods on
+    /// one `MethodRouter` (`get(..).post(..)`); `build()` refuses a path
+    /// registered twice ([`crate::BuildError::DuplicateRoute`]) or one axum
+    /// cannot mount ([`crate::BuildError::InvalidRoute`]).
     pub fn back_office(
         &mut self,
         permission: &'static str,
-        r: axum::Router<AppState>,
+        path: &'static str,
+        route: MethodRouter<AppState>,
     ) -> &mut Self {
-        self.back_office.push((permission, r));
+        self.back_office.push((permission, path, route));
         self
     }
 
-    /// Pages outside `/admin` with no Staff session: Mini App pages (which
-    /// check their own App Session) and public pages. Routes under `/admin`
-    /// registered here answer 404; use [`ModuleRegistrar::back_office`].
-    pub fn public(&mut self, r: axum::Router<AppState>) -> &mut Self {
-        self.public.push(r);
+    /// A page outside `/admin` with no Staff session: Mini App pages (which
+    /// check their own App Session) and public pages. `build()` refuses a
+    /// path under `/admin` ([`crate::BuildError::InvalidRoute`]; use
+    /// [`ModuleRegistrar::back_office`]), a path registered twice or one
+    /// the Kernel owns ([`crate::BuildError::DuplicateRoute`]).
+    pub fn public(&mut self, path: &'static str, route: MethodRouter<AppState>) -> &mut Self {
+        self.public.push((path, route));
         self
     }
 

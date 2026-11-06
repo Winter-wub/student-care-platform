@@ -1,0 +1,1 @@
+{ "destination": "Useal0bay0bot", "events": [ { "type": "follow", "mode": "active", "timestamp": 1793836800000, "webhookEventId": "01JSEALBAY0000000000000000", "deliveryContext": { "isRedelivery": false }, "source": { "type": "user", "userId": "U5ea1ba7000000000000000000000c0de" }, "replyToken": "nHuyWiB7yP5Zw52FIkcQobQuGDXCTA", "follow": { "isUnblocked": false } } ] }
