@@ -56,8 +56,34 @@ impl CatalogEntry {
 pub struct JobSpec {
     /// `module.name`, stored in `job.kind`.
     pub kind: &'static str,
-    /// Cron expression, for recurring Jobs.
+    /// Cron expression for a recurring Job, evaluated in the Deployment's
+    /// `utc_offset`. Five fields: minute (0-59), hour (0-23), day of month
+    /// (1-31), month (1-12), day of week (0-6, 0 = Sunday); each a
+    /// comma-separated list of `*`, `*/n`, `a` or `a-b`. Nothing else
+    /// (names, `a-b/n`, `@daily`, `L`, `?`) is accepted: `build()` refuses
+    /// it with [`crate::BuildError::InvalidSchedule`]. When both day fields
+    /// are restricted, either one matching is enough (classic cron). Each
+    /// due minute enqueues one Job with payload `{"scheduled_at": ms}`,
+    /// once, however many ticks run in that minute; a minute with no tick
+    /// at all (and none in the minute after) is skipped, not caught up.
     pub schedule: Option<&'static str>,
+}
+
+impl JobSpec {
+    /// A Job kind enqueued by code only.
+    pub const fn new(kind: &'static str) -> Self {
+        Self {
+            kind,
+            schedule: None,
+        }
+    }
+    /// A Job kind also enqueued by the scheduler on `cron`.
+    pub const fn scheduled(kind: &'static str, cron: &'static str) -> Self {
+        Self {
+            kind,
+            schedule: Some(cron),
+        }
+    }
 }
 
 /// A stored Job ready to run.

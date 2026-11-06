@@ -108,9 +108,12 @@ async fn peer_ip(
 }
 
 /// Calls [`Deployment::tick`] every `period` (one minute in production)
-/// with the Deployment's Clock, starting one period from now. Each tick
-/// runs in its own task: an error, a failed outcome write or a handler
-/// panic is printed to stderr and the next tick runs anyway. A tick that
+/// with the Deployment's Clock, starting one period from now: the same
+/// entry the Workers `scheduled` event calls. Each tick runs in its own
+/// task. A handler panic is caught by the tick and recorded as a failed
+/// run of that Job (retried like any failure); an error, a failed outcome
+/// write or a panic elsewhere in the tick is printed to stderr and the
+/// next tick runs anyway. A tick that
 /// overruns delays the next one instead of piling up. Abort the handle to
 /// stop.
 pub fn spawn_ticker(d: Arc<Deployment>, period: Duration) -> tokio::task::JoinHandle<()> {

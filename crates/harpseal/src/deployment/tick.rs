@@ -1,7 +1,8 @@
 //! [`Deployment::tick`]: the per-minute entry point both runtimes call (a
-//! Cron Trigger on Workers, a timer natively). It claims due Jobs with one
-//! `UPDATE … RETURNING` and runs them. #23 owns the full Job lifecycle
-//! (scheduled Jobs, pruning); this is the claim loop it builds on.
+//! Cron Trigger on Workers, a timer natively), and the Deployment's enqueue
+//! shortcuts. It enqueues due scheduled Jobs, claims due Jobs with one
+//! `UPDATE … RETURNING`, runs them and prunes old rows. The lifecycle is
+//! documented in `crate::jobs`.
 //!
 //! `job.attempts` counts runs started (incremented by the claim) and
 //! `job.max_attempts` is the number of **retries** after the first run: with
@@ -10,9 +11,13 @@
 //! `attempts > max_attempts`.
 
 use crate::delivery::Timestamp;
+use crate::jobs::{JobId, Jobs, cut};
 use crate::manifest::Job;
 use crate::port_types::{Rows, Statement};
 use crate::{Deployment, Result};
+
+/// Longest `last_error` stored.
+const MAX_ERROR_CHARS: usize = 500;
 
 /// Jobs claimed per tick.
 const CLAIM_LIMIT: i64 = 25;
@@ -39,6 +44,28 @@ pub struct TickReport {
     pub errors: Vec<String>,
     /// Expired Staff sessions deleted (#21).
     pub sessions_pruned: u64,
+    /// Scheduled Jobs this tick enqueued (0 when another tick in the same
+    /// minute already did).
+    pub scheduled: usize,
+    /// Old `done` and `failed` Job rows deleted.
+    pub jobs_pruned: u64,
+}
+
+impl core::fmt::Display for TickReport {
+    /// One log line, the same on both runtimes.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "scheduled {}, claimed {}, done {}, retried {}, failed {}, pruned {} jobs and {} sessions",
+            self.scheduled,
+            self.claimed,
+            self.done,
+            self.retried,
+            self.failed,
+            self.jobs_pruned,
+            self.sessions_pruned
+        )
+    }
 }
 
 /// One claimed row.
@@ -77,21 +104,61 @@ fn claimed(rows: &Rows) -> Vec<Claimed> {
 }
 
 impl Deployment {
+    /// Enqueues Jobs of the registered kinds (see [`Jobs`]).
+    pub fn jobs(&self) -> &Jobs {
+        &self.queue
+    }
+
+    /// [`Jobs::enqueue`]: one Job of `kind`, due at `run_at` (now if `None`).
+    /// An unregistered kind is `Error::Invalid`.
+    pub async fn enqueue(
+        &self,
+        kind: &str,
+        payload: serde_json::Value,
+        run_at: Option<Timestamp>,
+    ) -> Result<JobId> {
+        self.queue.enqueue(kind, payload, run_at).await
+    }
+
+    /// [`Jobs::enqueue_unique`]: `Ok(None)` when a Job with `key` exists.
+    pub async fn enqueue_unique(
+        &self,
+        key: &str,
+        kind: &str,
+        payload: serde_json::Value,
+        run_at: Option<Timestamp>,
+    ) -> Result<Option<JobId>> {
+        self.queue.enqueue_unique(key, kind, payload, run_at).await
+    }
+
     /// Runs the per-minute work at `now`. First, Staff sessions past their
-    /// sliding or absolute limit are deleted. Then `running` Jobs whose lock
+    /// sliding or absolute limit are deleted, and the scheduled Jobs due in
+    /// this minute (or the one before) are enqueued, once per minute
+    /// however many ticks run. Then `running` Jobs whose lock
     /// expired (their runtime died mid-run) and that have no retries left
     /// are marked `failed` with `last_error = 'lock expired'`. Then one
     /// statement claims due `queued` Jobs and expired `running` ones that
     /// still have retries, each handler runs, and the outcome is written:
     /// `done`, `queued` again after 1, 5 or 30 minutes, or `failed` once
-    /// `attempts > max_attempts`. Handlers must be idempotent: a Cron
-    /// Trigger may fire twice, and an expired lock re-runs a Job.
+    /// `attempts > max_attempts`; a handler panic (native) is a failed run.
+    /// Last, `done` rows older than `[retention] job_days` and `failed`
+    /// rows older than 90 days are deleted. Handlers must be idempotent: a
+    /// Cron Trigger may fire twice, and an expired lock re-runs a Job.
     pub async fn tick(&self, now: Timestamp) -> Result<TickReport> {
         let db = self.services.db.as_ref();
         let mut report = TickReport::default();
         match crate::auth::prune_sessions(&self.services, now.ms()).await {
             Ok(n) => report.sessions_pruned = n,
             Err(e) => report.errors.push(format!("staff session sweep: {e}")),
+        }
+        let offset = self.config.utc_offset_minutes().unwrap_or(0);
+        match self
+            .queue
+            .enqueue_scheduled(&self.registry.schedules, now, offset)
+            .await
+        {
+            Ok(n) => report.scheduled = n,
+            Err(e) => report.errors.push(format!("scheduled jobs: {e}")),
         }
         let expired = db
             .execute(
@@ -125,7 +192,7 @@ impl Deployment {
 
         for c in jobs {
             let id = c.job.id.clone();
-            let outcome = match self.run_job(c.job).await {
+            let outcome = match self.run_claimed(c.job, Some(&token)).await {
                 Ok(()) => {
                     report.done += 1;
                     Statement::new(
@@ -141,7 +208,7 @@ impl Deployment {
                          locked_until = NULL, last_error = ? WHERE id = ? AND lock_token = ?",
                     )
                     .bind(now.ms())
-                    .bind(e.to_string())
+                    .bind(cut(&e.to_string(), MAX_ERROR_CHARS))
                 }
                 Err(e) => {
                     report.retried += 1;
@@ -152,7 +219,7 @@ impl Deployment {
                          locked_until = NULL, last_error = ? WHERE id = ? AND lock_token = ?",
                     )
                     .bind(now.plus_ms(delay).ms())
-                    .bind(e.to_string())
+                    .bind(cut(&e.to_string(), MAX_ERROR_CHARS))
                 }
             };
             if let Err(e) = db
@@ -163,6 +230,10 @@ impl Deployment {
                     .errors
                     .push(format!("job {id}: outcome not saved: {e}"));
             }
+        }
+        match crate::jobs::prune(&self.services, now, self.config.retention.job_days).await {
+            Ok(n) => report.jobs_pruned = n,
+            Err(e) => report.errors.push(format!("job prune: {e}")),
         }
         Ok(report)
     }
