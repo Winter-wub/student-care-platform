@@ -145,6 +145,20 @@ impl Catalog {
             .unwrap_or_else(|| key.to_string())
     }
 
+    /// Every `(locale, key, text)`, unordered (the Texts page sorts them).
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.texts
+            .iter()
+            .map(|((l, k), t)| (l.as_str(), k.as_str(), t.as_str()))
+    }
+
+    /// The text for `key` in exactly `locale`, without fallback.
+    pub(crate) fn exact(&self, locale: &str, key: &str) -> Option<&str> {
+        self.texts
+            .get(&(locale.to_string(), key.to_string()))
+            .map(String::as_str)
+    }
+
     /// The Deployment's default Locale.
     pub fn default_locale(&self) -> Locale {
         self.default_locale.clone().unwrap_or_else(Locale::th)

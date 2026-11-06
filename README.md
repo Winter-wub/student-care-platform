@@ -265,6 +265,19 @@ returning / kept by manual edits, and Confirm runs the Job
 import at a time; the file stays in the FileStore under `roster/<import id>/`.
 Try it with `crates/harpseal/tests/fixtures/roster/seal_bay_50.csv`.
 
+Administrators also get `/admin/security` (Security Events, `kernel.security.view`)
+and `/admin/audit` (the audit log with a before/after diff, `kernel.audit.view`);
+each request to either is itself logged as a sensitive read. `/admin/staff` and
+`/admin/roles` (`kernel.staff.manage`) create Staff with a temporary password
+shown once, disable them (their sessions end), assign Roles, reset passwords,
+clear lockouts and edit Roles; at least one active Staff member always keeps
+`kernel.staff.manage`. A Role from `[roles]` can be edited there too, but the next
+`migrate` grants its TOML Permissions again. `/admin/texts` (`kernel.setting.edit`)
+edits any catalog text per Locale (it must keep the default's `{name}`
+placeholders) and bumps the privacy notice version, which asks every linked
+Student to accept again on their next message. Edits take effect on the next
+message: `setting` is read on every Inbound, with no cache.
+
 ## Deploying the example to Workers
 
 Workers Paid is required (Free's 10 ms CPU fails logins and imports). The

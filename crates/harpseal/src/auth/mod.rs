@@ -21,9 +21,11 @@ mod cookies;
 mod guard;
 mod login;
 mod pages;
+pub(crate) mod role_admin;
 pub(crate) mod roles;
 mod session;
 mod staff;
+pub(crate) mod staff_admin;
 mod texts;
 
 pub(crate) use cookies::flash as flash_cookie;

@@ -2,6 +2,7 @@
 //! migrations and public pages. Registered first by every Deployment. Not
 //! public API: the schema and these queries may change without notice.
 
+mod admin;
 pub(crate) mod flow;
 pub mod links;
 pub(crate) mod notice;
@@ -88,6 +89,7 @@ impl Module for Kernel {
         }
         students::register(r);
         roster::register(r);
+        admin::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))

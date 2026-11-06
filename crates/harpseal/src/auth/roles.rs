@@ -110,3 +110,84 @@ pub(crate) fn grant(staff_id: &str, name: &str) -> Statement {
     .bind(staff_id)
     .bind(name)
 }
+
+/// Whether any of the Roles `names` grants Permission `permission`.
+pub(crate) async fn grant_any(
+    services: &Services,
+    names: &[String],
+    permission: &str,
+) -> Result<bool> {
+    for name in names {
+        let rows = services
+            .db
+            .query(
+                Statement::new(
+                    "SELECT 1 FROM role_permission rp JOIN role r ON r.id = rp.role_id \
+                     WHERE r.name = ? AND rp.permission_id = ?",
+                )
+                .bind(name.as_str())
+                .bind(permission),
+            )
+            .await?;
+        if !rows.is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// One Role with its Permissions and how many Staff hold it.
+#[derive(Debug, Clone)]
+pub(crate) struct RoleRow {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) permissions: Vec<String>,
+    pub(crate) holders: i64,
+}
+
+impl RoleRow {
+    /// The compare-and-set token of the edit form: the sorted Permissions.
+    pub(crate) fn version(&self) -> String {
+        self.permissions.join(",")
+    }
+}
+
+const ROLE_SELECT: &str = "SELECT r.id, r.name, \
+    (SELECT json_group_array(permission_id) FROM (SELECT permission_id FROM role_permission \
+     WHERE role_id = r.id ORDER BY permission_id)) AS perms, \
+    (SELECT count(*) FROM staff_role WHERE role_id = r.id) AS holders FROM role r";
+
+/// Every Role, by name.
+pub(crate) async fn list(services: &Services) -> Result<Vec<RoleRow>> {
+    let rows = services
+        .db
+        .query(Statement::new(format!("{ROLE_SELECT} ORDER BY r.name")))
+        .await?;
+    Ok(role_rows(&rows))
+}
+
+/// One Role by id.
+pub(crate) async fn get(services: &Services, id: &str) -> Result<Option<RoleRow>> {
+    let rows = services
+        .db
+        .query(Statement::new(format!("{ROLE_SELECT} WHERE r.id = ?")).bind(id))
+        .await?;
+    Ok(role_rows(&rows).into_iter().next())
+}
+
+fn role_rows(rows: &Rows) -> Vec<RoleRow> {
+    let text = |i: usize, c: &str| {
+        rows.get(i, c)
+            .and_then(|v| v.as_text())
+            .unwrap_or_default()
+            .to_string()
+    };
+    (0..rows.len())
+        .map(|i| RoleRow {
+            id: text(i, "id"),
+            name: text(i, "name"),
+            permissions: serde_json::from_str(&text(i, "perms")).unwrap_or_default(),
+            holders: rows.get(i, "holders").and_then(|v| v.as_i64()).unwrap_or(0),
+        })
+        .collect()
+}
