@@ -1,0 +1,203 @@
+//! The create / edit form as posted ([`Fields`]), its checks, and the
+//! [`Draft`] it becomes.
+
+use std::collections::BTreeMap;
+
+use super::service::Draft;
+use super::store::{Row, Texts};
+use super::view::{end_of_day, input_date, input_datetime, local_datetime};
+use crate::audience::Audience;
+use crate::config::{AttributeType, RosterConfig};
+
+/// Longest title and body, in characters.
+pub(crate) const MAX_TITLE: usize = 100;
+pub(crate) const MAX_BODY: usize = 2000;
+
+/// The form exactly as typed, so a refused post re-renders unchanged.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Fields {
+    pub(crate) title_th: String,
+    pub(crate) body_th: String,
+    pub(crate) title_en: String,
+    pub(crate) body_en: String,
+    pub(crate) require_ack: bool,
+    pub(crate) expires: String,
+    /// `now` or `later`.
+    pub(crate) when: String,
+    pub(crate) send_at: String,
+    /// `attr.<key>` values (checkboxes, or one comma-separated text).
+    pub(crate) attrs: BTreeMap<String, Vec<String>>,
+    pub(crate) tags: String,
+    pub(crate) unreachable: bool,
+    pub(crate) version: Option<i64>,
+    /// The submit button pressed: `draft` or `confirm`.
+    pub(crate) submit: String,
+}
+
+fn split(s: &str) -> impl Iterator<Item = String> + '_ {
+    s.split(',')
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+impl Fields {
+    /// From the posted pairs.
+    pub(crate) fn from_pairs(pairs: &[(String, String)]) -> Self {
+        let mut f = Fields::default();
+        for (k, v) in pairs {
+            match k.as_str() {
+                "title_th" => f.title_th.clone_from(v),
+                "body_th" => f.body_th.clone_from(v),
+                "title_en" => f.title_en.clone_from(v),
+                "body_en" => f.body_en.clone_from(v),
+                "require_ack" => f.require_ack = true,
+                "expires" => f.expires.clone_from(v),
+                "when" => f.when.clone_from(v),
+                "send_at" => f.send_at.clone_from(v),
+                "tags" => f.tags.clone_from(v),
+                "unreachable" => f.unreachable = true,
+                "version" => f.version = v.parse().ok(),
+                "do" => f.submit.clone_from(v),
+                other => {
+                    if let Some(key) = other.strip_prefix("attr.") {
+                        f.attrs.entry(key.to_string()).or_default().extend(split(v));
+                    }
+                }
+            }
+        }
+        if f.when.is_empty() {
+            f.when = "now".into();
+        }
+        f
+    }
+
+    /// From a stored announcement, for its edit form.
+    pub(crate) fn of(row: &Row, texts: &Texts, offset: i32) -> Self {
+        let get = |l: &str| texts.0.get(l).cloned().unwrap_or_default();
+        let (title_th, body_th) = get("th");
+        let (title_en, body_en) = get("en");
+        Fields {
+            title_th,
+            body_th,
+            title_en,
+            body_en,
+            require_ack: row.require_ack,
+            expires: row
+                .expires_at
+                .map(|e| input_date(e, offset))
+                .unwrap_or_default(),
+            when: if row.send_at.is_some() {
+                "later"
+            } else {
+                "now"
+            }
+            .into(),
+            send_at: row
+                .send_at
+                .map(|t| input_datetime(t, offset))
+                .unwrap_or_default(),
+            attrs: row.audience.attributes.clone(),
+            tags: row.audience.tags.join(", "),
+            unreachable: row.audience.include_unreachable,
+            version: Some(row.version),
+            submit: String::new(),
+        }
+    }
+
+    /// The Audience the form describes (unchecked).
+    pub(crate) fn audience(&self) -> Audience {
+        let mut a = Audience::everyone();
+        a.attributes = self
+            .attrs
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        a.tags = split(&self.tags).collect();
+        a.include_unreachable = self.unreachable;
+        a
+    }
+
+    /// The Draft, or every problem as (field, catalog key).
+    pub(crate) fn draft(
+        &self,
+        roster: &RosterConfig,
+        offset: i32,
+        now: i64,
+    ) -> Result<Draft, Vec<(&'static str, &'static str)>> {
+        let mut errors = Vec::new();
+        let long = |s: &str, n: usize| s.chars().count() > n;
+        if self.title_th.trim().is_empty() || self.body_th.trim().is_empty() {
+            errors.push(("th", "announcements.form.th_required"));
+        }
+        let en_title = self.title_en.trim();
+        let en_body = self.body_en.trim();
+        if en_title.is_empty() != en_body.is_empty() {
+            errors.push(("en", "announcements.form.en_both"));
+        }
+        if [&self.title_th, &self.title_en]
+            .iter()
+            .any(|t| long(t, MAX_TITLE))
+            || [&self.body_th, &self.body_en]
+                .iter()
+                .any(|b| long(b, MAX_BODY))
+        {
+            errors.push(("th", "announcements.form.too_long"));
+        }
+        let expires_at = match self.expires.trim() {
+            "" => None,
+            e => match end_of_day(e, offset) {
+                Some(t) if t > now => Some(t),
+                _ => {
+                    errors.push(("expires", "announcements.form.bad_expires"));
+                    None
+                }
+            },
+        };
+        let send_at = if self.when == "later" {
+            match local_datetime(&self.send_at, offset) {
+                Some(t) if t > now => Some(t),
+                _ => {
+                    errors.push(("send_at", "announcements.form.bad_send_at"));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let audience = self.audience();
+        for (key, values) in &audience.attributes {
+            let Some(spec) = roster.attributes.get(key) else {
+                errors.push(("audience", "announcements.form.bad_audience"));
+                continue;
+            };
+            let off_list =
+                spec.kind == AttributeType::Enum && values.iter().any(|v| !spec.values.contains(v));
+            if off_list {
+                errors.push(("audience", "announcements.form.bad_audience"));
+            }
+        }
+        if audience.check(roster).is_err() {
+            errors.push(("audience", "announcements.form.bad_audience"));
+        }
+        if !errors.is_empty() {
+            errors.dedup();
+            return Err(errors);
+        }
+        let mut texts = vec![(
+            "th".to_string(),
+            self.title_th.trim().to_string(),
+            self.body_th.trim().to_string(),
+        )];
+        if !en_title.is_empty() {
+            texts.push(("en".into(), en_title.to_string(), en_body.to_string()));
+        }
+        Ok(Draft {
+            texts,
+            audience,
+            require_ack: self.require_ack,
+            expires_at,
+            send_at,
+        })
+    }
+}

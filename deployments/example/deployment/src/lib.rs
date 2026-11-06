@@ -1,11 +1,15 @@
 //! The fictional "Seal Bay University" Deployment: Thai default Locale,
-//! LINE + Telegram + Fake Channels, email-OTP Verification and one small
-//! customer Module ([`Contact`]) adding a Menu entry. Both runtime binaries
-//! (`../native`, `../worker`) call [`deployment`] with their own Services.
+//! LINE + Telegram + Fake Channels, email-OTP Verification, the built-in
+//! Announcements Module and one small customer Module ([`Contact`]) adding
+//! a Menu entry. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
+//! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
+//! Both runtime binaries (`../native`, `../worker`) call [`deployment`]
+//! with their own Services.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+use harpseal::modules::announcements::Announcements;
 use harpseal::{
     ActionContext, ActionId, BuildError, CatalogEntry, Deployment, DeploymentBuilder,
     DeploymentConfig, EmailOtp, MenuEntrySpec, Message, Module, ModuleRegistrar, Services,
@@ -101,12 +105,15 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
     let config = config();
     let otp = EmailOtp::new(config.otp.clone());
     let http = services.http.clone();
+    let clock = services.clock.clone();
     Deployment::builder()
         .config(config)
         .runtime(services)
         .channel(LineChannel::new(secrets.line, http.clone()))
-        .channel(TelegramChannel::new(secrets.telegram, http))
+        // The Clock checks the age of Telegram Mini App `initData`.
+        .channel(TelegramChannel::new(secrets.telegram, http).with_clock(clock))
         .verification(otp)
+        .module(Announcements)
         .module(Contact)
 }
 

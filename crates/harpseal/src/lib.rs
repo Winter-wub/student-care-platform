@@ -45,6 +45,7 @@ mod sql_split;
 mod verification;
 
 pub mod audit;
+pub mod modules;
 pub mod password;
 pub mod render;
 pub mod ui;
@@ -68,10 +69,11 @@ pub use delivery::{
     IncomingFile, Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp,
     WebhookRequest,
 };
-pub use deployment::{Deployment, DeploymentBuilder, TickReport, WebhookReport};
+pub use deployment::{Deployment, DeploymentBuilder, ManySent, TickReport, WebhookReport};
 pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};
+pub use kernel::audience;
 pub use kernel::links;
 pub use kernel::links::LinkChange;
 pub use kernel::students;
