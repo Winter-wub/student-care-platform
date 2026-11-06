@@ -135,6 +135,8 @@ async fn webhook_with_a_bad_signature_is_rejected_before_parsing() {
     let body = FakeChannel::encode(&[Inbound::Follow {
         from: FakeChannel::account("u1"),
         reply: None,
+        event_id: None,
+        redelivery: false,
     }]);
     assert_eq!(
         app.fake_webhook_raw(body.clone(), "wrong").await.status,
@@ -159,6 +161,8 @@ fn press(account: &str, action: &str, reply_expires_at: i64) -> Inbound {
             token: "r-1".into(),
             expires_at: Timestamp(reply_expires_at),
         }),
+        event_id: None,
+        redelivery: false,
     }
 }
 

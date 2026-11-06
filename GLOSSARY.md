@@ -95,7 +95,7 @@ An outgoing message the system starts on its own, such as an announcement or a r
 _Avoid_: notification, broadcast, multicast
 
 **Outbound Message** (ข้อความขาออก):
-The record of any message sent to a Channel Account, with whether it was metered on that Channel. Usage figures come from these records. A metered unit is one Push request to one recipient, however many messages it carries (LINE puts up to 5 in one request), so usage counts Push requests, not messages.
+The record of any message sent to a Channel Account, with whether it was metered on that Channel. Usage figures come from these records. A metered unit is one Push request to one recipient, however many messages it carries (LINE puts up to 5 in one request), so usage counts Push requests, not messages. A message the Channel has to spread over several Push requests (a very long text, a long Card List) costs one unit for each of them.
 
 **Card** (การ์ด):
 A structured message with a title, body and optional buttons. A **Card List** (ชุดการ์ด) is several Cards shown together.

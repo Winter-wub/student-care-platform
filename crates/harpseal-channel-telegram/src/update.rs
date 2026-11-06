@@ -70,14 +70,28 @@ fn account(chat_id: &Value) -> Result<ChannelAccountId> {
 
 /// Parses an already verified body. `lookup` resolves a command name for
 /// the sending account (the Menu overlay, then the construction-time map).
+/// The event's id is the Update's `update_id` (unique per bot; Telegram
+/// resends an Update with the same id until it gets a 2xx), so the Kernel
+/// answers a resent Update once. Telegram has no redelivery flag.
 pub fn parse(
     body: &[u8],
     lookup: impl Fn(&ChannelAccountId, &str) -> Option<ActionId>,
 ) -> Result<Parsed> {
     let update: Value = serde_json::from_slice(body).map_err(|e| invalid(&e.to_string()))?;
-    if !update["update_id"].is_i64() {
+    let Some(update_id) = update["update_id"].as_i64() else {
         return Err(invalid("no update_id"));
-    }
+    };
+    let mut parsed = parse_update(&update, lookup)?;
+    parsed.event = parsed
+        .event
+        .map(|e| e.with_event_id(Some(update_id.to_string()), false));
+    Ok(parsed)
+}
+
+fn parse_update(
+    update: &Value,
+    lookup: impl Fn(&ChannelAccountId, &str) -> Option<ActionId>,
+) -> Result<Parsed> {
     if let Some(m) = update.get("message") {
         return Ok(Parsed {
             event: message(m, lookup)?,
@@ -115,6 +129,8 @@ fn message(
         from,
         file,
         reply: None,
+        event_id: None,
+        redelivery: false,
     }))
 }
 
@@ -127,13 +143,20 @@ fn text_event(
 ) -> Inbound {
     if let Some(cmd) = command(text) {
         if cmd == "start" {
-            return Inbound::Follow { from, reply: None };
+            return Inbound::Follow {
+                from,
+                reply: None,
+                event_id: None,
+                redelivery: false,
+            };
         }
         if let Some(action) = lookup(&from, &cmd) {
             return Inbound::Action {
                 from,
                 action,
                 reply: None,
+                event_id: None,
+                redelivery: false,
             };
         }
     }
@@ -141,6 +164,8 @@ fn text_event(
         from,
         text: text.to_string(),
         reply: None,
+        event_id: None,
+        redelivery: false,
     }
 }
 
@@ -202,6 +227,8 @@ fn callback(q: &Value) -> Result<Parsed> {
                 from,
                 action,
                 reply: None,
+                event_id: None,
+                redelivery: false,
             })
         }
         _ => parsed.refused = Some(invalid("callback_data is not an Action id")),
@@ -217,8 +244,17 @@ fn member(m: &Value) -> Result<Option<Inbound>> {
     }
     let from = account(&m["chat"]["id"])?;
     Ok(match m["new_chat_member"]["status"].as_str() {
-        Some("kicked" | "left") => Some(Inbound::Blocked { from }),
-        Some("member") => Some(Inbound::Unblocked { from, reply: None }),
+        Some("kicked" | "left") => Some(Inbound::Blocked {
+            from,
+            event_id: None,
+            redelivery: false,
+        }),
+        Some("member") => Some(Inbound::Unblocked {
+            from,
+            reply: None,
+            event_id: None,
+            redelivery: false,
+        }),
         _ => None,
     })
 }
@@ -312,6 +348,25 @@ mod tests {
         let group = parse(&q(json!("news.ack.1042"), "group"), none).unwrap();
         assert_eq!(group.answer_callback.as_deref(), Some("q"));
         assert!(group.event.is_none() && group.refused.is_none());
+    }
+
+    #[test]
+    fn the_event_id_is_the_update_id() {
+        let left = json!({ "update_id": 734_120_001, "my_chat_member": {
+            "chat": { "id": 42, "type": "private" }, "new_chat_member": { "status": "kicked" } } });
+        let ev = parse(left.to_string().as_bytes(), none)
+            .unwrap()
+            .event
+            .unwrap();
+        assert_eq!(ev.event_id(), Some("734120001"));
+        assert!(!ev.redelivery());
+        let text = json!({ "update_id": 734_120_002, "message": {
+            "message_id": 5, "chat": { "id": 42, "type": "private" }, "text": "สวัสดี" } });
+        let ev = parse(text.to_string().as_bytes(), none)
+            .unwrap()
+            .event
+            .unwrap();
+        assert_eq!(ev.event_id(), Some("734120002"));
     }
 
     #[test]

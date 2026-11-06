@@ -19,6 +19,8 @@ fn typed(who: &str, text: &str) -> Inbound {
             token: format!("{who}-{text}"),
             expires_at: Timestamp(harpseal_testing::START_MS + 60_000),
         }),
+        event_id: None,
+        redelivery: false,
     }
 }
 

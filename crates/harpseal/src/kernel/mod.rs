@@ -64,6 +64,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0005_job_unique_key",
         include_str!("../../migrations/0005_job_unique_key.sql"),
     ),
+    (
+        "0006_inbound_event_id",
+        include_str!("../../migrations/0006_inbound_event_id.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.
