@@ -1,0 +1,47 @@
+[
+  {
+    "altText": "ผูกบัญชีเรียบร้อย",
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "size": "lg",
+            "text": "ผูกบัญชีเรียบร้อย",
+            "type": "text",
+            "weight": "bold",
+            "wrap": true
+          },
+          {
+            "size": "sm",
+            "text": "สวัสดีคุณสมหญิง (รหัส 65012345) ตอนนี้คุณจะได้รับประกาศและใช้เมนูทั้งหมดได้แล้ว",
+            "type": "text",
+            "wrap": true
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "md",
+        "type": "box"
+      },
+      "footer": {
+        "contents": [
+          {
+            "action": {
+              "data": "news.latest",
+              "displayText": "ดูประกาศล่าสุด",
+              "label": "ดูประกาศล่าสุด",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "primary",
+            "type": "button"
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "sm",
+        "type": "box"
+      },
+      "type": "bubble"
+    },
+    "type": "flex"
+  }
+]

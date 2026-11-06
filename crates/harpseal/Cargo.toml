@@ -1,0 +1,23 @@
+[package]
+name = "harpseal"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+async-trait.workspace = true
+axum.workspace = true
+http.workspace = true
+serde.workspace = true
+toml.workspace = true
+maud.workspace = true
+argon2.workspace = true
+pbkdf2.workspace = true
+sha2.workspace = true
+
+[features]
+# Sample first-slice messages for adapter tests (issue #3). Test-only, not a platform flag.
+fixtures = []

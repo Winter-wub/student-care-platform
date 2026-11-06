@@ -1,0 +1,15 @@
+[package]
+name = "harpseal-example-native"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+harpseal-runtime-native.workspace = true
+example-deployment.workspace = true
+harpseal-channel-line.workspace = true
+harpseal-channel-telegram.workspace = true
+tokio.workspace = true

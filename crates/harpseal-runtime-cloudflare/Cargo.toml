@@ -1,0 +1,15 @@
+[package]
+name = "harpseal-runtime-cloudflare"
+version = "0.0.0"
+edition.workspace = true
+rust-version = "1.91"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+harpseal.workspace = true
+worker.workspace = true
+async-trait.workspace = true
+http.workspace = true
+getrandom = { workspace = true, features = ["wasm_js"] }

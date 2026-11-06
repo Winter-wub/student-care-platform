@@ -9,6 +9,8 @@ Every Kernel table (and, by convention, every Module table) uses a UUIDv7 stored
 
 We rejected integer auto-increment keys (D1 returns integers beyond ±2^53 inexactly and the Core never relies on a round-trip to the database for an id), ULIDs (shorter, but UUIDv7 is the form most tools and libraries already parse), natural primary keys (a changed student ID would cascade through every table), ISO-8601 text timestamps (range comparisons depend on exact formatting) and an audit log without before/after values (cannot answer "who changed this value from what").
 
+Amended 2026-11-06 (#14 review): join tables (`student_tag`, `role_permission`, `staff_role`), aggregate tables (`usage_daily` by channel and day) and keyed tables (`setting` by key and Locale, `migration` by Module and name) use their natural composite key as primary key, and session tables (`staff_session`, `app_session`) use the SHA-256 hash of the token as `id`; every other table keeps a UUIDv7. UUIDv7 ids sort by creation time only to the millisecond (on Workers, to the request, since the clock is frozen within one), so lists order by `(at, id)`, never by `id` alone.
+
 ## Consequences
 
 - Ids are opaque and sortable by creation time; URLs and logs show UUIDs, not sequence numbers.

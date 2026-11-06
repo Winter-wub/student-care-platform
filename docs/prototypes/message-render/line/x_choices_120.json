@@ -1,0 +1,1349 @@
+[
+  {
+    "altText": "เลือกห้อง",
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "size": "sm",
+            "text": "เลือกห้อง",
+            "type": "text",
+            "wrap": true
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "md",
+        "type": "box"
+      },
+      "footer": {
+        "contents": [
+          {
+            "action": {
+              "data": "room.1",
+              "displayText": "ห้อง 1",
+              "label": "ห้อง 1",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "primary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.2",
+              "displayText": "ห้อง 2",
+              "label": "ห้อง 2",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.3",
+              "displayText": "ห้อง 3",
+              "label": "ห้อง 3",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.4",
+              "displayText": "ห้อง 4",
+              "label": "ห้อง 4",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.5",
+              "displayText": "ห้อง 5",
+              "label": "ห้อง 5",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.6",
+              "displayText": "ห้อง 6",
+              "label": "ห้อง 6",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.7",
+              "displayText": "ห้อง 7",
+              "label": "ห้อง 7",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.8",
+              "displayText": "ห้อง 8",
+              "label": "ห้อง 8",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.9",
+              "displayText": "ห้อง 9",
+              "label": "ห้อง 9",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.10",
+              "displayText": "ห้อง 10",
+              "label": "ห้อง 10",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.11",
+              "displayText": "ห้อง 11",
+              "label": "ห้อง 11",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.12",
+              "displayText": "ห้อง 12",
+              "label": "ห้อง 12",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.13",
+              "displayText": "ห้อง 13",
+              "label": "ห้อง 13",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.14",
+              "displayText": "ห้อง 14",
+              "label": "ห้อง 14",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.15",
+              "displayText": "ห้อง 15",
+              "label": "ห้อง 15",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.16",
+              "displayText": "ห้อง 16",
+              "label": "ห้อง 16",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.17",
+              "displayText": "ห้อง 17",
+              "label": "ห้อง 17",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.18",
+              "displayText": "ห้อง 18",
+              "label": "ห้อง 18",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.19",
+              "displayText": "ห้อง 19",
+              "label": "ห้อง 19",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.20",
+              "displayText": "ห้อง 20",
+              "label": "ห้อง 20",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.21",
+              "displayText": "ห้อง 21",
+              "label": "ห้อง 21",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.22",
+              "displayText": "ห้อง 22",
+              "label": "ห้อง 22",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.23",
+              "displayText": "ห้อง 23",
+              "label": "ห้อง 23",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.24",
+              "displayText": "ห้อง 24",
+              "label": "ห้อง 24",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.25",
+              "displayText": "ห้อง 25",
+              "label": "ห้อง 25",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.26",
+              "displayText": "ห้อง 26",
+              "label": "ห้อง 26",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.27",
+              "displayText": "ห้อง 27",
+              "label": "ห้อง 27",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.28",
+              "displayText": "ห้อง 28",
+              "label": "ห้อง 28",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.29",
+              "displayText": "ห้อง 29",
+              "label": "ห้อง 29",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.30",
+              "displayText": "ห้อง 30",
+              "label": "ห้อง 30",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.31",
+              "displayText": "ห้อง 31",
+              "label": "ห้อง 31",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.32",
+              "displayText": "ห้อง 32",
+              "label": "ห้อง 32",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.33",
+              "displayText": "ห้อง 33",
+              "label": "ห้อง 33",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.34",
+              "displayText": "ห้อง 34",
+              "label": "ห้อง 34",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.35",
+              "displayText": "ห้อง 35",
+              "label": "ห้อง 35",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.36",
+              "displayText": "ห้อง 36",
+              "label": "ห้อง 36",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.37",
+              "displayText": "ห้อง 37",
+              "label": "ห้อง 37",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.38",
+              "displayText": "ห้อง 38",
+              "label": "ห้อง 38",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.39",
+              "displayText": "ห้อง 39",
+              "label": "ห้อง 39",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.40",
+              "displayText": "ห้อง 40",
+              "label": "ห้อง 40",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.41",
+              "displayText": "ห้อง 41",
+              "label": "ห้อง 41",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.42",
+              "displayText": "ห้อง 42",
+              "label": "ห้อง 42",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.43",
+              "displayText": "ห้อง 43",
+              "label": "ห้อง 43",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.44",
+              "displayText": "ห้อง 44",
+              "label": "ห้อง 44",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.45",
+              "displayText": "ห้อง 45",
+              "label": "ห้อง 45",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.46",
+              "displayText": "ห้อง 46",
+              "label": "ห้อง 46",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.47",
+              "displayText": "ห้อง 47",
+              "label": "ห้อง 47",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.48",
+              "displayText": "ห้อง 48",
+              "label": "ห้อง 48",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.49",
+              "displayText": "ห้อง 49",
+              "label": "ห้อง 49",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.50",
+              "displayText": "ห้อง 50",
+              "label": "ห้อง 50",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.51",
+              "displayText": "ห้อง 51",
+              "label": "ห้อง 51",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.52",
+              "displayText": "ห้อง 52",
+              "label": "ห้อง 52",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.53",
+              "displayText": "ห้อง 53",
+              "label": "ห้อง 53",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.54",
+              "displayText": "ห้อง 54",
+              "label": "ห้อง 54",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.55",
+              "displayText": "ห้อง 55",
+              "label": "ห้อง 55",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.56",
+              "displayText": "ห้อง 56",
+              "label": "ห้อง 56",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.57",
+              "displayText": "ห้อง 57",
+              "label": "ห้อง 57",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.58",
+              "displayText": "ห้อง 58",
+              "label": "ห้อง 58",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.59",
+              "displayText": "ห้อง 59",
+              "label": "ห้อง 59",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.60",
+              "displayText": "ห้อง 60",
+              "label": "ห้อง 60",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.61",
+              "displayText": "ห้อง 61",
+              "label": "ห้อง 61",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.62",
+              "displayText": "ห้อง 62",
+              "label": "ห้อง 62",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.63",
+              "displayText": "ห้อง 63",
+              "label": "ห้อง 63",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.64",
+              "displayText": "ห้อง 64",
+              "label": "ห้อง 64",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.65",
+              "displayText": "ห้อง 65",
+              "label": "ห้อง 65",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.66",
+              "displayText": "ห้อง 66",
+              "label": "ห้อง 66",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.67",
+              "displayText": "ห้อง 67",
+              "label": "ห้อง 67",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.68",
+              "displayText": "ห้อง 68",
+              "label": "ห้อง 68",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.69",
+              "displayText": "ห้อง 69",
+              "label": "ห้อง 69",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.70",
+              "displayText": "ห้อง 70",
+              "label": "ห้อง 70",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.71",
+              "displayText": "ห้อง 71",
+              "label": "ห้อง 71",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.72",
+              "displayText": "ห้อง 72",
+              "label": "ห้อง 72",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.73",
+              "displayText": "ห้อง 73",
+              "label": "ห้อง 73",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.74",
+              "displayText": "ห้อง 74",
+              "label": "ห้อง 74",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.75",
+              "displayText": "ห้อง 75",
+              "label": "ห้อง 75",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.76",
+              "displayText": "ห้อง 76",
+              "label": "ห้อง 76",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.77",
+              "displayText": "ห้อง 77",
+              "label": "ห้อง 77",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.78",
+              "displayText": "ห้อง 78",
+              "label": "ห้อง 78",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.79",
+              "displayText": "ห้อง 79",
+              "label": "ห้อง 79",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.80",
+              "displayText": "ห้อง 80",
+              "label": "ห้อง 80",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.81",
+              "displayText": "ห้อง 81",
+              "label": "ห้อง 81",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.82",
+              "displayText": "ห้อง 82",
+              "label": "ห้อง 82",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.83",
+              "displayText": "ห้อง 83",
+              "label": "ห้อง 83",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.84",
+              "displayText": "ห้อง 84",
+              "label": "ห้อง 84",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.85",
+              "displayText": "ห้อง 85",
+              "label": "ห้อง 85",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.86",
+              "displayText": "ห้อง 86",
+              "label": "ห้อง 86",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.87",
+              "displayText": "ห้อง 87",
+              "label": "ห้อง 87",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.88",
+              "displayText": "ห้อง 88",
+              "label": "ห้อง 88",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.89",
+              "displayText": "ห้อง 89",
+              "label": "ห้อง 89",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.90",
+              "displayText": "ห้อง 90",
+              "label": "ห้อง 90",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.91",
+              "displayText": "ห้อง 91",
+              "label": "ห้อง 91",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.92",
+              "displayText": "ห้อง 92",
+              "label": "ห้อง 92",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.93",
+              "displayText": "ห้อง 93",
+              "label": "ห้อง 93",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.94",
+              "displayText": "ห้อง 94",
+              "label": "ห้อง 94",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.95",
+              "displayText": "ห้อง 95",
+              "label": "ห้อง 95",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.96",
+              "displayText": "ห้อง 96",
+              "label": "ห้อง 96",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.97",
+              "displayText": "ห้อง 97",
+              "label": "ห้อง 97",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.98",
+              "displayText": "ห้อง 98",
+              "label": "ห้อง 98",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.99",
+              "displayText": "ห้อง 99",
+              "label": "ห้อง 99",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.100",
+              "displayText": "ห้อง 100",
+              "label": "ห้อง 100",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.101",
+              "displayText": "ห้อง 101",
+              "label": "ห้อง 101",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.102",
+              "displayText": "ห้อง 102",
+              "label": "ห้อง 102",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.103",
+              "displayText": "ห้อง 103",
+              "label": "ห้อง 103",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.104",
+              "displayText": "ห้อง 104",
+              "label": "ห้อง 104",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.105",
+              "displayText": "ห้อง 105",
+              "label": "ห้อง 105",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.106",
+              "displayText": "ห้อง 106",
+              "label": "ห้อง 106",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.107",
+              "displayText": "ห้อง 107",
+              "label": "ห้อง 107",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.108",
+              "displayText": "ห้อง 108",
+              "label": "ห้อง 108",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.109",
+              "displayText": "ห้อง 109",
+              "label": "ห้อง 109",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.110",
+              "displayText": "ห้อง 110",
+              "label": "ห้อง 110",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.111",
+              "displayText": "ห้อง 111",
+              "label": "ห้อง 111",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.112",
+              "displayText": "ห้อง 112",
+              "label": "ห้อง 112",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.113",
+              "displayText": "ห้อง 113",
+              "label": "ห้อง 113",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.114",
+              "displayText": "ห้อง 114",
+              "label": "ห้อง 114",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.115",
+              "displayText": "ห้อง 115",
+              "label": "ห้อง 115",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.116",
+              "displayText": "ห้อง 116",
+              "label": "ห้อง 116",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.117",
+              "displayText": "ห้อง 117",
+              "label": "ห้อง 117",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.118",
+              "displayText": "ห้อง 118",
+              "label": "ห้อง 118",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.119",
+              "displayText": "ห้อง 119",
+              "label": "ห้อง 119",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "data": "room.120",
+              "displayText": "ห้อง 120",
+              "label": "ห้อง 120",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "sm",
+        "type": "box"
+      },
+      "type": "bubble"
+    },
+    "type": "flex"
+  }
+]

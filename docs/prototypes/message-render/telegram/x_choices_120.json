@@ -1,0 +1,738 @@
+[
+  {
+    "method": "sendMessage",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "room.1",
+            "text": "ห้อง 1"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.2",
+            "text": "ห้อง 2"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.3",
+            "text": "ห้อง 3"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.4",
+            "text": "ห้อง 4"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.5",
+            "text": "ห้อง 5"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.6",
+            "text": "ห้อง 6"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.7",
+            "text": "ห้อง 7"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.8",
+            "text": "ห้อง 8"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.9",
+            "text": "ห้อง 9"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.10",
+            "text": "ห้อง 10"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.11",
+            "text": "ห้อง 11"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.12",
+            "text": "ห้อง 12"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.13",
+            "text": "ห้อง 13"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.14",
+            "text": "ห้อง 14"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.15",
+            "text": "ห้อง 15"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.16",
+            "text": "ห้อง 16"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.17",
+            "text": "ห้อง 17"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.18",
+            "text": "ห้อง 18"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.19",
+            "text": "ห้อง 19"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.20",
+            "text": "ห้อง 20"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.21",
+            "text": "ห้อง 21"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.22",
+            "text": "ห้อง 22"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.23",
+            "text": "ห้อง 23"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.24",
+            "text": "ห้อง 24"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.25",
+            "text": "ห้อง 25"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.26",
+            "text": "ห้อง 26"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.27",
+            "text": "ห้อง 27"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.28",
+            "text": "ห้อง 28"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.29",
+            "text": "ห้อง 29"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.30",
+            "text": "ห้อง 30"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.31",
+            "text": "ห้อง 31"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.32",
+            "text": "ห้อง 32"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.33",
+            "text": "ห้อง 33"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.34",
+            "text": "ห้อง 34"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.35",
+            "text": "ห้อง 35"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.36",
+            "text": "ห้อง 36"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.37",
+            "text": "ห้อง 37"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.38",
+            "text": "ห้อง 38"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.39",
+            "text": "ห้อง 39"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.40",
+            "text": "ห้อง 40"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.41",
+            "text": "ห้อง 41"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.42",
+            "text": "ห้อง 42"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.43",
+            "text": "ห้อง 43"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.44",
+            "text": "ห้อง 44"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.45",
+            "text": "ห้อง 45"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.46",
+            "text": "ห้อง 46"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.47",
+            "text": "ห้อง 47"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.48",
+            "text": "ห้อง 48"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.49",
+            "text": "ห้อง 49"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.50",
+            "text": "ห้อง 50"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.51",
+            "text": "ห้อง 51"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.52",
+            "text": "ห้อง 52"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.53",
+            "text": "ห้อง 53"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.54",
+            "text": "ห้อง 54"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.55",
+            "text": "ห้อง 55"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.56",
+            "text": "ห้อง 56"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.57",
+            "text": "ห้อง 57"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.58",
+            "text": "ห้อง 58"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.59",
+            "text": "ห้อง 59"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.60",
+            "text": "ห้อง 60"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.61",
+            "text": "ห้อง 61"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.62",
+            "text": "ห้อง 62"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.63",
+            "text": "ห้อง 63"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.64",
+            "text": "ห้อง 64"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.65",
+            "text": "ห้อง 65"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.66",
+            "text": "ห้อง 66"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.67",
+            "text": "ห้อง 67"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.68",
+            "text": "ห้อง 68"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.69",
+            "text": "ห้อง 69"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.70",
+            "text": "ห้อง 70"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.71",
+            "text": "ห้อง 71"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.72",
+            "text": "ห้อง 72"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.73",
+            "text": "ห้อง 73"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.74",
+            "text": "ห้อง 74"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.75",
+            "text": "ห้อง 75"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.76",
+            "text": "ห้อง 76"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.77",
+            "text": "ห้อง 77"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.78",
+            "text": "ห้อง 78"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.79",
+            "text": "ห้อง 79"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.80",
+            "text": "ห้อง 80"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.81",
+            "text": "ห้อง 81"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.82",
+            "text": "ห้อง 82"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.83",
+            "text": "ห้อง 83"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.84",
+            "text": "ห้อง 84"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.85",
+            "text": "ห้อง 85"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.86",
+            "text": "ห้อง 86"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.87",
+            "text": "ห้อง 87"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.88",
+            "text": "ห้อง 88"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.89",
+            "text": "ห้อง 89"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.90",
+            "text": "ห้อง 90"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.91",
+            "text": "ห้อง 91"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.92",
+            "text": "ห้อง 92"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.93",
+            "text": "ห้อง 93"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.94",
+            "text": "ห้อง 94"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.95",
+            "text": "ห้อง 95"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.96",
+            "text": "ห้อง 96"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.97",
+            "text": "ห้อง 97"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.98",
+            "text": "ห้อง 98"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.99",
+            "text": "ห้อง 99"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.100",
+            "text": "ห้อง 100"
+          }
+        ]
+      ]
+    },
+    "text": "เลือกห้อง"
+  },
+  {
+    "method": "sendMessage",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "room.101",
+            "text": "ห้อง 101"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.102",
+            "text": "ห้อง 102"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.103",
+            "text": "ห้อง 103"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.104",
+            "text": "ห้อง 104"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.105",
+            "text": "ห้อง 105"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.106",
+            "text": "ห้อง 106"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.107",
+            "text": "ห้อง 107"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.108",
+            "text": "ห้อง 108"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.109",
+            "text": "ห้อง 109"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.110",
+            "text": "ห้อง 110"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.111",
+            "text": "ห้อง 111"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.112",
+            "text": "ห้อง 112"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.113",
+            "text": "ห้อง 113"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.114",
+            "text": "ห้อง 114"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.115",
+            "text": "ห้อง 115"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.116",
+            "text": "ห้อง 116"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.117",
+            "text": "ห้อง 117"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.118",
+            "text": "ห้อง 118"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.119",
+            "text": "ห้อง 119"
+          }
+        ],
+        [
+          {
+            "callback_data": "room.120",
+            "text": "ห้อง 120"
+          }
+        ]
+      ]
+    },
+    "text": "ตัวเลือกเพิ่มเติม (2/2)"
+  }
+]

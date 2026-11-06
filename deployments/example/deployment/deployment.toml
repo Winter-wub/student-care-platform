@@ -1,0 +1,52 @@
+# Seal Bay University (มหาวิทยาลัยอ่าวแมวน้ำ): a FICTIONAL customer used as
+# the reference Deployment. Data only; code lives in src/lib.rs. Secrets
+# never go here: they come from the environment or Worker secrets.
+
+name = "Seal Bay University"
+default_locale = "th"
+utc_offset = "+07:00"
+
+[branding]
+primary_color = "#0b5cad"
+
+# Initial Roles: Role -> Permission ids. Every id must be declared by the
+# Kernel or a Module; build() fails otherwise.
+[roles]
+Administrator = [
+    "kernel.student.view", "kernel.student.edit", "kernel.link.manage",
+    "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
+    "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
+    "kernel.staff.manage", "kernel.setting.edit",
+]
+Officer = [
+    "kernel.student.view", "kernel.student.edit", "kernel.link.manage",
+    "kernel.roster.view", "kernel.roster.import", "kernel.usage.view",
+]
+Viewer = ["kernel.student.view", "kernel.usage.view"]
+
+# Warn Staff at 80% and 100% of metered pushes per month; never stops sending.
+[quotas.line]
+metered_per_month = 300
+
+[otp]
+digits = 6
+ttl_minutes = 5
+max_attempts = 3
+resends_per_hour = 3
+lock_minutes = 30
+
+# Overrides of default texts, per Locale.
+[texts.th]
+"kernel.notice.body" = """
+มหาวิทยาลัยอ่าวแมวน้ำใช้ระบบนี้ส่งข่าวและบริการนักศึกษาผ่าน LINE และ Telegram
+
+เราเก็บรหัสนักศึกษา ชื่อ-สกุล อีเมล ชั้นปี หลักสูตร และรหัสบัญชีแชทของคุณ เพื่อส่งประกาศให้ตรงกลุ่มและให้เจ้าหน้าที่ช่วยเหลือคุณได้ถูกคน
+
+คุณขอดู แก้ไข หรือยกเลิกการเชื่อมบัญชีได้ทุกเมื่อ โดยติดต่อกองกิจการนักศึกษา เราไม่ขายหรือส่งต่อข้อมูลของคุณให้บุคคลภายนอก
+
+ข้อความนี้เป็นตัวอย่าง ไม่ใช่ประกาศจริงของสถาบันใด
+"""
+"contact.reply" = "กองกิจการนักศึกษา อาคาร 1 ชั้น 2 เปิดจันทร์–ศุกร์ 08:30–16:30 น. โทร 0 0000 0000"
+
+[texts.en]
+"contact.reply" = "Student Affairs, Building 1, 2nd floor. Mon–Fri 08:30–16:30. Tel. 0 0000 0000."

@@ -1,0 +1,57 @@
+[
+  {
+    "altText": "ปิดอาคารเรียนรวม 2 วันเสาร์ที่ 14 พ.ย.",
+    "contents": {
+      "body": {
+        "contents": [
+          {
+            "size": "lg",
+            "text": "ปิดอาคารเรียนรวม 2 วันเสาร์ที่ 14 พ.ย.",
+            "type": "text",
+            "weight": "bold",
+            "wrap": true
+          },
+          {
+            "size": "sm",
+            "text": "งานอาคารสถานที่จะปิดอาคารเรียนรวม 2 ทั้งวันเพื่อซ่อมระบบไฟฟ้า นักศึกษาที่มีเรียนชดเชยให้ไปที่ห้อง 3105 อาคารเรียนรวม 3 แทน กด “รับทราบ” เพื่อยืนยันว่าได้อ่านประกาศนี้แล้ว",
+            "type": "text",
+            "wrap": true
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "md",
+        "type": "box"
+      },
+      "footer": {
+        "contents": [
+          {
+            "action": {
+              "data": "news.ack.1042",
+              "displayText": "รับทราบ",
+              "label": "รับทราบ",
+              "type": "postback"
+            },
+            "height": "sm",
+            "style": "primary",
+            "type": "button"
+          },
+          {
+            "action": {
+              "label": "เปิดดูรายละเอียด",
+              "type": "uri",
+              "uri": "https://liff.line.me/2000000000-SealBay0/news/1042"
+            },
+            "height": "sm",
+            "style": "secondary",
+            "type": "button"
+          }
+        ],
+        "layout": "vertical",
+        "spacing": "sm",
+        "type": "box"
+      },
+      "type": "bubble"
+    },
+    "type": "flex"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "method": "sendMessage",
+    "parse_mode": "HTML",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "callback_data": "consent.accept",
+            "text": "ยอมรับเงื่อนไขการใช้ข้อมูลส่วนบุคคลฉบับปรับปรุง ยอมรับเงื่อนไขการใช้ข้อมูลส่วนบุคคลฉบับปรับปรุง "
+          }
+        ]
+      ]
+    },
+    "text": "<b>แบบสอบถาม</b>\nกรุณาเลือกหนึ่งข้อ"
+  }
+]

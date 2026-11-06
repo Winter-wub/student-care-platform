@@ -1,0 +1,16 @@
+# Seal Bay University (fictional) on Cloudflare Workers. Workers Paid is the
+# baseline (issue #6). Create the database first and paste its id below:
+#   npx wrangler@4 d1 create harpseal-example
+# Secrets: npx wrangler@4 secret put LINE_CHANNEL_SECRET (and the others in src/lib.rs).
+name = "harpseal-example"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "harpseal-example"
+database_id = "00000000-0000-0000-0000-000000000000"
