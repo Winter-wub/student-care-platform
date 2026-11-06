@@ -11,7 +11,7 @@ first slice is specified in [`docs/specs/first-slice.md`](docs/specs/first-slice
 | Crate | What it is | Targets |
 |---|---|---|
 | `crates/harpseal` | The Core: message model, `Channel` and `Module` traits, the six runtime ports (`Db`, `FileStore`, `EmailSender`, `HttpClient`, `Clock`, `Random`) in `Services`, `Deployment::builder()` with build-time validation, Kernel migrations, the axum `Router`, the shared page layout. | native + wasm32 |
-| `crates/harpseal-channel-line` | LINE adapter: renderer and request packing (real), HTTP calls (#16). | native + wasm32 |
+| `crates/harpseal-channel-line` | LINE adapter: signed webhooks, Flex rendering with degrade rules, Reply/Push/multicast, rich menus, LIFF. | native + wasm32 |
 | `crates/harpseal-channel-telegram` | Telegram adapter: secret-token webhook, Updates → Inbound, commands as Actions, rendering, `setMyCommands` Menus, edit/delete, Web App `initData` (#17). | native + wasm32 |
 | `crates/harpseal-channel-fake` | Fake Channel: in-memory, records what the Student saw; used by tests and demos. | native + wasm32 |
 | `crates/harpseal-runtime-native` | Native runtime: SQLite (rusqlite), local directory or S3-compatible files (SigV4), SMTP (lettre) or Resend email, reqwest, OS clock and RNG, `axum::serve`, a per-minute ticker. | native |
@@ -198,7 +198,7 @@ The Channel contract suite lives in `harpseal_testing::contract`: an adapter
 crate adds `harpseal-testing` as a dev-dependency and calls
 `contract::run(|| target)` with its Channel, recorded webhooks (`Fixtures`) and
 a `Wire` reading its `RecordingHttp`. It runs green against the Fake Channel in
-every profile and against the Telegram adapter; the LINE run is `#[ignore]` until #16.
+every profile and against the LINE and Telegram adapters.
 
 Runtime port tests live in `crates/harpseal-runtime-native/tests` (SQLite
 batch rollback, local files, a mock SMTP server, Resend and S3 signing against

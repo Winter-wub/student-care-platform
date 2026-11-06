@@ -1,6 +1,7 @@
-//! Renders every first-slice fixture, checks LINE's limits, prints the JSON
-//! (`cargo test -- --nocapture`) and writes it to
-//! `docs/prototypes/message-render/line/<fixture>.json`.
+//! Renders every first-slice fixture, checks LINE's limits and compares
+//! the JSON with the committed snapshot
+//! `docs/prototypes/message-render/line/<fixture>.json` (read-only here;
+//! print the output with `cargo test -- --nocapture`).
 
 use harpseal::fixtures::{self, Sample};
 use harpseal::render::{RenderCx, action_ids, char_len};
@@ -79,15 +80,18 @@ fn assert_limits(m: &Value) {
     }
 }
 
-fn write(name: &str, v: &Value) {
+/// The rendered JSON equals the committed snapshot.
+fn snapshot(name: &str, v: &Value) {
     let pretty = serde_json::to_string_pretty(v).unwrap();
     println!("── line/{name}.json ──\n{pretty}");
-    let dir = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/prototypes/message-render/line"
+    let path = format!(
+        "{}/../../docs/prototypes/message-render/line/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
     );
-    std::fs::create_dir_all(dir).unwrap();
-    std::fs::write(format!("{dir}/{name}.json"), pretty + "\n").unwrap();
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("snapshot {path} is missing: {e}"));
+    let committed: Value = serde_json::from_str(&committed).expect("snapshot is JSON");
+    assert_eq!(v, &committed, "{name}: differs from {path}");
 }
 
 #[test]
@@ -127,7 +131,7 @@ fn renders_every_fixture_within_limits() {
             }
             _ => panic!("{name}: a Sample kind this test does not know"),
         };
-        write(name, &out);
+        snapshot(name, &out);
     }
 }
 
@@ -213,23 +217,15 @@ fn attachments_degrade_to_links() {
 }
 
 #[test]
-fn reply_token_covers_five_objects_then_push() {
-    use harpseal::{ChannelAccountId, Delivery, Metering, ReplyToken, Timestamp};
-    let to = ChannelAccountId {
-        channel: harpseal_channel_line::KIND,
-        external_id: "U0".into(),
-    };
-    let token = ReplyToken {
-        token: "t".into(),
-        expires_at: Timestamp(0),
-    };
-    let seven = (0..7)
-        .map(|_| serde_json::json!({ "type": "text", "text": "x" }))
-        .collect();
-    let (calls, metering) = harpseal_channel_line::requests(&to, &Delivery::Reply(token), seven);
-    assert_eq!(
-        calls.iter().map(|c| c.0).collect::<Vec<_>>(),
-        ["/v2/bot/message/reply", "/v2/bot/message/push"]
+fn every_snapshot_has_a_fixture() {
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/prototypes/message-render/line"
     );
-    assert_eq!(metering, Metering::Metered);
+    let names: Vec<&str> = fixtures::all().iter().map(|(n, _)| *n).collect();
+    for f in std::fs::read_dir(dir).unwrap() {
+        let file = f.unwrap().file_name().into_string().unwrap();
+        let stem = file.trim_end_matches(".json");
+        assert!(names.contains(&stem), "snapshot {file} has no fixture");
+    }
 }

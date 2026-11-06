@@ -99,6 +99,11 @@ pub trait Channel: Send + Sync {
     fn attachments(&self) -> Option<&dyn SendAttachment> {
         None
     }
+    /// Channel Capability: one request to many accounts (LINE multicast),
+    /// for Announcements. `None` (the default): send to each account.
+    fn multicast(&self) -> Option<&dyn Multicast> {
+        None
+    }
 
     /// Derived from the accessors above.
     fn capabilities(&self) -> Capabilities {
@@ -107,6 +112,7 @@ pub trait Channel: Send + Sync {
             delete_message: self.deleter().is_some(),
             mini_app: self.mini_app().is_some(),
             send_attachment: self.attachments().is_some(),
+            multicast: self.multicast().is_some(),
         }
     }
 }
@@ -152,4 +158,26 @@ pub trait SendAttachment: Send + Sync {
         file: &Attachment,
         locale: &Locale,
     ) -> Result<SendReceipt>;
+}
+
+/// Capability: send the same Messages to many accounts with one request per
+/// group of recipients (LINE: at most 500 per multicast request). Always a
+/// Push: there is no reply token.
+#[async_trait]
+pub trait Multicast: Send + Sync {
+    /// Most recipients one platform request takes; the adapter splits a
+    /// longer `to` itself.
+    fn max_recipients(&self) -> usize;
+    /// Sends `msgs` to every account in `to`. The receipts are
+    /// recipient-major: `receipts[i * msgs.len() + j]` is Message `j` to
+    /// `to[i]`. Metering is per recipient: for each recipient, the receipt
+    /// of the Message that opens a platform request is `Metered` (one unit
+    /// per request per recipient), every other one `Free`. On error nothing
+    /// is reported as sent, although earlier requests may have gone out.
+    async fn send_many(
+        &self,
+        to: &[ChannelAccountId],
+        msgs: &[Message],
+        locale: &Locale,
+    ) -> Result<Vec<SendReceipt>>;
 }

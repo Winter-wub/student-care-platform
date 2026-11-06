@@ -236,6 +236,7 @@ pub async fn capabilities_agree(t: &Target) {
         (Capability::DeleteMessage, c.deleter().is_some()),
         (Capability::MiniApp, c.mini_app().is_some()),
         (Capability::SendAttachment, c.attachments().is_some()),
+        (Capability::Multicast, c.multicast().is_some()),
     ];
     for (cap, present) in pairs {
         assert_eq!(caps.has(cap), present, "{kind}: {cap:?}");

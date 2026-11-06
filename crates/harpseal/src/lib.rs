@@ -45,7 +45,7 @@ pub mod ui;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 
-pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, SendAttachment};
+pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
 pub use config::{BrandingConfig, DeploymentConfig, OtpConfig, QuotaConfig, RetentionConfig};
 pub use delivery::{
     BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,
