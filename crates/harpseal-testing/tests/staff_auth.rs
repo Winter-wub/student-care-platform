@@ -82,7 +82,7 @@ async fn five_failures_lock_the_account_for_fifteen_minutes() {
     for _ in 0..5 {
         assert_eq!(b.login(EMAIL, "guessing the password").await.status, 401);
     }
-    let sql = "SELECT count(*) FROM security_event WHERE kind = 'staff.login_locked' \
+    let sql = "SELECT count(*) FROM security_event WHERE kind = 'staff.lockout' \
                AND staff_id = ?";
     assert_eq!(count(&h, sql, &staff_id).await, 1);
 

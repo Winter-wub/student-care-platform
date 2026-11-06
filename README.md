@@ -153,6 +153,13 @@ lock the account for 15 minutes. The session cookie is `Secure`: browsers
 accept it on `http://localhost`, but to test from another device over plain
 http set `[staff] cookie_secure = false` in a local copy of the TOML (never in
 production). Every response carries an `x-request-id`, which audit rows record.
+Audit rows, sessions and Security Events take the client address from the TCP
+peer natively and from `CF-Connecting-IP` on Workers; behind your own reverse
+proxy set `[staff] trust_forwarded_for = true` to use the right-most public
+`X-Forwarded-For` hop instead. A password change ends every session of that
+Staff member and starts a fresh one; the per-minute tick deletes expired
+sessions. `--admin` on an `Administrator` Role that already exists from
+`[roles]` keeps the TOML's Permissions and prints the ones it lacks.
 
 ## Deploying the example to Workers
 

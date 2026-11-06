@@ -132,3 +132,20 @@ async fn short_passwords_are_refused() {
     let err = create_staff(&d, &admin("root@sealbay.example"), Some("short".into())).await;
     assert!(matches!(err, Err(CliError::Core(_))));
 }
+
+#[tokio::test]
+async fn an_administrator_role_from_the_toml_wins_with_a_warning() {
+    // TEST_CONFIG seeds Administrator with three Permissions only.
+    let h = Harness::new();
+    let d = h.builder().build().unwrap();
+    let mut out = Vec::new();
+    let cmd = args("staff create --admin --email root@sealbay.example");
+    run(&d, &cmd, &mut &b""[..], &mut out).await.unwrap();
+    let text = String::from_utf8_lossy(&out);
+    assert!(text.contains("warning: role Administrator"), "{text}");
+    assert!(text.contains("kernel.audit.view"), "{text}");
+    assert!(
+        !text.contains("kernel.student.view,"),
+        "held ones are not listed: {text}"
+    );
+}

@@ -37,6 +37,8 @@ pub struct TickReport {
     /// Outcome writes that failed (the Job keeps its lock and is re-claimed
     /// when it expires). The runtime logs these.
     pub errors: Vec<String>,
+    /// Expired Staff sessions deleted (#21).
+    pub sessions_pruned: u64,
 }
 
 /// One claimed row.
@@ -75,7 +77,8 @@ fn claimed(rows: &Rows) -> Vec<Claimed> {
 }
 
 impl Deployment {
-    /// Runs the per-minute work at `now`. First, `running` Jobs whose lock
+    /// Runs the per-minute work at `now`. First, Staff sessions past their
+    /// sliding or absolute limit are deleted. Then `running` Jobs whose lock
     /// expired (their runtime died mid-run) and that have no retries left
     /// are marked `failed` with `last_error = 'lock expired'`. Then one
     /// statement claims due `queued` Jobs and expired `running` ones that
@@ -86,6 +89,10 @@ impl Deployment {
     pub async fn tick(&self, now: Timestamp) -> Result<TickReport> {
         let db = self.services.db.as_ref();
         let mut report = TickReport::default();
+        match crate::auth::prune_sessions(&self.services, now.ms()).await {
+            Ok(n) => report.sessions_pruned = n,
+            Err(e) => report.errors.push(format!("staff session sweep: {e}")),
+        }
         let expired = db
             .execute(
                 Statement::new(

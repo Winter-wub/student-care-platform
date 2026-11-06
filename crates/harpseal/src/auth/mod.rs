@@ -9,7 +9,8 @@
 //!   checked against the Clock on every request.
 //! - Lockout: 5 wrong passwords in a row → `staff.locked_until` = now + 15
 //!   minutes, the counter (`staff.failed_logins`) resets, and a Security
-//!   Event `staff.login_locked` is written.
+//!   Event `staff.lockout` is written. Wrong current passwords on the change
+//!   form count too. A password change rotates the session.
 //! - CSRF: every back-office POST carries a per-session token (SHA-256 of
 //!   `"csrf:" + session token`) in a hidden `_csrf` field or an
 //!   `X-CSRF-Token` header (HTMX sends it from `hx-headers`); the login form,
@@ -29,9 +30,10 @@ pub use guard::CurrentStaff;
 pub(crate) use guard::{AdminCx, Gate, NavItem, guard, request_ctx};
 pub(crate) use login::{login_form, login_submit, logout, password_form, password_submit};
 pub(crate) use pages::home;
+pub(crate) use session::prune as prune_sessions;
 pub use staff::{
     ADMINISTRATOR_ROLE, MIN_PASSWORD_CHARS, NewStaff, check_password_rules, create_staff,
-    ensure_role, set_roles, set_temporary_password, staff_count,
+    ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub(crate) use texts::TEXTS;
 

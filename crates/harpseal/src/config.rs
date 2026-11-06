@@ -25,7 +25,9 @@ pub struct DeploymentConfig {
     #[serde(default)]
     pub branding: BrandingConfig,
     /// Initial Roles: Role name -> Permission ids. `build()` rejects an id
-    /// no Module declared.
+    /// no Module declared. Merged into the database on every migrate,
+    /// add-only: removing a Role or a Permission here does not remove it
+    /// from the database (do that in the back office).
     #[serde(default)]
     pub roles: BTreeMap<String, Vec<String>>,
     /// Per-Channel Quotas, keyed by Channel kind (`[quotas.line]`).
@@ -89,7 +91,9 @@ impl Default for BrandingConfig {
 }
 
 impl BrandingConfig {
-    fn check(&self) -> crate::Result<()> {
+    /// Refuses a colour that is not CSS hex and URLs that are not
+    /// `https://` or a `/` path (they go into the page head).
+    pub(crate) fn check(&self) -> crate::Result<()> {
         let hex = self.primary_color.strip_prefix('#').unwrap_or("x");
         let ok = matches!(hex.len(), 3 | 6) && hex.bytes().all(|b| b.is_ascii_hexdigit());
         if !ok {
@@ -122,12 +126,20 @@ pub struct StaffConfig {
     /// `http://` from another device (browsers already accept `Secure`
     /// cookies on `http://localhost`); never in production.
     pub cookie_secure: bool,
+    /// Take the client address from `X-Forwarded-For` (right-most public
+    /// hop) and `CF-Connecting-IP`. Default `false`. Turn it on only when a
+    /// native server is reachable solely through a proxy you run, which
+    /// appends the address it saw; otherwise clients could forge the
+    /// address in audit rows, sessions and Security Events. Workers always
+    /// use `CF-Connecting-IP`.
+    pub trust_forwarded_for: bool,
 }
 
 impl Default for StaffConfig {
     fn default() -> Self {
         Self {
             cookie_secure: true,
+            trust_forwarded_for: false,
         }
     }
 }

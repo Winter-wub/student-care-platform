@@ -1,15 +1,13 @@
 //! One sign-in attempt: lockout, constant work for unknown emails, audit
 //! rows for success and failure, and the Security Event on lock.
 
-use std::sync::OnceLock;
-
 use serde_json::json;
 
 use super::session::text;
 use super::staff::normalise_email;
 use super::{LOCK_AFTER, LOCK_MS};
 use crate::audit::{self, Actor, RequestCtx, Target};
-use crate::password::{self, Scheme};
+use crate::password;
 use crate::port_types::Statement;
 use crate::{Result, Services};
 
@@ -19,22 +17,14 @@ pub(crate) struct Accepted {
     pub(crate) must_change_password: bool,
 }
 
-/// A hash with the production parameters, verified when there is no real
-/// hash to check, so unknown and locked accounts take as long as real ones.
-fn dummy_hash() -> &'static str {
-    static DUMMY: OnceLock<String> = OnceLock::new();
-    DUMMY.get_or_init(|| {
-        password::hash(
-            Scheme::ARGON2ID_OWASP,
-            "harpseal-dummy",
-            b"harpseal-dummy-s",
-        )
-        .unwrap_or_default()
-    })
-}
+/// `password::hash(ARGON2ID_OWASP, "harpseal-dummy", b"harpseal-dummy-s")`,
+/// precomputed (a test checks it): verified when there is no real hash, so
+/// unknown and locked accounts take as long as real ones, without a cold
+/// isolate paying for a second Argon2 run to build it.
+pub(crate) const DUMMY_PHC: &str = "$argon2id$v=19$m=19456,t=2,p=1$aGFycHNlYWwtZHVtbXktcw$rraRkJkQnMUEdnl0QQod/9J0HMhwd/L6fplM7BC2k+g";
 
 fn burn(password: &str) {
-    let _ = password::verify(dummy_hash(), password);
+    let _ = password::verify(DUMMY_PHC, password);
 }
 
 /// Checks `email` + `password`. `None` is every kind of refusal (unknown
@@ -50,8 +40,8 @@ pub(crate) async fn attempt(
         .db
         .query(
             Statement::new(
-                "SELECT id, password_hash, status, failed_logins, locked_until, \
-                 must_change_password FROM staff WHERE email = ?",
+                "SELECT id, password_hash, status, locked_until, must_change_password \
+                 FROM staff WHERE email = ?",
             )
             .bind(email.clone()),
         )
@@ -59,10 +49,11 @@ pub(crate) async fn attempt(
     if rows.is_empty() {
         burn(password);
         let after = json!({ "reason": "unknown_email" });
+        let action = "staff.login_failed";
         audit::record(
             services,
             &Actor::System,
-            "staff.login_failed",
+            action,
             None,
             None,
             Some(after),
@@ -75,42 +66,40 @@ pub(crate) async fn attempt(
     let id = text(&rows, "id");
     let target = Target::new("staff", id.clone());
     let actor = Actor::Staff(id.clone());
-    let now = services.now_ms();
-    let fail = |reason: &str| json!({ "email": email, "reason": reason });
-    if int("locked_until").is_some_and(|until| until > now) {
-        burn(password);
+    let fail = |reason: &str| Some(json!({ "email": email, "reason": reason }));
+    let refuse = |reason: &'static str| {
         audit::record(
             services,
             &actor,
             "staff.login_failed",
             Some(&target),
             None,
-            Some(fail("locked")),
+            fail(reason),
             ctx,
         )
-        .await?;
+    };
+    if int("locked_until").is_some_and(|until| until > services.now_ms()) {
+        burn(password);
+        refuse("locked").await?;
         return Ok(None);
     }
     let ok = password::verify(&text(&rows, "password_hash"), password).unwrap_or(false);
     if text(&rows, "status") != "active" {
-        audit::record(
-            services,
-            &actor,
-            "staff.login_failed",
-            Some(&target),
-            None,
-            Some(fail("disabled")),
-            ctx,
-        )
-        .await?;
+        refuse("disabled").await?;
         return Ok(None);
     }
     if !ok {
-        wrong_password(
+        let (failures, locked) = count_failure(services, &id, ctx).await?;
+        let after = json!({ "email": email, "reason": "wrong_password",
+                            "failures": failures, "locked": locked });
+        let action = "staff.login_failed";
+        audit::record(
             services,
-            &id,
-            int("failed_logins").unwrap_or(0) + 1,
-            &email,
+            &actor,
+            action,
+            Some(&target),
+            None,
+            Some(after),
             ctx,
         )
         .await?;
@@ -136,55 +125,72 @@ pub(crate) async fn attempt(
     }))
 }
 
-/// Counts a wrong password; the [`LOCK_AFTER`]th in a row locks the
-/// account for [`LOCK_MS`] and writes Security Event `staff.login_locked`.
-async fn wrong_password(
+/// Counts one wrong password in the database (safe against parallel
+/// attempts: the increment and the lock are single statements). The
+/// [`LOCK_AFTER`]th in a row locks the account for [`LOCK_MS`], resets the
+/// counter and writes Security Event `staff.lockout`; only the request
+/// whose update set the lock writes it. Returns (failures, locked now).
+pub(crate) async fn count_failure(
     services: &Services,
     id: &str,
-    failures: i64,
-    email: &str,
     ctx: &RequestCtx,
-) -> Result<()> {
-    let now = services.now_ms();
-    let actor = Actor::Staff(id.into());
-    let target = Target::new("staff", id);
-    let locks = failures >= LOCK_AFTER;
-    let after = json!({ "email": email, "reason": "wrong_password", "failures": failures, "locked": locks });
-    let mut stmts = vec![audit::entry(
-        services,
-        &actor,
-        "staff.login_failed",
-        Some(&target),
-        None,
-        Some(after),
-        ctx,
-    )?];
-    if locks {
-        let until = now + LOCK_MS;
-        stmts.push(
-            Statement::new("UPDATE staff SET failed_logins = 0, locked_until = ? WHERE id = ?")
-                .bind(until)
-                .bind(id),
-        );
-        stmts.push(
+) -> Result<(i64, bool)> {
+    let rows = services
+        .db
+        .query(
             Statement::new(
-                "INSERT INTO security_event (id, at, kind, staff_id, details) VALUES \
-                 (?, ?, 'staff.login_locked', ?, json_object('locked_until', ?, 'ip', ?, \
-                 'failures', ?))",
+                "UPDATE staff SET failed_logins = failed_logins + 1 WHERE id = ? \
+                 RETURNING failed_logins",
             )
-            .bind(services.new_id()?)
-            .bind(now)
-            .bind(id)
-            .bind(until)
-            .bind(ctx.ip.clone())
-            .bind(failures),
-        );
-    } else {
-        stmts.push(
-            Statement::new("UPDATE staff SET failed_logins = ? WHERE id = ?")
-                .bind(failures)
-                .bind(id),
-        );
+            .bind(id),
+        )
+        .await?;
+    let failures = rows
+        .rows
+        .first()
+        .and_then(|r| r.first())
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    if failures < LOCK_AFTER {
+        return Ok((failures, false));
     }
-    services.db.batch(stmts).await.map(|_| ())
+    let now = services.now_ms();
+    let until = now + LOCK_MS;
+    let lock = Statement::new(
+        "UPDATE staff SET locked_until = ?, failed_logins = 0 WHERE id = ? AND failed_logins >= ?",
+    )
+    .bind(until)
+    .bind(id)
+    .bind(LOCK_AFTER);
+    if services.db.execute(lock).await?.rows_affected == 0 {
+        return Ok((failures, false));
+    }
+    let event = Statement::new(
+        "INSERT INTO security_event (id, at, kind, staff_id, details) VALUES \
+         (?, ?, 'staff.lockout', ?, json_object('locked_until', ?, 'ip', ?, 'failures', ?))",
+    )
+    .bind(services.new_id()?)
+    .bind(now)
+    .bind(id)
+    .bind(until)
+    .bind(ctx.ip.clone())
+    .bind(failures);
+    services.db.execute(event).await?;
+    Ok((failures, true))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::password::Scheme;
+
+    #[test]
+    fn dummy_phc_is_the_production_hash_it_claims_to_be() {
+        let h = password::hash(
+            Scheme::ARGON2ID_OWASP,
+            "harpseal-dummy",
+            b"harpseal-dummy-s",
+        );
+        assert_eq!(h.unwrap(), DUMMY_PHC);
+    }
 }

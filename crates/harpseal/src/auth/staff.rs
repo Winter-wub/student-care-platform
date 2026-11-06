@@ -198,17 +198,28 @@ pub async fn set_temporary_password(
     services.db.batch(stmts).await.map(|_| ())
 }
 
+/// What the change form achieved.
+pub(crate) enum Change {
+    /// Changed; every session of the Staff member was ended and this is
+    /// the cookie token of the new one.
+    Done(String),
+    /// `current` was wrong (counted toward the lock). `locked`: this
+    /// failure locked the account, and every session was ended.
+    WrongCurrent { locked: bool },
+}
+
 /// The Staff member's own change: `current` must verify, `new` must pass
-/// the rules and differ. Ends every other session. Audited as
-/// `staff.password_change`. `Ok(false)` when `current` is wrong.
+/// the rules (checked by the caller). The session rotates: every session
+/// of the Staff member ends, a new one starts. Audited as
+/// `staff.password_change`, or `staff.password_change_failed` when
+/// `current` is wrong.
 pub(crate) async fn change_password(
     services: &Services,
     staff_id: &str,
     current: &str,
     new: &str,
-    keep_token: &str,
     ctx: &RequestCtx,
-) -> Result<bool> {
+) -> Result<Change> {
     let rows = services
         .db
         .query(
@@ -217,31 +228,50 @@ pub(crate) async fn change_password(
         )
         .await?;
     let phc = session::text(&rows, "password_hash");
-    if phc.is_empty() || !password::verify(&phc, current)? {
-        return Ok(false);
+    let actor = Actor::Staff(staff_id.into());
+    let target = Target::new("staff", staff_id);
+    if phc.is_empty() || !password::verify(&phc, current).unwrap_or(false) {
+        let (failures, locked) = super::attempt::count_failure(services, staff_id, ctx).await?;
+        let after = json!({ "failures": failures, "locked": locked });
+        let mut stmts = vec![audit::entry(
+            services,
+            &actor,
+            "staff.password_change_failed",
+            Some(&target),
+            None,
+            Some(after),
+            ctx,
+        )?];
+        if locked {
+            stmts.push(session::delete_others(staff_id, None));
+        }
+        services.db.batch(stmts).await?;
+        return Ok(Change::WrongCurrent { locked });
     }
     let was_forced = rows.get(0, "must_change_password").and_then(|v| v.as_i64()) == Some(1);
+    let (token, insert) = session::insert(services, staff_id, ctx)?;
     let stmts = vec![
         Statement::new(
-            "UPDATE staff SET password_hash = ?, must_change_password = 0, updated_at = ? \
-             WHERE id = ?",
+            "UPDATE staff SET password_hash = ?, must_change_password = 0, failed_logins = 0, \
+             updated_at = ? WHERE id = ?",
         )
         .bind(hash_password(services, new)?)
         .bind(services.now_ms())
         .bind(staff_id),
-        session::delete_others(staff_id, Some(keep_token)),
+        session::delete_others(staff_id, None),
+        insert,
         audit::entry(
             services,
-            &Actor::Staff(staff_id.into()),
+            &actor,
             "staff.password_change",
-            Some(&Target::new("staff", staff_id)),
+            Some(&target),
             Some(json!({ "must_change_password": was_forced })),
             Some(json!({ "must_change_password": false })),
             ctx,
         )?,
     ];
     services.db.batch(stmts).await?;
-    Ok(true)
+    Ok(Change::Done(token))
 }
 
 /// Name of the Role the CLI creates for the first Administrator.
@@ -277,6 +307,25 @@ pub async fn ensure_role(
     )?);
     services.db.batch(stmts).await?;
     Ok(true)
+}
+
+/// The Permission ids Role `name` grants, sorted; empty for no such Role.
+pub async fn role_permissions(services: &Services, name: &str) -> Result<Vec<String>> {
+    let rows = services
+        .db
+        .query(
+            Statement::new(
+                "SELECT rp.permission_id FROM role_permission rp JOIN role r ON r.id = rp.role_id \
+                 WHERE r.name = ? ORDER BY rp.permission_id",
+            )
+            .bind(name),
+        )
+        .await?;
+    Ok(rows
+        .rows
+        .iter()
+        .filter_map(|r| r.first().and_then(|v| v.as_text()).map(str::to_string))
+        .collect())
 }
 
 /// How many Staff accounts exist.

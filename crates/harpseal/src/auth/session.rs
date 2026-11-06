@@ -28,6 +28,17 @@ pub(crate) async fn create(
     staff_id: &str,
     ctx: &RequestCtx,
 ) -> Result<String> {
+    let (token, stmt) = insert(services, staff_id, ctx)?;
+    services.db.execute(stmt).await?;
+    Ok(token)
+}
+
+/// A new session's cookie token and its `INSERT`, for a batch.
+pub(crate) fn insert(
+    services: &Services,
+    staff_id: &str,
+    ctx: &RequestCtx,
+) -> Result<(String, Statement)> {
     let token = services.random_hex(32)?;
     let now = services.now_ms();
     let stmt = Statement::new(
@@ -41,8 +52,16 @@ pub(crate) async fn create(
     .bind(now)
     .bind(ctx.ip.clone())
     .bind(ctx.user_agent.clone());
-    services.db.execute(stmt).await?;
-    Ok(token)
+    Ok((token, stmt))
+}
+
+/// Deletes sessions past either limit at `now`; returns how many.
+pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
+    let stmt =
+        Statement::new("DELETE FROM staff_session WHERE expires_at <= ? OR last_seen_at <= ?")
+            .bind(now)
+            .bind(now - SLIDING_MS);
+    Ok(services.db.execute(stmt).await?.rows_affected)
 }
 
 /// The live session for `token`, sliding it forward. An expired session,

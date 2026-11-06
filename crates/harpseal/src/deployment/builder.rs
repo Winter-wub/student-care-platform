@@ -57,6 +57,11 @@ impl DeploymentBuilder {
     /// Runs every `Module::register`, merges, validates.
     pub fn build(self) -> Result<Deployment, BuildError> {
         let config = self.config.ok_or(BuildError::Missing(Part::Config))?;
+        // Public fields can bypass `from_toml`; the values reach the page head.
+        config
+            .branding
+            .check()
+            .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
         let services = self.services.ok_or(BuildError::Missing(Part::Runtime))?;
         let verification = self
             .verification

@@ -88,8 +88,10 @@ impl Target {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RequestCtx {
-    /// First hop of `X-Forwarded-For`, else `CF-Connecting-IP`, else the
-    /// [`PeerIp`] the runtime recorded.
+    /// The client address: `CF-Connecting-IP` on Workers, the right-most
+    /// public `X-Forwarded-For` hop only with `[staff] trust_forwarded_for`,
+    /// else the [`PeerIp`] the runtime recorded. Headers a client could
+    /// forge are never trusted on their own.
     pub ip: Option<String>,
     /// `User-Agent`, cut to 512 characters.
     pub user_agent: Option<String>,
@@ -105,17 +107,10 @@ impl RequestCtx {
     pub(crate) fn from_parts(
         headers: &HeaderMap,
         peer: Option<String>,
+        trust_forwarded_for: bool,
         request_id: Option<String>,
     ) -> Self {
-        let text = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
-        let forwarded = text("x-forwarded-for")
-            .and_then(|v| v.split(',').next())
-            .map(str::trim)
-            .filter(|v| !v.is_empty());
-        let ip = forwarded
-            .or_else(|| text("cf-connecting-ip").map(str::trim))
-            .map(|v| v.chars().take(64).collect())
-            .or(peer);
+        let ip = crate::client_ip::resolve(headers, peer, trust_forwarded_for);
         let user_agent = headers
             .get(header::USER_AGENT)
             .and_then(|v| v.to_str().ok())
@@ -135,7 +130,12 @@ impl<S: Send + Sync> FromRequestParts<S> for RequestCtx {
         if let Some(ctx) = parts.extensions.get::<RequestCtx>() {
             return Ok(ctx.clone());
         }
-        Ok(RequestCtx::from_parts(&parts.headers, peer(parts), None))
+        Ok(RequestCtx::from_parts(
+            &parts.headers,
+            peer(parts),
+            false,
+            None,
+        ))
     }
 }
 
@@ -248,16 +248,5 @@ mod tests {
         assert_eq!(r["nested"][0]["Client_Secret"], REDACTED);
         assert_eq!(r["nested"][0]["hash"], REDACTED);
         assert_eq!(r["nested"][0]["ok"], 1);
-    }
-
-    #[test]
-    fn ip_prefers_the_first_forwarded_hop() {
-        let mut h = HeaderMap::new();
-        h.insert("x-forwarded-for", "203.0.113.7, 10.0.0.1".parse().unwrap());
-        h.insert("cf-connecting-ip", "198.51.100.1".parse().unwrap());
-        let ctx = RequestCtx::from_parts(&h, Some("127.0.0.1".into()), None);
-        assert_eq!(ctx.ip.as_deref(), Some("203.0.113.7"));
-        let ctx = RequestCtx::from_parts(&HeaderMap::new(), Some("127.0.0.1".into()), None);
-        assert_eq!(ctx.ip.as_deref(), Some("127.0.0.1"));
     }
 }

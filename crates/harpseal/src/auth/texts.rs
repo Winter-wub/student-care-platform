@@ -106,6 +106,16 @@ pub(crate) const TEXTS: &[E] = &[
         "en",
         "The current password is wrong.",
     ),
+    E::new(
+        "kernel.auth.locked_out",
+        "th",
+        "ใส่รหัสผ่านผิดหลายครั้ง บัญชีถูกล็อก 15 นาทีและออกจากระบบแล้ว",
+    ),
+    E::new(
+        "kernel.auth.locked_out",
+        "en",
+        "Too many wrong passwords: the account is locked for 15 minutes and you have been signed out.",
+    ),
     E::new("kernel.auth.password_changed", "th", "เปลี่ยนรหัสผ่านแล้ว"),
     E::new(
         "kernel.auth.password_changed",

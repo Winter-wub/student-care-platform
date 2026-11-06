@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
-use axum::http::{HeaderValue, Method, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
@@ -99,8 +99,10 @@ impl<S: Send + Sync> FromRequestParts<S> for CurrentStaff {
     }
 }
 
-/// Outermost layer: gives each request a [`RequestCtx`] and answers with
-/// its id in `x-request-id`.
+/// Outermost layer: gives each request a [`RequestCtx`], answers with its
+/// id in `x-request-id`, and adds `Cache-Control: no-store`,
+/// `X-Frame-Options: DENY` and `Referrer-Policy: same-origin` to every
+/// `/admin` response.
 pub(crate) async fn request_ctx(
     State(state): State<AppState>,
     req: Request,
@@ -108,11 +110,23 @@ pub(crate) async fn request_ctx(
 ) -> Response {
     let (mut parts, body) = req.into_parts();
     let id = state.services.new_id().ok();
-    let ctx = RequestCtx::from_parts(&parts.headers, peer(&parts), id.clone());
+    let trust = state.config.staff.trust_forwarded_for;
+    let ctx = RequestCtx::from_parts(&parts.headers, peer(&parts), trust, id.clone());
     parts.extensions.insert(ctx);
+    let admin = parts.uri.path() == "/admin" || parts.uri.path().starts_with("/admin/");
     let mut resp = next.run(Request::from_parts(parts, body)).await;
+    let h = resp.headers_mut();
     if let Some(v) = id.and_then(|id| HeaderValue::from_str(&id).ok()) {
-        resp.headers_mut().insert(REQUEST_ID_HEADER, v);
+        h.insert(REQUEST_ID_HEADER, v);
+    }
+    if admin {
+        // Back-office pages hold personal data: never cached, never framed.
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+        h.insert(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("same-origin"),
+        );
     }
     resp
 }
@@ -159,7 +173,7 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         return Ok(Err(bare_page(state, StatusCode::FORBIDDEN, &text)));
     }
     if live.must_change_password && !gate.during_forced_change {
-        return Ok(Err(redirect(&req, PASSWORD_PATH, None)));
+        return Ok(Err(redirect(req.headers(), PASSWORD_PATH, None)));
     }
     let permissions: Arc<[String]> = roles::permissions_of(&state.services, &live.staff_id)
         .await?
@@ -225,8 +239,8 @@ pub(crate) async fn check_csrf(req: Request, expected: &str) -> (Request, bool) 
 }
 
 /// 303 to `to` (HTMX gets `HX-Redirect` instead, so it swaps the page).
-pub(crate) fn redirect(req: &Request, to: &str, cookie: Option<HeaderValue>) -> Response {
-    let htmx = req.headers().contains_key("hx-request");
+pub(crate) fn redirect(headers: &HeaderMap, to: &str, cookie: Option<HeaderValue>) -> Response {
+    let htmx = headers.contains_key("hx-request");
     let mut resp = if htmx {
         (StatusCode::OK, [("hx-redirect", to)]).into_response()
     } else {
@@ -239,7 +253,7 @@ pub(crate) fn redirect(req: &Request, to: &str, cookie: Option<HeaderValue>) -> 
 }
 
 fn to_login(req: &Request, cookie: Option<HeaderValue>) -> Response {
-    redirect(req, LOGIN_PATH, cookie)
+    redirect(req.headers(), LOGIN_PATH, cookie)
 }
 
 /// The 403 page, inside the back-office layout.

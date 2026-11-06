@@ -13,8 +13,10 @@
 //! `--password-stdin` it generates a temporary password, prints it once and
 //! the Staff member must change it at first sign-in. `--admin` gives the
 //! `Administrator` Role, creating it with every declared Permission when
-//! the database has none; it is refused once any Staff exists unless
-//! `--force` is given. Passwords on the command line end up in shell
+//! the database has none. When the Role already exists (usually seeded
+//! from `[roles]` in `deployment.toml`), the TOML wins: the Role is left as
+//! it is and a warning lists the declared Permissions it lacks. `--admin`
+//! is refused once any Staff exists unless `--force` is given. Passwords on the command line end up in shell
 //! history: prefer `--password-stdin` or the generated one. Backup and
 //! restore arrive with #29.
 
@@ -185,6 +187,9 @@ pub struct Created {
     pub temporary_password: Option<String>,
     /// Whether the Administrator Role had to be created.
     pub created_admin_role: bool,
+    /// With `--admin` on an existing Administrator Role: declared
+    /// Permissions it does not grant (the TOML wins; printed as a warning).
+    pub missing_admin_permissions: Vec<String>,
 }
 
 impl core::fmt::Debug for Created {
@@ -192,6 +197,7 @@ impl core::fmt::Debug for Created {
         f.debug_struct("Created")
             .field("staff_id", &self.staff_id)
             .field("created_admin_role", &self.created_admin_role)
+            .field("missing_admin_permissions", &self.missing_admin_permissions)
             .finish_non_exhaustive()
     }
 }
@@ -212,11 +218,20 @@ pub async fn create_staff(
         ));
     }
     let mut created_admin_role = false;
+    let mut missing_admin_permissions = Vec::new();
     let mut roles = a.roles.clone();
     if a.admin {
         let all: Vec<&str> = d.permissions().iter().map(|p| p.id).collect();
         created_admin_role =
             harpseal::ensure_role(services, &Actor::System, ADMINISTRATOR_ROLE, &all, &ctx).await?;
+        if !created_admin_role {
+            let held = harpseal::role_permissions(services, ADMINISTRATOR_ROLE).await?;
+            missing_admin_permissions = all
+                .iter()
+                .filter(|p| !held.iter().any(|h| h == *p))
+                .map(|p| p.to_string())
+                .collect();
+        }
         roles.push(ADMINISTRATOR_ROLE.into());
     }
     let (password, temporary) = match password {
@@ -240,6 +255,7 @@ pub async fn create_staff(
         staff_id,
         temporary_password: temporary.then_some(password),
         created_admin_role,
+        missing_admin_permissions,
     })
 }
 
@@ -276,6 +292,15 @@ pub async fn run(
             writeln!(out, "created staff {} ({})", a.email.trim(), c.staff_id).map_err(io)?;
             if c.created_admin_role {
                 writeln!(out, "created role {ADMINISTRATOR_ROLE}").map_err(io)?;
+            }
+            if !c.missing_admin_permissions.is_empty() {
+                writeln!(
+                    out,
+                    "warning: role {ADMINISTRATOR_ROLE} comes from [roles] in deployment.toml and \
+                     lacks: {} (add them there; the TOML wins)",
+                    c.missing_admin_permissions.join(", ")
+                )
+                .map_err(io)?;
             }
             if let Some(p) = c.temporary_password {
                 writeln!(

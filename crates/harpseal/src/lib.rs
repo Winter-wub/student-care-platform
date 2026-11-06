@@ -24,6 +24,7 @@
 
 mod auth;
 mod channel;
+mod client_ip;
 mod config;
 mod delivery;
 mod deployment;
@@ -52,7 +53,7 @@ pub mod fixtures;
 pub use audit::{Actor, PeerIp, RequestCtx, Target};
 pub use auth::{
     ADMINISTRATOR_ROLE, CurrentStaff, MIN_PASSWORD_CHARS, NewStaff, check_password_rules,
-    create_staff, ensure_role, set_roles, set_temporary_password, staff_count,
+    create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
 pub use config::{

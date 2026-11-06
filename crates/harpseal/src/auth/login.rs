@@ -166,7 +166,7 @@ pub(crate) async fn logout(
         }
     }
     let mut resp = redirect(
-        &req,
+        req.headers(),
         LOGIN_PATH,
         Some(cookies::clear(SESSION_COOKIE, secure)),
     );
@@ -243,18 +243,30 @@ pub(crate) async fn password_submit(
     if let Some(key) = problem {
         return password_page(&s, &staff, StatusCode::BAD_REQUEST, Some(t(key)));
     }
-    let token = cookies::get(&headers, SESSION_COOKIE).unwrap_or_default();
-    match staff::change_password(&s.services, &staff.id, current, new, &token, &ctx).await {
-        Ok(true) => {
-            let secure = s.config.staff.cookie_secure;
+    let secure = s.config.staff.cookie_secure;
+    match staff::change_password(&s.services, &staff.id, current, new, &ctx).await {
+        Ok(staff::Change::Done(token)) => {
             let mut resp = (StatusCode::SEE_OTHER, [(header::LOCATION, HOME_PATH)]).into_response();
+            let h = resp.headers_mut();
+            let cookie = cookies::set(SESSION_COOKIE, &token, ABSOLUTE_MS / 1000, secure);
+            h.append(header::SET_COOKIE, cookie);
             let flash = cookies::flash(true, "kernel.auth.password_changed", secure);
-            resp.headers_mut().append(header::SET_COOKIE, flash);
+            h.append(header::SET_COOKIE, flash);
             resp
         }
-        Ok(false) => {
+        Ok(staff::Change::WrongCurrent { locked: false }) => {
             let msg = Some(t("kernel.auth.wrong_current"));
             password_page(&s, &staff, StatusCode::BAD_REQUEST, msg)
+        }
+        Ok(staff::Change::WrongCurrent { locked: true }) => {
+            let mut resp = redirect(
+                &headers,
+                LOGIN_PATH,
+                Some(cookies::clear(SESSION_COOKIE, secure)),
+            );
+            let flash = cookies::flash(false, "kernel.auth.locked_out", secure);
+            resp.headers_mut().append(header::SET_COOKIE, flash);
+            resp
         }
         Err(e) => error_page(&s, &e),
     }
