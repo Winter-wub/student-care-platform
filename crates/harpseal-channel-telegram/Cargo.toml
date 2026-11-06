@@ -14,3 +14,6 @@ serde_json.workspace = true
 
 [dev-dependencies]
 harpseal = { workspace = true, features = ["fixtures"] }
+harpseal-testing.workspace = true
+http.workspace = true
+tokio.workspace = true

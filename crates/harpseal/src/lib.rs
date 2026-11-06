@@ -46,10 +46,11 @@ pub mod fixtures;
 pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, SendAttachment};
 pub use config::{BrandingConfig, DeploymentConfig, OtpConfig, QuotaConfig, RetentionConfig};
 pub use delivery::{
-    Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile,
-    Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp, WebhookRequest,
+    BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,
+    IncomingFile, Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp,
+    WebhookRequest,
 };
-pub use deployment::{Deployment, DeploymentBuilder};
+pub use deployment::{Deployment, DeploymentBuilder, WebhookReport};
 pub use error::{BuildError, Error, Part, Result};
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{

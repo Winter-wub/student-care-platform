@@ -107,6 +107,27 @@ pub enum BuildError {
     },
     /// Two Modules share a `name()`, or a Module is named `kernel`.
     DuplicateModule(String),
+    /// Two routes would match the same requests: the same path, or paths
+    /// equal once their `{param}` names are ignored (axum would panic when
+    /// mounting them). Back-office paths are compared under `/admin`; the
+    /// Kernel owns `/webhook/{kind}` and the stylesheet path.
+    DuplicateRoute {
+        /// The Module registering the second route.
+        module: &'static str,
+        /// The full path, `/admin` included for back-office routes.
+        path: String,
+        /// The Module that registered the path first.
+        first: &'static str,
+    },
+    /// A route path axum cannot mount: it must start with `/`, must not use
+    /// the old `:param` / `*rest` syntax, and a public route must not be
+    /// under `/admin`.
+    InvalidRoute {
+        /// The Module that registered the route.
+        module: &'static str,
+        /// The path as registered.
+        path: String,
+    },
 }
 
 impl core::fmt::Display for BuildError {
@@ -132,6 +153,20 @@ impl core::fmt::Display for BuildError {
                 write!(f, "{source} uses unknown text key `{key}`")
             }
             BuildError::DuplicateModule(m) => write!(f, "module name `{m}` is used twice"),
+            BuildError::DuplicateRoute {
+                module,
+                path,
+                first,
+            } => write!(
+                f,
+                "module `{module}` registers route `{path}`, already registered by `{first}`"
+            ),
+            BuildError::InvalidRoute { module, path } => {
+                write!(
+                    f,
+                    "module `{module}` registers route `{path}`, which cannot be mounted"
+                )
+            }
         }
     }
 }

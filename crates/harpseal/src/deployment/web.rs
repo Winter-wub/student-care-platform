@@ -12,35 +12,39 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 
 use super::Deployment;
+use super::routes::{ADMIN, WEBHOOK_PATH};
 use crate::delivery::WebhookRequest;
 use crate::{AppState, Error, PageState};
 
 impl Deployment {
     /// The whole HTTP surface:
-    /// - `POST /webhook/{kind}`: Channel webhooks (401 on a bad signature);
+    /// - `POST /webhook/{kind}`: Channel webhooks: 200 once the call is
+    ///   accepted (a failing event is logged, never turned into an error
+    ///   status, or the platform would resend the whole call), 401 on a bad
+    ///   signature, 400 when the body cannot be parsed, 404 for an unknown
+    ///   Channel;
     /// - `GET /static/app.css`: the shared stylesheet;
-    /// - Module public routes at the root (the Kernel's `/notice`); a
-    ///   public route under `/admin` answers 404, so `public()` can never
-    ///   bypass the Permission guard;
+    /// - Module public routes at the root (the Kernel's `/notice`);
     /// - Module back-office routes under `/admin`, each guarded by its
     ///   Permission.
+    ///
+    /// Never panics: `build()` already refused overlapping or invalid paths.
     pub fn router(self: Arc<Self>) -> axum::Router {
         let state: AppState = Arc::new(PageState {
             services: self.services.clone(),
             catalog: self.catalog.clone(),
             config: self.config.clone(),
         });
-        let mut admin = axum::Router::new();
-        for (_module, permission, r) in &self.registry.back_office {
-            let guarded = r.clone().layer(axum::middleware::from_fn_with_state(
+        let mut root = axum::Router::new();
+        for (_module, path, route) in &self.registry.public {
+            root = root.route(path, route.clone());
+        }
+        for (_module, permission, path, route) in &self.registry.back_office {
+            let guarded = route.clone().layer(axum::middleware::from_fn_with_state(
                 (state.clone(), *permission),
                 guard,
             ));
-            admin = admin.merge(guarded);
-        }
-        let mut root = axum::Router::new();
-        for r in &self.registry.public {
-            root = root.merge(r.clone().layer(axum::middleware::from_fn(public_only)));
+            root = root.route(&format!("{ADMIN}{path}"), guarded);
         }
         let css = get(|| async {
             (
@@ -51,9 +55,8 @@ impl Deployment {
                 crate::ui::CSS,
             )
         });
-        root.route("/webhook/{kind}", post(webhook))
+        root.route(WEBHOOK_PATH, post(webhook))
             .route(crate::ui::CSS_PATH, css)
-            .nest("/admin", admin)
             .with_state(state)
             .layer(axum::Extension(self))
     }
@@ -73,20 +76,10 @@ async fn webhook(
         body: body.to_vec(),
     };
     match d.handle_webhook(&kind, req).await {
-        Ok(()) => StatusCode::OK,
+        Ok(_) => StatusCode::OK,
         Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Err(_) => StatusCode::BAD_REQUEST,
     }
-}
-
-/// Public routers must not serve the back office: anything under `/admin`
-/// registered through `ModuleRegistrar::public` answers 404.
-async fn public_only(req: Request, next: Next) -> Response {
-    let path = req.uri().path();
-    if path == "/admin" || path.starts_with("/admin/") {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    next.run(req).await
 }
 
 /// Lets a back-office request through only for Staff holding `permission`.

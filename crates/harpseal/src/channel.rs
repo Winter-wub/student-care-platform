@@ -4,12 +4,12 @@
 
 use async_trait::async_trait;
 
-use crate::Result;
 use crate::delivery::{
-    Capabilities, ChannelAccountId, ChannelKind, Delivery, Inbound, IncomingFile,
-    PlatformMessageId, SendReceipt, WebhookRequest,
+    BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,
+    IncomingFile, PlatformMessageId, SendReceipt, WebhookRequest,
 };
 use crate::message::{Attachment, Locale, Menu, Message};
+use crate::{Error, Result};
 
 /// A messaging platform adapter. The required minimum: receive text and
 /// files (`parse_webhook` + `download`), send Text/Card/CardList/Choices
@@ -37,6 +37,42 @@ pub trait Channel: Send + Sync {
         msg: &Message,
         locale: &Locale,
     ) -> Result<SendReceipt>;
+
+    /// Sends a handler's whole batch to one account with one Delivery. The
+    /// Core calls this, never [`Channel::send`] directly, so an adapter
+    /// whose reply token is single-use or limited (LINE: one reply call of
+    /// at most 5 objects) can spend the token on the first objects and send
+    /// the rest as Pushes, reporting that in each [`SendReceipt`].
+    ///
+    /// The default sends each Message in order with the same Delivery
+    /// (right for Channels whose tokens can be reused or that never issue
+    /// one) and routes [`Message::Attachment`] through
+    /// [`Channel::attachments`], or stops with
+    /// `Error::Unsupported(SendAttachment)` when that Capability is absent.
+    /// It stops at the first error.
+    async fn send_batch(
+        &self,
+        to: &ChannelAccountId,
+        delivery: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+    ) -> BatchReceipt {
+        let mut receipts = Vec::with_capacity(msgs.len());
+        for msg in msgs {
+            let sent = match msg {
+                Message::Attachment(file) => match self.attachments() {
+                    Some(a) => a.send_attachment(to, delivery, file, locale).await,
+                    None => Err(Error::Unsupported(Capability::SendAttachment)),
+                },
+                _ => self.send(to, delivery, msg, locale).await,
+            };
+            match sent {
+                Ok(r) => receipts.push(r),
+                Err(e) => return BatchReceipt::partial(receipts, e),
+            }
+        }
+        BatchReceipt::complete(receipts)
+    }
 
     /// Sets the Menu for one account; `None` resets it to the locked
     /// pre-Link Menu.

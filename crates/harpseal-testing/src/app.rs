@@ -92,15 +92,21 @@ impl TestApp {
         self.request(req).await
     }
 
-    /// Queues `events` on the Fake Channel and posts a signed webhook call
-    /// to `/webhook/fake`, as the platform would.
+    /// Posts one signed webhook call carrying `events` to `/webhook/fake`,
+    /// as the platform would.
     pub async fn fake_webhook(&self, events: impl IntoIterator<Item = Inbound>) -> TestResponse {
-        for ev in events {
-            self.fake.push_inbound(ev);
-        }
+        let events: Vec<Inbound> = events.into_iter().collect();
+        let body = FakeChannel::encode(&events);
+        let signature = self.fake.sign(&body);
+        self.fake_webhook_raw(body, &signature).await
+    }
+
+    /// Posts `body` to `/webhook/fake` with `signature` as is (for bad
+    /// signatures and unparseable bodies).
+    pub async fn fake_webhook_raw(&self, body: Vec<u8>, signature: &str) -> TestResponse {
         let req = Request::post("/webhook/fake")
-            .header(SIGNATURE_HEADER, self.fake.secret())
-            .body(Body::empty())
+            .header(SIGNATURE_HEADER, signature)
+            .body(Body::from(body))
             .expect("valid request");
         self.request(req).await
     }
@@ -114,5 +120,15 @@ impl TestApp {
             .query(Statement::new(sql))
             .await
             .expect("query runs")
+    }
+
+    /// One integer from a query (e.g. `SELECT count(*) ...`); 0 for none.
+    pub async fn count(&self, sql: &'static str) -> i64 {
+        let rows = self.query(sql).await;
+        rows.rows
+            .first()
+            .and_then(|r| r.first())
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0)
     }
 }
