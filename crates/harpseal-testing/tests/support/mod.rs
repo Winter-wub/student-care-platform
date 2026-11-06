@@ -191,3 +191,38 @@ pub fn upload(h: &Harness, id: &str, bytes: Vec<u8>, size: Option<u64>) -> Incom
         size_bytes: size,
     }
 }
+
+/// [`boot`] with extra TOML appended to the test config and the Services
+/// changed by `services` (e.g. a failing EmailSender).
+pub async fn boot_with(
+    profile: FakeProfile,
+    toml: &str,
+    services: impl FnOnce(harpseal::Services) -> harpseal::Services,
+) -> (Harness, TestApp) {
+    let h = Harness::new().with_fake_profile(profile);
+    let config = harpseal::DeploymentConfig::from_toml(&format!(
+        "{}\n{toml}",
+        harpseal_testing::TEST_CONFIG
+    ))
+    .unwrap();
+    let d = h
+        .builder()
+        .config(config)
+        .runtime(services(h.services()))
+        .module(Hello)
+        .build()
+        .unwrap();
+    let app = h.boot(d).await;
+    for sql in ROSTER {
+        h.db().execute(Statement::new(*sql)).await.unwrap();
+    }
+    (h, app)
+}
+
+/// Runs one SQL statement on the harness database.
+pub async fn sql(h: &Harness, sql: &str) {
+    h.db()
+        .execute(Statement::new(sql.to_string()))
+        .await
+        .unwrap();
+}

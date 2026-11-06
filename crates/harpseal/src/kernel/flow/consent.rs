@@ -5,7 +5,7 @@
 use super::account::{self, LinkRow};
 use super::{Input, Turn, actions, linked};
 use crate::Result;
-use crate::message::{Button, Card, Message};
+use crate::message::{ActionId, Button, Card, Message};
 use crate::port_types::Statement;
 
 /// The Card: summary, accept, and "read in full" as a Mini App button to
@@ -42,20 +42,31 @@ pub(super) async fn offer(t: &mut Turn<'_>, welcome: bool) -> Result<()> {
     let card = card(t, "kernel.consent.title")?;
     t.out.push(card);
     t.acct.flow = Default::default();
-    let stmts = vec![
-        account::cancel_challenges(&t.acct.id),
-        t.save("awaiting_consent"),
-    ];
-    t.s().db.batch(stmts).await?;
+    let cancel = vec![account::cancel_challenges(&t.acct.id)];
+    t.commit(cancel, "awaiting_consent").await?;
     Ok(())
 }
 
 /// Step 2: remember the version shown, ask for the student id.
 pub(super) async fn accept_before_link(t: &mut Turn<'_>) -> Result<()> {
     t.acct.flow.consent_version = Some(t.version.clone());
-    t.s().db.execute(t.save("awaiting_student_id")).await?;
     t.say("kernel.link.ask_student_id");
+    t.save("awaiting_student_id").await?;
     Ok(())
+}
+
+/// The account waits on the Card but the Student already accepted the
+/// current version (on another Channel): back to `linked`, replaying the
+/// parked Action. `false` when a concurrent Inbound moved the state first.
+pub(super) async fn already_accepted(t: &mut Turn<'_>, link: &LinkRow) -> Result<bool> {
+    let parked = t.acct.flow.parked.take();
+    if !t.save("linked").await? {
+        return Ok(false);
+    }
+    if let Some(action) = parked.and_then(|p| ActionId::new(p).ok()) {
+        linked::act(t, link, action).await?;
+    }
+    Ok(true)
 }
 
 /// A linked Student whose Consent is not current. Accept records it and
@@ -77,10 +88,11 @@ pub(super) async fn reconsent(t: &mut Turn<'_>, link: LinkRow, input: Input) -> 
             .bind(t.version.clone())
             .bind(link.locale.as_str())
             .bind(now);
-            t.s().db.batch(vec![insert, t.save("linked")]).await?;
-            t.acct.state = "linked".into();
+            if !t.commit(vec![insert], "linked").await? {
+                return Ok(());
+            }
             t.set_menu(Some(&link.locale)).await?;
-            match parked.and_then(|p| crate::message::ActionId::new(p).ok()) {
+            match parked.and_then(|p| ActionId::new(p).ok()) {
                 Some(action) => linked::act(t, &link, action).await,
                 None => {
                     t.menu_choices();
@@ -96,9 +108,9 @@ pub(super) async fn reconsent(t: &mut Turn<'_>, link: LinkRow, input: Input) -> 
                 Input::Text(_) | Input::File(_) => linked::store(t, &link, &other).await?,
                 _ => {}
             }
-            t.s().db.execute(t.save("awaiting_reconsent")).await?;
             let card = card(t, "kernel.consent.updated")?;
             t.out.push(card);
+            t.save("awaiting_reconsent").await?;
             Ok(())
         }
     }

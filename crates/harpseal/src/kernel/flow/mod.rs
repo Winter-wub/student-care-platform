@@ -27,6 +27,7 @@ use crate::delivery::{ChannelAccountId, Inbound, IncomingFile, ReplyToken};
 use crate::deployment::Deployment;
 use crate::kernel::text::Texts;
 use crate::message::{ActionId, Button, Choices, Locale, Message};
+use crate::port_types::Statement;
 use crate::{Result, Services};
 
 pub(crate) use account::mark_unreachable;
@@ -76,6 +77,9 @@ pub(super) struct Turn<'a> {
     pub(super) module: &'static str,
     /// Pushes to other accounts, sent after the answer.
     pub(super) pushes: Vec<(ChannelAccountId, Locale, Message)>,
+    /// A concurrent Inbound of this account moved its state first: this
+    /// one sends nothing.
+    stale: bool,
 }
 
 /// Answers one Inbound.
@@ -97,7 +101,10 @@ pub(crate) async fn handle(d: &Deployment, ev: Inbound) -> Result<()> {
         Inbound::File { file, .. } => Input::File(file),
         Inbound::Action { action, .. } if action.as_str() == actions::START => Input::Start,
         Inbound::Action { action, .. } => Input::Action(action),
-        _ => Input::Start,
+        // `Blocked` returned above.
+        Inbound::Follow { .. } | Inbound::Unblocked { .. } | Inbound::Blocked { .. } => {
+            Input::Start
+        }
     };
     let mut turn = Turn {
         d,
@@ -109,6 +116,7 @@ pub(crate) async fn handle(d: &Deployment, ev: Inbound) -> Result<()> {
         out: Vec::new(),
         module: super::NAME,
         pushes: Vec::new(),
+        stale: false,
     };
     match turn.acct.link.clone() {
         Some(link) => linked::handle(&mut turn, link, input).await?,
@@ -144,7 +152,7 @@ async fn prelink(t: &mut Turn<'_>, input: Input) -> Result<()> {
             Ok(())
         }
         // `linked` / `awaiting_reconsent` with no live Link left (revoked
-        // by Staff, or the Student left the roster): start over.
+        // by Staff): start over.
         _ => consent::offer(t, true).await,
     }
 }
@@ -168,9 +176,35 @@ impl Turn<'_> {
         Ok(Button::action(self.t(key), ActionId::new(id)?))
     }
 
-    /// Writes `state` and the account's `flow_data`.
-    pub(super) fn save(&self, state: &str) -> crate::port_types::Statement {
-        account::save(self.s(), &self.acct.id, state, &self.acct.flow)
+    /// Runs `stmts` and, last in the same `Db::batch`, writes `state` and
+    /// the account's `flow_data` if the account is still in the state this
+    /// Inbound loaded. `false` (and nothing will be sent) when another
+    /// Inbound of the account changed it first; the other statements of
+    /// the batch did run, so callers put only idempotent ones before.
+    pub(super) async fn commit(&mut self, mut stmts: Vec<Statement>, state: &str) -> Result<bool> {
+        let save = account::save(
+            self.s(),
+            &self.acct.id,
+            &self.acct.state,
+            state,
+            &self.acct.flow,
+        );
+        stmts.push(save);
+        let done = self.s().db.batch(stmts).await?;
+        if done.last().is_some_and(|r| r.rows_affected == 1) {
+            self.acct.state = state.to_string();
+            Ok(true)
+        } else {
+            self.stale = true;
+            self.out.clear();
+            self.pushes.clear();
+            Ok(false)
+        }
+    }
+
+    /// [`Turn::commit`] with nothing else in the batch.
+    pub(super) async fn save(&mut self, state: &str) -> Result<bool> {
+        self.commit(Vec::new(), state).await
     }
 
     /// Resets `flow_data` to what survives a finished or abandoned claim.
@@ -188,7 +222,10 @@ impl Turn<'_> {
             .d
             .channel(self.from.channel.as_str())
             .ok_or_else(|| crate::Error::Invalid(format!("no channel {}", self.from.channel)))?;
-        let menu = unlocked.map(|l| self.d.menu_for(l));
+        let menu = unlocked.map(|l| {
+            let texts = self.texts.in_locale(l);
+            self.d.menu_with(|k| texts.t(k))
+        });
         channel.set_menu(&self.from, menu.as_ref()).await
     }
 
@@ -198,7 +235,7 @@ impl Turn<'_> {
         let text = self.t("kernel.menu.pick");
         let options: Vec<Button> = self
             .d
-            .menu_for(self.texts.locale())
+            .menu_with(|k| self.texts.t(k))
             .entries
             .into_iter()
             .map(|e| Button::action(e.label, e.action))
@@ -224,22 +261,27 @@ impl Turn<'_> {
         }
     }
 
-    /// Sends the answer as one batch, then the Pushes. A failed Push does
-    /// not fail the Inbound (an unreachable account is marked as such by
-    /// the send path).
+    /// Sends the answer as one batch, then the Pushes, which go out even
+    /// when the answer failed (a warning to the owner of a Link matters
+    /// more than the answer to the claimant). A failed Push does not fail
+    /// the Inbound; an unreachable account is marked by the send path.
     async fn flush(self) -> Result<()> {
+        if self.stale {
+            return Ok(());
+        }
         let module = Some(self.module);
         let locale = self.texts.locale().clone();
-        self.d
+        let answered = self
+            .d
             .deliver(&self.from, self.reply.as_ref(), &self.out, &locale, module)
-            .await?;
+            .await;
         for (to, locale, msg) in &self.pushes {
             let _ = self
                 .d
                 .deliver(to, None, std::slice::from_ref(msg), locale, module)
                 .await;
         }
-        Ok(())
+        answered.map(|_| ())
     }
 }
 

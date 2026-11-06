@@ -102,6 +102,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "ขอรหัสครบจำนวนที่กำหนดแล้ว กรุณารออีก {minutes} นาที",
         "You have asked for the most codes allowed. Please wait {minutes} minutes."
     ),
+    (
+        "kernel.otp.send_failed",
+        "ส่งอีเมลรหัสยืนยันไม่สำเร็จ กรุณาลองใหม่ภายหลัง",
+        "We could not send the code email. Please try again later."
+    ),
     ("kernel.otp.resend", "ส่งรหัสใหม่", "Resend code"),
     ("kernel.otp.cancel", "ยกเลิก", "Cancel"),
     // Email. {code}, {minutes}, {name}

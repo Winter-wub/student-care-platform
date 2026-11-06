@@ -45,14 +45,21 @@ pub(super) async fn start(t: &mut Turn<'_>, student: &StudentRow) -> Result<()> 
         ));
         return Ok(());
     }
-    t.s()
-        .db
-        .execute(account::cancel_challenges(&t.acct.id))
-        .await?;
     let email = student
         .email
         .clone()
         .ok_or_else(|| Error::Invalid("student has no email".into()))?;
+    // Claim the step first: of two Inbounds of this account racing here,
+    // only the one that moves the state opens a challenge.
+    t.acct.flow.student_id = Some(student.id.clone());
+    t.acct.flow.challenge_id = None;
+    if !t.save("awaiting_otp").await? {
+        return Ok(());
+    }
+    t.s()
+        .db
+        .execute(account::cancel_challenges(&t.acct.id))
+        .await?;
     let claim = StudentClaim {
         student: StudentId(student.id.clone()),
         student_code: student.code.clone(),
@@ -61,16 +68,38 @@ pub(super) async fn start(t: &mut Turn<'_>, student: &StudentRow) -> Result<()> 
         locale: student.locale.clone(),
         channel_account: t.acct.id.clone(),
     };
-    let challenge = t.d.verification().start(&cx(t, student), &claim).await?;
-    t.acct.flow.student_id = Some(student.id.clone());
+    let challenge = match t.d.verification().start(&cx(t, student), &claim).await {
+        Ok(c) => c,
+        Err(e) => return send_failed(t, student, e).await,
+    };
     t.acct.flow.challenge_id = Some(challenge.id);
-    t.s().db.execute(t.save("awaiting_otp")).await?;
     let minutes = t.d.config().otp.ttl_minutes.to_string();
     let text = t.tf(
         "kernel.otp.sent",
         &[("email", &challenge.sent_to), ("minutes", &minutes)],
     );
-    with_buttons(t, text)
+    with_buttons(t, text)?;
+    t.save("awaiting_otp").await?;
+    Ok(())
+}
+
+/// The method could not open the challenge (e.g. the email bounced at the
+/// provider): no code counts against the hour, the Student is told to try
+/// later, and a Security Event `otp.send_failed` keeps the reason.
+async fn send_failed(t: &mut Turn<'_>, student: &StudentRow, e: Error) -> Result<()> {
+    let details = [("error", e.to_string().chars().take(200).collect())];
+    security::record(
+        t.s(),
+        "otp.send_failed",
+        Some(&t.acct.id),
+        Some(&student.id),
+        &details,
+    )
+    .await?;
+    t.say("kernel.otp.send_failed");
+    t.reset_flow();
+    t.save("awaiting_student_id").await?;
+    Ok(())
 }
 
 /// Not a code: say what is expected, count nothing.
@@ -111,11 +140,8 @@ async fn claimed(t: &mut Turn<'_>) -> Result<Option<StudentRow>> {
 
 async fn back_to_student_id(t: &mut Turn<'_>) -> Result<()> {
     t.reset_flow();
-    let stmts = vec![
-        account::cancel_challenges(&t.acct.id),
-        t.save("awaiting_student_id"),
-    ];
-    t.s().db.batch(stmts).await.map(|_| ())
+    let cancel = vec![account::cancel_challenges(&t.acct.id)];
+    t.commit(cancel, "awaiting_student_id").await.map(|_| ())
 }
 
 /// Step 4: digits only after removing spaces and dashes.
@@ -136,6 +162,23 @@ pub(super) async fn answer(t: &mut Turn<'_>, typed: &str) -> Result<()> {
         t.say("kernel.link.ask_student_id");
         return Ok(());
     };
+    // Claim one attempt before comparing, atomically: the cap holds
+    // however many answers arrive at once. Passing refunds it, so only
+    // wrong answers count.
+    let now = t.s().now_ms();
+    let max = i64::from(t.d.config().otp.max_attempts);
+    let claim_attempt = Statement::new(
+        "UPDATE verification_challenge SET attempts = attempts + 1 \
+         WHERE id = ? AND state = 'pending' AND attempts < ? AND expires_at > ? \
+         RETURNING attempts",
+    )
+    .bind(challenge.clone())
+    .bind(max)
+    .bind(now);
+    let claimed_rows = t.s().db.query(claim_attempt).await?;
+    let Some(attempts) = claimed_rows.get(0, "attempts").and_then(Value::as_i64) else {
+        return closed(t, &challenge).await;
+    };
     match t
         .d
         .verification()
@@ -143,29 +186,51 @@ pub(super) async fn answer(t: &mut Turn<'_>, typed: &str) -> Result<()> {
         .await?
     {
         Verdict::Passed => link(t, &student, &challenge).await,
-        Verdict::Expired => {
-            let expire = Statement::new(
-                "UPDATE verification_challenge SET state = 'expired' WHERE id = ? AND state = 'pending'",
-            )
-            .bind(challenge);
-            t.s().db.execute(expire).await?;
-            let text = t.t("kernel.otp.expired");
-            with_buttons(t, text)
-        }
-        _ => wrong(t, &student, &challenge).await,
+        Verdict::Expired => expired(t, &challenge).await,
+        _ => wrong(t, &student, &challenge, attempts).await,
     }
 }
 
-/// Counts the attempt; the last one locks the Student.
-async fn wrong(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result<()> {
-    let bump =
-        Statement::new("UPDATE verification_challenge SET attempts = attempts + 1 WHERE id = ?")
-            .bind(challenge);
-    t.s().db.execute(bump).await?;
-    let read =
-        Statement::new("SELECT attempts FROM verification_challenge WHERE id = ?").bind(challenge);
+/// The challenge took no attempt: past its expiry (offer a resend), or
+/// used up / failed by a concurrent answer (locked).
+async fn closed(t: &mut Turn<'_>, challenge: &str) -> Result<()> {
+    let read = Statement::new("SELECT state, expires_at FROM verification_challenge WHERE id = ?")
+        .bind(challenge);
     let rows = t.s().db.query(read).await?;
-    let attempts = rows.get(0, "attempts").and_then(Value::as_i64).unwrap_or(0);
+    let state = rows.get(0, "state").and_then(Value::as_text).unwrap_or("");
+    let expires_at = rows
+        .get(0, "expires_at")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let used_up = state == "failed" || (state == "pending" && expires_at > t.s().now_ms());
+    if !used_up {
+        return expired(t, challenge).await;
+    }
+    let minutes = t.d.config().otp.lock_minutes.to_string();
+    t.out.push(Message::text(
+        t.tf("kernel.otp.locked", &[("minutes", &minutes)]),
+    ));
+    back_to_student_id(t).await
+}
+
+async fn expired(t: &mut Turn<'_>, challenge: &str) -> Result<()> {
+    let expire = Statement::new(
+        "UPDATE verification_challenge SET state = 'expired' WHERE id = ? AND state = 'pending'",
+    )
+    .bind(challenge);
+    t.s().db.execute(expire).await?;
+    let text = t.t("kernel.otp.expired");
+    with_buttons(t, text)
+}
+
+/// A wrong answer, already counted; the last allowed one locks the
+/// Student.
+async fn wrong(
+    t: &mut Turn<'_>,
+    student: &StudentRow,
+    challenge: &str,
+    attempts: i64,
+) -> Result<()> {
     let otp = &t.d.config().otp;
     let left = i64::from(otp.max_attempts) - attempts;
     if left > 0 {
@@ -185,10 +250,18 @@ async fn wrong(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Resul
         Some(&student.id),
         &details,
     )?;
+    let minutes = otp.lock_minutes.to_string();
+    t.out.push(Message::text(
+        t.tf("kernel.otp.locked", &[("minutes", &minutes)]),
+    ));
+    let others = account::other_links(t.s(), &student.id, &t.acct.id, None).await?;
+    t.warn(others, "kernel.otp.lockout_notice", &student.locale);
     t.reset_flow();
     let stmts = vec![
-        Statement::new("UPDATE verification_challenge SET state = 'failed' WHERE id = ?")
-            .bind(challenge),
+        Statement::new(
+            "UPDATE verification_challenge SET state = 'failed' WHERE id = ? AND state = 'pending'",
+        )
+        .bind(challenge),
         Statement::new(
             "UPDATE student SET verification_locked_until = ?, updated_at = ? WHERE id = ?",
         )
@@ -196,15 +269,8 @@ async fn wrong(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Resul
         .bind(now)
         .bind(student.id.clone()),
         event,
-        t.save("awaiting_student_id"),
     ];
-    t.s().db.batch(stmts).await?;
-    let minutes = otp.lock_minutes.to_string();
-    t.out.push(Message::text(
-        t.tf("kernel.otp.locked", &[("minutes", &minutes)]),
-    ));
-    let others = account::other_links(t.s(), &student.id, &t.acct.id, None).await?;
-    t.warn(others, "kernel.otp.lockout_notice", &student.locale);
+    t.commit(stmts, "awaiting_student_id").await?;
     Ok(())
 }
 
@@ -227,6 +293,20 @@ pub(super) async fn cancel(t: &mut Turn<'_>) -> Result<()> {
 /// shown on the Card), state `linked`, audit `link.create`. Then the Menu
 /// unlocks and the success Card and the Menu Choices go out.
 async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result<()> {
+    // Another account may have linked this Student on this Channel while
+    // this one waited for its code.
+    if claim::duplicate(t, student).await? {
+        return back_to_student_id(t).await;
+    }
+    let pass = Statement::new(
+        "UPDATE verification_challenge SET state = 'passed', attempts = max(attempts - 1, 0) \
+         WHERE id = ? AND state = 'pending'",
+    )
+    .bind(challenge);
+    if t.s().db.execute(pass).await?.rows_affected != 1 {
+        // A concurrent wrong answer locked it first.
+        return closed(t, challenge).await;
+    }
     let s = t.s().clone();
     let now = s.now_ms();
     let link_id = s.new_id()?;
@@ -248,9 +328,8 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
             ("method", method.to_string()),
         ],
     )?;
-    t.acct.flow = Default::default();
+    let flow = std::mem::take(&mut t.acct.flow);
     let stmts = vec![
-        Statement::new("UPDATE verification_challenge SET state = 'passed' WHERE id = ?").bind(challenge),
         Statement::new(
             "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
              linked_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)",
@@ -272,10 +351,21 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
         .bind(version)
         .bind(student.locale.as_str())
         .bind(now),
-        t.save("linked"),
         audit,
     ];
-    s.db.batch(stmts).await?;
+    match t.commit(stmts, "linked").await {
+        Ok(true) => {}
+        Ok(false) => return Ok(()),
+        // The unique index lost the race to another account's Link.
+        Err(Error::Db(e)) if e.contains("UNIQUE") => {
+            t.acct.flow = flow;
+            if claim::duplicate(t, student).await? {
+                return back_to_student_id(t).await;
+            }
+            return Err(Error::Db(e));
+        }
+        Err(e) => return Err(e),
+    }
     t.texts = t.texts.in_locale(&student.locale);
     t.set_menu(Some(&student.locale)).await?;
     let body = t.tf("kernel.link.success", &[("name", &student.name)]);

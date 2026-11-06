@@ -54,6 +54,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0003_operations",
         include_str!("../../migrations/0003_operations.sql"),
     ),
+    (
+        "0004_inbound_file_error",
+        include_str!("../../migrations/0004_inbound_file_error.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

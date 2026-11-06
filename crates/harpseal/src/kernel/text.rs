@@ -60,6 +60,21 @@ impl Texts {
         }
     }
 
+    /// The catalog with this Inbound's `setting` overrides applied (for a
+    /// Module's `ActionContext`); shared as is when there are none.
+    pub(crate) fn catalog(&self) -> Arc<Catalog> {
+        if self.overrides.keys().all(|(l, _)| l.is_empty()) {
+            return self.catalog.clone();
+        }
+        let mut merged = (*self.catalog).clone();
+        for ((locale, key), value) in self.overrides.iter() {
+            if !locale.is_empty() {
+                merged.insert(locale, key, value);
+            }
+        }
+        Arc::new(merged)
+    }
+
     pub(crate) fn locale(&self) -> &Locale {
         &self.locale
     }

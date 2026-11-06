@@ -124,12 +124,20 @@ pub(crate) async fn load(
     })
 }
 
-/// Writes `state` and the whole `flow_data`.
-pub(crate) fn save(services: &Services, account: &str, state: &str, flow: &FlowData) -> Statement {
+/// Writes `state` and the whole `flow_data`, only while the row is still
+/// in `expected` (the state this Inbound loaded): a concurrent Inbound of
+/// the same account that moved it first wins, and this one changes 0 rows.
+pub(crate) fn save(
+    services: &Services,
+    account: &str,
+    expected: &str,
+    state: &str,
+    flow: &FlowData,
+) -> Statement {
     Statement::new(
         "UPDATE channel_account SET flow_state = ?, flow_data = json_object(\
          'consent_version', ?, 'student_id', ?, 'challenge_id', ?, 'parked', ?, \
-         'last_fallback_at', ?), updated_at = ? WHERE id = ?",
+         'last_fallback_at', ?), updated_at = ? WHERE id = ? AND flow_state = ?",
     )
     .bind(state)
     .bind(flow.consent_version.clone())
@@ -139,6 +147,7 @@ pub(crate) fn save(services: &Services, account: &str, state: &str, flow: &FlowD
     .bind(flow.last_fallback_at)
     .bind(services.now_ms())
     .bind(account)
+    .bind(expected)
 }
 
 /// The account's active Link becomes unreachable (LINE unfollow, or a send

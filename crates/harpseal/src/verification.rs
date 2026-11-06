@@ -46,6 +46,17 @@ pub struct Challenge {
     pub expires_at: Timestamp,
 }
 
+impl Challenge {
+    /// A challenge, for a [`VerificationMethod::start`] to return.
+    pub fn new(id: impl Into<String>, sent_to: impl Into<String>, expires_at: Timestamp) -> Self {
+        Self {
+            id: id.into(),
+            sent_to: sent_to.into(),
+            expires_at,
+        }
+    }
+}
+
 /// What `check` decided about one answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -93,11 +104,16 @@ impl core::fmt::Debug for VerifyContext {
 #[async_trait]
 pub trait VerificationMethod: Send + Sync {
     /// Stable id stored in `verification_challenge.method` and
-    /// `link.method`, e.g. `email_otp`.
+    /// `link.method`. It must be a value `link.method` accepts: today
+    /// `email_otp` (or `manual`, which Staff Manual Links use); another
+    /// method needs a migration widening that CHECK first, or the Link
+    /// write fails.
     fn id(&self) -> &'static str;
     /// Opens a challenge for `claim` (writes its `verification_challenge`
     /// row, e.g. emails a code). The Kernel has already cancelled any
-    /// earlier open challenge of the account.
+    /// earlier open challenge of the account. On error the method leaves
+    /// no `pending` row behind (the Kernel tells the Student to try later
+    /// and counts the row toward the hourly limit if it remains).
     async fn start(&self, cx: &VerifyContext, claim: &StudentClaim) -> Result<Challenge>;
     /// Judges `answer` for challenge `challenge_id`. Writes nothing: the
     /// Kernel records attempts and the outcome.
@@ -226,12 +242,14 @@ impl VerificationMethod for EmailOtp {
             text: crate::kernel::text::fill(&cx.t("kernel.otp.email_body"), &args),
             html: None,
         };
-        s.email.send(email).await?;
-        Ok(Challenge {
-            id,
-            sent_to: mask_email(&claim.email),
-            expires_at,
-        })
+        if let Err(e) = s.email.send(email).await {
+            // The code never reached the Student: drop the row so it does
+            // not count toward the codes per hour.
+            let drop = Statement::new("DELETE FROM verification_challenge WHERE id = ?").bind(id);
+            s.db.execute(drop).await?;
+            return Err(e);
+        }
+        Ok(Challenge::new(id, mask_email(&claim.email), expires_at))
     }
 
     async fn check(&self, cx: &VerifyContext, challenge_id: &str, answer: &str) -> Result<Verdict> {

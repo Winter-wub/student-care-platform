@@ -117,12 +117,18 @@ impl Deployment {
     /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
     /// `[student] self_unlink` is on.
     pub fn menu_for(&self, locale: &Locale) -> Menu {
+        self.menu_with(|key| self.catalog.t(locale, key))
+    }
+
+    /// The unlocked Menu with labels from `t` (the chat flow passes texts
+    /// with `setting` overrides).
+    pub(crate) fn menu_with(&self, t: impl Fn(&str) -> String) -> Menu {
         let mut entries: Vec<MenuEntry> = self
             .registry
             .menu
             .iter()
             .map(|e| MenuEntry {
-                label: self.catalog.t(locale, e.label_key),
+                label: t(e.label_key),
                 action: e.action.clone(),
             })
             .collect();
@@ -130,7 +136,7 @@ impl Deployment {
             && let Ok(action) = ActionId::new(kernel::flow::actions::UNLINK)
         {
             entries.push(MenuEntry {
-                label: self.catalog.t(locale, "kernel.menu.unlink"),
+                label: t("kernel.menu.unlink"),
                 action,
             });
         }

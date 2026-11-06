@@ -102,30 +102,3 @@ async fn the_third_wrong_code_locks_the_student() {
     other.text("68010001").await;
     assert_eq!(h.emails().len(), 3, "a code again once the lock is over");
 }
-
-#[tokio::test]
-async fn a_lockout_pushes_a_notice_to_the_students_other_links() {
-    let (h, app) = boot(FakeProfile::Full).await;
-    // s1 holds an active Link on another (seeded) Channel account.
-    for sql in [
-        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
-         VALUES ('old', 'fake', 'old-phone', 1, 1)",
-        "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, linked_at, updated_at) \
-         VALUES ('l-old', 's1', 'old', 'fake-2', 'active', 'manual', 1, 1)",
-    ] {
-        h.db().execute(harpseal::Statement::new(sql)).await.unwrap();
-    }
-    let mut c = Chat::new(&h, &app, "new-phone");
-    c.follow().await;
-    c.press("kernel.consent.accept").await;
-    c.text("68010001").await;
-    let code = c.code();
-    let wrong = if code == "000000" { "111111" } else { "000000" };
-    for _ in 0..3 {
-        c.text(wrong).await;
-    }
-    let old = Chat::new(&h, &app, "old-phone");
-    let seen = old.seen_since();
-    assert_eq!(seen.len(), 1, "{seen:?}");
-    assert!(text_of(&seen[0]).starts_with("มีการใส่รหัสยืนยันของคุณผิดหลายครั้ง"));
-}

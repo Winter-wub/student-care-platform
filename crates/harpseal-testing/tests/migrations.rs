@@ -84,6 +84,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
             ("kernel".into(), "0001_people".into()),
             ("kernel".into(), "0002_channels".into()),
             ("kernel".into(), "0003_operations".into()),
+            ("kernel".into(), "0004_inbound_file_error".into()),
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
@@ -112,8 +113,8 @@ async fn a_module_migration_runs_after_the_kernel_and_once() {
     let h = Harness::new();
     let d = h.builder().module(Notes).build().unwrap();
     let names: Vec<&str> = d.migrations().iter().map(|m| m.module).collect();
-    assert_eq!(names, ["kernel", "kernel", "kernel", "notes"]);
-    assert_eq!(d.migrate().await.unwrap().applied.len(), 4);
+    assert_eq!(names, ["kernel", "kernel", "kernel", "kernel", "notes"]);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 5);
     assert!(d.migrate().await.unwrap().applied.is_empty());
 }
 

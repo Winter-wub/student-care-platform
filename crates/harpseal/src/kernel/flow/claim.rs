@@ -105,8 +105,11 @@ pub(super) async fn student_id(t: &mut Turn<'_>, typed: &str) -> Result<()> {
     otp::start(t, &student).await
 }
 
-/// A live Link of this Student on this Channel held by another account.
-async fn duplicate(t: &mut Turn<'_>, student: &StudentRow) -> Result<bool> {
+/// A live Link of this Student on this Channel held by another account:
+/// refuse (`kernel.link.already_linked`), record a Security Event every
+/// time, and Push a warning to that account at most once per Student per
+/// hour.
+pub(super) async fn duplicate(t: &mut Turn<'_>, student: &StudentRow) -> Result<bool> {
     let stmt = Statement::new(
         "SELECT ca.id, ca.external_id FROM link l \
          JOIN channel_account ca ON ca.id = l.channel_account_id \
@@ -121,6 +124,14 @@ async fn duplicate(t: &mut Turn<'_>, student: &StudentRow) -> Result<bool> {
     };
     let old = old.to_string();
     t.say("kernel.link.already_linked");
+    let recent = Statement::new(
+        "SELECT count(*) AS n FROM security_event \
+         WHERE kind = 'link.duplicate_attempt' AND student_id = ? AND at > ?",
+    )
+    .bind(student.id.clone())
+    .bind(t.s().now_ms() - 3_600_000);
+    let warned = t.s().db.query(recent).await?;
+    let warned = warned.get(0, "n").and_then(Value::as_i64).unwrap_or(0) > 0;
     let details = [
         ("channel", t.from.channel.as_str().to_string()),
         ("student_code", student.code.clone()),
@@ -133,12 +144,14 @@ async fn duplicate(t: &mut Turn<'_>, student: &StudentRow) -> Result<bool> {
         &details,
     )
     .await?;
-    let kind = t.from.channel.as_str().to_string();
-    t.warn(
-        vec![(kind, old)],
-        "kernel.link.attempt_warning",
-        &student.locale,
-    );
+    if !warned {
+        let kind = t.from.channel.as_str().to_string();
+        t.warn(
+            vec![(kind, old)],
+            "kernel.link.attempt_warning",
+            &student.locale,
+        );
+    }
     Ok(true)
 }
 
