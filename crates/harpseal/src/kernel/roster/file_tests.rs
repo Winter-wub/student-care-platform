@@ -15,7 +15,7 @@ fn the_csv_fixture_reads_50_rows() {
     assert_eq!(r.number, 2);
     assert_eq!(r.get("รหัสนักศึกษา"), Some("68010001"));
     assert_eq!(r.get("ชื่อ-สกุล"), Some("นกน้อย ทะเลใส"));
-    assert_eq!(r.get("กลุ่ม"), Some("ปี1;DDS"));
+    assert_eq!(r.get("กลุ่ม"), Some("ปี1;MSC"));
     assert_eq!(rows[9].get("อีเมล"), None, "empty cell is absent");
 }
 
@@ -41,7 +41,7 @@ fn semicolons_bom_crlf_and_empty_rows() {
     let c = test_config();
     let text = "\u{feff} รหัสนักศึกษา ;ชื่อ-สกุล;อีเมล;ภาษา;กลุ่ม;หลักสูตร;ชั้นปี;เกรดเฉลี่ย\r\n\
                 ;;;;;;;\r\n\
-                68010001; นก ทะเล ;;;;DDS;1;\r\n";
+                68010001; นก ทะเล ;;;;MSC;1;\r\n";
     let rows = parse(text.as_bytes(), "a.CSV", &c.roster).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].number, 3);

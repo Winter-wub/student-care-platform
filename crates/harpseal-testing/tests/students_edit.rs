@@ -14,7 +14,7 @@ const EDIT: &str = "/admin/students/s1/edit";
 
 fn edit_form(name: &str, year: &str) -> String {
     format!(
-        "display_name={}&email={}&locale=th&attr.year={}&attr.programme=DDS&attr.entered=",
+        "display_name={}&email={}&locale=th&attr.year={}&attr.programme=MSC&attr.entered=",
         urlencode(name),
         urlencode("s68010001@student.sealbay.example"),
         urlencode(year)
@@ -47,7 +47,7 @@ async fn an_edit_is_audited_and_recorded_as_an_override_until_cleared() {
     assert!(form.body.contains("value=\"Nok Thale\""));
     assert!(
         form.body
-            .contains("<option value=\"DDS\" selected>DDS</option>")
+            .contains("<option value=\"MSC\" selected>MSC</option>")
     );
     assert!(form.body.contains("type=\"date\""), "date attribute");
     assert!(!form.body.contains("แก้ด้วยมือ</span>"), "no override yet");
@@ -69,7 +69,7 @@ async fn an_edit_is_audited_and_recorded_as_an_override_until_cleared() {
     );
     let attrs: serde_json::Value =
         serde_json::from_str(row.get(0, "attributes").unwrap().as_text().unwrap()).unwrap();
-    assert_eq!(attrs, json!({ "year": 3, "programme": "DDS" }));
+    assert_eq!(attrs, json!({ "year": 3, "programme": "MSC" }));
 
     let (before, after) = audit_json(&h, "student.update").await;
     assert_eq!(
@@ -183,7 +183,7 @@ async fn manual_tags_come_and_go_and_roster_tags_stay() {
     let (h, app) = boot().await;
     run(
         &h,
-        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'DDS-1', 1)",
+        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'MSC-1', 1)",
     )
     .await;
     run(
@@ -193,7 +193,7 @@ async fn manual_tags_come_and_go_and_roster_tags_stay() {
     .await;
     let (b, staff_id) = signed_in(&h, &app, "Officer").await;
 
-    for name in ["  ทุนเรียนดี ", "DDS-1"] {
+    for name in ["  ทุนเรียนดี ", "MSC-1"] {
         let r = b
             .post(
                 "/admin/students/s1/tags",
@@ -203,7 +203,7 @@ async fn manual_tags_come_and_go_and_roster_tags_stay() {
         assert_eq!(r.status, 303);
         assert_eq!(flash(&b), "ok:kernel.students.tag_added");
     }
-    b.post("/admin/students/s1/tags", "name=DDS-1").await;
+    b.post("/admin/students/s1/tags", "name=MSC-1").await;
     assert_eq!(flash(&b), "err:kernel.students.tag_exists");
     b.post("/admin/students/s1/tags", "name=+").await;
     assert_eq!(flash(&b), "err:kernel.students.tag_invalid");
@@ -220,9 +220,9 @@ async fn manual_tags_come_and_go_and_roster_tags_stay() {
     assert_eq!(by, Some(staff_id));
     let (before, after) = audit_json(&h, "student.tag_add").await;
     assert_eq!(before, json!({ "manual_tags": ["ทุนเรียนดี"] }));
-    assert_eq!(after, json!({ "manual_tags": ["DDS-1", "ทุนเรียนดี"] }));
+    assert_eq!(after, json!({ "manual_tags": ["MSC-1", "ทุนเรียนดี"] }));
 
-    // Remove the manual DDS-1: the roster DDS-1 (same tag id) stays.
+    // Remove the manual MSC-1: the roster MSC-1 (same tag id) stays.
     let r = b.post("/admin/students/s1/tags/remove", "tag_id=t1").await;
     assert_eq!(r.status, 303);
     assert_eq!(flash(&b), "ok:kernel.students.tag_removed");
@@ -238,7 +238,7 @@ async fn manual_tags_come_and_go_and_roster_tags_stay() {
         "a roster Tag cannot be removed"
     );
     let (before, after) = audit_json(&h, "student.tag_remove").await;
-    assert_eq!(before, json!({ "manual_tags": ["DDS-1", "ทุนเรียนดี"] }));
+    assert_eq!(before, json!({ "manual_tags": ["MSC-1", "ทุนเรียนดี"] }));
     assert_eq!(after, json!({ "manual_tags": ["ทุนเรียนดี"] }));
 }
 

@@ -29,7 +29,7 @@ Viewer = ["announcements.view"]
 [roster.attributes.programme]
 column = "หลักสูตร"
 type = "enum"
-values = ["DDS", "DDS-Intl", "Hygiene"]
+values = ["MSC", "MSC-Intl", "Fisheries"]
 label = { th = "หลักสูตร", en = "Programme" }
 
 [roster.attributes.year]
@@ -159,17 +159,17 @@ pub async fn link(h: &Harness, student: &str, channel: &str, status: &str) {
 /// is excluded).
 pub async fn roster(w: &World) {
     let h = &w.h;
-    student(h, "s1", "th", "active", r#"{"programme":"DDS","year":2}"#).await;
-    student(h, "s2", "th", "left", r#"{"programme":"DDS","year":2}"#).await;
+    student(h, "s1", "th", "active", r#"{"programme":"MSC","year":2}"#).await;
+    student(h, "s2", "th", "left", r#"{"programme":"MSC","year":2}"#).await;
     student(
         h,
         "s3",
         "th",
         "active",
-        r#"{"programme":"DDS-Intl","year":2}"#,
+        r#"{"programme":"MSC-Intl","year":2}"#,
     )
     .await;
-    student(h, "s4", "en", "active", r#"{"programme":"DDS","year":3}"#).await;
+    student(h, "s4", "en", "active", r#"{"programme":"MSC","year":3}"#).await;
     link(h, "s1", "fake", "active").await;
     link(h, "s1", TG, "active").await;
     link(h, "s2", "fake", "active").await;
