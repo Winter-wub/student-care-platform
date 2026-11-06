@@ -5,30 +5,41 @@
 use super::account::{self, LinkRow};
 use super::{Input, Turn, actions, linked};
 use crate::Result;
+use crate::deployment::Deployment;
+use crate::kernel::text::Texts;
 use crate::message::{ActionId, Button, Card, Message};
 use crate::port_types::Statement;
 
 /// The Card: summary, accept, and "read in full" as a Mini App button to
-/// `/notice` when the Channel has a Mini App, else a line in the body.
-fn card(t: &Turn<'_>, title_key: &str) -> Result<Message> {
-    let mut body = t.t("kernel.consent.notice");
-    let mut buttons = vec![t.action("kernel.consent.accept", actions::CONSENT_ACCEPT)?];
-    let mini_app =
-        t.d.channel(t.from.channel.as_str())
-            .is_some_and(|c| c.mini_app().is_some());
+/// `/notice` when the Channel `channel` has a Mini App, else a line in the
+/// body. Also Pushed by a Manual Link (`kernel::links`).
+pub(crate) fn consent_card(
+    d: &Deployment,
+    texts: &Texts,
+    channel: &str,
+    title_key: &str,
+) -> Result<Message> {
+    let mut body = texts.t("kernel.consent.notice");
+    let accept = ActionId::new(actions::CONSENT_ACCEPT)?;
+    let mut buttons = vec![Button::action(texts.t("kernel.consent.accept"), accept)];
+    let mini_app = d.channel(channel).is_some_and(|c| c.mini_app().is_some());
     if mini_app {
         buttons.push(Button::mini_app(
-            t.t("kernel.consent.read_full"),
+            texts.t("kernel.consent.read_full"),
             crate::kernel::notice::PATH,
         ));
     } else {
-        body = format!("{body}\n\n{}", t.t("kernel.consent.read_full_hint"));
+        body = format!("{body}\n\n{}", texts.t("kernel.consent.read_full_hint"));
     }
     Ok(Message::Card(Card {
-        title: t.t(title_key),
+        title: texts.t(title_key),
         body,
         buttons,
     }))
+}
+
+fn card(t: &Turn<'_>, title_key: &str) -> Result<Message> {
+    consent_card(t.d, &t.texts, t.from.channel.as_str(), title_key)
 }
 
 /// Step 1: (welcome Text +) Consent Card; any open claim is dropped. With
@@ -56,13 +67,15 @@ pub(super) async fn accept_before_link(t: &mut Turn<'_>) -> Result<()> {
 }
 
 /// The account waits on the Card but the Student already accepted the
-/// current version (on another Channel): back to `linked`, replaying the
-/// parked Action. `false` when a concurrent Inbound moved the state first.
+/// current version (on another Channel): back to `linked` with the Menu
+/// unlocked, replaying the parked Action. `false` when a concurrent
+/// Inbound moved the state first.
 pub(super) async fn already_accepted(t: &mut Turn<'_>, link: &LinkRow) -> Result<bool> {
     let parked = t.acct.flow.parked.take();
     if !t.save("linked").await? {
         return Ok(false);
     }
+    t.set_menu(Some(&link.locale)).await?;
     if let Some(action) = parked.and_then(|p| ActionId::new(p).ok()) {
         linked::act(t, link, action).await?;
     }
@@ -108,7 +121,14 @@ pub(super) async fn reconsent(t: &mut Turn<'_>, link: LinkRow, input: Input) -> 
                 Input::Text(_) | Input::File(_) => linked::store(t, &link, &other).await?,
                 _ => {}
             }
-            let card = card(t, "kernel.consent.updated")?;
+            // A Manual Link of a Student who never accepted any version
+            // gets the first-time title.
+            let title = if link.any_consent {
+                "kernel.consent.updated"
+            } else {
+                "kernel.consent.title"
+            };
+            let card = card(t, title)?;
             t.out.push(card);
             t.save("awaiting_reconsent").await?;
             Ok(())

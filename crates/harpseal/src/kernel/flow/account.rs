@@ -181,31 +181,6 @@ pub(crate) fn cancel_challenges(account: &str) -> Statement {
     .bind(account)
 }
 
-/// An `audit_log` row for a Student's own act (actor = the Student).
-pub(crate) fn audit(
-    services: &Services,
-    action: &str,
-    student: &str,
-    link: &str,
-    after: &[(&str, String)],
-) -> Result<Statement> {
-    let placeholders = vec!["?, ?"; after.len()].join(", ");
-    let sql = format!(
-        "INSERT INTO audit_log (id, at, actor_kind, actor_id, action, target_kind, target_id, after) \
-         VALUES (?, ?, 'student', ?, ?, 'link', ?, json_object({placeholders}))"
-    );
-    let mut stmt = Statement::new(sql)
-        .bind(services.new_id()?)
-        .bind(services.now_ms())
-        .bind(student)
-        .bind(action)
-        .bind(link);
-    for (k, v) in after {
-        stmt = stmt.bind(*k).bind(v.clone());
-    }
-    Ok(stmt)
-}
-
 /// Accounts of the Student's other active Links: (channel kind, external
 /// id), for warning Pushes. Excludes `except` (a `channel_account.id`).
 pub(crate) async fn other_links(

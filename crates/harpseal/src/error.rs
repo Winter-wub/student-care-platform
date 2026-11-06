@@ -24,6 +24,9 @@ pub enum Error {
     Db(String),
     /// Any other platform / IO failure, with the adapter's message.
     Platform(String),
+    /// The change clashes with the current state (e.g. a live Link already
+    /// exists, or the Link is already revoked).
+    Conflict(String),
 }
 
 /// `Result` with the Core's [`Error`].
@@ -41,6 +44,7 @@ impl core::fmt::Display for Error {
             Error::Invalid(m) => write!(f, "invalid: {m}"),
             Error::Db(m) => write!(f, "database: {m}"),
             Error::Platform(m) => write!(f, "platform: {m}"),
+            Error::Conflict(m) => write!(f, "conflict: {m}"),
         }
     }
 }

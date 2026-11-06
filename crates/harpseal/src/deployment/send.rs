@@ -43,9 +43,12 @@ impl Deployment {
     /// lacks fails the whole batch with `Error::Unsupported` and nothing is
     /// recorded. After the send, every Message sent gets one
     /// `outbound_message` row and counts once in `usage_daily (channel,
-    /// day)`, all in one `Db::batch`. If the Channel stops part-way, the
-    /// Messages already sent are recorded and its error is returned; if the
-    /// write fails, the database error is returned (the Messages did go out).
+    /// day)`, all in one `Db::batch`. A Push to an account that blocked the
+    /// bot is skipped with `Error::Unreachable`; a send the Channel refuses
+    /// with `Error::Unreachable` marks the account's Link `unreachable`.
+    /// If the Channel stops part-way, the Messages already sent are
+    /// recorded and its error is returned; if the write fails, the database
+    /// error is returned (the Messages did go out).
     pub async fn send_batch(
         &self,
         to: &ChannelAccountId,
@@ -74,6 +77,9 @@ impl Deployment {
             return Ok(Vec::new());
         }
         let delivery = Delivery::select(reply, self.services.clock.now());
+        if matches!(delivery, Delivery::Push) && self.blocked(to).await? {
+            return Err(Error::Unreachable);
+        }
         let batch = channel.send_batch(to, &delivery, msgs, locale).await;
         if !batch.receipts.is_empty() {
             let stmts = self.outbound_rows(to, &delivery, msgs, &batch.receipts, module)?;
@@ -90,6 +96,25 @@ impl Deployment {
             let _ = self.services.db.batch(stmts).await;
         }
         result
+    }
+
+    /// The account blocked the bot (`blocked_at` set by `Inbound::Blocked`
+    /// or an `Unreachable` send, cleared by its next Inbound): Pushes skip
+    /// it and fail with `Error::Unreachable` without calling the Channel.
+    async fn blocked(&self, to: &ChannelAccountId) -> Result<bool> {
+        let rows = self
+            .services
+            .db
+            .query(
+                Statement::new(
+                    "SELECT 1 FROM channel_account WHERE channel = ? AND external_id = ? \
+                     AND blocked_at IS NOT NULL",
+                )
+                .bind(to.channel.as_str())
+                .bind(to.external_id.clone()),
+            )
+            .await?;
+        Ok(!rows.rows.is_empty())
     }
 
     /// Ensures the `channel_account` row, then per Message its usage upsert

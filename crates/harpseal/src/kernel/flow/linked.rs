@@ -10,7 +10,9 @@
 use super::account::{self, LinkRow};
 use super::{Input, Turn, actions, consent};
 use crate::Result;
+use crate::audit::{Actor, RequestCtx};
 use crate::delivery::{IncomingFile, StudentId};
+use crate::kernel::links;
 use crate::message::{ActionId, Choices, Message};
 use crate::module::ActionContext;
 use crate::port_types::Statement;
@@ -25,9 +27,11 @@ pub(super) async fn handle(t: &mut Turn<'_>, link: LinkRow, input: Input) -> Res
         )
         .bind(now)
         .bind(link.id.clone());
-        t.s().db.execute(back).await?;
-        t.set_menu(Some(&link.locale)).await?;
-        t.say("kernel.flow.welcome_back");
+        // Of racing Inbounds, only the one that restored it says so.
+        if t.s().db.execute(back).await?.rows_affected == 1 {
+            t.set_menu(Some(&link.locale)).await?;
+            t.say("kernel.flow.welcome_back");
+        }
         welcomed = true;
     }
     // Re-consent: no Consent for the current version, and the account is
@@ -98,32 +102,18 @@ pub(super) async fn act(t: &mut Turn<'_>, link: &LinkRow, action: ActionId) -> R
     }
 }
 
-/// Revokes the Link (Consent kept), locks the Menu, says goodbye; the
-/// account waits for a student id again.
+/// Revokes the Link (Consent kept) through `kernel::links` with the
+/// Student as the actor, locks the Menu, says goodbye; the account waits
+/// for a student id again.
 async fn unlink(t: &mut Turn<'_>, link: &LinkRow) -> Result<()> {
     let s = t.s().clone();
-    let now = s.now_ms();
     t.acct.flow = account::FlowData {
         consent_version: Some(t.version.clone()),
         ..Default::default()
     };
-    let audit = account::audit(
-        &s,
-        "link.revoke",
-        &link.student,
-        &link.id,
-        &[("status", "revoked".into()), ("by", "student".into())],
-    )?;
-    let stmts = vec![
-        Statement::new(
-            "UPDATE link SET status = 'revoked', revoked_at = ?, updated_at = ? \
-             WHERE id = ? AND status <> 'revoked'",
-        )
-        .bind(now)
-        .bind(now)
-        .bind(link.id.clone()),
-        audit,
-    ];
+    let actor = Actor::Student(link.student.clone());
+    let (stmts, _) =
+        links::revoke_statements(&s, &link.id, &link.student, &actor, &RequestCtx::default())?;
     if !t.commit(stmts, "awaiting_student_id").await? {
         return Ok(());
     }

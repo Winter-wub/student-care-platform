@@ -7,7 +7,14 @@
 //!     ─valid id─▶ awaiting_otp ─right code─▶ linked
 //! linked ─notice version changed─▶ awaiting_reconsent ─accept─▶ linked
 //! linked ─unlink─▶ awaiting_student_id (Consent kept)
+//! linked ─Staff revoke (kernel::links)─▶ awaiting_student_id (Consent kept)
+//! any ─Manual Link─▶ awaiting_reconsent (no current Consent) or linked
 //! ```
+//!
+//! A Link whose account blocked the bot (`Inbound::Blocked`, or a send
+//! refused with `Error::Unreachable`) is `unreachable` and Pushes skip the
+//! account; its next Inbound restores `active`, says welcome back and
+//! unlocks the Menu, without a new code.
 //!
 //! Each Inbound gets one batch of answers (one reply token); warnings to
 //! other accounts go as Pushes afterwards. Kernel Actions:
@@ -32,6 +39,7 @@ use crate::{Result, Services};
 
 pub(crate) use account::mark_unreachable;
 use account::{Account, FlowData};
+pub(crate) use consent::consent_card;
 
 /// Kernel Action ids.
 pub(crate) mod actions {

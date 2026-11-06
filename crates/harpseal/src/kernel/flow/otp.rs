@@ -3,6 +3,7 @@
 
 use super::claim::{self, StudentRow};
 use super::{Turn, account, actions, minutes_left};
+use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::kernel::security;
 use crate::message::{Card, Choices, Message};
 use crate::port_types::{Statement, Value};
@@ -323,16 +324,20 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
         .clone()
         .unwrap_or_else(|| t.version.clone());
     let method = t.d.verification().id();
-    let audit = account::audit(
+    let after = serde_json::json!({
+        "channel": t.from.channel.as_str(),
+        "channel_account_id": t.acct.id,
+        "student_id": student.id,
+        "method": method,
+    });
+    let audit = audit::entry(
         &s,
+        &Actor::Student(student.id.clone()),
         "link.create",
-        &student.id,
-        &link_id,
-        &[
-            ("channel", t.from.channel.as_str().to_string()),
-            ("channel_account_id", t.acct.id.clone()),
-            ("method", method.to_string()),
-        ],
+        Some(&Target::new("link", link_id.clone())),
+        None,
+        Some(after),
+        &RequestCtx::default(),
     )?;
     let flow = std::mem::take(&mut t.acct.flow);
     let stmts = vec![

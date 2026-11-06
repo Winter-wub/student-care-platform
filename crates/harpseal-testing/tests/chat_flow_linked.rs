@@ -167,9 +167,18 @@ async fn unlink_round_trip_keeps_consent() {
         1
     );
     assert_eq!(
-        app.count("SELECT count(*) FROM audit_log WHERE action = 'link.revoke'")
-            .await,
+        app.count(
+            "SELECT count(*) FROM audit_log WHERE action = 'link.revoke' \
+             AND actor_kind = 'student' AND actor_id = 's1'"
+        )
+        .await,
         1
+    );
+    assert_eq!(
+        app.count("SELECT count(*) FROM link WHERE revoked_by IS NULL")
+            .await,
+        1,
+        "revoked_by names Staff only"
     );
     assert_eq!(app.count("SELECT count(*) FROM consent").await, 1);
 
