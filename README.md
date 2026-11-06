@@ -12,7 +12,7 @@ first slice is specified in [`docs/specs/first-slice.md`](docs/specs/first-slice
 |---|---|---|
 | `crates/harpseal` | The Core: message model, `Channel` and `Module` traits, the six runtime ports (`Db`, `FileStore`, `EmailSender`, `HttpClient`, `Clock`, `Random`) in `Services`, `Deployment::builder()` with build-time validation, Kernel migrations, the axum `Router`, the shared page layout. | native + wasm32 |
 | `crates/harpseal-channel-line` | LINE adapter: renderer and request packing (real), HTTP calls (#16). | native + wasm32 |
-| `crates/harpseal-channel-telegram` | Telegram adapter: renderer and call building (real), HTTP calls (#17). | native + wasm32 |
+| `crates/harpseal-channel-telegram` | Telegram adapter: secret-token webhook, Updates → Inbound, commands as Actions, rendering, `setMyCommands` Menus, edit/delete, Web App `initData` (#17). | native + wasm32 |
 | `crates/harpseal-channel-fake` | Fake Channel: in-memory, records what the Student saw; used by tests and demos. | native + wasm32 |
 | `crates/harpseal-runtime-native` | Native runtime: SQLite (rusqlite), local directory or S3-compatible files (SigV4), SMTP (lettre) or Resend email, reqwest, OS clock and RNG, `axum::serve`, a per-minute ticker. | native |
 | `crates/harpseal-runtime-cloudflare` | Workers runtime: D1, R2, Resend over `fetch`, `Date.now`, `crypto.getRandomValues`, panic hook, and the `fetch` / `scheduled` (Cron) entry points. | wasm32 |
@@ -65,6 +65,34 @@ Storage follows ADR-0007: `Services::new_id()` makes UUIDv7 text ids from the
 Clock and Random ports, `Services::now_ms()` gives integer milliseconds UTC,
 and `audit_log` (plus `security_event` and `consent` deletes) are refused by
 triggers.
+
+### Telegram
+
+```rust
+let tg = TelegramChannel::new(
+    TelegramConfig::new(bot_token, webhook_secret, web_app_url), // "" = no Web App
+    services.http.clone(),
+)
+.with_clock(services.clock.clone());          // needed for the Mini App Capability (initData freshness)
+let d = Deployment::builder() /* ... */ .channel(tg.clone()).build()?;
+tg.with_menu(&d.menu_for(&d.config().default_locale)); // clones share the map
+```
+
+Telegram sends a Menu command back as text (`/news_latest`). The adapter maps
+it to `Inbound::Action` through the map from `with_menu` (the Deployment's
+unlocked Menu) and, per account, the last `set_menu` call. That overlay is in
+memory, so on Workers it is per isolate: `with_menu` is the reliable source.
+Mapping a command for an account without a Link is safe, as the Kernel never
+dispatches its Actions to a Module. The adapter does not pace sends: a 429
+becomes `Error::RateLimited` with Telegram's `retry_after`, and bulk sends are
+paced by the Job runner.
+
+Before a real webhook works: create the bot with BotFather (token), then call
+`setWebhook` with `url = https://<host>/webhook/telegram`, `secret_token =
+webhook_secret` and `allowed_updates = ["message", "callback_query",
+"my_chat_member"]`. For the Mini App, set the Web App URL (BotFather
+`/newapp` or the menu button set by `set_menu`) to the Deployment's HTTPS
+origin.
 
 ## Running the example natively
 
@@ -170,7 +198,7 @@ The Channel contract suite lives in `harpseal_testing::contract`: an adapter
 crate adds `harpseal-testing` as a dev-dependency and calls
 `contract::run(|| target)` with its Channel, recorded webhooks (`Fixtures`) and
 a `Wire` reading its `RecordingHttp`. It runs green against the Fake Channel in
-every profile; the LINE and Telegram runs are `#[ignore]` until #16/#17.
+every profile and against the Telegram adapter; the LINE run is `#[ignore]` until #16.
 
 Runtime port tests live in `crates/harpseal-runtime-native/tests` (SQLite
 batch rollback, local files, a mock SMTP server, Resend and S3 signing against

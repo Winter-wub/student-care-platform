@@ -11,9 +11,12 @@ publish = false
 harpseal.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true
+http.workspace = true
+sha2.workspace = true
+hmac.workspace = true
 
 [dev-dependencies]
 harpseal = { workspace = true, features = ["fixtures"] }
 harpseal-testing.workspace = true
-http.workspace = true
 tokio.workspace = true
+axum.workspace = true
