@@ -26,6 +26,7 @@ use crate::{
 /// One customer's running system: the Core, its configuration, Channels and
 /// Modules. Build it with [`Deployment::builder`]; serve it with
 /// [`Deployment::router`].
+#[derive(Clone)]
 pub struct Deployment {
     config: Arc<DeploymentConfig>,
     services: Services,
@@ -33,7 +34,7 @@ pub struct Deployment {
     channels: Vec<Arc<dyn Channel>>,
     verification: Arc<dyn VerificationMethod>,
     catalog: Arc<Catalog>,
-    registry: Registry,
+    registry: Arc<Registry>,
 }
 
 /// What the Modules registered, after validation.
@@ -322,6 +323,9 @@ impl Deployment {
             config: self.config.clone(),
             jobs: self.queue.clone(),
             run: token.map(|t| (job.id.clone(), t.to_string())),
+            // A shallow copy (every field is shared): Kernel Jobs that
+            // Push (the roster import's revoked notices) need the Channels.
+            deployment: Arc::new(self.clone()),
         };
         crate::jobs::catch::CatchPanic(h.run(cx, job)).await
     }

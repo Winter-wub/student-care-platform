@@ -5,6 +5,7 @@
 pub(crate) mod flow;
 pub mod links;
 pub(crate) mod notice;
+pub(crate) mod roster;
 pub(crate) mod security;
 pub mod students;
 pub(crate) mod text;
@@ -86,6 +87,7 @@ impl Module for Kernel {
             r.migration(name, sql);
         }
         students::register(r);
+        roster::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))

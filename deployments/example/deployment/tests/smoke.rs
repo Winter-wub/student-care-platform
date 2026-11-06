@@ -79,3 +79,24 @@ fn an_empty_fake_secret_refuses_to_start() {
         "{err}"
     );
 }
+
+#[tokio::test]
+async fn the_example_roster_template_has_the_mapped_headers() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    h.create_staff(
+        "officer@sealbay.example",
+        "kelp forest at dawn",
+        &["Officer"],
+    )
+    .await;
+    let b = app.browser();
+    b.login("officer@sealbay.example", "kelp forest at dawn")
+        .await;
+    let r = b.get("/admin/roster/template.csv").await;
+    assert_eq!(r.status, 200);
+    assert_eq!(
+        r.body,
+        "\u{feff}รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\r\n"
+    );
+}

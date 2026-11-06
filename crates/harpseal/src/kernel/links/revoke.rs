@@ -187,6 +187,36 @@ pub(crate) async fn live_links_of(
         .collect())
 }
 
+/// The live Links of several Students (the roster import's left batch),
+/// as `(student id, Link)`, in at most 50 ids per query.
+pub(crate) async fn live_links_of_students(
+    s: &Services,
+    student_ids: &[String],
+    default: &Locale,
+) -> R<Vec<(String, LinkInfo)>> {
+    let mut out = Vec::new();
+    for group in student_ids.chunks(50) {
+        let marks = vec!["?"; group.len()].join(", ");
+        let sql = format!(
+            "{} WHERE l.student_id IN ({marks}) AND l.status <> 'revoked' ORDER BY l.id",
+            LINK_INFO.replacen("SELECT ", "SELECT l.student_id, ", 1)
+        );
+        let stmt = group
+            .iter()
+            .fold(Statement::new(sql), |st, id| st.bind(id.as_str()));
+        let rows = s.db.query(stmt).await?;
+        for i in 0..rows.len() {
+            let student = rows
+                .get(i, "student_id")
+                .and_then(Value::as_text)
+                .unwrap_or_default()
+                .to_string();
+            out.push((student, info_at(&rows, i, default)));
+        }
+    }
+    Ok(out)
+}
+
 fn info_at(rows: &Rows, i: usize, default: &Locale) -> LinkInfo {
     let t = |c: &str| {
         rows.get(i, c)

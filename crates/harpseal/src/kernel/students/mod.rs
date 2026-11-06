@@ -165,6 +165,12 @@ pub fn merge_import(
     Merge { fields, skipped }
 }
 
+/// `ms` (UTC) as `YYYY-MM-DD HH:MM` at `offset_minutes` east, as the
+/// Students pages show times (the roster import pages, #24, too).
+pub(crate) fn format_time(ms: i64, offset_minutes: i32) -> String {
+    view::format_ms(ms, offset_minutes)
+}
+
 /// Registers the pages on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     const VIEW: &str = "kernel.student.view";

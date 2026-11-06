@@ -69,6 +69,43 @@ pub(crate) fn form_field<'a>(body: &'a str, field: &str) -> Option<&'a str> {
         .map(|(_, v)| v)
 }
 
+/// The boundary of a `multipart/form-data` content type.
+pub(crate) fn multipart_boundary(content_type: &str) -> Option<String> {
+    let (kind, params) = content_type.split_once(';')?;
+    if !kind.trim().eq_ignore_ascii_case("multipart/form-data") {
+        return None;
+    }
+    params
+        .split(';')
+        .filter_map(|p| p.trim().split_once('='))
+        .find(|(k, _)| k.eq_ignore_ascii_case("boundary"))
+        .map(|(_, v)| v.trim_matches('"').to_string())
+        .filter(|b| !b.is_empty())
+}
+
+/// The value of the plain (non-file) part `name` of a `multipart/form-data`
+/// body: the text between the part's blank line and the next boundary.
+pub(crate) fn multipart_field<'a>(body: &'a [u8], boundary: &str, name: &str) -> Option<&'a str> {
+    let delim = format!("--{boundary}");
+    let header = format!("name=\"{name}\"");
+    let mut rest = body;
+    while let Some(at) = find(rest, delim.as_bytes()) {
+        rest = &rest[at + delim.len()..];
+        let end = find(rest, b"\r\n\r\n")?;
+        let head = std::str::from_utf8(&rest[..end]).ok()?;
+        let value_and_rest = &rest[end + 4..];
+        if head.contains(&header) && !head.contains("filename=") {
+            let stop = find(value_and_rest, format!("\r\n{delim}").as_bytes())?;
+            return std::str::from_utf8(&value_and_rest[..stop]).ok();
+        }
+    }
+    None
+}
+
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +118,18 @@ mod tests {
         assert_eq!(get(&h, "hs_session").as_deref(), Some("abc"));
         assert_eq!(get(&h, "b").as_deref(), Some("2"));
         assert_eq!(get(&h, "c"), None);
+    }
+
+    #[test]
+    fn multipart_csrf_part() {
+        let ct = "multipart/form-data; boundary=\"xyz\"";
+        let b = multipart_boundary(ct).unwrap();
+        assert_eq!(b, "xyz");
+        assert_eq!(multipart_boundary("application/json"), None);
+        let body = b"--xyz\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.csv\"\r\n\r\n\
+            name=\"_csrf\"\r\n--xyz\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\nabc123\r\n--xyz--\r\n";
+        assert_eq!(multipart_field(body, &b, "_csrf"), Some("abc123"));
+        assert_eq!(multipart_field(body, &b, "mode"), None);
     }
 
     #[test]
