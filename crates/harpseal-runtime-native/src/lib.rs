@@ -111,7 +111,9 @@ async fn peer_ip(
 /// with the Deployment's Clock, starting one period from now: the same
 /// entry the Workers `scheduled` event calls. Each tick runs in its own
 /// task. A handler panic is caught by the tick and recorded as a failed
-/// run of that Job (retried like any failure); an error, a failed outcome
+/// run of that Job (retried like any failure). A tick that did anything
+/// (any count non-zero, or errors) logs its `TickReport` line to stderr,
+/// the same line the Workers entry logs; idle ticks stay quiet. An error, a failed outcome
 /// write or a panic elsewhere in the tick is printed to stderr and the
 /// next tick runs anyway. A tick that
 /// overruns delays the next one instead of piling up. Abort the handle to
@@ -129,7 +131,12 @@ pub fn spawn_ticker(d: Arc<Deployment>, period: Duration) -> tokio::task::JoinHa
                 d.tick(now).await
             });
             match run.await {
-                Ok(Ok(r)) => r.errors.iter().for_each(|e| eprintln!("tick: {e}")),
+                Ok(Ok(r)) => {
+                    if r != harpseal::TickReport::default() {
+                        eprintln!("tick: {r}");
+                    }
+                    r.errors.iter().for_each(|e| eprintln!("tick: {e}"));
+                }
                 Ok(Err(e)) => eprintln!("tick failed: {e}"),
                 Err(e) => eprintln!("tick aborted: {e}"),
             }

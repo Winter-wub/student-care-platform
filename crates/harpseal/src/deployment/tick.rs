@@ -175,7 +175,7 @@ impl Deployment {
 
         let token = self.services.random_hex(16)?;
         let claim = Statement::new(
-            "UPDATE job SET state = 'running', lock_token = ?, locked_until = ?, \
+            "UPDATE job SET state = 'running', lock_token = ?, locked_until = ?, progress = NULL, \
              attempts = attempts + 1 WHERE id IN (SELECT id FROM job WHERE \
              (state = 'queued' AND run_at <= ?) \
              OR (state = 'running' AND locked_until < ? AND attempts <= max_attempts) \

@@ -2,7 +2,7 @@
 //! Deployment's `utc_offset`. Hand-written: no cron crate.
 //!
 //! Five fields separated by spaces: minute (0-59), hour (0-23), day of
-//! month (1-31), month (1-12), day of week (0-6, 0 = Sunday). Each field
+//! month (1-31), month (1-12), day of week (0-7, 0 and 7 = Sunday). Each field
 //! is a comma-separated list of items, and an item is one of:
 //! - `*`: every value;
 //! - `*/n`: every `n`th value from the field's first (`*/15` = 0,15,30,45);
@@ -11,9 +11,10 @@
 //!
 //! Anything else (names such as `MON`, `a-b/n`, `?`, `L`, `#`, `@daily`,
 //! six fields, a value out of range) is refused at build time with
-//! [`crate::BuildError::InvalidSchedule`]. As in classic cron, when both
-//! day of month and day of week are restricted (neither is `*`), a day
-//! matching either one is due.
+//! [`crate::BuildError::InvalidSchedule`]. As in Vixie cron, when both
+//! day of month and day of week are restricted (neither field starts with
+//! `*`, so `*/2` counts as unrestricted), a day matching either one is due;
+//! otherwise both must match.
 
 /// A parsed schedule: one bit per allowed value of each field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +34,7 @@ const FIELDS: [(&str, u32, u32); 5] = [
     ("hour", 0, 23),
     ("day of month", 1, 31),
     ("month", 1, 12),
-    ("day of week", 0, 6),
+    ("day of week", 0, 7),
 ];
 
 /// Parses `expr`, or says why it is refused.
@@ -46,14 +47,18 @@ pub(crate) fn parse(expr: &str) -> Result<Schedule, String> {
     for (i, (part, (name, lo, hi))) in parts.iter().zip(FIELDS).enumerate() {
         masks[i] = field(part, lo, hi).map_err(|e| format!("{name} `{part}`: {e}"))?;
     }
+    // 7 is Sunday too.
+    if masks[4] & (1 << 7) != 0 {
+        masks[4] = (masks[4] & !(1 << 7)) | 1;
+    }
     Ok(Schedule {
         minute: masks[0],
         hour: masks[1],
         dom: masks[2],
         month: masks[3],
         dow: masks[4],
-        dom_any: parts[2] == "*",
-        dow_any: parts[4] == "*",
+        dom_any: parts[2].starts_with('*'),
+        dow_any: parts[4].starts_with('*'),
     })
 }
 
@@ -179,7 +184,7 @@ mod tests {
             "* 24 * * *",
             "* * 0 * *",
             "* * * 13 *",
-            "* * * * 7",
+            "* * * * 8",
             "* * * * MON",
             "*/0 * * * *",
             "1-5/2 * * * *",
@@ -219,5 +224,37 @@ mod tests {
         assert!(either.is_due(first_of_december, 0));
         let leap = 951_782_400_000; // 2000-02-29T00:00Z
         assert!(parse("0 0 29 2 *").unwrap().is_due(leap, 0));
+    }
+
+    #[test]
+    fn seven_is_sunday() {
+        let sunday = T0 + 3 * 24 * 60 * MIN; // 2026-11-08
+        for expr in ["0 0 * * 7", "0 0 * * 0", "0 0 * * 6-7", "0 0 * * 5,7"] {
+            let s = parse(expr).unwrap();
+            assert!(s.is_due(sunday, 0), "{expr}");
+            assert!(!s.is_due(T0, 0), "{expr} on a Thursday");
+        }
+        assert_eq!(parse("0 0 * * 7").unwrap(), parse("0 0 * * 0").unwrap());
+    }
+
+    #[test]
+    fn a_stepped_day_field_counts_as_unrestricted() {
+        // `*/2` day of month (odd days) AND Thursday: the 5th is both.
+        let s = parse("0 0 */2 * 4").unwrap();
+        assert!(s.is_due(T0, 0), "Thursday the 5th");
+        assert!(
+            !s.is_due(T0 + 24 * 60 * MIN, 0),
+            "Friday the 6th: not Thursday"
+        );
+        assert!(
+            !s.is_due(T0 + 7 * 24 * 60 * MIN, 0),
+            "Thursday the 12th: even day"
+        );
+        // Both literal restrictions: either one.
+        let either = parse("0 0 1-3 * 4").unwrap();
+        assert!(
+            either.is_due(T0 + 7 * 24 * 60 * MIN, 0),
+            "Thursday the 12th"
+        );
     }
 }

@@ -245,3 +245,91 @@ async fn one_tick_claims_runs_retries_and_prunes() {
     assert_eq!(s.job("orphan").await.state, "done");
     assert_eq!(s.job("flaky").await.run_at, now + MIN);
 }
+
+#[tokio::test]
+async fn a_prune_backlog_drains_500_rows_per_state_per_tick() {
+    let s = setup().await;
+    s.db()
+        .execute(harpseal::Statement::new(
+            "INSERT INTO job (id, kind, run_at, state, created_at, finished_at) \
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1200) \
+             SELECT printf('old-%04d', i), 'demo.ok', 0, 'done', 0, 0 FROM n",
+        ))
+        .await
+        .unwrap();
+    let now = s.now();
+    let pruned: Vec<u64> = [
+        s.tick(now).await,
+        s.tick(now + MIN).await,
+        s.tick(now + 2 * MIN).await,
+        s.tick(now + 3 * MIN).await,
+    ]
+    .iter()
+    .map(|r| r.jobs_pruned)
+    .collect();
+    assert_eq!(pruned, [500, 500, 200, 0], "three ticks drain 1200 rows");
+    assert_eq!(s.count("SELECT count(*) FROM job").await, 0);
+}
+
+#[tokio::test]
+async fn failed_rows_are_kept_as_long_as_done_rows_when_job_days_exceeds_90() {
+    let h = harpseal_testing::Harness::new();
+    let toml = format!(
+        "{}\n[retention]\njob_days = 120\n",
+        harpseal_testing::TEST_CONFIG
+    );
+    let config = harpseal::DeploymentConfig::from_toml(&toml).unwrap();
+    let d = h
+        .builder()
+        .config(config)
+        .module(jobs_support::Demo {
+            runs: Default::default(),
+        })
+        .build()
+        .unwrap();
+    d.migrate().await.unwrap();
+    let t0 = h.clock().now_ms();
+    for (id, state) in [("done-1", "done"), ("failed-1", "failed")] {
+        h.db()
+            .execute(
+                harpseal::Statement::new(
+                    "INSERT INTO job (id, kind, run_at, state, created_at, finished_at) \
+                     VALUES (?, 'demo.ok', ?, ?, ?, ?)",
+                )
+                .bind(id)
+                .bind(t0)
+                .bind(state)
+                .bind(t0)
+                .bind(t0),
+            )
+            .await
+            .unwrap();
+    }
+    let tick = |at: i64| d.tick(Timestamp(at));
+    assert_eq!(
+        tick(t0 + 91 * DAY).await.unwrap().jobs_pruned,
+        0,
+        "not at 90 days"
+    );
+    assert_eq!(tick(t0 + 120 * DAY).await.unwrap().jobs_pruned, 0);
+    assert_eq!(
+        tick(t0 + 120 * DAY + 1).await.unwrap().jobs_pruned,
+        2,
+        "both at 120"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_clears_the_previous_attempts_progress() {
+    let s = setup().await;
+    let now = s.now();
+    s.queue("noted", "demo.flaky", now).await;
+    s.db()
+        .execute(harpseal::Statement::new(
+            "UPDATE job SET progress = 'from the last attempt' WHERE id = 'noted'",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(s.tick(now).await.retried, 1);
+    assert_eq!(s.job("noted").await.progress, None);
+}

@@ -65,9 +65,33 @@ async fn an_administrator_gets_counts_and_recent_failed_and_running_jobs() {
     d.enqueue("demo.ok", serde_json::json!({}), Some(later))
         .await
         .unwrap();
+    app.query("UPDATE job SET progress = 'from an earlier attempt' WHERE kind = 'demo.flaky'")
+        .await;
     d.tick(harpseal::Timestamp(now)).await.unwrap();
+    // The flaky Job ran once and is given up; 60 older failures; one Job
+    // running now (claimed by a live tick, newest run_at).
     app.query("UPDATE job SET state = 'failed', finished_at = 1 WHERE kind = 'demo.flaky'")
         .await;
+    app.query(
+        "INSERT INTO job (id, kind, run_at, state, attempts, last_error, created_at, finished_at) \
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 60) \
+         SELECT printf('old-%02d', i), 'demo.flaky', i, 'failed', 4, 'old', 0, 1 FROM n",
+    )
+    .await;
+    let lock = now + 15 * MIN;
+    h.db()
+        .execute(
+            harpseal::Statement::new(
+                "INSERT INTO job (id, kind, run_at, state, attempts, lock_token, locked_until, \
+                 progress, created_at) VALUES ('live', 'demo.ok', ?, 'running', 1, 't', ?, \
+                 'chunk 1 of 4', ?)",
+            )
+            .bind(now + 2 * MIN)
+            .bind(lock)
+            .bind(now),
+        )
+        .await
+        .unwrap();
 
     h.create_staff("admin@sealbay.example", PASSWORD, &["Administrator"])
         .await;
@@ -81,15 +105,24 @@ async fn an_administrator_gets_counts_and_recent_failed_and_running_jobs() {
     assert_eq!(v["now"], now);
     assert_eq!(
         v["counts"],
-        serde_json::json!({ "queued": 1, "running": 0, "done": 1, "failed": 1 })
+        serde_json::json!({ "queued": 1, "running": 1, "done": 1, "failed": 61 })
     );
     let recent = v["recent"].as_array().unwrap();
-    assert_eq!(recent.len(), 1);
-    assert_eq!(recent[0]["kind"], "demo.flaky");
-    assert_eq!(recent[0]["state"], "failed");
-    assert_eq!(recent[0]["attempts"], 1);
-    assert_eq!(recent[0]["last_error"], "platform: attempt 1 failed");
-    assert_eq!(recent[0]["locked_until"], Value::Null);
-    assert!(recent[0]["run_at"].is_i64());
+    assert_eq!(recent.len(), 50, "capped at 50");
+    assert_eq!(recent[0]["id"], "live");
+    assert_eq!(recent[0]["state"], "running");
+    assert_eq!(recent[0]["locked_until"], lock);
+    assert_eq!(recent[0]["progress"], "chunk 1 of 4");
+    assert_eq!(recent[1]["kind"], "demo.flaky");
+    assert_eq!(recent[1]["state"], "failed");
+    assert_eq!(recent[1]["attempts"], 1);
+    assert_eq!(recent[1]["last_error"], "platform: attempt 1 failed");
+    assert_eq!(recent[1]["locked_until"], Value::Null);
+    assert_eq!(
+        recent[1]["progress"],
+        Value::Null,
+        "the claim cleared the old note"
+    );
+    assert_eq!(recent[49]["id"], "old-13", "newest run_at first");
     assert!(!r.body.contains("payload"), "payloads are never listed");
 }

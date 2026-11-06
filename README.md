@@ -56,10 +56,10 @@ d.tick(now).await?;                          // once a minute: claims and runs d
 
 `build()` refuses: a missing config, runtime, Verification Method or Channel;
 two Channels of one kind; two handlers for one Action id or Job kind; a Job
-`schedule` outside the supported cron subset; a Permission declared twice; a Role naming an undeclared Permission; a
-back-office route guarded by an undeclared Permission; a Module that sends
-Mini App buttons when a Channel has no Mini App URL; a Menu label key with no
-text in the default Locale.
+`schedule` outside the supported cron subset; a Permission declared twice; a
+Role naming an undeclared Permission; a back-office route guarded by an
+undeclared Permission; a Module that sends Mini App buttons when a Channel has
+no Mini App URL; a Menu label key with no text in the default Locale.
 
 ### Jobs
 
@@ -74,8 +74,10 @@ same handle. An unregistered kind is `Error::Invalid`. Once a minute
 
 1. enqueues the scheduled Jobs due in this minute or the one before (cron
    subset: five fields, each a list of `*`, `*/n`, `a`, `a-b`, evaluated in
-   `utc_offset`; key `<kind>@<epoch minute>`, so several ticks in one minute
-   run it once; a minute missed by two ticks in a row is skipped);
+   `utc_offset`, day of week 0-7 with 0 and 7 = Sunday, the two day fields
+   OR-ed when neither starts with `*`; key `cron:<kind>@<epoch minute>`, so
+   several ticks in one minute run it once; a minute missed by two ticks in a
+   row is skipped);
 2. marks `failed` (`lock expired`) every `running` Job whose 15-minute lock
    passed with no retries left;
 3. claims up to 25 due Jobs with one `UPDATE … RETURNING` (queued with
@@ -85,9 +87,17 @@ same handle. An unregistered kind is `Error::Invalid`. Once a minute
    matches: `done`; `queued` again 1, 5 then 30 minutes later
    (`max_attempts` counts retries, default 3, so up to 4 runs); or `failed`
    with `last_error` (cut to 500 characters). A handler panic on native is a
-   failed run; on Workers the isolate aborts and the lock expiry recovers it;
+   failed run of that Job only;
 5. deletes `done` rows after `[retention] job_days` (30) and `failed` rows
-   after 90 days.
+   after 90 days (or `job_days`, if longer), at most 500 of each per tick.
+
+On Workers (`panic = "abort"`) a handler panic aborts the whole tick: every
+other Job that tick claimed has used an attempt and waits out its 15-minute
+lock before it is re-claimed. A unique key (`enqueue_unique`, never starting
+with `cron:`, which the scheduler reserves) is held until its row is pruned,
+30 days after `done` or 90 after `failed`: it dedupes, it does not lock, so
+a resend or a deliberate retry needs a fresh key (for announcements, not a
+stable per-announcement key).
 
 Handlers must be idempotent: a Cron Trigger can fire twice and an expired lock
 re-runs a Job. `JobContext::progress(note)` saves a note while the run holds

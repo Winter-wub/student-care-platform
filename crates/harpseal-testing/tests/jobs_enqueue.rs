@@ -89,6 +89,33 @@ async fn enqueue_unique_dedupes_on_its_key() {
             .await
             .is_err()
     );
+    let reserved =
+        s.d.enqueue_unique("cron:demo.ok@1", "demo.ok", json!({}), None)
+            .await;
+    assert!(
+        matches!(reserved, Err(Error::Invalid(_))),
+        "cron: keys are the scheduler's"
+    );
+}
+
+#[tokio::test]
+async fn a_caller_key_cannot_suppress_a_scheduled_minute() {
+    let s = setup_with(true).await;
+    let t0 = s.now();
+    let minute = t0 / MIN;
+    let key = format!("clock.every5@{minute}");
+    let decoy =
+        s.d.enqueue_unique(&key, "clock.every5", json!({}), Some(Timestamp(t0 + MIN)));
+    assert!(decoy.await.unwrap().is_some());
+    assert_eq!(
+        s.tick(t0).await.scheduled,
+        2,
+        "both schedules still enqueue"
+    );
+    let keys = s
+        .count("SELECT count(*) FROM job WHERE unique_key LIKE 'cron:clock.every5@%'")
+        .await;
+    assert_eq!(keys, 1);
 }
 
 #[tokio::test]
