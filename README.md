@@ -254,6 +254,17 @@ Links. The attributes come from `[roster.attributes.<key>]` in
 `enum` with `values`), `label = { th = "..", en = ".." }`, `optional`,
 `shown_in_list` and `order` (see `harpseal::RosterConfig`).
 
+`/admin/roster` imports the roster (`kernel.roster.view` to see imports,
+`kernel.roster.import` to upload). Upload a CSV (UTF-8, `,` or `;`) or XLSX
+whose headers match `[roster]` exactly (the page lists them and offers
+`template.csv`), choose `full` (Students missing from the file become left and
+lose their Links) or `upsert`. Any row error refuses the whole file with a CSV
+report; otherwise a preview shows new / updated / unchanged / will become left /
+returning / kept by manual edits, and Confirm runs the Job
+`kernel.roster.import` in 500-row chunks (the page polls its progress). One
+import at a time; the file stays in the FileStore under `roster/<import id>/`.
+Try it with `crates/harpseal/tests/fixtures/roster/seal_bay_50.csv`.
+
 ## Deploying the example to Workers
 
 Workers Paid is required (Free's 10 ms CPU fails logins and imports). The

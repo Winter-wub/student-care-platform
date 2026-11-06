@@ -20,6 +20,9 @@ use crate::{AppState, Result};
 
 /// Largest form body the guard reads to find the CSRF field.
 const FORM_LIMIT: usize = 1024 * 1024;
+/// Largest `multipart/form-data` body read for its `_csrf` part (a roster
+/// file of up to 4 MiB plus the form's other fields).
+pub(crate) const UPLOAD_LIMIT: usize = 4 * 1024 * 1024 + 64 * 1024;
 
 /// One back-office page in the navigation.
 #[derive(Debug, Clone)]
@@ -219,22 +222,30 @@ pub(crate) async fn check_csrf(req: Request, expected: &str) -> (Request, bool) 
         let ok = cookies::ct_eq(v.as_bytes(), expected.as_bytes());
         return (req, ok);
     }
-    let is_form = req
+    let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.starts_with("application/x-www-form-urlencoded"));
-    if !is_form {
+        .unwrap_or_default()
+        .to_string();
+    // A file upload (the roster import, #24) carries `_csrf` as a part.
+    let boundary = cookies::multipart_boundary(&content_type);
+    let is_form = content_type.starts_with("application/x-www-form-urlencoded");
+    if !is_form && boundary.is_none() {
         return (req, false);
     }
+    let limit = if is_form { FORM_LIMIT } else { UPLOAD_LIMIT };
     let (parts, body) = req.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, FORM_LIMIT).await else {
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
         return (Request::from_parts(parts, Body::empty()), false);
     };
-    let ok = std::str::from_utf8(&bytes)
-        .ok()
-        .and_then(|b| cookies::form_field(b, CSRF_FIELD))
-        .is_some_and(|v| cookies::ct_eq(v.as_bytes(), expected.as_bytes()));
+    let found = match &boundary {
+        Some(b) => cookies::multipart_field(&bytes, b, CSRF_FIELD),
+        None => std::str::from_utf8(&bytes)
+            .ok()
+            .and_then(|b| cookies::form_field(b, CSRF_FIELD)),
+    };
+    let ok = found.is_some_and(|v| cookies::ct_eq(v.as_bytes(), expected.as_bytes()));
     (Request::from_parts(parts, Body::from(bytes)), ok)
 }
 

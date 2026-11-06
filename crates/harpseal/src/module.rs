@@ -105,6 +105,9 @@ pub struct JobContext {
     pub jobs: Jobs,
     /// This run's `job.id` and lock token (`None` outside a tick).
     pub(crate) run: Option<(String, String)>,
+    /// The Deployment running the Job (a shallow copy), for Kernel Jobs
+    /// that send through the Channels.
+    pub(crate) deployment: Arc<crate::Deployment>,
 }
 
 impl JobContext {
