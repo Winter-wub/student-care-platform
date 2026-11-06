@@ -240,10 +240,27 @@ fn attachment(a: &Attachment, cx: &RenderCx) -> Value {
 }
 
 /// Rich menu object for `POST /v2/bot/richmenu`. A 3- or 4-column grid of
-/// postback areas on a 2500 px wide image. The Core must still draw and
-/// upload the image (`POST api-data.line.me/v2/bot/richmenu/{id}/content`,
-/// JPEG/PNG, ≤ 1 MB, same size as `size`) and then link it to the user.
+/// postback areas on a 2500 px wide image, 843 px high for one row and
+/// 1686 px for more. [`crate::LineChannel`]'s `set_menu` uses
+/// [`menu_sized`] with the size of the configured image instead.
 pub fn menu(m: &Menu) -> Value {
+    let rows = grid(menu_entries(m).len()).1;
+    menu_sized(m, 2500, if rows == 1 { 843 } else { 1686 })
+}
+
+/// Columns and rows for `n` areas.
+fn grid(n: usize) -> (usize, usize) {
+    let n = n.max(1);
+    let cols = match n {
+        0..=3 => n,
+        4 => 2,
+        5 | 6 => 3,
+        _ => 4,
+    };
+    (cols, n.div_ceil(cols))
+}
+
+fn menu_entries(m: &Menu) -> Vec<(String, String)> {
     let mut entries: Vec<(String, String)> = m
         .entries
         .iter()
@@ -253,15 +270,13 @@ pub fn menu(m: &Menu) -> Value {
         entries.truncate(RICH_MENU_AREAS_MAX - 1);
         entries.push(("เพิ่มเติม".into(), MENU_MORE_ACTION.into()));
     }
-    let n = entries.len().max(1);
-    let cols = match n {
-        0..=3 => n,
-        4 => 2,
-        5 | 6 => 3,
-        _ => 4,
-    };
-    let rows = n.div_ceil(cols);
-    let (width, height) = (2500, if rows == 1 { 843 } else { 1686 });
+    entries
+}
+
+/// [`menu`] on an image of `width` x `height` px: the same grid, scaled.
+pub fn menu_sized(m: &Menu, width: usize, height: usize) -> Value {
+    let entries = menu_entries(m);
+    let (cols, rows) = grid(entries.len());
     let (cw, ch) = (width / cols, height / rows);
     let areas: Vec<Value> = entries
         .iter()

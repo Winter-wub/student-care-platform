@@ -524,8 +524,10 @@ name = "harpseal-channel-line"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "axum",
  "harpseal",
  "harpseal-testing",
+ "hmac",
  "http",
  "serde_json",
  "sha2",

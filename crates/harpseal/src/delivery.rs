@@ -304,6 +304,8 @@ pub enum Capability {
     MiniApp,
     /// Send a file to a Student.
     SendAttachment,
+    /// Send one request to many accounts.
+    Multicast,
 }
 
 /// The set an adapter declares. Derived from its accessors, never configured.
@@ -318,6 +320,8 @@ pub struct Capabilities {
     pub mini_app: bool,
     /// [`Capability::SendAttachment`].
     pub send_attachment: bool,
+    /// [`Capability::Multicast`].
+    pub multicast: bool,
 }
 
 impl Capabilities {
@@ -328,6 +332,7 @@ impl Capabilities {
             Capability::DeleteMessage => self.delete_message,
             Capability::MiniApp => self.mini_app,
             Capability::SendAttachment => self.send_attachment,
+            Capability::Multicast => self.multicast,
         }
     }
 }
