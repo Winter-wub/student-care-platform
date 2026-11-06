@@ -202,6 +202,24 @@ impl Turn<'_> {
         }
     }
 
+    /// [`Turn::commit`] for a batch whose other statements are the outcome
+    /// itself (a lockout): when the save loses to a concurrent change of
+    /// the account's state, the answer and the Pushes still go out, since
+    /// what they announce has landed.
+    pub(super) async fn commit_outcome(
+        &mut self,
+        stmts: Vec<Statement>,
+        state: &str,
+    ) -> Result<bool> {
+        let out = std::mem::take(&mut self.out);
+        let pushes = std::mem::take(&mut self.pushes);
+        let saved = self.commit(stmts, state).await?;
+        self.out = out;
+        self.pushes = pushes;
+        self.stale = false;
+        Ok(saved)
+    }
+
     /// [`Turn::commit`] with nothing else in the batch.
     pub(super) async fn save(&mut self, state: &str) -> Result<bool> {
         self.commit(Vec::new(), state).await
