@@ -69,7 +69,7 @@ fn cards(n: usize) -> Message {
         (0..n)
             .map(|i| Card {
                 title: format!("ข่าว {i}"),
-                body: "คณะทันตแพทยศาสตร์ มหาวิทยาลัยอ่าวแมวน้ำ".into(),
+                body: "คณะวิทยาศาสตร์ทางทะเล มหาวิทยาลัยอ่าวแมวน้ำ".into(),
                 buttons: Vec::new(),
             })
             .collect(),

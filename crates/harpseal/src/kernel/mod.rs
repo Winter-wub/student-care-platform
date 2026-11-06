@@ -2,7 +2,7 @@
 //! migrations and public pages. Registered first by every Deployment. Not
 //! public API: the schema and these queries may change without notice.
 
-mod admin;
+pub(crate) mod admin;
 pub(crate) mod app;
 pub mod audience;
 pub(crate) mod flow;

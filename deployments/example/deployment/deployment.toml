@@ -14,6 +14,10 @@ utc_offset = "+07:00"
 [branding]
 primary_color = "#0b5cad"
 
+# Student codes are eight digits (data/roster.csv: 68010001…68010050).
+[student]
+id_pattern = '########'
+
 # Initial Roles: Role -> Permission ids. Every id must be declared by the
 # Kernel or a Module; build() fails otherwise.
 [roles]

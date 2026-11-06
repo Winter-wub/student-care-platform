@@ -1,11 +1,15 @@
 [package]
 name = "harpseal-runtime-native"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
-publish = false
+readme.workspace = true
+homepage.workspace = true
+description = "Self-hosted runtime for harpseal: SQLite, local or S3 files, SMTP or Resend, axum::serve and a Job ticker on tokio."
+keywords = ["sqlite", "tokio", "axum", "self-hosted", "harpseal"]
+categories = ["web-programming::http-server"]
 
 [dependencies]
 harpseal.workspace = true

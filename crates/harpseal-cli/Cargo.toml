@@ -1,11 +1,15 @@
 [package]
 name = "harpseal-cli"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
-publish = false
+readme.workspace = true
+homepage.workspace = true
+description = "The harpseal command line as a library each Deployment's binary calls: migrate, create Staff."
+keywords = ["cli", "admin", "migrate", "student", "harpseal"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 harpseal.workspace = true

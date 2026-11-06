@@ -3,3 +3,5 @@
 *.sqlite3
 /deployments/example/worker/.wrangler
 /deployments/example/worker/.dev.vars
+/.harpseal-files
+/deployments/example/native/.env

@@ -1,0 +1,39 @@
+# release-plz (https://release-plz.dev): Release PRs from Conventional
+# Commits, tags `<crate>-v<version>`, GitHub releases and crates.io
+# publishing (needs the CARGO_REGISTRY_TOKEN secret; see
+# .github/workflows/release-plz.yml).
+
+[workspace]
+# One CHANGELOG.md per crate, next to its Cargo.toml (the Core's is the
+# repository's CHANGELOG.md, below).
+changelog_update = true
+git_release_enable = true
+git_tag_enable = true
+git_tag_name = "{{ package }}-v{{ version }}"
+git_release_name = "{{ package }} v{{ version }}"
+# Crates are published only when their Cargo.toml allows it: the four
+# example packages are `publish = false` and are never released.
+publish = true
+pr_labels = ["release"]
+# The Release PR stays a draft-free normal PR; the coordinator merges it.
+pr_draft = false
+
+[[package]]
+name = "harpseal"
+changelog_path = "./CHANGELOG.md"
+
+[[package]]
+name = "example-deployment"
+release = false
+
+[[package]]
+name = "harpseal-example-native"
+release = false
+
+[[package]]
+name = "harpseal-example-worker"
+release = false
+
+[[package]]
+name = "harpseal-example-e2e"
+release = false

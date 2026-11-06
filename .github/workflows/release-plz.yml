@@ -1,0 +1,61 @@
+# release-plz (#11): on every push to main, open or update the Release PR
+# from the Conventional Commits since the last tag. Merging that PR bumps
+# versions and changelogs; the next push tags `<crate>-v<version>`, makes a
+# GitHub release and publishes to crates.io, but only once the owner has
+# added the CARGO_REGISTRY_TOKEN repository secret (checklist item B).
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release-pr:
+    name: Release PR
+    runs-on: ubuntu-24.04
+    if: github.repository == 'Winter-wub/student-care-platform'
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: release-plz/action@v0.5.144
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Release (tags, GitHub releases, crates.io)
+    runs-on: ubuntu-24.04
+    if: github.repository == 'Winter-wub/student-care-platform'
+    permissions:
+      contents: write
+    env:
+      # Secrets cannot gate a job; the steps below check it instead.
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - name: Skip until the owner adds CARGO_REGISTRY_TOKEN
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "CARGO_REGISTRY_TOKEN is not set; nothing is tagged or published."
+      - uses: actions/checkout@v7.0.1
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - if: env.CARGO_REGISTRY_TOKEN != ''
+        run: rustup toolchain install
+      - uses: release-plz/action@v0.5.144
+        if: env.CARGO_REGISTRY_TOKEN != ''
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -1,6 +1,6 @@
 # student-care-platform
 
-A reusable core for student care and service systems that serve students over messaging channels. It is not a multi-tenant SaaS: each customer gets their own deployment, customised on top of this core. The first channels are LINE and Telegram. The first customer is วิทยาลัยทันตแพทย์นานาชาติ ม.วลัยลักษณ์ (via Fastwork). Keep channel-specific behaviour behind a channel layer, and keep customer-specific rules and content in configuration or extension points instead of the core.
+A reusable core for student care and service systems that serve students over messaging channels. It is not a multi-tenant SaaS: each customer gets their own deployment, customised on top of this core. The first channels are LINE and Telegram. ลูกค้ารายแรกเป็นมหาวิทยาลัยในไทย (via Fastwork). Keep channel-specific behaviour behind a channel layer, and keep customer-specific rules and content in configuration or extension points instead of the core.
 
 ## Agent skills
 

@@ -1,0 +1,89 @@
+# The definition-of-done checks (#11) on every pull request and on main:
+# the same five commands as `just check`. The e2e walk is not part of CI;
+# the owner can start it by hand (Actions -> CI -> Run workflow).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: "Also run `just e2e` (boots the example, walks the first slice)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # Installs the toolchain, components and wasm32 target pinned in
+      # rust-toolchain.toml.
+      - run: rustup toolchain install
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy -D warnings
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test --workspace
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: cargo test --workspace
+
+  wasm:
+    name: wasm32 check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: >-
+          cargo check --target wasm32-unknown-unknown
+          -p harpseal -p harpseal-channel-line -p harpseal-channel-telegram
+          -p harpseal-channel-fake -p harpseal-runtime-cloudflare -p harpseal-example-worker
+
+  doc:
+    name: cargo doc -D warnings
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  e2e:
+    name: just e2e (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.e2e
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2.9.3
+      - uses: extractions/setup-just@v4
+      - run: just e2e

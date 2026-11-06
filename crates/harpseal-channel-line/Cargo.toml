@@ -1,11 +1,15 @@
 [package]
 name = "harpseal-channel-line"
-version = "0.0.0"
+version = "0.1.0"
 edition.workspace = true
 rust-version = "1.91"
 license.workspace = true
 repository.workspace = true
-publish = false
+readme.workspace = true
+homepage.workspace = true
+description = "LINE Messaging API Channel adapter for harpseal: signed webhooks, Flex rendering, Reply/Push/multicast, rich menus, LIFF."
+keywords = ["line", "messaging-api", "chatbot", "liff", "harpseal"]
+categories = ["api-bindings", "web-programming", "wasm"]
 
 [dependencies]
 harpseal.workspace = true
