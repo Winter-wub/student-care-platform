@@ -7,7 +7,14 @@
 //!     ─valid id─▶ awaiting_otp ─right code─▶ linked
 //! linked ─notice version changed─▶ awaiting_reconsent ─accept─▶ linked
 //! linked ─unlink─▶ awaiting_student_id (Consent kept)
+//! linked ─Staff revoke (kernel::links)─▶ awaiting_student_id (Consent kept)
+//! any ─Manual Link─▶ awaiting_reconsent (no current Consent) or linked
 //! ```
+//!
+//! A Link whose account blocked the bot (`Inbound::Blocked`, or a send
+//! refused with `Error::Unreachable`) is `unreachable` and Pushes skip the
+//! account; its next Inbound restores `active`, says welcome back and
+//! unlocks the Menu, without a new code.
 //!
 //! Each Inbound gets one batch of answers (one reply token); warnings to
 //! other accounts go as Pushes afterwards. Kernel Actions:
@@ -32,6 +39,7 @@ use crate::{Result, Services};
 
 pub(crate) use account::mark_unreachable;
 use account::{Account, FlowData};
+pub(crate) use consent::consent_card;
 
 /// Kernel Action ids.
 pub(crate) mod actions {
@@ -181,14 +189,34 @@ impl Turn<'_> {
     /// Inbound loaded. `false` (and nothing will be sent) when another
     /// Inbound of the account changed it first; the other statements of
     /// the batch did run, so callers put only idempotent ones before.
-    pub(super) async fn commit(&mut self, mut stmts: Vec<Statement>, state: &str) -> Result<bool> {
-        let save = account::save(
+    pub(super) async fn commit(&mut self, stmts: Vec<Statement>, state: &str) -> Result<bool> {
+        self.commit_gated(stmts, state, None).await
+    }
+
+    /// [`Turn::commit`] whose save also needs the audit row `gate` (an
+    /// `audit_log.id` written earlier in the batch only if its condition
+    /// held, see `audit::entry_if`).
+    pub(super) async fn commit_gated(
+        &mut self,
+        mut stmts: Vec<Statement>,
+        state: &str,
+        gate: Option<String>,
+    ) -> Result<bool> {
+        let mut save = account::save(
             self.s(),
             &self.acct.id,
             &self.acct.state,
             state,
             &self.acct.flow,
         );
+        if let Some(gate) = gate {
+            save.sql = format!(
+                "{} AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+                save.sql
+            )
+            .into();
+            save = save.bind(gate);
+        }
         stmts.push(save);
         let done = self.s().db.batch(stmts).await?;
         if done.last().is_some_and(|r| r.rows_affected == 1) {

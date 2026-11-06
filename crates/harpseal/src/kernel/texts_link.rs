@@ -122,4 +122,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Hello {name},\n\nYour verification code is {code}. It is valid for {minutes} minutes.\n\
          If you did not ask for it, ignore this email and never share the code."
     ),
+    // Pushed when Staff revoke a Link.
+    (
+        "kernel.link.revoked_by_staff",
+        "เจ้าหน้าที่ยกเลิกการเชื่อมบัญชีนี้แล้ว หากต้องการเชื่อมใหม่ พิมพ์รหัสนักศึกษาได้ทุกเมื่อ",
+        "Staff have unlinked this account. To link it again, type your student ID at any time."
+    ),
+    // Pushed when Staff create a Manual Link. {name}
+    (
+        "kernel.link.manual_notice",
+        "เจ้าหน้าที่เชื่อมบัญชีนี้กับ {name} ให้แล้ว หากไม่ใช่คุณ กรุณาติดต่อเจ้าหน้าที่",
+        "Staff have linked this account to {name}. If this is not you, please contact Staff."
+    ),
 ];

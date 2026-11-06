@@ -70,6 +70,8 @@ pub use deployment::{Deployment, DeploymentBuilder, TickReport, WebhookReport};
 pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};
+pub use kernel::links;
+pub use kernel::links::LinkChange;
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{
     ActionId, Attachment, Button, Card, CardList, Choices, Locale, Menu, MenuEntry, Message,

@@ -3,6 +3,7 @@
 //! public API: the schema and these queries may change without notice.
 
 pub(crate) mod flow;
+pub mod links;
 pub(crate) mod notice;
 pub(crate) mod security;
 pub(crate) mod text;

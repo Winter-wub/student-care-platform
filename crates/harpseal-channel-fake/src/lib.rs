@@ -257,7 +257,11 @@ impl Channel for FakeChannel {
         self.record_batch(to, d, msgs, locale)
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
-        self.lock().menus.insert(to.clone(), menu.cloned());
+        let mut s = self.lock();
+        if s.blocked.contains(to) {
+            return Err(Error::Unreachable);
+        }
+        s.menus.insert(to.clone(), menu.cloned());
         Ok(())
     }
     fn editor(&self) -> Option<&dyn EditMessage> {

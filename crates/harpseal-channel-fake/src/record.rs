@@ -58,6 +58,8 @@ pub(crate) struct State {
     pub(crate) menus: HashMap<ChannelAccountId, Option<Menu>>,
     pub(crate) edited: Vec<(PlatformMessageId, Message)>,
     pub(crate) deleted: Vec<PlatformMessageId>,
+    /// Accounts whose sends fail with `Error::Unreachable`.
+    pub(crate) blocked: HashSet<ChannelAccountId>,
     next_id: u64,
 }
 
@@ -78,6 +80,9 @@ impl FakeChannel {
         let profile = self.profile;
         let attachments_off = self.attachments_off();
         let mut s = self.lock();
+        if s.blocked.contains(to) {
+            return BatchReceipt::partial(Vec::new(), Error::Unreachable);
+        }
         let token = match d {
             Delivery::Reply(t) if profile.reply_tokens() && !s.used_tokens.contains(&t.token) => {
                 Some(t.token.clone())
@@ -163,6 +168,18 @@ impl FakeChannel {
             receipts.push(receipt);
         }
         BatchReceipt::complete(receipts)
+    }
+
+    /// Makes every later send and Menu change for `to` fail with
+    /// `Error::Unreachable`, as a platform does once the Student blocked
+    /// the bot (`false` undoes it).
+    pub fn set_unreachable(&self, to: &ChannelAccountId, unreachable: bool) {
+        let mut s = self.lock();
+        if unreachable {
+            s.blocked.insert(to.clone());
+        } else {
+            s.blocked.remove(to);
+        }
     }
 
     /// Every platform request so far, in order.
