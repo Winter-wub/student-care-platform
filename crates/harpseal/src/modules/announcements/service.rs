@@ -3,66 +3,18 @@
 //! compare-and-set, [`crate::audit::entry_if`]), then the changes gated on
 //! that row. A lost race is `Error::Conflict`; nothing changes then.
 
-use serde_json::{Value as Json, json};
+use serde_json::json;
 
 use super::deliver::{deliver_key, parent_job};
+pub(crate) use super::draft::Draft;
+use super::draft::{changed_locales, text_rows};
 use super::gate::{GATED, JobReq, bump, cas, load_err};
+use super::notice::notice_key;
 use super::store;
-use super::{EDIT, NAME, RETRACT};
-use crate::audience::Audience;
+use super::{EDIT, NAME, NOTICE, RETRACT};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::port_types::Statement;
 use crate::{Deployment, Error, Result};
-
-/// What Staff fill in on the create / edit form.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Draft {
-    /// (locale, title, body); Thai first and required.
-    pub(crate) texts: Vec<(String, String, String)>,
-    pub(crate) audience: Audience,
-    pub(crate) require_ack: bool,
-    pub(crate) expires_at: Option<i64>,
-    /// `None`: send at once when confirmed.
-    pub(crate) send_at: Option<i64>,
-}
-
-impl Draft {
-    fn summary(&self) -> Json {
-        json!({
-            "texts": self.texts.iter().map(|(l, t, _)| json!({"locale": l, "title": t})).collect::<Vec<_>>(),
-            "audience": self.audience.audit_json(),
-            "require_ack": self.require_ack,
-            "expires_at": self.expires_at,
-            "send_at": self.send_at,
-        })
-    }
-}
-
-fn text_rows(id: &str, d: &Draft, gate: Option<&str>) -> Vec<Statement> {
-    d.texts
-        .iter()
-        .map(|(l, t, b)| {
-            let sql = match gate {
-                None => "INSERT INTO announcement_text (announcement_id, locale, title, body) \
-                         VALUES (?, ?, ?, ?)"
-                    .to_string(),
-                Some(_) => format!(
-                    "INSERT INTO announcement_text (announcement_id, locale, title, body) \
-                     SELECT ?, ?, ?, ? WHERE {GATED}"
-                ),
-            };
-            let s = Statement::new(sql)
-                .bind(id)
-                .bind(l.as_str())
-                .bind(t.as_str())
-                .bind(b.as_str());
-            match gate {
-                Some(g) => s.bind(g),
-                None => s,
-            }
-        })
-        .collect()
-}
 
 /// Creates a draft; returns its id. Audit `announcement.create`.
 pub(crate) async fn create(
@@ -110,7 +62,11 @@ pub(crate) async fn create(
 /// Edits announcement `id` seen at `version`. A draft or a schedule
 /// takes everything (a schedule moves its Job); a sent announcement takes
 /// the texts and the expiry, and Job `announcements.edit` replaces the
-/// Cards where the Channel can edit. Audit `announcement.update`.
+/// Cards where the Channel can edit. With [`Draft::notify`], a sent one
+/// whose text changed and that does not expire with this save also starts
+/// the edit notice ([`super::notice`]): `notice_report` reset to the new
+/// version (stopping an older run) and Job `announcements.notice` for the
+/// changed Locales. Audit `announcement.update`.
 pub(crate) async fn update(
     d: &Deployment,
     id: &str,
@@ -135,17 +91,33 @@ pub(crate) async fn update(
             .filter(|t| *t > now)
             .ok_or_else(|| Error::Invalid("send_at".into()))?;
         jobs.push(parent_job(id, row.round, next, Some(at)));
-    } else if row.status == "sent" {
-        // Only Cards whose visible text changed are edited.
-        let locales = changed_locales(&store::texts(s, id).await?, draft);
-        if !locales.is_empty() {
-            jobs.push(JobReq {
-                key: format!("{NAME}:{id}:edit:v{next}"),
-                kind: EDIT,
-                payload: json!({ "id": id, "version": next, "locales": locales }),
-                run_at: None,
-            });
-        }
+    }
+    // Only Cards whose visible text changed are edited (and notified).
+    let locales = if row.status == "sent" {
+        changed_locales(&store::texts(s, id).await?, draft)
+    } else {
+        Vec::new()
+    };
+    if !locales.is_empty() {
+        jobs.push(JobReq {
+            key: format!("{NAME}:{id}:edit:v{next}"),
+            kind: EDIT,
+            payload: json!({ "id": id, "version": next, "locales": locales }),
+            run_at: None,
+        });
+    }
+    // A notice only for a changed text of an announcement open now and
+    // still open after this save (the page refuses the box otherwise).
+    let open_after = draft.expires_at.is_none_or(|e| e > now);
+    let open_now = super::notice::open(&row, now);
+    let notify = draft.notify && !locales.is_empty() && open_now && open_after;
+    if notify {
+        jobs.push(JobReq {
+            key: notice_key(id, next),
+            kind: NOTICE,
+            payload: json!({ "id": id, "version": next, "locales": locales }),
+            run_at: None,
+        });
     }
     let old_key = deliver_key(id, row.round, version);
     let audience = serde_json::to_string(&draft.audience).unwrap_or_else(|_| "{}".into());
@@ -191,6 +163,16 @@ pub(crate) async fn update(
             .bind(gate),
         );
         v.extend(text_rows(id, draft, Some(gate)));
+        if notify {
+            v.push(
+                Statement::new(format!(
+                    "UPDATE announcement SET notice_report = json_object('version', {next}, \
+                     'at', {now}, 'sent', 0, 'failed', 0, 'total', NULL) WHERE id = ? AND {GATED}"
+                ))
+                .bind(id)
+                .bind(gate),
+            );
+        }
         v
     };
     let from: &[&str] = &["draft", "scheduled", "sent"];
@@ -290,7 +272,8 @@ pub(crate) async fn cancel(
 }
 
 /// "ส่งซ้ำ": a new round to the Audience as it is now, with a new Job key.
-/// Audit `announcement.resend`.
+/// An expired announcement is not resent (`Error::Conflict`): Students
+/// could not open it. Audit `announcement.resend`.
 pub(crate) async fn resend(
     d: &Deployment,
     id: &str,
@@ -302,6 +285,9 @@ pub(crate) async fn resend(
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
     let now = s.now_ms();
+    if !super::notice::open(&row, now) {
+        return Err(Error::Conflict("announcement expired".into()));
+    }
     let round = row.round + 1;
     let job = parent_job(id, round, version + 1, None);
     let set = format!("status = 'sending', round = {round}");
@@ -359,29 +345,4 @@ pub(crate) async fn retract(
         vec![job],
     )
     .await
-}
-
-/// Locales whose title or body differs between `old` and `draft` (added
-/// and removed ones included).
-fn changed_locales(old: &store::Texts, draft: &Draft) -> Vec<String> {
-    let new: std::collections::BTreeMap<&str, (&str, &str)> = draft
-        .texts
-        .iter()
-        .map(|(l, t, b)| (l.as_str(), (t.as_str(), b.as_str())))
-        .collect();
-    let mut keys: Vec<&str> = old
-        .0
-        .keys()
-        .map(String::as_str)
-        .chain(new.keys().copied())
-        .collect();
-    keys.sort_unstable();
-    keys.dedup();
-    keys.into_iter()
-        .filter(|l| {
-            let before = old.0.get(*l).map(|(t, b)| (t.as_str(), b.as_str()));
-            before != new.get(l).copied()
-        })
-        .map(str::to_string)
-        .collect()
 }

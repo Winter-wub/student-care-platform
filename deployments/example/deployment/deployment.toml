@@ -58,6 +58,11 @@ enabled = true
 schedule = "0 2 * * *"
 retention_days = 30
 
+# The Announcements Module (#77): how many of a Student's newest
+# announcements the "ข่าวล่าสุด" Menu entry lists, 1..=10 (default 5).
+[announcements]
+latest = 5
+
 [otp]
 digits = 6
 ttl_minutes = 5

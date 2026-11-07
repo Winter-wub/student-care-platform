@@ -94,6 +94,11 @@ impl Deployment {
     pub fn config(&self) -> &DeploymentConfig {
         &self.config
     }
+
+    /// The configuration, shared (for the contexts handed to Modules).
+    pub(crate) fn config_arc(&self) -> Arc<DeploymentConfig> {
+        self.config.clone()
+    }
     /// The runtime ports.
     pub fn services(&self) -> &Services {
         &self.services

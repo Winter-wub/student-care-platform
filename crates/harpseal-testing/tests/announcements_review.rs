@@ -296,7 +296,7 @@ async fn cards_older_than_48_hours_are_too_old_to_delete() {
 }
 
 #[tokio::test]
-async fn an_expired_announcement_still_accepts_an_ack() {
+async fn an_expired_announcement_refuses_an_ack() {
     let w = boot().await;
     roster(&w).await;
     let b = signed_in(&w, "Officer").await;
@@ -313,8 +313,17 @@ async fn an_expired_announcement_still_accepts_an_ack() {
     w.h.clock().advance_minutes(2 * 24 * 60);
     let listed = press(&w, "fake", "s1", "announcements.latest").await;
     assert_eq!(text(&listed[0]), "ยังไม่มีข่าวสำหรับคุณ", "hidden once expired");
+    // #77: once expired, closed to Students; nothing is recorded.
     let ack = press(&w, "fake", "s1", &format!("announcements.ack.{id}")).await;
-    assert_eq!(text(&ack[0]), "บันทึกว่ารับทราบแล้ว ขอบคุณครับ");
+    assert_eq!(text(&ack[0]), "ข่าวนี้ไม่เปิดให้ดูแล้ว");
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL"
+        )
+        .await,
+        0
+    );
 }
 
 #[tokio::test]

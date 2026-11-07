@@ -142,7 +142,7 @@ fn hand_picked(v: &View<'_>, a: &Audience, c: &Counts, p: &HandPicked) -> Markup
 }
 
 /// "ใช้ไปแล้ว X/Y เดือนนี้" (or without a Quota, "ใช้ไปแล้ว X เดือนนี้").
-fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
+pub(super) fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
     let used = m.used.to_string();
     match m.cap {
         Some(cap) => fill(

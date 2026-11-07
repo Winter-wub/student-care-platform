@@ -106,6 +106,9 @@ pub(super) async fn resend(
         );
     }
     let r = service::resend(&s.deployment, &id, version, &Actor::staff(&staff), &ctx).await;
+    if matches!(&r, Err(Error::Conflict(m)) if m == "announcement expired") {
+        return v.redirect(&back(&id), false, "announcements.flash.expired");
+    }
     done(&v, &id, r, "announcements.flash.resending")
 }
 

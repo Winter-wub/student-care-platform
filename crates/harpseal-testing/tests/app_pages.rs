@@ -308,7 +308,7 @@ async fn a_wrong_csrf_header_is_refused() {
 }
 
 #[tokio::test]
-async fn an_expired_announcement_still_opens_and_takes_the_ack() {
+async fn an_expired_announcement_is_no_longer_available_and_takes_no_ack() {
     let w = boot().await;
     roster(&w).await;
     let now = w.h.clock().now_ms();
@@ -316,19 +316,22 @@ async fn an_expired_announcement_still_opens_and_takes_the_ack() {
     let b = open(&w, "fake", "s1").await;
     let home = b.get("/app").await.body;
     assert!(!home.contains("ข่าว late"), "expired: not listed");
+    // #77: a deep link to it shows "no longer available", not its text.
     let page = b.get("/app/announcements/late").await;
     assert_eq!(page.status, 200);
-    assert!(page.body.contains("รายละเอียด late"));
+    assert!(page.body.contains("ข่าวนี้ไม่เปิดให้ดูแล้ว"));
+    assert!(!page.body.contains("รายละเอียด late"));
+    assert!(!page.body.contains("class=\"app-ack\""));
     let csrf = csrf_of(&page.body);
     let r = hx_post(&b, "/app/announcements/late/ack", &format!("_csrf={csrf}")).await;
     assert_eq!(r.status, 200);
-    assert!(r.body.contains("รับทราบแล้ว"));
+    assert!(r.body.contains("ข่าวนี้ไม่เปิดให้ดูแล้ว"));
     assert_eq!(
         count(
             &w,
             "SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL"
         )
         .await,
-        1
+        0
     );
 }
