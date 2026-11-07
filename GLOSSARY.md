@@ -106,7 +106,7 @@ A short set of buttons offered with a message, each carrying an Action.
 _Avoid_: quick reply, inline keyboard
 
 **Menu** (เมนู):
-The persistent set of entry points a Student sees in the chat. Set per Channel Account; locked until the Student has a Link.
+The persistent set of entry points a Student sees in the chat. Set per Channel Account; locked until the Student has a Link. Identified by a key: the Locale it serves, or `locked`.
 _Avoid_: rich menu, command list
 
 **Action** (การกระทำจากปุ่ม):

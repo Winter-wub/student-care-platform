@@ -11,12 +11,10 @@ use harpseal_channel_line::richmenu::rich_menu;
 use harpseal_channel_line::{KIND, LineChannel, LineConfig};
 
 fn locked() -> Menu {
-    Menu {
-        entries: vec![MenuEntry {
-            label: "เริ่มใช้งาน".into(),
-            action: ActionId::new("link.start").unwrap(),
-        }],
-    }
+    Menu::new(vec![MenuEntry {
+        label: "เริ่มใช้งาน".into(),
+        action: ActionId::new("link.start").unwrap(),
+    }])
 }
 
 fn channel(api: &LineApi, locked_menu: Menu) -> LineChannel {

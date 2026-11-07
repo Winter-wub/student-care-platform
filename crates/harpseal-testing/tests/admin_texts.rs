@@ -271,3 +271,32 @@ async fn a_multi_line_text_is_saved_twice_and_reset_from_a_browser_and_notice_sh
     assert_eq!(app.count("SELECT count(*) FROM setting").await, 0);
     assert!(!app.get("/notice").await.body.contains("ห้อง 202"));
 }
+
+#[tokio::test]
+async fn an_edited_menu_label_keeps_the_menu_key() {
+    let (h, app) = boot().await;
+    let mut c = Chat::new(&h, &app, "linked");
+    c.link("68010001").await;
+    let before = c.menu().flatten().expect("Menu unlocked");
+    assert_eq!(before.key().map(harpseal::MenuKey::as_str), Some("th"));
+
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let path = "/admin/texts/kernel.menu.unlink";
+    let edited = "เลิกเชื่อมต่อบัญชี";
+    let r = admin.post(path, &save("th", edited, "-")).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(flash(&admin), "ok:kernel.admin.saved");
+
+    // A follow sets the Menu again, now with the edited label.
+    c.follow().await;
+    let after = c.menu().flatten().expect("Menu unlocked");
+    let labels = |m: &harpseal::Menu| {
+        m.entries
+            .iter()
+            .map(|e| e.label.clone())
+            .collect::<Vec<_>>()
+    };
+    assert!(labels(&after).contains(&edited.to_string()), "{after:?}");
+    assert_ne!(labels(&after), labels(&before));
+    assert_eq!(after.key(), before.key(), "same Menu key after the edit");
+}

@@ -12,7 +12,7 @@ use crate::error::{BuildError, Part};
 use crate::kernel::Kernel;
 use crate::manifest::{Catalog, MenuEntrySpec, Permission};
 use crate::module::NavSpec;
-use crate::{Channel, Module, ModuleRegistrar, Services, VerificationMethod};
+use crate::{Channel, Locale, Module, ModuleRegistrar, Services, VerificationMethod};
 
 /// Assembles a [`Deployment`]: config, the runtime's [`Services`], Channels,
 /// a Verification Method and Modules. Nothing is checked until
@@ -98,6 +98,7 @@ impl DeploymentBuilder {
         check_toml_texts(&config, &catalog)?;
         config.apply_texts(&mut catalog);
         check_menu_texts(&collected.menu, &catalog)?;
+        check_menu_keys(&catalog)?;
         check_nav(&collected.nav, &catalog)?;
         let nav = nav_items(collected.nav);
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
@@ -297,6 +298,28 @@ fn check_menu_texts(
         }),
         None => Ok(()),
     }
+}
+
+/// Every Locale of the catalog maps to its own Menu key, so the Kernel's
+/// Menus (keyed by the effective Locale) always carry one.
+fn check_menu_keys(catalog: &Catalog) -> Result<(), BuildError> {
+    let mut seen: Vec<(crate::MenuKey, Locale)> = Vec::new();
+    for locale in catalog.locales() {
+        let bad = |reason: String| BuildError::MenuKey {
+            locale: locale.0.clone(),
+            reason,
+        };
+        let key = crate::MenuKey::for_locale(&locale).map_err(|e| bad(e.to_string()))?;
+        if let Some((_, other)) = seen.iter().find(|(k, _)| *k == key) {
+            return Err(bad(format!(
+                "`{}` is also the key of Locale `{}`",
+                key.as_str(),
+                other.0
+            )));
+        }
+        seen.push((key, locale));
+    }
+    Ok(())
 }
 
 /// Navigation entries: a known title in the default Locale, no parameters.

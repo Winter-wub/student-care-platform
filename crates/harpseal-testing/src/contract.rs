@@ -16,17 +16,19 @@
 
 mod checks;
 mod fake;
+mod menu;
 
 use std::sync::Arc;
 
 use harpseal::{ActionId, Channel, ChannelAccountId, Delivery, Metering, WebhookRequest};
 
 pub use checks::{
-    action_ids_round_trip, capabilities_agree, degrade_keeps_every_action, menu_set_and_unset,
+    action_ids_round_trip, capabilities_agree, degrade_keeps_every_action,
     metering_counts_push_requests, parses_each_inbound_kind, sends_the_minimum,
     signature_is_checked_before_parsing,
 };
 pub use fake::{FakeWire, fake};
+pub use menu::{keyed_menu_is_set, menu_set_and_unset};
 
 /// Recorded webhook calls, one event each, as the platform sends them.
 /// Build with [`Fixtures::builder`]: new fixtures can be added later
@@ -225,6 +227,24 @@ pub trait Wire: Send + Sync {
     /// Entries of the Menu `to` currently has on the platform, `None` when
     /// it shows the locked (pre-Link) Menu.
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize>;
+    /// The Menu key of the Menu `to` currently has, as far as the
+    /// platform shows it (default: [`SeenKey::Hidden`]).
+    fn menu_key(&self, to: &ChannelAccountId) -> SeenKey {
+        let _ = to;
+        SeenKey::Hidden
+    }
+}
+
+/// The Menu key a [`Wire`] sees on the platform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SeenKey {
+    /// The platform does not show Menu keys.
+    Hidden,
+    /// No Menu, or one without a key.
+    None,
+    /// This key.
+    Key(String),
 }
 
 /// One adapter under test.
@@ -258,6 +278,7 @@ pub async fn run(factory: impl Fn() -> Target) {
     sends_the_minimum(&factory()).await;
     metering_counts_push_requests(&factory()).await;
     menu_set_and_unset(&factory()).await;
+    keyed_menu_is_set(&factory()).await;
     capabilities_agree(&factory()).await;
     degrade_keeps_every_action(&factory()).await;
     action_ids_round_trip(&factory()).await;

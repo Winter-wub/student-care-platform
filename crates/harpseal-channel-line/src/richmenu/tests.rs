@@ -34,9 +34,9 @@ fn the_name_changes_with_the_menu_the_image_the_key_or_the_generation() {
     assert_ne!(a, b);
     assert_ne!(a, c);
     assert_eq!(rich_menu(None, &menu, &png(2500, 1686)).unwrap().0, a);
-    let (th, _) = rich_menu(Some(("th", 7)), &menu, &png(2500, 1686)).unwrap();
+    let key = MenuKey::new("th").unwrap();
+    let (th, _) = rich_menu(Some((&key, 7)), &menu, &png(2500, 1686)).unwrap();
     assert_eq!(th, a.replace("harpseal-", "harpseal-th-7-"));
     assert_eq!(name_key(&th), Some(Some(("th", 7))));
     assert!(th.len() <= 300, "LINE's name limit");
-    assert!(rich_menu(Some(("TH", 1)), &menu, &png(2500, 1686)).is_err());
 }

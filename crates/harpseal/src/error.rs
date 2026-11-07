@@ -191,6 +191,14 @@ pub enum BuildError {
         /// The unknown catalog key.
         key: String,
     },
+    /// A Locale of the catalog maps to no valid [`crate::MenuKey`]
+    /// ([`crate::MenuKey::for_locale`]), or two map to the same key.
+    MenuKey {
+        /// The Locale tag.
+        locale: String,
+        /// What is wrong with its key.
+        reason: String,
+    },
     /// A configuration value is invalid (e.g. `[branding] primary_color`
     /// set in code to something that is not a CSS hex colour).
     InvalidConfig(String),
@@ -248,6 +256,9 @@ impl core::fmt::Display for BuildError {
             ),
             BuildError::UnknownText { source, key } => {
                 write!(f, "{source} uses unknown text key `{key}`")
+            }
+            BuildError::MenuKey { locale, reason } => {
+                write!(f, "Locale `{locale}` has no Menu key of its own: {reason}")
             }
             BuildError::InvalidConfig(m) => write!(f, "invalid configuration: {m}"),
             BuildError::DuplicateModule(m) => write!(f, "module name `{m}` is used twice"),

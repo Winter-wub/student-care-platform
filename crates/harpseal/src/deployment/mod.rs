@@ -138,14 +138,21 @@ impl Deployment {
 
     /// The unlocked Menu in `locale`: the Modules' entries by `order`,
     /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
-    /// `[student] self_unlink` is on.
+    /// `[student] self_unlink` is on. Its key is that of the effective
+    /// Locale ([`Catalog::effective`], [`MenuKey::for_locale`]): a Student
+    /// in `TH` or `en-US` with no texts of their own reads the default
+    /// Locale, and gets its Menu and key. `build()` checked that every
+    /// catalog Locale has a key of its own.
+    ///
+    /// [`MenuKey::for_locale`]: crate::MenuKey::for_locale
     pub fn menu_for(&self, locale: &Locale) -> Menu {
-        self.menu_with(|key| self.catalog.t(locale, key))
+        self.menu_with(locale, |key| self.catalog.t(locale, key))
     }
 
-    /// The unlocked Menu with labels from `t` (the chat flow passes texts
-    /// with `setting` overrides).
-    pub(crate) fn menu_with(&self, t: impl Fn(&str) -> String) -> Menu {
+    /// The unlocked Menu in `locale` with labels from `t`, a label key to
+    /// its text (the chat flow passes texts with `setting` overrides);
+    /// keyed as in [`Deployment::menu_for`], whatever the labels.
+    pub fn menu_with(&self, locale: &Locale, t: impl Fn(&str) -> String) -> Menu {
         let mut entries: Vec<MenuEntry> = self
             .registry
             .menu
@@ -163,7 +170,15 @@ impl Deployment {
                 action,
             });
         }
-        Menu { entries }
+        let menu = Menu::new(entries);
+        let key = crate::MenuKey::for_locale(&self.catalog.effective(locale));
+        // Unreachable: the effective Locale is a catalog Locale, and
+        // `build()` refused any without a key (`BuildError::MenuKey`).
+        debug_assert!(key.is_ok(), "{locale:?}: {key:?}");
+        match key {
+            Ok(key) => menu.with_key(key),
+            Err(_) => menu,
+        }
     }
 
     /// The Module and handler registered for `action`: the exact id

@@ -113,7 +113,9 @@ pub async fn manual_link(
         texts.tf("kernel.link.manual_notice", &[("name", &student.name)]),
     )];
     let menu = if student.consented {
-        Some(d.menu_with(|k| texts.t(k)))
+        let locale = d.catalog().effective(&student.locale);
+        let texts = texts.in_locale(&locale);
+        Some(d.menu_with(&locale, |k| texts.t(k)))
     } else {
         // Same titles as the chat flow's re-consent Card.
         let title = if student.any_consent {
