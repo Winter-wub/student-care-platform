@@ -36,10 +36,16 @@ pub struct IncomingFile {
 /// handles each event id at most once per Channel, so a platform retry
 /// never answers twice. `redelivery` is informational: the Kernel does not
 /// use it (the event id alone decides), it is there for logs and Modules.
+///
+/// Each variant is `#[non_exhaustive]`: outside this crate, build events
+/// with the constructors ([`Inbound::text`], [`Inbound::action`], ...)
+/// and [`Inbound::with_event_id`], and match with `..`, so a field added
+/// later breaks no Deployment or test.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Inbound {
     /// The Student added the bot (LINE follow, Telegram `/start`).
+    #[non_exhaustive]
     Follow {
         /// Who.
         from: ChannelAccountId,
@@ -51,6 +57,7 @@ pub enum Inbound {
         redelivery: bool,
     },
     /// Free text.
+    #[non_exhaustive]
     Text {
         /// Who.
         from: ChannelAccountId,
@@ -64,6 +71,7 @@ pub enum Inbound {
         redelivery: bool,
     },
     /// A file.
+    #[non_exhaustive]
     File {
         /// Who.
         from: ChannelAccountId,
@@ -77,6 +85,7 @@ pub enum Inbound {
         redelivery: bool,
     },
     /// A button or Menu entry was pressed.
+    #[non_exhaustive]
     Action {
         /// Who.
         from: ChannelAccountId,
@@ -91,6 +100,7 @@ pub enum Inbound {
     },
     /// The Student blocked the bot: the Link becomes unreachable. No reply
     /// token: a blocked account cannot be answered.
+    #[non_exhaustive]
     Blocked {
         /// Who.
         from: ChannelAccountId,
@@ -100,6 +110,7 @@ pub enum Inbound {
         redelivery: bool,
     },
     /// The Student unblocked the bot.
+    #[non_exhaustive]
     Unblocked {
         /// Who.
         from: ChannelAccountId,
@@ -113,6 +124,73 @@ pub enum Inbound {
 }
 
 impl Inbound {
+    /// The Student added the bot, with no event id (stamp one with
+    /// [`Inbound::with_event_id`]).
+    pub fn follow(from: ChannelAccountId, reply: Option<ReplyToken>) -> Self {
+        Inbound::Follow {
+            from,
+            reply,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
+    /// Free text, with no event id.
+    pub fn text(
+        from: ChannelAccountId,
+        text: impl Into<String>,
+        reply: Option<ReplyToken>,
+    ) -> Self {
+        Inbound::Text {
+            from,
+            text: text.into(),
+            reply,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
+    /// A file, with no event id.
+    pub fn file(from: ChannelAccountId, file: IncomingFile, reply: Option<ReplyToken>) -> Self {
+        Inbound::File {
+            from,
+            file,
+            reply,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
+    /// A press of `action`, with no event id.
+    pub fn action(from: ChannelAccountId, action: ActionId, reply: Option<ReplyToken>) -> Self {
+        Inbound::Action {
+            from,
+            action,
+            reply,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
+    /// The Student blocked the bot, with no event id.
+    pub fn blocked(from: ChannelAccountId) -> Self {
+        Inbound::Blocked {
+            from,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
+    /// The Student unblocked the bot, with no event id.
+    pub fn unblocked(from: ChannelAccountId, reply: Option<ReplyToken>) -> Self {
+        Inbound::Unblocked {
+            from,
+            reply,
+            event_id: None,
+            redelivery: false,
+        }
+    }
+
     /// The account the event came from.
     pub fn from(&self) -> &ChannelAccountId {
         match self {

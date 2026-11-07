@@ -55,12 +55,7 @@ async fn a_blocked_account_is_skipped_by_pushes_until_it_writes_again() {
     let mut c = Chat::new(&h, &app, "u1");
     c.link("68010001").await;
     let d = app.deployment();
-    c.send(Inbound::Blocked {
-        from: c.who.clone(),
-        event_id: None,
-        redelivery: false,
-    })
-    .await;
+    c.send(Inbound::blocked(c.who.clone())).await;
     let r = d
         .send(&c.who, None, &Message::text("x"), &Locale::th())
         .await;
@@ -80,12 +75,7 @@ async fn staff_can_revoke_an_unreachable_link() {
     let staff = officer(&h).await;
     let mut c = Chat::new(&h, &app, "u1");
     c.link("68010001").await;
-    c.send(Inbound::Blocked {
-        from: c.who.clone(),
-        event_id: None,
-        redelivery: false,
-    })
-    .await;
+    c.send(Inbound::blocked(c.who.clone())).await;
     let id = live_link(&h, "u1").await;
     let done = links::revoke_by_staff(app.deployment(), &id, &staff, &RequestCtx::default())
         .await
@@ -115,12 +105,7 @@ async fn a_manual_link_to_a_blocked_account_is_unreachable_until_it_writes() {
     let staff = officer(&h).await;
     let mut c = Chat::new(&h, &app, "u1");
     c.follow().await;
-    c.send(Inbound::Blocked {
-        from: c.who.clone(),
-        event_id: None,
-        redelivery: false,
-    })
-    .await;
+    c.send(Inbound::blocked(c.who.clone())).await;
     let done = links::manual_link(
         app.deployment(),
         "s3",

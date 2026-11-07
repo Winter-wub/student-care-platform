@@ -118,11 +118,25 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   `inbound_event` with one conditional insert before handling an event and
   skips an id it has seen (still 200; counted in `WebhookReport::duplicates`),
   so a redelivered LINE event can no longer fall back to a second, metered
-  Push. `redelivery` is informational. `Deployment::tick` deletes claims
+  Push. `redelivery` is informational. A claim gets `done_at` once its event
+  was answered or logged; a redelivery that finds a claim unfinished after 2
+  minutes (the handler was killed) logs one `inbound.failed` Security Event
+  and still does not answer (ADR-0009). `Deployment::tick` deletes claims
   older than 7 days, at most 500 per tick.
+- **Resuming a partial send.** On a resume with the same key, LINE answers
+  409 to the Push requests of the stopped Message that already went out; the
+  receipt reports them in `SendReceipt::replayed_units` and the Kernel does
+  not meter them again (they were recorded with the partial attempt).
+- **Building `Inbound` events.** Each variant is `#[non_exhaustive]`: build
+  events with `Inbound::text`, `Inbound::action`, `Inbound::file`,
+  `Inbound::follow`, `Inbound::blocked` and `Inbound::unblocked`, plus
+  `with_event_id`, and match them with `..`.
 - **Transport errors.** `ReqwestHttp` strips the request URL from every
-  reqwest error (`without_url`), so bot tokens in URLs never reach logs or
-  `security_event`; the Telegram adapter still redacts its token too.
+  reqwest error (`without_url`), and `WorkerHttp` scrubs URLs from the JS
+  errors of `fetch` (an "Invalid URL" error quotes it), so bot tokens in URLs
+  never reach logs or `security_event`; the Telegram adapter still redacts
+  its token too. D1 writes without `meta.changes` fail with `Error::Db`
+  instead of reporting 0 rows.
 
 Storage follows ADR-0007: `Services::new_id()` makes UUIDv7 text ids from the
 Clock and Random ports, `Services::now_ms()` gives integer milliseconds UTC,

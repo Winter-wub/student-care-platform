@@ -66,7 +66,10 @@ impl Deployment {
     /// Message it stopped in gets a row with `error` set when some of its
     /// parts went out) and the result is [`Error::PartialSend`]: resume
     /// with `msgs[sent..]`, ideally through
-    /// [`Deployment::send_batch_with_key`] with the same key. When nothing
+    /// [`Deployment::send_batch_with_key`] with the same key. On that
+    /// resume the first Message's requests already accepted (LINE answers
+    /// 409, [`SendReceipt::replayed_units`]) are not metered again; the
+    /// Message gets a second row, without `error`, for its completion. When nothing
     /// went out the Channel's error is returned as is. If the write fails,
     /// a database error is returned (the Messages did go out); it names the
     /// Channel's error too when there was one.
@@ -265,8 +268,13 @@ impl Deployment {
                 .iter()
                 .map(|r| (r, unfinished_error.clone())),
         );
-        for ((msg, r), error) in msgs.iter().zip(rows).map(|(m, (r, e))| ((m, r), e)) {
-            let units = r.metered_units;
+        for (i, ((msg, r), error)) in msgs
+            .iter()
+            .zip(rows)
+            .map(|(m, (r, e))| ((m, r), e))
+            .enumerate()
+        {
+            let units = units_to_meter(i, r);
             stmts.push(
                 Statement::new(
                     "INSERT INTO usage_daily (channel, day, metered, free) VALUES (?, ?, ?, ?) \
@@ -299,6 +307,22 @@ impl Deployment {
             );
         }
         Ok(stmts)
+    }
+}
+
+/// The metered units the Message at `index` of a batch adds to
+/// `usage_daily`: its [`SendReceipt::metered_units`], less its
+/// [`SendReceipt::replayed_units`] when it is the first Message and only
+/// part of it was replayed (#44). That is the resume of a Message the last
+/// attempt stopped in: its first Push requests went out then and were
+/// recorded with it (`unfinished`), so their 409s now must not count again.
+/// A Message replayed whole is metered in full: an earlier attempt sent it
+/// but may have died before recording anything, and the Kernel cannot tell.
+fn units_to_meter(index: usize, r: &SendReceipt) -> u32 {
+    if index == 0 && r.replayed_units > 0 && r.replayed_units < r.metered_units {
+        r.metered_units - r.replayed_units
+    } else {
+        r.metered_units
     }
 }
 

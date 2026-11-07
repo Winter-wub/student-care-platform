@@ -1,6 +1,7 @@
 //! A built Deployment: dispatches through the maps the builder validated.
 
 mod builder;
+mod inbound;
 mod routes;
 mod send;
 pub(crate) use send::civil_day;
@@ -16,11 +17,10 @@ pub use send_many::ManySent;
 pub use tick::TickReport;
 
 use crate::config::DeploymentConfig;
-use crate::delivery::{ChannelAccountId, Inbound, PlatformMessageId, WebhookRequest};
+use crate::delivery::{ChannelAccountId, PlatformMessageId};
 use crate::manifest::{Catalog, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
 use crate::migrate::MigrationReport;
-use crate::port_types::Statement;
 use crate::{
     ActionHandler, Channel, Error, JobContext, JobHandler, Result, Services, VerificationMethod,
     kernel,
@@ -72,15 +72,11 @@ pub struct WebhookReport {
     /// The events that failed (kind and error); each was logged as a
     /// Security Event `inbound.failed` and did not stop the others.
     pub failed: Vec<(&'static str, Error)>,
-    /// Events skipped because their event id was already handled (a
-    /// platform retry or redelivery).
+    /// Events skipped because their event id was already claimed (a
+    /// platform retry or redelivery). A redelivery of a claim that never
+    /// finished counts here and in `failed` (#44).
     pub duplicates: usize,
 }
-
-/// Days a handled webhook event id is remembered (`inbound_event`).
-pub(crate) const INBOUND_EVENT_DAYS: i64 = 7;
-/// Most `inbound_event` rows one tick deletes.
-pub(crate) const INBOUND_EVENT_PRUNE_LIMIT: i64 = 500;
 
 impl Deployment {
     /// Starts assembling a Deployment.
@@ -165,119 +161,6 @@ impl Deployment {
             });
         }
         Menu { entries }
-    }
-
-    /// Verifies and parses one webhook call for Channel `kind`, then
-    /// handles each event on its own: a failing event is logged (Security
-    /// Event `inbound.failed`) and does not stop the others. `Err` only when
-    /// the call as a whole is refused: `BadSignature`, or the body could not
-    /// be parsed.
-    ///
-    /// An event with a platform event id ([`Inbound::event_id`]) is first
-    /// claimed in `inbound_event` with one conditional insert; an id this
-    /// Channel already claimed is skipped before anything is handled or
-    /// sent (counted in [`WebhookReport::duplicates`]), so a retried or
-    /// redelivered event is answered once. The claim stays even when
-    /// handling fails: the event was logged, and answering it twice is
-    /// worse than once. Claims older than 7 days are deleted by
-    /// [`Deployment::tick`], never on the webhook path.
-    pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
-        let channel = self.channel_or_err(kind)?;
-        let channel_kind = channel.kind().as_str();
-        let events = channel.parse_webhook(req).await?;
-        let mut report = WebhookReport {
-            events: events.len(),
-            failed: Vec::new(),
-            duplicates: 0,
-        };
-        for ev in events {
-            let ev_kind = ev.kind();
-            let from = ev.from().clone();
-            if let Some(id) = ev.event_id() {
-                match self.claim_event(channel_kind, id).await {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        report.duplicates += 1;
-                        continue;
-                    }
-                    Err(e) => {
-                        self.log_failed_event(&from, ev_kind, &e).await;
-                        report.failed.push((ev_kind, e));
-                        continue;
-                    }
-                }
-            }
-            if let Err(e) = self.handle_inbound(ev).await {
-                self.log_failed_event(&from, ev_kind, &e).await;
-                report.failed.push((ev_kind, e));
-            }
-        }
-        Ok(report)
-    }
-
-    /// Claims `(channel, event_id)`: `true` the first time, `false` when
-    /// the id was already claimed. One conditional statement, so two
-    /// deliveries racing each other cannot both win.
-    async fn claim_event(&self, channel: &str, event_id: &str) -> Result<bool> {
-        let done = self
-            .services
-            .db
-            .execute(
-                Statement::new(
-                    "INSERT INTO inbound_event (channel, event_id, received_at) VALUES (?, ?, ?) \
-                     ON CONFLICT (channel, event_id) DO NOTHING",
-                )
-                .bind(channel)
-                .bind(event_id)
-                .bind(self.services.now_ms()),
-            )
-            .await?;
-        Ok(done.rows_affected == 1)
-    }
-
-    /// Deletes claims older than [`INBOUND_EVENT_DAYS`], at most
-    /// [`INBOUND_EVENT_PRUNE_LIMIT`] per call (run by [`Deployment::tick`],
-    /// so a backlog drains over several ticks). Returns the rows deleted.
-    pub(crate) async fn prune_inbound_events(&self, now_ms: i64) -> Result<u64> {
-        let cutoff = now_ms - INBOUND_EVENT_DAYS * 86_400_000;
-        let stmt = Statement::new(
-            "DELETE FROM inbound_event WHERE rowid IN (SELECT rowid FROM inbound_event \
-             WHERE received_at < ? LIMIT ?)",
-        )
-        .bind(cutoff)
-        .bind(INBOUND_EVENT_PRUNE_LIMIT);
-        Ok(self.services.db.execute(stmt).await?.rows_affected)
-    }
-
-    /// Best effort: if even this write fails there is nowhere left to log.
-    /// The account is linked when its `channel_account` row exists; the
-    /// error text is cut to 200 chars.
-    async fn log_failed_event(&self, from: &ChannelAccountId, event: &str, e: &Error) {
-        let Ok(id) = self.services.new_id() else {
-            return;
-        };
-        let error: String = e.to_string().chars().take(200).collect();
-        let stmt = Statement::new(
-            "INSERT INTO security_event (id, at, kind, channel_account_id, details) VALUES \
-             (?, ?, 'inbound.failed', \
-             (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
-             json_object('channel', ?, 'event', ?, 'error', ?))",
-        )
-        .bind(id)
-        .bind(self.services.now_ms())
-        .bind(from.channel.as_str())
-        .bind(from.external_id.clone())
-        .bind(from.channel.as_str())
-        .bind(event)
-        .bind(error);
-        let _ = self.services.db.execute(stmt).await;
-    }
-
-    /// Answers one event: the Kernel's chat flow (`kernel::flow`) handles
-    /// Consent, Verification, Link, re-consent, unlink and fallback, and
-    /// hands Actions of linked, consenting Students to their Module.
-    async fn handle_inbound(&self, ev: Inbound) -> Result<()> {
-        kernel::flow::handle(self, ev).await
     }
 
     /// The Module and handler registered for `action`: the exact id

@@ -151,7 +151,13 @@ impl LineChannel {
                     Ok(Err(f)) if f.bad_reply_token() => {
                         self.push_call(to, &objects, keys.as_mut()).await
                     }
-                    other => other.map(|r| r.map(|ids| (ids, false))),
+                    other => other.map(|r| {
+                        r.map(|ids| Request {
+                            ids,
+                            pushed: false,
+                            replayed: false,
+                        })
+                    }),
                 },
                 None => self.push_call(to, &objects, keys.as_mut()).await,
             };
@@ -160,7 +166,11 @@ impl LineChannel {
                 Ok(Err(f)) => Err(f.into_error(true)),
                 Err(e) => Err(e),
             };
-            let (ids, pushed) = match sent {
+            let Request {
+                ids,
+                pushed,
+                replayed,
+            } = match sent {
                 Ok(v) => v,
                 Err(e) => {
                     let first = chunk[0].source;
@@ -180,8 +190,12 @@ impl LineChannel {
                     r.pushed = true;
                     if i == 0 {
                         // One metered unit per Push request, charged to the
-                        // Message that opens it.
+                        // Message that opens it; a 409 says the unit was
+                        // spent on an earlier attempt.
                         r.add_metered_unit();
+                        if replayed {
+                            r.replayed_units += 1;
+                        }
                     }
                 }
                 if let Some(id) = ids.get(i).cloned().flatten() {
@@ -207,14 +221,14 @@ impl LineChannel {
         Ok(got.map(|v| sent_ids(&v)))
     }
 
-    /// A Push: `(ids, true)`. A 409 for an already accepted retry key
-    /// counts as sent (no ids).
+    /// A Push. A 409 for an already accepted retry key counts as sent (no
+    /// ids, `replayed`).
     async fn push_call(
         &self,
         to: &ChannelAccountId,
         objects: &[&Value],
         keys: Option<&mut RetryKeys>,
-    ) -> Result<std::result::Result<(Vec<Option<String>>, bool), Failure>> {
+    ) -> Result<std::result::Result<Request, Failure>> {
         let body = json!({ "to": to.external_id, "messages": objects });
         let retry = keys.map(|k| k.next(&[to.external_id.as_str()], objects));
         let got = self
@@ -224,8 +238,22 @@ impl LineChannel {
                 retry.as_deref(),
             )
             .await?;
-        Ok(got.map(|v| (sent_ids(&v), true)))
+        Ok(got.map(|k| Request {
+            ids: sent_ids(&k.body),
+            pushed: true,
+            replayed: k.replayed,
+        }))
     }
+}
+
+/// One Reply or Push request that LINE accepted.
+struct Request {
+    /// `sentMessages[].id`, in order (empty after a 409).
+    ids: Vec<Option<String>>,
+    /// It was a Push.
+    pushed: bool,
+    /// LINE answered 409: it went out on an earlier attempt.
+    replayed: bool,
 }
 
 /// `sentMessages[].id` of a reply or push answer, in order.

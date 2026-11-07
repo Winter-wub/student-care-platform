@@ -85,8 +85,17 @@ fn exec_result(r: &D1Result) -> Result<ExecResult> {
         return Err(Error::Db(e));
     }
     let meta = r.meta().map_err(db_err)?;
+    rows_affected(meta.and_then(|m| m.changes))
+}
+
+/// D1's `meta.changes` as an [`ExecResult`]. Missing metadata is an error,
+/// never 0 rows: callers decide on the count (an Inbound whose claim
+/// "changed 0 rows" is skipped as a duplicate), so a silent 0 would drop
+/// every event.
+fn rows_affected(changes: Option<usize>) -> Result<ExecResult> {
+    let n = changes.ok_or_else(|| Error::Db("D1 returned no `meta.changes` for a write".into()))?;
     Ok(ExecResult {
-        rows_affected: meta.as_ref().and_then(|m| m.changes).unwrap_or(0) as u64,
+        rows_affected: n as u64,
     })
 }
 
@@ -153,5 +162,17 @@ impl harpseal::Db for D1Db {
             results.iter().map(exec_result).collect()
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_changes_metadata_is_an_error_not_zero_rows() {
+        assert!(matches!(rows_affected(None), Err(Error::Db(m)) if m.contains("meta.changes")));
+        assert_eq!(rows_affected(Some(0)).unwrap().rows_affected, 0);
+        assert_eq!(rows_affected(Some(3)).unwrap().rows_affected, 3);
     }
 }

@@ -210,3 +210,48 @@ async fn ten_identical_texts_are_two_pushes_with_different_retry_keys() {
         .await;
     assert_eq!(metered, 4, "two Push requests per send");
 }
+
+/// 61 Cards: 6 carousels, so Push requests of 5 and 1.
+fn cards61() -> Message {
+    Message::CardList(harpseal::CardList(
+        (0..61)
+            .map(|i| harpseal::Card {
+                title: format!("ประกาศ {i}"),
+                body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
+                buttons: Vec::new(),
+            })
+            .collect(),
+    ))
+}
+
+#[tokio::test]
+async fn a_resume_after_a_partial_send_meters_the_409_push_once() {
+    // #44: push 1 of a Message went out and was recorded with 1 unit; the
+    // resume rebuilds it, LINE answers 409, and it must not count again.
+    let (h, app) = linked().await;
+    let to = harpseal::ChannelAccountId::new(harpseal_channel_line::KIND, USER);
+    let msgs = [cards61()];
+    let d = app.deployment();
+    let th = harpseal::Locale::th();
+    let send = || d.send_batch_with_key(&to, None, &msgs, &th, "job-9/a1");
+    h.http().respond_with(200, "{}");
+    h.http().respond_with(500, r#"{"message":"boom"}"#);
+    let err = send().await.unwrap_err();
+    assert!(
+        matches!(err, harpseal::Error::PartialSend { sent: 0, .. }),
+        "{err}"
+    );
+    const METERED: &str =
+        "SELECT coalesce(sum(metered), 0) FROM usage_daily WHERE channel = 'line'";
+    assert_eq!(app.count(METERED).await, 1);
+    h.http()
+        .respond_with(409, r#"{"message":"The retry key is already accepted"}"#);
+    h.http().respond_with(200, "{}");
+    let receipts = send().await.unwrap();
+    assert_eq!(receipts[0].metered_units, 2);
+    assert_eq!(app.count(METERED).await, 2, "two Push requests, each once");
+    let rows = app
+        .count("SELECT count(*) FROM outbound_message WHERE metering = 'metered'")
+        .await;
+    assert_eq!(rows, 2, "the partial attempt and the completion");
+}

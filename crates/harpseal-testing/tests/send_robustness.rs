@@ -29,16 +29,15 @@ fn id(s: &str) -> ActionId {
 
 /// `u1` presses `echo.ping`, with the platform event id `event`.
 fn ping(event: Option<&str>, redelivery: bool) -> Inbound {
-    Inbound::Action {
-        from: FakeChannel::account("u1"),
-        action: id("echo.ping"),
-        reply: Some(ReplyToken {
+    Inbound::action(
+        FakeChannel::account("u1"),
+        id("echo.ping"),
+        Some(ReplyToken {
             token: format!("r-{}", event.unwrap_or("none")),
             expires_at: Timestamp(START_MS + 60_000),
         }),
-        event_id: event.map(str::to_string),
-        redelivery,
-    }
+    )
+    .with_event_id(event.map(str::to_string), redelivery)
 }
 
 /// A Deployment with the Echo Module and `u1` linked to a Student.
@@ -300,4 +299,68 @@ async fn a_tick_forgets_event_ids_older_than_a_week_and_keeps_younger_ones() {
         .map(|i| rows.get(i, "event_id").unwrap().as_text().unwrap())
         .collect();
     assert_eq!(ids, ["new", "young"]);
+}
+
+const INBOUND_FAILED: &str = "SELECT count(*) FROM security_event WHERE kind = 'inbound.failed'";
+
+#[tokio::test]
+async fn a_handled_event_marks_its_claim_done() {
+    let (_h, app) = linked(FakeProfile::Full).await;
+    app.fake_webhook([ping(Some("evt-done"), false)]).await;
+    let open = "SELECT count(*) FROM inbound_event WHERE done_at IS NULL";
+    assert_eq!(app.count(open).await, 0);
+    assert_eq!(app.count("SELECT count(*) FROM inbound_event").await, 1);
+}
+
+#[tokio::test]
+async fn a_redelivery_of_a_claim_that_never_finished_is_logged_once_and_not_answered() {
+    // #44: the process died between the claim and the reply, as a Worker
+    // past its CPU limit would; the claim is left with no `done_at`.
+    let (h, app) = linked(FakeProfile::Full).await;
+    let to = FakeChannel::account("u1");
+    h.db()
+        .execute(
+            Statement::new(
+                "INSERT INTO inbound_event (channel, event_id, received_at) VALUES ('fake', ?, ?)",
+            )
+            .bind("evt-killed")
+            .bind(h.clock().now_ms()),
+        )
+        .await
+        .unwrap();
+    let redeliver = || async {
+        app.deployment()
+            .handle_webhook(
+                "fake",
+                h.fake_channel().webhook(&[ping(Some("evt-killed"), true)]),
+            )
+            .await
+            .unwrap()
+    };
+    // Within the lease the first delivery may still be running: a plain
+    // duplicate.
+    let report = redeliver().await;
+    assert_eq!((report.duplicates, report.failed.len()), (1, 0));
+    assert_eq!(app.count(INBOUND_FAILED).await, 0);
+    // Past the lease it is abandoned: logged once, still not answered.
+    h.clock().advance_ms(3 * 60_000);
+    let report = redeliver().await;
+    assert_eq!((report.duplicates, report.failed.len()), (1, 1));
+    assert!(matches!(report.failed[0], ("action", Error::Conflict(_))));
+    assert_eq!(app.count(INBOUND_FAILED).await, 1);
+    let details = app
+        .query(
+            "SELECT channel_account_id, details FROM security_event WHERE kind = 'inbound.failed'",
+        )
+        .await;
+    assert_eq!(
+        details.get(0, "channel_account_id").unwrap().as_text(),
+        Some("a1")
+    );
+    // A later redelivery finds the claim done: a plain duplicate again.
+    h.clock().advance_ms(3 * 60_000);
+    let report = redeliver().await;
+    assert_eq!((report.duplicates, report.failed.len()), (1, 0));
+    assert_eq!(app.count(INBOUND_FAILED).await, 1);
+    assert!(h.fake_channel().sent_to(&to).is_empty(), "never answered");
 }

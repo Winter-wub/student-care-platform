@@ -134,6 +134,12 @@ pub struct SendReceipt {
     /// went out by Push, whether the Core chose Push or the token was spent
     /// (used up by an earlier part, or past the Channel's reply limit).
     pub pushed: bool,
+    /// How many of [`SendReceipt::metered_units`] belong to Push requests
+    /// the platform answered as already accepted (LINE: 409 for a retry
+    /// key it took on an earlier attempt). Those requests went out, and
+    /// were paid for, then; nothing went out now. The Kernel uses it to
+    /// avoid metering the resumed part of a Message twice (#44).
+    pub replayed_units: u32,
 }
 
 impl SendReceipt {
@@ -145,6 +151,7 @@ impl SendReceipt {
             metering,
             metered_units: u32::from(metering == Metering::Metered),
             pushed,
+            replayed_units: 0,
         }
     }
 
