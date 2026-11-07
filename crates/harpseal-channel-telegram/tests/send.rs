@@ -196,12 +196,10 @@ async fn forbidden_is_unreachable_and_flood_control_is_rate_limited() {
 }
 
 fn news_menu() -> Menu {
-    Menu {
-        entries: vec![MenuEntry {
-            label: "ประกาศล่าสุด".into(),
-            action: id("news.latest"),
-        }],
-    }
+    Menu::new(vec![MenuEntry {
+        label: "ประกาศล่าสุด".into(),
+        action: id("news.latest"),
+    }])
 }
 
 #[tokio::test]

@@ -1,5 +1,5 @@
 //! The rich menu set stays bounded and fresh on the recorded Messaging API:
-//! lower generations of a registered Menu are deleted, a cached id LINE no
+//! lower generations of a keyed Menu are deleted, a cached id LINE no
 //! longer knows is recreated once, and two cold isolates racing on the
 //! same Menu end with one rich menu (#36).
 
@@ -9,14 +9,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common::{LineApi, SECRET, TOKEN, USER, png};
-use harpseal::{ActionId, Channel, ChannelAccountId, Error, HttpClient, Menu, MenuEntry, Result};
+use harpseal::{
+    ActionId, Channel, ChannelAccountId, Error, HttpClient, Menu, MenuEntry, MenuKey, Result,
+};
 use harpseal_channel_line::richmenu::{LOCKED_KEY, name_key, rich_menu};
 use harpseal_channel_line::{KIND, LineChannel, LineConfig};
 use serde_json::json;
 
 fn menu(labels: &[&str]) -> Menu {
-    Menu {
-        entries: labels
+    Menu::new(
+        labels
             .iter()
             .enumerate()
             .map(|(i, l)| MenuEntry {
@@ -24,7 +26,12 @@ fn menu(labels: &[&str]) -> Menu {
                 action: ActionId::new(format!("news.m{i}")).unwrap(),
             })
             .collect(),
-    }
+    )
+}
+
+/// [`menu`] under Menu key `key`.
+fn keyed(key: &str, labels: &[&str]) -> Menu {
+    menu(labels).with_key(MenuKey::new(key).unwrap())
 }
 
 fn locked() -> Menu {
@@ -102,18 +109,16 @@ async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
     for (i, name) in others.iter().enumerate() {
         api.preexisting(&other_id(i), json!({ "name": name }));
     }
-    let en = menu(&["News"]);
+    let en = keyed("en", &["News"]);
     let versions = [
-        menu(&["ข่าว"]),
-        menu(&["ข่าวล่าสุด"]),
-        menu(&["ข่าวล่าสุด", "ติดต่อ"]),
+        keyed("th", &["ข่าว"]),
+        keyed("th", &["ข่าวล่าสุด"]),
+        keyed("th", &["ข่าวล่าสุด", "ติดต่อ"]),
     ];
 
     for (generation, th) in (1..).zip(&versions) {
         // A redeploy with the changed Menu and a bumped generation.
         let ch = deploy(&api, generation);
-        ch.with_menus([("th", th.clone()), ("en", en.clone())])
-            .unwrap();
         ch.set_menu(&to(1), None).await.unwrap();
         ch.set_menu(&to(2), Some(th)).await.unwrap();
         ch.set_menu(&to(3), Some(&en)).await.unwrap();
@@ -139,7 +144,7 @@ async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
 #[tokio::test]
 async fn only_lower_generations_of_the_same_key_are_deleted() {
     let api = LineApi::default();
-    let th = menu(&["ข่าว"]);
+    let th = keyed("th", &["ข่าว"]);
     let older = format!("harpseal-th-1-{}", h('b'));
     let sibling = format!("harpseal-th-2-{}", h('c')); // another live version
     let newer = format!("harpseal-th-3-{}", h('d')); // a newer Deployment
@@ -148,7 +153,6 @@ async fn only_lower_generations_of_the_same_key_are_deleted() {
         api.preexisting(&other_id(i), json!({ "name": name }));
     }
     let ch = deploy(&api, 2);
-    ch.with_menus([("th", th.clone())]).unwrap();
     ch.set_menu(&to(1), Some(&th)).await.unwrap();
 
     assert_eq!(
@@ -166,7 +170,7 @@ async fn only_lower_generations_of_the_same_key_are_deleted() {
 }
 
 #[tokio::test]
-async fn an_unregistered_menu_is_never_cleaned_up() {
+async fn a_menu_without_a_key_is_never_cleaned_up() {
     let api = LineApi::default();
     let ch = channel(Arc::new(api.clone()));
     ch.set_menu(&to(1), Some(&menu(&["ข่าว"]))).await.unwrap();

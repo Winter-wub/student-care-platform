@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use common::{LineApi, SECRET, TOKEN, USER, fixture, json, png};
 use harpseal::{ActionId, ChannelAccountId, Delivery, Menu, MenuEntry, Metering, WebhookRequest};
+use harpseal_channel_line::richmenu::name_key;
 use harpseal_channel_line::{KIND, LineChannel, LineConfig, metering};
 use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
 use serde_json::{Value, json};
@@ -69,12 +70,10 @@ fn signed(body: &[u8], secret: &str) -> WebhookRequest {
 const LOCKED_ACTION: &str = "contract.locked.start";
 
 fn locked_menu() -> Menu {
-    Menu {
-        entries: vec![MenuEntry {
-            label: "เริ่มใช้งาน".into(),
-            action: ActionId::new(LOCKED_ACTION).unwrap(),
-        }],
-    }
+    Menu::new(vec![MenuEntry {
+        label: "เริ่มใช้งาน".into(),
+        action: ActionId::new(LOCKED_ACTION).unwrap(),
+    }])
 }
 
 /// Reads the requests LINE received.
@@ -139,6 +138,23 @@ impl Wire for LineWire {
     /// link to the locked Menu's rich menu, is the locked Menu; a link to
     /// any other rich menu shows its areas.
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
+        let menu = self.linked(to)?;
+        let mut data = Vec::new();
+        postbacks(&menu, &mut data);
+        (data != [LOCKED_ACTION]).then_some(data.len())
+    }
+    /// The Menu key in the name of the rich menu linked last.
+    fn menu_key(&self, to: &ChannelAccountId) -> Option<Option<String>> {
+        let menu = self.linked(to)?;
+        let key = name_key(menu["name"].as_str()?)?;
+        Some(key.map(|(k, _)| k.to_string()))
+    }
+}
+
+impl LineWire {
+    /// The rich menu the last per-user rich menu call linked to `to`
+    /// (`None` after an unlink).
+    fn linked(&self, to: &ChannelAccountId) -> Option<Value> {
         let reqs = self.0.requests();
         let user = format!(
             "https://api.line.me/v2/bot/user/{}/richmenu",
@@ -148,11 +164,7 @@ impl Wire for LineWire {
         if last.method == http::Method::DELETE {
             return None;
         }
-        let id = last.uri.rsplit('/').next()?;
-        let menu = self.0.created(id)?;
-        let mut data = Vec::new();
-        postbacks(&menu, &mut data);
-        (data != [LOCKED_ACTION]).then_some(data.len())
+        self.0.created(last.uri.rsplit('/').next()?)
     }
 }
 

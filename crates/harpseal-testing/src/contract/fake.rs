@@ -53,6 +53,14 @@ impl Wire for FakeWire {
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
         self.0.menu(to).flatten().map(|m| m.entries.len())
     }
+    fn menu_key(&self, to: &ChannelAccountId) -> Option<Option<String>> {
+        Some(
+            self.0
+                .menu(to)
+                .flatten()
+                .and_then(|m| m.key().map(String::from)),
+        )
+    }
 }
 
 /// A fresh Fake Channel in `profile` with its fixtures.

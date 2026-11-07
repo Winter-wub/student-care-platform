@@ -42,17 +42,22 @@ adapter when it sets a Menu.
 
 Each Menu becomes one rich menu, created on first use and reused by name:
 `harpseal-<key>-<generation>-<hash>`. `<hash>` covers the rendered rich menu
-and its image; `<key>` says which Menu it is: `locked` for the locked Menu, or
-the key the unlocked Menu was registered under; `<generation>` comes from
-`LineConfig::with_menu_generation` (default 1). Register the unlocked Menus
-once the Deployment is built (clones of the channel share the registration;
-the example Deployment does this in `register_line_menus`):
+and its image; `<key>` says which Menu it is and comes from the Menu itself
+(`Menu::key`): `locked` for the locked Menu, and for an unlocked Menu the
+Menu key of its Locale (`MenuKey::for_locale`: the tag in lowercase without
+`-` or `_`, so `th`, `en`, `zh-Hant` -> `zhhant`). The Kernel's Menus
+(`Deployment::menu_for`, `menu_with`, and the chat flow's Menu with `setting`
+overrides) always carry that key, so a back-office label edit keeps it.
+`<generation>` comes from `LineConfig::with_menu_generation` (default 1).
+Nothing needs registering:
 
 ```rust
 let line = LineChannel::new(line_config.with_menu_generation(1), services.http.clone());
-let d = Deployment::builder() /* ... */ .channel(line.clone()).build()?;
-line.with_menus([("th", d.menu_for(&Locale::th())), ("en", d.menu_for(&Locale::en()))])?;
 ```
+
+A Menu built without a key (`Menu::new`, outside the Kernel) is named
+`harpseal-<hash>` and is never cleaned up. `LineChannel::with_menus` and the
+hash-based registration are gone (#64).
 
 A channel holds at most 1000 rich menus, and every change to a Menu or an image
 makes a new one. After a `set_menu` that had to look the rich menu up on LINE
@@ -71,16 +76,13 @@ generation when a Menu change must win; changes within one generation only
 leak (the old rich menus stay until deleted by hand in the console). Higher
 generations, other keys, rich menus without a key (`harpseal-<hash>`) and
 names not made by the adapter (e.g. `harpseal-th-backup`) are never deleted.
-Two keys registered with identical content collapse into one key.
 
 Limits to know:
 
-- **Label overrides are not covered.** The Kernel sets the unlocked Menu with
-  the labels after `setting` overrides, while `with_menus` registers
-  `menu_for` without them. After any back-office label edit the Menu no longer
-  matches a registration: it is named `harpseal-<hash>`, never cleaned up, and
-  every later edit leaks one rich menu. A stable Menu key is tracked in
-  [#64](https://github.com/Winter-wub/student-care-platform/issues/64).
+- **Label edits within one generation leak.** A back-office label edit keeps
+  the Menu key, but makes a new rich menu under the same generation, which is
+  left alone like any same-generation version. The old ones go with the next
+  generation bump.
 - **Accounts on a deleted rich menu.** LINE cannot list the accounts linked to
   a rich menu. An account still on a deleted older generation sees the default
   rich menu set in the LINE Official Account Manager (or none) until its next

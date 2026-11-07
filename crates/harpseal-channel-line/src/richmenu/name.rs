@@ -1,9 +1,9 @@
 //! Rich menu names: `harpseal-<key>-<generation>-<hash>` for a Menu with a
 //! Menu key, `harpseal-<hash>` without one (see [`crate::richmenu`]).
 
-use harpseal::{Error, Result};
+use harpseal::{MenuKey, Result};
 
-use super::{KEY_MAX_LEN, NAME_PREFIX};
+use super::NAME_PREFIX;
 
 /// Hex digits in a name's content hash.
 pub const HASH_LEN: usize = 32;
@@ -45,20 +45,9 @@ fn is_hash(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// A Menu key: 1 to [`KEY_MAX_LEN`] lowercase ASCII letters and digits.
-pub(super) fn valid_key(key: &str) -> Result<&str> {
-    let ok = !key.is_empty()
-        && key.len() <= KEY_MAX_LEN
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
-    if ok {
-        Ok(key)
-    } else {
-        Err(Error::Invalid(format!(
-            "LINE Menu key {key:?}: 1 to {KEY_MAX_LEN} of a-z and 0-9"
-        )))
-    }
+/// A Menu key, checked as [`MenuKey::new`] does.
+fn valid_key(key: &str) -> Result<&str> {
+    MenuKey::new(key).map(|_| key)
 }
 
 #[cfg(test)]

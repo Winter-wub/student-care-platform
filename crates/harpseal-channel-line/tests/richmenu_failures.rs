@@ -15,12 +15,10 @@ use harpseal_channel_line::{KIND, LineChannel, LineConfig};
 use serde_json::json;
 
 fn locked() -> Menu {
-    Menu {
-        entries: vec![MenuEntry {
-            label: "เริ่มใช้งาน".into(),
-            action: ActionId::new("link.start").unwrap(),
-        }],
-    }
+    Menu::new(vec![MenuEntry {
+        label: "เริ่มใช้งาน".into(),
+        action: ActionId::new("link.start").unwrap(),
+    }])
 }
 
 fn channel(http: Arc<dyn HttpClient>, generation: u32) -> LineChannel {

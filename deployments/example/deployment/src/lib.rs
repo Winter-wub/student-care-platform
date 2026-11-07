@@ -14,7 +14,7 @@ pub mod seed;
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
     ActionContext, ActionId, BuildError, CatalogEntry, Deployment, DeploymentBuilder,
-    DeploymentConfig, EmailOtp, Locale, MenuEntrySpec, Message, Module, ModuleRegistrar, Services,
+    DeploymentConfig, EmailOtp, MenuEntrySpec, Message, Module, ModuleRegistrar, Services,
 };
 use harpseal_channel_fake::FakeChannel;
 use harpseal_channel_line::{LineChannel, LineConfig};
@@ -104,39 +104,19 @@ impl Module for Contact {
 /// Everything but the Fake Channel: config, Services, LINE, Telegram,
 /// email OTP and the Modules. Tests add the harness's Fake Channel.
 pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
-    parts(services, secrets).0
-}
-
-/// [`builder`], and a handle on its LINE Channel (clones share the
-/// registered Menus) for [`register_line_menus`] when rich menu images are
-/// configured (without them LINE shows no Menu, so there is nothing to
-/// clean up).
-fn parts(services: Services, secrets: Secrets) -> (DeploymentBuilder, Option<LineChannel>) {
     let config = config();
     let otp = EmailOtp::new(config.otp.clone());
     let http = services.http.clone();
     let clock = services.clock.clone();
-    let images = !secrets.line.unlocked_menu_image.is_empty();
-    let line = LineChannel::new(secrets.line, http.clone());
-    let builder = Deployment::builder()
+    Deployment::builder()
         .config(config)
         .runtime(services)
-        .channel(line.clone())
+        .channel(LineChannel::new(secrets.line, http.clone()))
         // The Clock checks the age of Telegram Mini App `initData`.
         .channel(TelegramChannel::new(secrets.telegram, http).with_clock(clock))
         .verification(otp)
         .module(Announcements)
-        .module(Contact);
-    (builder, images.then_some(line))
-}
-
-/// Registers the unlocked Menu of each Locale with the LINE Channel, so
-/// that its rich menus of lower generations are deleted
-/// (`docs/guide/channels.md`, LINE). Menus whose labels a setting changed
-/// are not covered.
-pub fn register_line_menus(line: &LineChannel, d: &Deployment) -> harpseal::Result<()> {
-    let menus = [Locale::th(), Locale::en()].map(|l| (l.0.clone(), d.menu_for(&l)));
-    line.with_menus(menus).map(drop)
+        .module(Contact)
 }
 
 /// Why [`deployment`] refused to start.
@@ -147,9 +127,6 @@ pub enum StartError {
     FakeSecret(harpseal::Error),
     /// The builder refused the configuration.
     Build(BuildError),
-    /// A Menu could not be registered with the LINE Channel (its rich menu
-    /// image is missing or invalid).
-    LineMenus(harpseal::Error),
 }
 
 impl std::fmt::Display for StartError {
@@ -157,7 +134,6 @@ impl std::fmt::Display for StartError {
         match self {
             StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
             StartError::Build(e) => write!(f, "{e}"),
-            StartError::LineMenus(e) => write!(f, "LINE Menus: {e}"),
         }
     }
 }
@@ -177,13 +153,9 @@ pub fn deployment_with_fake(
     secrets: Secrets,
 ) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
-    let (builder, line) = parts(services, secrets);
-    let d = builder
+    let d = builder(services, secrets)
         .channel(fake.clone())
         .build()
         .map_err(StartError::Build)?;
-    if let Some(line) = line {
-        register_line_menus(&line, &d).map_err(StartError::LineMenus)?;
-    }
     Ok((d, fake))
 }

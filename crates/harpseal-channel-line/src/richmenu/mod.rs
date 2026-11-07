@@ -9,15 +9,14 @@
 //!
 //! The object and the image are hashed (`<hash>`, 32 hex). A Menu with a
 //! *Menu key* is named `harpseal-<key>-<generation>-<hash>`: the locked
-//! Menu has key [`LOCKED_KEY`], an unlocked Menu the key it was registered
-//! under with [`crate::LineChannel::with_menus`] (e.g. its Locale, `th`);
-//! `<generation>` is [`crate::LineConfig::menu_generation`] (default 1).
-//! A Menu that was not registered is named `harpseal-<hash>` and is never
-//! cleaned up. That includes every unlocked Menu whose labels a setting
-//! override changed: the Kernel sets the Menu with the overridden labels,
-//! which hash differently from the registered one. Two keys registered
-//! with identical content collapse to one key (the last registered). The
-//! same Menu and image reuse one rich menu:
+//! Menu has key [`LOCKED_KEY`], an unlocked Menu its own
+//! [`Menu::key`] (the Kernel's Menus carry their Locale's,
+//! [`harpseal::MenuKey::for_locale`], e.g. `th`, whatever `setting`
+//! overrides did to the labels); `<generation>` is
+//! [`crate::LineConfig::menu_generation`] (default 1). An unlocked Menu
+//! without a key ([`Menu::new`]) is named `harpseal-<hash>` and is never
+//! cleaned up: each version of it stays until deleted by hand. The same
+//! Menu and image reuse one rich menu:
 //!
 //! 1. the in-memory cache (name -> rich menu id), else
 //! 2. `GET /v2/bot/richmenu/list`, looking for that name (with several,
@@ -85,7 +84,6 @@ use http::Method;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use name::valid_key;
 pub use name::{HASH_LEN, name_key};
 
 use crate::api::{API, API_DATA, Failure, parse, path_id};
@@ -97,41 +95,32 @@ pub const IMAGE_MAX_BYTES: usize = 1_048_576;
 pub const IMAGE_SIZES: [(usize, usize); 2] = [(2500, 1686), (2500, 843)];
 /// Every rich menu this adapter creates is named with this prefix.
 pub const NAME_PREFIX: &str = "harpseal-";
-/// The Menu key of the locked Menu.
-pub const LOCKED_KEY: &str = "locked";
+/// The Menu key of the locked Menu ([`harpseal::MenuKey::LOCKED`]).
+pub const LOCKED_KEY: &str = harpseal::MenuKey::LOCKED;
 /// Most rich menus deleted by one `set_menu`: LINE allows 100 deletes an
 /// hour, and each one adds latency (and a Workers subrequest) to the call.
 pub const MAX_DELETES: usize = 5;
-/// Longest Menu key.
-pub const KEY_MAX_LEN: usize = 16;
+/// Longest Menu key ([`harpseal::MenuKey::MAX_LEN`]).
+pub const KEY_MAX_LEN: usize = harpseal::MenuKey::MAX_LEN;
 const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
-/// Rich menu ids by name, and the registered Menu keys by content hash,
-/// for this process (or Worker isolate); shared by clones of the channel.
+/// Rich menu ids by name for this process (or Worker isolate); shared by
+/// clones of the channel.
 #[derive(Debug, Default)]
-pub(crate) struct MenuCache(Mutex<Cached>);
-
-#[derive(Debug, Default)]
-struct Cached {
-    ids: HashMap<String, String>,
-    keys: HashMap<String, String>,
-}
+pub(crate) struct MenuCache(Mutex<HashMap<String, String>>);
 
 impl MenuCache {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Cached> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, String>> {
         self.0.lock().unwrap_or_else(|p| p.into_inner())
     }
     fn get(&self, name: &str) -> Option<String> {
-        self.lock().ids.get(name).cloned()
+        self.lock().get(name).cloned()
     }
     fn put(&self, name: &str, id: &str) {
-        self.lock().ids.insert(name.into(), id.into());
+        self.lock().insert(name.into(), id.into());
     }
     fn forget(&self, name: &str) {
-        self.lock().ids.remove(name);
-    }
-    fn key(&self, hash: &str) -> Option<String> {
-        self.lock().keys.get(hash).cloned()
+        self.lock().remove(name);
     }
 }
 
@@ -159,7 +148,7 @@ pub fn png_size(image: &[u8]) -> Result<(usize, usize)> {
 }
 
 /// The content hash of `menu` on `image` and its rich menu object (not
-/// yet named).
+/// yet named). The Menu key is not hashed: it is in the name.
 fn hashed(menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
     let (w, h) = png_size(image)?;
     let obj = render::menu_sized(menu, w, h);
@@ -204,30 +193,6 @@ struct Listed {
 }
 
 impl LineChannel {
-    /// Registers the unlocked Menus in use, each under a Menu key (its
-    /// Locale, say: `[("th", d.menu_for(&Locale::th())), ...]`), so that
-    /// their superseded rich menus are deleted (see [`crate::richmenu`]).
-    /// Replaces any earlier registration; shared with every clone. Keys are
-    /// 1 to [`KEY_MAX_LEN`] of `a-z0-9`, never [`LOCKED_KEY`].
-    pub fn with_menus<K: Into<String>>(
-        &self,
-        menus: impl IntoIterator<Item = (K, Menu)>,
-    ) -> Result<&Self> {
-        let mut keys = HashMap::new();
-        for (key, menu) in menus {
-            let key = key.into();
-            if valid_key(&key)? == LOCKED_KEY {
-                return Err(Error::Invalid(format!(
-                    "LINE Menu key {LOCKED_KEY:?} is the locked Menu's"
-                )));
-            }
-            let (hash, _) = hashed(&menu, &self.cfg.unlocked_menu_image)?;
-            keys.insert(hash, key);
-        }
-        self.menus.lock().keys = keys;
-        Ok(self)
-    }
-
     pub(crate) async fn rich_menu_set(
         &self,
         to: &ChannelAccountId,
@@ -235,14 +200,11 @@ impl LineChannel {
     ) -> Result<()> {
         let user = path_id(&to.external_id)?;
         let (menu, image, key) = match menu {
-            Some(m) => {
-                let (hash, _) = hashed(m, &self.cfg.unlocked_menu_image)?;
-                (m, &self.cfg.unlocked_menu_image, self.menus.key(&hash))
-            }
+            Some(m) => (m, &self.cfg.unlocked_menu_image, m.key()),
             None => (
                 &self.cfg.locked_menu,
                 &self.cfg.locked_menu_image,
-                Some(LOCKED_KEY.to_string()),
+                Some(LOCKED_KEY),
             ),
         };
         if menu.entries.is_empty() {
@@ -254,7 +216,7 @@ impl LineChannel {
                 .map_err(fail);
         }
         let generation = self.cfg.menu_generation();
-        let tag = key.as_deref().map(|k| (k, generation));
+        let tag = key.map(|k| (k, generation));
         let (name, obj) = rich_menu(tag, menu, image)?;
         let mut found = self.rich_menu_id(&name, &obj, image, true).await?;
         if let Err(f) = self.link(user, &found.id).await? {

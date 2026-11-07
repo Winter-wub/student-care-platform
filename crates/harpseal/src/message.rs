@@ -206,10 +206,99 @@ pub struct MenuEntry {
 }
 
 /// The Menu set per Channel Account (locked until the Student has a Link).
+/// Build it with [`Menu::new`] or [`Menu::keyed`].
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct Menu {
     /// Entries in display order.
     pub entries: Vec<MenuEntry>,
+    /// Which Menu this is, independent of its labels (see [`MenuKey`]).
+    key: Option<MenuKey>,
+}
+
+impl Menu {
+    /// A Menu without a key.
+    pub fn new(entries: Vec<MenuEntry>) -> Self {
+        Self { entries, key: None }
+    }
+    /// A Menu under `key`.
+    pub fn keyed(key: MenuKey, entries: Vec<MenuEntry>) -> Self {
+        Self::new(entries).with_key(key)
+    }
+    /// The same Menu under `key`.
+    pub fn with_key(mut self, key: MenuKey) -> Self {
+        self.key = Some(key);
+        self
+    }
+    /// The Menu key, if any.
+    pub fn key(&self) -> Option<&str> {
+        self.key.as_ref().map(MenuKey::as_str)
+    }
+}
+
+/// Which Menu a [`Menu`] is, stable while its labels change (a `setting`
+/// override, say), so that an adapter can tell its versions apart from
+/// other Menus: the Locale an unlocked Menu serves
+/// ([`MenuKey::for_locale`]), or [`MenuKey::LOCKED`] for the locked Menu.
+/// Invariant: 1 to [`MenuKey::MAX_LEN`] of `a-z0-9`, checked by
+/// [`MenuKey::new`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MenuKey(String);
+
+impl MenuKey {
+    /// Longest key.
+    pub const MAX_LEN: usize = 16;
+    /// The locked Menu's key. No Locale maps to it.
+    pub const LOCKED: &'static str = "locked";
+
+    /// Rejects anything but 1 to [`MenuKey::MAX_LEN`] lowercase ASCII
+    /// letters and digits.
+    pub fn new(key: impl Into<String>) -> crate::Result<Self> {
+        let key = key.into();
+        let ok = !key.is_empty()
+            && key.len() <= Self::MAX_LEN
+            && key
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        if ok {
+            Ok(Self(key))
+        } else {
+            Err(crate::Error::Invalid(format!(
+                "Menu key {key:?}: 1 to {} of a-z and 0-9",
+                Self::MAX_LEN
+            )))
+        }
+    }
+
+    /// The locked Menu's key, [`MenuKey::LOCKED`].
+    pub fn locked() -> Self {
+        Self(Self::LOCKED.into())
+    }
+
+    /// The key of the unlocked Menu in `locale`: the tag in lowercase
+    /// without `-` and `_` (`zh-Hant` -> `zhhant`). The one mapping every
+    /// adapter relies on. Fails when the result is not a valid key (too
+    /// long, other characters) or is [`MenuKey::LOCKED`].
+    pub fn for_locale(locale: &Locale) -> crate::Result<Self> {
+        let mapped: String = locale
+            .as_str()
+            .chars()
+            .filter(|c| !matches!(c, '-' | '_'))
+            .flat_map(char::to_lowercase)
+            .collect();
+        if mapped == Self::LOCKED {
+            return Err(crate::Error::Invalid(format!(
+                "Locale {:?} maps to the locked Menu's key",
+                locale.as_str()
+            )));
+        }
+        Self::new(mapped)
+    }
+
+    /// The key as text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[cfg(test)]
@@ -221,5 +310,32 @@ mod tests {
         assert!(ActionId::new("").is_err());
         assert!(ActionId::new("a".repeat(64)).is_ok());
         assert!(ActionId::new("a".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn menu_keys_from_locales() {
+        let key = |tag: &str| MenuKey::for_locale(&Locale::new(tag)).map(|k| k.0);
+        assert_eq!(key("th").unwrap(), "th");
+        assert_eq!(key("zh-hant").unwrap(), "zhhant");
+        assert_eq!(key("zh-Hant").unwrap(), "zhhant");
+        assert_eq!(key("pt_BR").unwrap(), "ptbr");
+        assert!(key("").is_err());
+        assert!(key("locked").is_err());
+        assert!(key("x-a-very-long-private-tag").is_err());
+        assert!(key("th.u").is_err());
+    }
+
+    #[test]
+    fn menu_key_bounds() {
+        assert!(MenuKey::new("th").is_ok());
+        assert!(MenuKey::new("a".repeat(16)).is_ok());
+        assert!(MenuKey::new("a".repeat(17)).is_err());
+        assert!(MenuKey::new("").is_err());
+        assert!(MenuKey::new("TH").is_err());
+        assert!(MenuKey::new("zh-hant").is_err());
+        assert_eq!(MenuKey::locked().as_str(), MenuKey::LOCKED);
+        let m = Menu::new(Vec::new());
+        assert_eq!(m.key(), None);
+        assert_eq!(m.with_key(MenuKey::locked()).key(), Some("locked"));
     }
 }

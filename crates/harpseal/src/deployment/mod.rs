@@ -138,14 +138,17 @@ impl Deployment {
 
     /// The unlocked Menu in `locale`: the Modules' entries by `order`,
     /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
-    /// `[student] self_unlink` is on.
+    /// `[student] self_unlink` is on. Its key is
+    /// [`MenuKey::for_locale`](crate::MenuKey::for_locale), or none when
+    /// the Locale maps to no valid key.
     pub fn menu_for(&self, locale: &Locale) -> Menu {
-        self.menu_with(|key| self.catalog.t(locale, key))
+        self.menu_with(locale, |key| self.catalog.t(locale, key))
     }
 
-    /// The unlocked Menu with labels from `t` (the chat flow passes texts
-    /// with `setting` overrides).
-    pub(crate) fn menu_with(&self, t: impl Fn(&str) -> String) -> Menu {
+    /// The unlocked Menu in `locale` with labels from `t`, a label key to
+    /// its text (the chat flow passes texts with `setting` overrides);
+    /// keyed as in [`Deployment::menu_for`], whatever the labels.
+    pub fn menu_with(&self, locale: &Locale, t: impl Fn(&str) -> String) -> Menu {
         let mut entries: Vec<MenuEntry> = self
             .registry
             .menu
@@ -163,7 +166,11 @@ impl Deployment {
                 action,
             });
         }
-        Menu { entries }
+        let menu = Menu::new(entries);
+        match crate::MenuKey::for_locale(locale) {
+            Ok(key) => menu.with_key(key),
+            Err(_) => menu,
+        }
     }
 
     /// The Module and handler registered for `action`: the exact id
