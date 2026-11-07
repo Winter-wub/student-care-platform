@@ -10,12 +10,7 @@ use crate::{Error, ResumeToken};
 /// # use harpseal::{Error, SendOptions};
 /// let first = SendOptions::new().key("job-7/u1");
 /// // The first attempt stopped part-way: resume where it left off.
-/// let stopped = Error::PartialSend {
-///     sent: 2,
-///     total: 5,
-///     source: Box::new(Error::RateLimited { retry_after_secs: 30 }),
-///     resume: None,
-/// };
+/// let stopped = Error::partial_send(2, 5, Error::RateLimited { retry_after_secs: 30 });
 /// let again = first.clone().resume_after(&stopped);
 /// assert_eq!(again.first_message(), 2);
 /// ```
@@ -44,14 +39,22 @@ impl SendOptions {
     }
 
     /// Resumes after `err`: when it is an [`Error::PartialSend`], the send
-    /// starts at Message `sent` of the batch and hands the Channel its
-    /// resume token. Any other error leaves the options as they are (a
-    /// retry of the whole batch, e.g. after `RateLimited` with nothing
-    /// sent).
+    /// starts at Message `sent` of the batch, hands the Channel its resume
+    /// token and, when these options have no key, takes the batch key the
+    /// Kernel used ([`Error::batch_key`]; an unkeyed send's fresh key), so
+    /// the resume finds the batch's rows and retry keys. Any other error
+    /// leaves the options as they are (a retry of the whole batch, e.g.
+    /// after `RateLimited` with nothing sent).
     pub fn resume_after(mut self, err: &Error) -> Self {
-        if let Error::PartialSend { sent, resume, .. } = err {
+        if let Error::PartialSend {
+            sent, resume, key, ..
+        } = err
+        {
             self.first = *sent;
             self.resume = resume.clone();
+            if self.key.is_none() {
+                self.key = key.clone();
+            }
         }
         self
     }

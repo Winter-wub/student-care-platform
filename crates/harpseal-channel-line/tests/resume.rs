@@ -243,3 +243,132 @@ async fn ten_identical_texts_resumed_at_push_2_reuse_its_key_not_push_1s() {
     assert_eq!(pushes(&h.http().take_requests()), [first[1].clone()]);
     assert_eq!(app.count(METERED).await, 2);
 }
+
+/// 121 Cards: 11 carousels, so Push requests of 5, 5 and 1.
+fn cards121() -> Message {
+    Message::CardList(CardList(
+        (0..121)
+            .map(|i| Card {
+                title: format!("ข่าวคณะ {i}"),
+                body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
+                buttons: Vec::new(),
+            })
+            .collect(),
+    ))
+}
+
+#[tokio::test]
+async fn one_message_resumed_whose_failed_push_went_out_meters_2() {
+    // A(6): push 1 = A1..A5 (1 unit, recorded), push 2 = A6 accepted but
+    // its answer lost. The token resume rebuilds push 2 only: 409.
+    let (h, app) = boot().await;
+    let d = app.deployment();
+    let msgs = [cards61()];
+    let opts = SendOptions::new().key("job-6/a1");
+    h.http().respond_with(200, OK);
+    h.http().respond_with(500, BOOM);
+    let err = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap_err();
+    let first = pushes(&h.http().take_requests());
+    assert_eq!(rows(&app).await, [(0, 1, false)]);
+    h.http().respond_with(409, ACCEPTED);
+    let again = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
+        .await
+        .unwrap();
+    assert_eq!((again[0].metered_units, again[0].replayed_units), (2, 2));
+    assert_eq!(pushes(&h.http().take_requests()), [first[1].clone()]);
+    assert_eq!(app.count(METERED).await, 2, "LINE charged 2");
+    assert_eq!(rows(&app).await, [(0, 2, true)]);
+}
+
+#[tokio::test]
+async fn three_pushes_push_2_lost_then_resumed_meters_3() {
+    let (h, app) = boot().await;
+    let d = app.deployment();
+    let msgs = [cards121()];
+    let opts = SendOptions::new().key("job-7/a1");
+    h.http().respond_with(200, OK);
+    h.http().respond_with(500, BOOM);
+    let err = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap_err();
+    let first = pushes(&h.http().take_requests());
+    assert_eq!((first[0].1.len(), first[1].1.len()), (5, 5));
+    h.http().respond_with(409, ACCEPTED);
+    h.http().respond_with(200, OK);
+    d.send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
+        .await
+        .unwrap();
+    let resumed = pushes(&h.http().take_requests());
+    assert_eq!(resumed.len(), 2);
+    assert_eq!(resumed[0], first[1], "push 2 rebuilt, same key");
+    assert_eq!(resumed[1].1.len(), 1);
+    assert_eq!(app.count(METERED).await, 3);
+    assert_eq!(rows(&app).await, [(0, 3, true)]);
+}
+
+#[tokio::test]
+async fn a_resume_that_fails_again_carries_its_units_on_meters_3() {
+    // Push 2 fails; the resume sends push 2 and push 3 fails; the next
+    // resume sends push 3 only.
+    let (h, app) = boot().await;
+    let d = app.deployment();
+    let msgs = [cards121()];
+    let opts = SendOptions::new().key("job-8/a1");
+    h.http().respond_with(200, OK);
+    h.http().respond_with(500, BOOM);
+    let err = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap_err();
+    h.http().take_requests();
+    h.http().respond_with(200, OK);
+    h.http().respond_with(500, BOOM);
+    let opts = opts.resume_after(&err);
+    let err = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::PartialSend { sent: 0, .. }), "{err}");
+    let second = pushes(&h.http().take_requests());
+    assert_eq!(app.count(METERED).await, 2);
+    assert_eq!(rows(&app).await, [(0, 2, false)]);
+    h.http().respond_with(200, OK);
+    d.send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
+        .await
+        .unwrap();
+    assert_eq!(pushes(&h.http().take_requests()), [second[1].clone()]);
+    assert_eq!(app.count(METERED).await, 3);
+    assert_eq!(rows(&app).await, [(0, 3, true)]);
+}
+
+#[tokio::test]
+async fn an_unkeyed_send_resumed_reuses_its_retry_keys() {
+    let (h, app) = boot().await;
+    let d = app.deployment();
+    let msgs = [Message::text("ประกาศ: งดเรียนวันศุกร์"), cards61()];
+    h.http().respond_with(200, OK);
+    h.http().respond_with(500, BOOM);
+    let err = d
+        .send_batch(&to(), None, &msgs, &Locale::th())
+        .await
+        .unwrap_err();
+    let first = pushes(&h.http().take_requests());
+    h.http().respond_with(409, ACCEPTED);
+    d.send_batch_with(
+        &to(),
+        None,
+        &msgs,
+        &Locale::th(),
+        &SendOptions::new().resume_after(&err),
+    )
+    .await
+    .unwrap();
+    assert_eq!(pushes(&h.http().take_requests()), [first[1].clone()]);
+    assert_eq!(app.count(METERED).await, 2);
+    assert_eq!(rows(&app).await, [(0, 1, true), (1, 1, true)]);
+}

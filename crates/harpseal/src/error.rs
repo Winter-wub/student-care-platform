@@ -46,6 +46,10 @@ pub enum Error {
     /// request, no retry keys) the parts of Message `sent` already
     /// delivered go again. That is the accepted trade-off there: a repeated
     /// Card beats a lost one.
+    ///
+    /// The variant is `#[non_exhaustive]`: build it with
+    /// [`Error::partial_send`] and match it with `..`.
+    #[non_exhaustive]
     PartialSend {
         /// Messages wholly sent and recorded.
         sent: usize,
@@ -56,6 +60,12 @@ pub enum Error {
         /// The adapter's token for resuming from the failing request
         /// ([`crate::Channel::send_batch_resumed`]), if it gave one.
         resume: Option<crate::ResumeToken>,
+        /// The batch key the Kernel sent with (its own fresh one for an
+        /// unkeyed send), which [`crate::SendOptions::resume_after`]
+        /// restores: a resume needs the same key to find the batch's rows
+        /// and, on LINE, its retry keys. `None` when not built by the
+        /// Kernel.
+        key: Option<String>,
     },
 }
 
@@ -124,6 +134,26 @@ impl Error {
         match self {
             Error::PartialSend { source, .. } => source.root(),
             e => e,
+        }
+    }
+
+    /// A [`Error::PartialSend`]: `sent` of `total` Messages went out before
+    /// `source`; no resume token, no batch key.
+    pub fn partial_send(sent: usize, total: usize, source: Error) -> Self {
+        Error::PartialSend {
+            sent,
+            total,
+            source: Box::new(source),
+            resume: None,
+            key: None,
+        }
+    }
+
+    /// The batch key of a [`Error::PartialSend`] the Kernel returned.
+    pub fn batch_key(&self) -> Option<&str> {
+        match self {
+            Error::PartialSend { key, .. } => key.as_deref(),
+            _ => None,
         }
     }
 

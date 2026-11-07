@@ -72,16 +72,19 @@ impl Deployment {
     /// If the Channel stops part-way, what went out is recorded (the
     /// Message it stopped in gets a row with `error` set when some of its
     /// parts went out) and the result is [`Error::PartialSend`]: resume
-    /// through [`Deployment::send_batch_with`] with the same key and
-    /// [`SendOptions::resume_after`], or resend the whole batch with the
-    /// same key. Either way an earlier attempt's rows are found by key and
-    /// index: a Push the platform answers as already accepted (LINE 409,
-    /// [`SendReceipt::replayed_units`]) is metered only if no row recorded
-    /// it, and a "partly sent" row is completed rather than a second one
-    /// written. When nothing went out the Channel's error is returned as
-    /// is. If the write fails, a database error is returned (the Messages
-    /// did go out, unrecorded: a retry with the same key meters them once);
-    /// it names the Channel's error too when there was one.
+    /// through [`Deployment::send_batch_with`] with
+    /// `SendOptions::new().resume_after(&err)`, which restores the batch
+    /// key this call chose ([`Error::batch_key`]). A keyed batch
+    /// ([`Deployment::send_batch_with_key`]) may also be resent whole with
+    /// the same key. Either way an earlier attempt's rows are found by key
+    /// and index: a Push the platform answers as already accepted (LINE
+    /// 409, [`SendReceipt::replayed_units`]) is metered only if no row
+    /// recorded it, and a "partly sent" row is completed rather than a
+    /// second one written. When nothing went out the Channel's error is
+    /// returned as is. If the write fails, a database error is returned
+    /// (the Messages did go out, unrecorded); it names the Channel's error
+    /// too when there was one. It carries no key: only a keyed send can be
+    /// retried exactly after it (the same key meters every Push once).
     pub async fn send_batch(
         &self,
         to: &ChannelAccountId,
@@ -116,7 +119,8 @@ impl Deployment {
     /// [`Deployment::send_batch`] with [`SendOptions`]. `msgs` is always the
     /// whole batch; the send covers `msgs[opts.first_message()..]` and
     /// returns their receipts. After an [`Error::PartialSend`], pass
-    /// `opts.resume_after(&err)` with the same key: the Kernel sends from
+    /// `opts.resume_after(&err)` (it keeps `opts`' key, or takes the one
+    /// the failed call used when `opts` had none): the Kernel sends from
     /// Message `sent`, hands the Channel its resume token (LINE rebuilds
     /// the failing request and those after it with the same retry keys, so
     /// no part reaches the Student twice) and meters exactly what no
@@ -252,6 +256,7 @@ impl Deployment {
             total: batch_msgs.len(),
             source: Box::new(error),
             resume: batch.resume,
+            key: Some(key),
         })
     }
 

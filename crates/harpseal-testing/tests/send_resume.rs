@@ -284,24 +284,54 @@ async fn case_3_a_resume_of_a_shared_request_hands_back_the_token_and_meters_2()
 }
 
 #[tokio::test]
-async fn a_lost_answer_inside_a_recorded_partial_send_counts_once_meters_3() {
-    // Push 1 recorded, push 2 accepted but its answer lost (recorded as a
-    // failure), push 3 new: 409, 409, 200 on the resume.
+async fn a_token_resume_whose_failed_push_went_out_counts_it_once_meters_2() {
+    // A(6): push 1 (A1..A5) recorded with 1 unit, push 2 (A6) accepted but
+    // its answer lost. The token resume rebuilds push 2 only; LINE answers
+    // 409. The adapter carries push 1's unit as replayed, so the receipt
+    // covers both requests: metered 2, replayed 2, against 1 on record.
     let (_h, app, ch) = boot().await;
     let d = app.deployment();
-    let msgs = [news(150)];
+    let msgs = [news(61)];
     let opts = SendOptions::new().key("job-5/u1");
-    ch.then(BatchReceipt::part_way(Vec::new(), pushed(1, 0), stopped()));
+    let token = ResumeToken::new("scripted:push-2");
+    ch.then(BatchReceipt::part_way(Vec::new(), pushed(1, 0), stopped()).with_resume(Some(token)));
     let err = d
         .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
         .await
         .unwrap_err();
-    ch.then(BatchReceipt::complete(vec![pushed(3, 2)]));
+    ch.then(BatchReceipt::complete(vec![pushed(2, 2)]));
     d.send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
         .await
         .unwrap();
-    assert_eq!(app.count(METERED).await, 3);
-    assert_eq!(rows(&app).await, [(0, 3, true)]);
+    assert_eq!(app.count(METERED).await, 2);
+    assert_eq!(rows(&app).await, [(0, 2, true)]);
+}
+
+#[tokio::test]
+async fn an_unkeyed_send_resumes_with_its_own_key_and_completes_its_row_2() {
+    // `send_batch` chose a fresh key; `resume_after` takes it from the
+    // error, so the resume finds the "partly sent" row.
+    let (_h, app, ch) = boot().await;
+    let d = app.deployment();
+    let msgs = [news(61)];
+    ch.then(BatchReceipt::part_way(Vec::new(), pushed(1, 0), stopped()));
+    let err = d
+        .send_batch(&to(), None, &msgs, &Locale::th())
+        .await
+        .unwrap_err();
+    let key = err.batch_key().expect("the Kernel's key").to_string();
+    ch.then(BatchReceipt::complete(vec![pushed(2, 1)]));
+    let opts = SendOptions::new().resume_after(&err);
+    d.send_batch_with(&to(), None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap();
+    let got = ch.got();
+    assert_eq!(
+        (got[0].key.as_str(), got[1].key.as_str()),
+        (key.as_str(), key.as_str())
+    );
+    assert_eq!(app.count(METERED).await, 2);
+    assert_eq!(rows(&app).await, [(0, 2, true)], "one row, completed");
 }
 
 #[tokio::test]

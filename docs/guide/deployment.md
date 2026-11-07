@@ -100,15 +100,17 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   recorded (`outbound_message` rows and usage; a Message cut off after some
   of its parts gets a row with `error = 'partly sent: …'`) and
   `Deployment::send_batch` returns `Error::PartialSend { sent, total,
-  source, resume }`. `Error::root()` gives the cause (`RateLimited`,
-  `Unreachable`). A Job resumes with the whole batch, the same key and
-  `SendOptions::resume_after(&err)` (ADR-0010):
+  source, resume, key, .. }` (`#[non_exhaustive]`: match it with `..`,
+  build it with `Error::partial_send`). `Error::root()` gives the cause
+  (`RateLimited`, `Unreachable`). A resume in the same process passes the
+  whole batch and `SendOptions::resume_after(&err)` (ADR-0010), which also
+  restores the batch key (the fresh one an unkeyed `send_batch` chose):
 
   ```rust
   let opts = SendOptions::new().key(format!("{job}/{account}"));
   match d.send_batch_with(&to, None, &msgs, &locale, &opts).await {
       Err(e @ Error::PartialSend { .. }) => {
-          // later, e.g. on the Job's next run:
+          // in the same run, e.g. after waiting out a `RateLimited`:
           d.send_batch_with(&to, None, &msgs, &locale, &opts.resume_after(&e)).await?;
       }
       other => { other?; }
@@ -125,10 +127,15 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   (they send one part per request and have no retry keys): the resume
   starts at the first part of Message `sent`, whose parts already delivered
   go again. That is the accepted trade-off there: a repeated Card beats a
-  lost one. A token is only useful in the same process (it is not
-  stored); a Job that resends the whole batch with the same key instead
-  is metered exactly too, and on LINE delivers nothing twice either (the
-  same requests, the same keys).
+  lost one. The token is not stored: a later run (the Job's next attempt)
+  resends the whole batch with the same key instead
+  (`send_batch_with_key`), which is metered exactly too and on LINE
+  delivers nothing twice either (the same requests, the same keys). An
+  unkeyed send cannot be retried exactly in a later run: its key lives
+  only in the error. LINE ignores a token written for another batch key,
+  another account or other Messages (without a log: the adapter has no
+  logging port) and then resumes from the first part of Message `sent`,
+  delivering those parts again rather than losing them.
 - **Idempotency keys.** `Deployment::send_batch_with_key(to, reply, msgs,
   locale, key)` (or `send_batch_with` and `SendOptions::key`) passes a
   stable key (e.g. `<job id>/<account>`); LINE turns it
