@@ -27,6 +27,10 @@ _Avoid_: tenant, instance, site
 A person on the roster, identified by student ID. The only kind of person who talks to the bot. A Student is active while on the roster and left once a `full` roster import no longer lists them (a Deployment may allow `upsert` only, which never marks anyone left); a left Student keeps their records but loses every Link.
 _Avoid_: user, member, end user
 
+**Roster warning** (คำเตือนทะเบียน):
+A problem found in a roster file that does not stop the import: a missing, malformed or shared email, or an empty optional attribute. The row imports and the preview and report list it. A problem that stops the import (a malformed or duplicate student ID, an unreadable value) is _blocking_; a Deployment may make any warning class blocking. A Student a warning describes shows as having missing data on the Students list.
+_Avoid_: soft error
+
 **Staff** (เจ้าหน้าที่):
 A person who signs in to the back office with a system account.
 _Avoid_: admin (that is a Role), operator, officer

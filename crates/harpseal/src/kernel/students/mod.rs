@@ -23,6 +23,7 @@ mod detail;
 mod edit;
 mod form;
 mod list;
+mod missing;
 mod read;
 mod service;
 mod tags;

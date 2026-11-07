@@ -3,6 +3,8 @@
 use serde_json::{Map, Value as Json};
 
 use super::StudentFields;
+use super::missing::{self, Missing};
+use crate::config::RosterConfig;
 use crate::message::Locale;
 use crate::port_types::{Rows, Statement, Value};
 use crate::{Result, Services};
@@ -104,6 +106,8 @@ pub(crate) struct ListRow {
     pub(crate) attributes: Map<String, Json>,
     /// Live Links: (channel, status).
     pub(crate) links: Vec<(String, String)>,
+    /// What is missing from the Student (#71): empty for a complete one.
+    pub(crate) missing: Vec<Missing>,
 }
 
 /// Longest `LIKE` pattern in bytes: Cloudflare D1 refuses more than 50.
@@ -142,33 +146,61 @@ pub(crate) struct Found {
 /// Students whose name or code contains `q` (all when empty), page
 /// `page` (from 1, clamped to the pages there are) by student code.
 pub(crate) async fn search(s: &Services, q: &str, page: i64) -> Result<Found> {
+    search_with(s, q, page, None, false).await
+}
+
+/// [`search`], also marking each Student's missing data (#71) per
+/// `roster`'s attributes, and listing only those with some when
+/// `only_missing`.
+pub(crate) async fn search_with(
+    s: &Services,
+    q: &str,
+    page: i64,
+    roster: Option<&RosterConfig>,
+    only_missing: bool,
+) -> Result<Found> {
     let pattern = like(q.trim());
-    let filter = "WHERE display_name LIKE ? ESCAPE '\\' OR student_code LIKE ? ESCAPE '\\'";
-    let count = Statement::new(format!("SELECT count(*) AS n FROM student {filter}"))
-        .bind(pattern.clone())
-        .bind(pattern.clone());
+    let mut filter =
+        "WHERE (display_name LIKE ? ESCAPE '\\' OR student_code LIKE ? ESCAPE '\\')".to_string();
+    let mut extra = Vec::new();
+    if let (true, Some(roster)) = (only_missing, roster) {
+        let (cond, binds) = missing::condition(s, roster).await?;
+        filter = format!("{filter} AND {cond}");
+        extra = binds;
+    }
+    let with_filter = |st: Statement| {
+        let mut st = st.bind(pattern.clone()).bind(pattern.clone());
+        st.params.extend(extra.iter().cloned());
+        st
+    };
+    let count = with_filter(Statement::new(format!(
+        "SELECT count(*) AS n FROM student {filter}"
+    )));
     let total = int(&s.db.query(count).await?, 0, "n").unwrap_or(0).max(0);
     let pages = ((total + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
     let page = page.clamp(1, pages);
-    let stmt = Statement::new(format!(
-        "SELECT id, student_code, display_name, status, attributes FROM student {filter} \
+    let stmt = with_filter(Statement::new(format!(
+        "SELECT id, student_code, display_name, email, status, attributes FROM student {filter} \
          ORDER BY student_code, id LIMIT ? OFFSET ?"
-    ))
-    .bind(pattern.clone())
-    .bind(pattern)
+    )))
     .bind(PAGE_SIZE)
     .bind((page - 1) * PAGE_SIZE);
     let rows = s.db.query(stmt).await?;
     let mut out: Vec<ListRow> = (0..rows.len())
         .map(|i| {
             let t = |c: &str| text(&rows, i, c).unwrap_or_default();
+            let attributes = object(&t("attributes"));
+            let missing = roster
+                .map(|r| missing::of(text(&rows, i, "email").as_deref(), &attributes, r))
+                .unwrap_or_default();
             ListRow {
                 id: t("id"),
                 code: t("student_code"),
                 name: t("display_name"),
                 status: t("status"),
-                attributes: object(&t("attributes")),
+                attributes,
                 links: Vec::new(),
+                missing,
             }
         })
         .collect();

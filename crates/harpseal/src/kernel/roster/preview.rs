@@ -5,13 +5,15 @@
 //! import may be `previewed` / `queued` / `running` at a time; a preview
 //! older than an hour gives its place up (it becomes `cancelled`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
 
-use super::file::{self, FileError};
-use super::store::{self, BUSY, Counts, Failure, Import, Preview, Tally};
-use super::validate::{self, MAX_PROBLEMS, Problem, Valid};
+use super::file;
+use super::intake::{self, Checked};
+use super::store::{self, BUSY, Counts, Existing, Failure, Import, Preview, Tally, Warned};
+use super::validate::{Problem, Valid};
+use super::warnings;
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::deployment::Deployment;
 use crate::port_types::Statement;
@@ -62,29 +64,7 @@ pub(crate) async fn upload(
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
-    let mut skipped = Vec::new();
-    let read = if bytes.len() > MAX_FILE_BYTES {
-        Err(vec![problem("too_large")])
-    } else {
-        file::read(&bytes, &name, &config.roster)
-            .map_err(|e: FileError| validate::file_problems(&e))
-            .and_then(|r| {
-                skipped = r.skipped;
-                // Students in a hidden roster sheet would become left.
-                if mode == "full" {
-                    hidden_roster_sheets(&skipped)?;
-                }
-                validate::validate(&r.rows, config)
-            })
-            .and_then(|v| {
-                // A full file with no rows would mark everyone left.
-                if mode == "full" && v.records.is_empty() {
-                    Err(vec![problem("empty_full")])
-                } else {
-                    Ok(v)
-                }
-            })
-    };
+    let read = intake::read(s, config, &name, &bytes, mode).await?;
     let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
@@ -93,7 +73,7 @@ pub(crate) async fn upload(
     s.files.put(&key, bytes, content_type).await?;
     let counts = Counts {
         sha256,
-        skipped,
+        skipped: read.skipped,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
     };
@@ -104,7 +84,7 @@ pub(crate) async fn upload(
         key: &key,
         name: &name,
     };
-    let out = record(s, &row, counts, read, mode == "full", ctx).await;
+    let out = record(s, &row, counts, read.result, mode == "full", ctx).await;
     if !matches!(out, Ok(Uploaded::Previewed(_) | Uploaded::Refused(_))) && row_absent(s, &id).await
     {
         // No row points at the objects (a failed batch, or another upload
@@ -129,16 +109,17 @@ async fn record(
     s: &Services,
     row: &NewRow<'_>,
     mut counts: Counts,
-    read: core::result::Result<Valid, Vec<Problem>>,
+    read: core::result::Result<Checked, Vec<Problem>>,
     full: bool,
     ctx: &RequestCtx,
 ) -> Result<Uploaded> {
-    let valid = match read {
-        Ok(v) => v,
+    let Checked { valid, existing } = match read {
+        Ok(c) => c,
         Err(problems) => {
             let failure = Failure {
                 total: problems.len() as u64,
-                problems: problems.into_iter().take(MAX_PROBLEMS).collect(),
+                classes: warnings::classes(&problems),
+                problems: warnings::kept(problems),
                 job: None,
             };
             let stmts = row.statements(s, &counts, Some(&failure), 0, ctx, None)?;
@@ -146,7 +127,8 @@ async fn record(
             return Ok(Uploaded::Refused(row.id.to_string()));
         }
     };
-    counts.preview = preview(s, &valid, full).await?;
+    counts.preview = preview(&valid, &existing, full);
+    counts.warnings = Warned::new(valid.warnings.clone());
     let parsed = super::rows::encode(&valid.records)?;
     counts.rows_sha256 = crate::auth::sha256_hex(&parsed);
     s.files
@@ -292,33 +274,12 @@ impl NewRow<'_> {
     }
 }
 
-/// Refuses a `full` file with a hidden sheet holding the roster header:
-/// one problem per such sheet.
-fn hidden_roster_sheets(skipped: &[file::Skipped]) -> core::result::Result<(), Vec<Problem>> {
-    let problems: Vec<Problem> = skipped
-        .iter()
-        .filter(|s| s.reason == "hidden_roster_sheet")
-        .map(|s| problem("hidden_roster_sheet").on(&s.sheet))
-        .collect();
-    if problems.is_empty() {
-        Ok(())
-    } else {
-        Err(problems)
-    }
-}
-
-/// A problem of the file as a whole.
-fn problem(reason: &str) -> Problem {
-    Problem::new(0, "", reason)
-}
-
 fn json_err(e: serde_json::Error) -> Error {
     Error::Invalid(format!("roster counts: {e}"))
 }
 
 /// Compares the file with the Students.
-async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
-    let existing = store::all_students(s).await?;
+fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> Preview {
     let mut tally = Tally::default();
     let mut listed = HashSet::new();
     for rec in &valid.records {
@@ -347,7 +308,7 @@ async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
     let left = leaving.len() as u64;
     let active_before = active.len() as u64;
     let shrinking = full && (valid.records.len() as u64) < active_before;
-    Ok(Preview {
+    Preview {
         tally,
         will_become_left: left,
         kept_by_status,
@@ -360,5 +321,5 @@ async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
             .take(MAX_LEFT_NAMES)
             .map(str::to_string)
             .collect(),
-    })
+    }
 }

@@ -39,9 +39,11 @@ mod chunk;
 pub(crate) use crate::sheet::csv;
 pub(crate) mod file;
 mod finish;
+mod intake;
 mod job;
 mod page_import;
 mod page_list;
+mod page_problems;
 pub(crate) mod preview;
 mod prune;
 mod rows;
@@ -51,8 +53,10 @@ mod store;
 mod stuck;
 mod texts;
 mod texts_sheets;
+mod texts_warnings;
 pub(crate) mod validate;
 mod view;
+pub(crate) mod warnings;
 
 use axum::routing::{get, post};
 
@@ -83,6 +87,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     };
     r.messages(texts::DEFAULTS)
         .messages(texts_sheets::DEFAULTS)
+        .messages(texts_warnings::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",
@@ -96,7 +101,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .back_office(IMPORT, "/roster/{id}/confirm", post(page_import::confirm))
         .back_office(IMPORT, "/roster/{id}/cancel", post(page_import::cancel))
         .back_office(IMPORT, "/roster/{id}/fail", post(page_import::fail))
-        .back_office(VIEW, "/roster/{id}/report.csv", get(page_import::report))
+        .back_office(VIEW, "/roster/{id}/report.csv", get(page_problems::report))
         .back_office(VIEW, "/roster/{id}/file", get(page_import::file))
         .job(JobSpec::new(service::JOB_KIND), job::run);
 }

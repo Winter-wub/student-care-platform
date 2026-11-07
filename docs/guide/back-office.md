@@ -5,7 +5,12 @@ the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 `/admin/students` lists the roster (50 per page, HTMX search by name or code)
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
-recent Security Events. Staff with `kernel.student.edit` edit fields (each
+recent Security Events. A Student with **missing data** (no email, an email that
+is not a valid address, or a `[roster.attributes]` attribute with no value) has a
+"ข้อมูลไม่ครบ" badge naming what is missing, and the checkbox "only Students with
+missing data" (`?missing=1`, kept across pages and search) lists just them. The
+roster import warns about the same things (below); a Student without an email
+still cannot start onboarding. Staff with `kernel.student.edit` edit fields (each
 edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
 the status. Staff with `kernel.link.manage` create Manual Links; Staff with
 `kernel.link.revoke` unlink a Student's chat account. The two are separate, so
@@ -47,8 +52,22 @@ never list every Student (one file per cohort) sets `modes = ["upsert"]` and
 asking for `full` is refused with 400 and imports nothing (`modes` must not be
 empty, hold only `full` / `upsert` and include `default_mode`; a bad value stops
 the Deployment from building). The preview and the import page name the mode.
-Any row error refuses the
-whole file with a CSV report, including data in a column without a header.
+A **blocking** problem refuses the
+whole file with a CSV report: an empty or malformed student id, a duplicate id in
+the file, a required value missing or off its type or list, an unreadable value,
+data in a column without a header, a hidden roster sheet in `full` mode. A
+**warning** does not: the row imports and the preview lists it (sheet, row, column
+and a count per class, with the same list in `report.csv`, which gains a level
+column). The warning classes, all on by default: `missing_email` (the Student
+cannot start onboarding until Staff add one), `invalid_email` (imported as typed,
+so Staff can fix it on the Student's page), `duplicate_email` (the address is used by
+another Student in the file, or by one already in the system that the file does
+not change) and `empty_attribute` (an optional attribute with no value). A
+Deployment makes classes blocking with `[roster] blocking = ["invalid_email",
+"duplicate_email"]` (only these four names are accepted; anything else stops the
+Deployment from building). A file with only warnings imports after Confirm, and
+the warnings stay on the import's page. Older imports keep their reports; a bad
+email used to refuse the file.
 An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; at most 50
 sheets). **Every visible sheet with content must hold the header**: a
 workbook with an extra notes or lookup sheet that imported before #70 is now
@@ -78,7 +97,7 @@ unreadable (type long ids as text). An Excel error cell
 and cell of each problem; a student id repeated in two sheets is a
 duplicate.
 Emails must be ASCII (letters, digits and symbols; an address with Thai
-characters is refused). Otherwise a preview shows new / updated / unchanged /
+characters is an `invalid_email`). A preview shows new / updated / unchanged /
 returning / fields kept by manual edits and, for `full`, will become left /
 kept active because Staff set the status; Confirm runs the Job
 `kernel.roster.import` in 500-row chunks (the page polls its progress), and the

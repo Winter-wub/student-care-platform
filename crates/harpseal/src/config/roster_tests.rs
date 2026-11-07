@@ -136,3 +136,26 @@ fn a_config_changed_in_code_is_checked_too() {
     r.default_mode = "upsert".into();
     assert!(r.check().is_ok());
 }
+
+#[test]
+fn blocking_defaults_to_none_and_names_warning_classes() {
+    let base = "name = \"X\"\ndefault_locale = \"th\"\n[roster]\n";
+    let ok = |extra: &str| crate::DeploymentConfig::from_toml(&format!("{base}{extra}"));
+    let none = ok("").unwrap();
+    assert!(none.roster.blocking.is_empty());
+    assert!(WARNING_CLASSES.iter().all(|c| !none.roster.blocks(c)));
+    let c = ok("blocking = [\"invalid_email\", \"duplicate_email\"]").unwrap();
+    assert!(c.roster.blocks("invalid_email") && c.roster.blocks("duplicate_email"));
+    assert!(!c.roster.blocks("missing_email") && !c.roster.blocks("empty_attribute"));
+    assert!(c.roster.is_mapped());
+    for bad in [
+        // Problems that always block cannot be listed (nor made warnings).
+        "blocking = [\"duplicate_code\"]",
+        "blocking = [\"required\"]",
+        "blocking = [\"bad_email\"]",
+        "blocking = [\"missing_email\", \"missing_email\"]",
+        "blocking = \"invalid_email\"",
+    ] {
+        assert!(ok(bad).is_err(), "accepted: {bad}");
+    }
+}

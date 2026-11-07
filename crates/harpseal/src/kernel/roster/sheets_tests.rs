@@ -9,6 +9,14 @@ const COHORTS: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts.xl
 const NO_HEADER: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_no_header.xlsx");
 const DUPLICATE: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_duplicate.xlsx");
 
+/// What stops the import; the warnings (#71) are tested on their own.
+fn blocking(problems: Vec<Problem>) -> Vec<Problem> {
+    problems
+        .into_iter()
+        .filter(|p| p.severity.is_blocking())
+        .collect()
+}
+
 fn at(p: &Problem) -> (&str, usize, &str, &str) {
     (
         p.sheet.as_str(),
@@ -75,7 +83,7 @@ fn a_header_with_a_wrong_column_names_its_sheet_and_row() {
 fn a_duplicate_id_across_sheets_and_an_error_cell_carry_sheet_and_row() {
     let c = test_config();
     let rows = parse(DUPLICATE, "d.xlsx", &c.roster).unwrap();
-    let problems = validate(&rows, &c).unwrap_err();
+    let problems = blocking(validate(&rows, &c).unwrap_err());
     let got: Vec<_> = problems.iter().map(at).collect();
     assert_eq!(
         got,
