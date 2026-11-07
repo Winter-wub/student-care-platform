@@ -29,6 +29,10 @@ pub struct MigrationReport {
     pub applied: Vec<(String, String)>,
     /// How many were already recorded (with an unchanged checksum) and skipped.
     pub skipped: usize,
+    /// Advice for the Deployment's author from [`crate::Deployment::migrate`]
+    /// (e.g. a `[roles]` entry that relies on a retired Permission rule);
+    /// the Core has no logger, so callers print these.
+    pub notices: Vec<String>,
 }
 
 /// SHA-256 hex of the migration text, line endings normalised to `\n` so a

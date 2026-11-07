@@ -13,6 +13,7 @@ use super::read::{self, LinkRow, StudentRow};
 use super::view::{View, channel_label};
 use super::{attribute_field, service};
 use crate::config::AttributeSpec;
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result};
 
 pub(super) async fn page(
@@ -113,7 +114,9 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
 }
 
 fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
-    let can_link = v.staff.can("kernel.link.manage");
+    // Staff unlink and Manual Link are separate Permissions (#80).
+    let can_revoke = v.staff.can(LINK_REVOKE);
+    let can_link = v.staff.can(LINK_MANAGE);
     let kinds = v.s.deployment.channel_kinds();
     let base = format!("/admin/students/{}", row.id);
     let history: Vec<&LinkRow> = links.iter().filter(|l| l.status == "revoked").collect();
@@ -133,7 +136,7 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                                 @if let Some(by) = &l.verified_by { " · " (v.t("kernel.students.verified_by")) " " (by) }
                             }
                             span class="muted code" { (v.t("kernel.students.account")) " " (l.external_id) }
-                            @if can_link {
+                            @if can_revoke {
                                 form method="post" action=(format!("{base}/links/{}/revoke", l.id)) {
                                     (v.staff.csrf_field())
                                     button class="secondary" type="submit" { (v.t("kernel.students.revoke")) }

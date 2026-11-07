@@ -51,6 +51,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         report.applied.len(),
         report.skipped
     );
+    for n in &report.notices {
+        eprintln!("notice: {n}");
+    }
     let _ticker = spawn_ticker(d.clone(), Duration::from_secs(60));
     let mut router = d.clone().router();
     if dev_mode {
