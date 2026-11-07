@@ -15,11 +15,12 @@
 
 use harpseal::{
     BatchReceipt, Capability, ChannelAccountId, Delivery, Error, Locale, Message, Metering,
-    PlatformMessageId, Result, SendReceipt,
+    PlatformMessageId, Result, ResumeToken, SendReceipt,
 };
 use serde_json::{Value, json};
 
 use crate::api::{API, Failure};
+use crate::resume::{Resume, objects_digest};
 use crate::retry_key::RetryKeys;
 use crate::{LineChannel, render};
 
@@ -124,8 +125,11 @@ impl LineChannel {
     /// Sends a rendered batch. `key`: the Core's batch key, from which
     /// every Push request gets its `X-Line-Retry-Key` (none without it; a
     /// reply has no retry key). On a failed request, the Messages wholly
-    /// sent before it are receipts, and a Message whose first parts went
-    /// out in earlier requests is `unfinished`.
+    /// sent before it are receipts, a Message whose first parts went out
+    /// in earlier requests is `unfinished`, and the receipt carries a
+    /// resume token ([`crate::resume`]) when a resume needs one to rebuild
+    /// the failed request: `resume` is that token, handed back with the
+    /// Messages from the stopped one on.
     pub(crate) async fn batch(
         &self,
         to: &ChannelAccountId,
@@ -133,6 +137,7 @@ impl LineChannel {
         msgs: &[Message],
         locale: &Locale,
         key: Option<&str>,
+        resume: Option<&ResumeToken>,
     ) -> BatchReceipt {
         let Rendered {
             parts,
@@ -141,10 +146,26 @@ impl LineChannel {
         } = render_batch(self, msgs, locale);
         let mut receipts = vec![SendReceipt::new(None, Metering::Free, false); messages];
         let token = d.reply_token().map(|t| t.token.as_str());
-        let mut keys = key.map(RetryKeys::new);
-        for req in plan(parts.len(), token) {
-            let chunk = &parts[req.parts.clone()];
+        let bind = (key.unwrap_or_default(), to.external_id.as_str());
+        let resume = resume.and_then(|t| applicable(t, bind, &parts));
+        // Parts of Message 0 an earlier attempt sent: not sent again. The
+        // units it opened then are carried, as replayed ([`crate::resume`]).
+        let skip = resume.as_ref().map_or(0, |r| r.skip);
+        if let (Some(r), Some(first)) = (&resume, receipts.first_mut()) {
+            first.pushed = skip > 0;
+            first.set_metered_units(r.carried);
+            *first = first.clone().with_replayed_units(r.carried);
+        }
+        let mut keys = key.map(|k| match resume {
+            Some(r) => RetryKeys::resumed(k, r.seen),
+            None => RetryKeys::new(k),
+        });
+        for req in plan(parts.len() - skip, token) {
+            let range = req.parts.start + skip..req.parts.end + skip;
+            let chunk = &parts[range.clone()];
             let objects: Vec<&Value> = chunk.iter().map(|p| &p.object).collect();
+            // The keys taken before this request: what a resume restores.
+            let seen = keys.as_ref().map(|k| k.seen().clone()).unwrap_or_default();
             let sent = match &req.reply {
                 Some(t) => match self.reply_call(t, &objects).await {
                     // Expired or spent token: the same objects go by Push.
@@ -173,20 +194,35 @@ impl LineChannel {
             } = match sent {
                 Ok(v) => v,
                 Err(e) => {
-                    // A Message whose parts went out before this request is
-                    // `unfinished`. Only when it opened its own requests does
-                    // a resume from it rebuild them (same retry keys, 409);
-                    // when its first parts shared a request with earlier
-                    // Messages, a resume builds other requests (#62).
+                    // A Message whose parts went out before this request
+                    // (now or on an earlier attempt) is `unfinished`.
                     let first = chunk[0].source;
-                    let started = req.parts.start > 0 && parts[req.parts.start - 1].source == first;
+                    let started = range.start > 0 && parts[range.start - 1].source == first;
                     let unfinished = started.then(|| receipts[first].clone());
+                    // Units the stopped Message opened so far (carried ones
+                    // included): the next resume carries them on.
+                    let receipts_units = receipts[first].metered_units;
                     // Messages wholly sent before this request.
                     receipts.truncate(first);
-                    return match unfinished {
+                    let opened = parts.iter().position(|p| p.source == first).unwrap_or(0);
+                    let done: Vec<&Value> = parts[opened..range.start]
+                        .iter()
+                        .map(|p| &p.object)
+                        .collect();
+                    let token = (!done.is_empty() || !seen.is_empty()).then(|| {
+                        Resume {
+                            skip: done.len(),
+                            carried: if started { receipts_units } else { 0 },
+                            skipped: objects_digest(bind.0, bind.1, &done),
+                            seen,
+                        }
+                        .encode()
+                    });
+                    let out = match unfinished {
                         Some(u) => BatchReceipt::part_way(receipts, u, e),
                         None => BatchReceipt::partial(receipts, e),
                     };
+                    return out.with_resume(token);
                 }
             };
             for (i, p) in chunk.iter().enumerate() {
@@ -249,6 +285,19 @@ impl LineChannel {
             replayed: k.replayed,
         }))
     }
+}
+
+/// The token's state when it fits these parts: its `skip` parts all belong
+/// to Message 0 and are the objects it went out with, in this batch (`key`)
+/// to this account (`to`). `None` otherwise (a token from another batch or
+/// account, or not this adapter's): resume from the first part, as without
+/// a token.
+fn applicable(t: &ResumeToken, (key, to): (&str, &str), parts: &[Part]) -> Option<Resume> {
+    let r = Resume::decode(t)?;
+    let head = parts.get(..r.skip)?;
+    let objects: Vec<&Value> = head.iter().map(|p| &p.object).collect();
+    let fits = head.iter().all(|p| p.source == 0) && objects_digest(key, to, &objects) == r.skipped;
+    fits.then_some(r)
 }
 
 /// One Reply or Push request that LINE accepted.

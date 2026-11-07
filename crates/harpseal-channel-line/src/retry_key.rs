@@ -46,10 +46,25 @@ impl RetryKeys {
         *n += 1;
         retry_key(&self.batch_key, to, objects, occurrence)
     }
+
+    /// Keys for the rest of a batch whose earlier requests took the
+    /// occurrence counts `seen` (from a resume token, [`crate::resume`]):
+    /// a request rebuilt on the resume gets the key it had before.
+    pub(crate) fn resumed(batch_key: impl Into<String>, seen: HashMap<[u8; 32], u32>) -> Self {
+        Self {
+            batch_key: batch_key.into(),
+            seen,
+        }
+    }
+
+    /// The occurrence counts so far, per (recipients, objects) digest.
+    pub(crate) fn seen(&self) -> &HashMap<[u8; 32], u32> {
+        &self.seen
+    }
 }
 
 /// SHA-256 of the recipients and the objects.
-fn digest(to: &[&str], objects: &[&Value]) -> [u8; 32] {
+pub(crate) fn digest(to: &[&str], objects: &[&Value]) -> [u8; 32] {
     let mut h = Sha256::new();
     for id in to {
         h.update(id.as_bytes());

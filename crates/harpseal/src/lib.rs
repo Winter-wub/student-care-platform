@@ -62,7 +62,7 @@ pub use auth::{
     create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub use channel::{
-    Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment, WebClient,
+    Channel, DeleteMessage, EditMessage, MiniApp, Multicast, ResumeToken, SendAttachment, WebClient,
 };
 pub use config::{
     AttrError, AttributeSpec, AttributeType, BrandingConfig, ConsentConfig, DeploymentConfig,
@@ -74,7 +74,9 @@ pub use delivery::{
     IncomingFile, Metering, PlatformMessageId, ReplyToken, SendReceipt, StudentId, Timestamp,
     WebhookRequest,
 };
-pub use deployment::{Deployment, DeploymentBuilder, ManySent, TickReport, WebhookReport};
+pub use deployment::{
+    Deployment, DeploymentBuilder, ManySent, SendOptions, TickReport, WebhookReport,
+};
 pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};

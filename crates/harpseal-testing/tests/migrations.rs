@@ -91,6 +91,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
             ("kernel".into(), "0007_rate_limit".into()),
             ("kernel".into(), "0008_app_session_expires_idx".into()),
             ("kernel".into(), "0009_inbound_event_done".into()),
+            ("kernel".into(), "0010_outbound_message_index".into()),
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
@@ -123,10 +124,10 @@ async fn a_module_migration_runs_after_the_kernel_and_once() {
         names,
         [
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
-            "kernel", "notes"
+            "kernel", "kernel", "notes"
         ]
     );
-    assert_eq!(d.migrate().await.unwrap().applied.len(), 10);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 11);
     assert!(d.migrate().await.unwrap().applied.is_empty());
 }
 
