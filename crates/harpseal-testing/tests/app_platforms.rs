@@ -3,9 +3,11 @@
 //! harness's `RecordingHttp`) and a Telegram `initData` checked by HMAC
 //! against the harness clock. The vectors are the adapters' own:
 //! `harpseal-channel-line/tests/liff.rs` and `web_app.rs`'s known vector.
+//! The scripts come from each adapter's `MiniApp::web_client` (#52), so a
+//! LINE MINI App URL loads LIFF too.
 
 use harpseal::{Deployment, EmailOtp, Statement};
-use harpseal_channel_line::{LineChannel, LineConfig};
+use harpseal_channel_line::{LINE_MINI_APP_BASE, LineChannel, LineConfig};
 use harpseal_channel_telegram::{TelegramChannel, TelegramConfig};
 use harpseal_testing::{Harness, TestApp};
 
@@ -27,12 +29,13 @@ async fn run(h: &Harness, sql: &str) {
 }
 
 async fn boot() -> (Harness, TestApp) {
+    boot_with(LineConfig::new("line-secret", "line-token", LIFF)).await
+}
+
+async fn boot_with(line: LineConfig) -> (Harness, TestApp) {
     let h = Harness::new();
     let s = h.services();
-    let line = LineChannel::new(
-        LineConfig::new("line-secret", "line-token", LIFF),
-        s.http.clone(),
-    );
+    let line = LineChannel::new(line, s.http.clone());
     let tg = TelegramChannel::new(
         TelegramConfig::new(BOT_TOKEN, "tg-secret", "https://sealbay.example"),
         s.http.clone(),
@@ -105,6 +108,80 @@ async fn the_entry_page_loads_both_platform_scripts_with_the_liff_id() {
 }
 
 #[tokio::test]
+async fn a_line_mini_app_url_loads_the_liff_sdk_with_its_id() {
+    let cfg =
+        LineConfig::new("line-secret", "line-token", LIFF).with_launch_base(LINE_MINI_APP_BASE);
+    let (h, app) = boot_with(cfg).await;
+    let line = app.deployment().channel("line").unwrap();
+    let launch = line.mini_app().unwrap().launch_url("/app");
+    assert_eq!(launch, format!("https://miniapp.line.me/{LIFF}/app"));
+    let page = app.get("/app").await.body;
+    assert!(page.contains("src=\"https://static.line-scdn.net/liff/edge/2/sdk.js\""));
+    assert!(page.contains(&format!("data-liff=\"{LIFF}\"")));
+    assert!(page.contains("data-line=\"line\""));
+    // The LINE Login button for a browser outside LINE.
+    assert!(page.contains("id=\"xchg-line\""));
+    // And its exchange is the LIFF one: limited and verified with LINE.
+    h.http().respond_with(200, claims("2000000000"));
+    let r = app
+        .browser()
+        .open_mini_app_raw("line", ID_TOKEN, "/app")
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(h.http_requests().len(), 1);
+}
+
+#[tokio::test]
+async fn telegram_web_in_an_iframe_gets_a_partitioned_cookie() {
+    let (h, app) = boot().await;
+    let post = |channel: &str, token: &str, framed: &str| {
+        http::Request::post("/app/session")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(axum::body::Body::from(format!(
+                "channel={channel}&token={}&next=%2Fapp&framed={framed}",
+                token
+                    .replace('%', "%25")
+                    .replace('&', "%26")
+                    .replace('=', "%3D")
+            )))
+            .unwrap()
+    };
+    let framed = app.request(post("telegram", INIT_DATA, "1")).await;
+    assert_eq!(framed.status, 303, "{}", framed.body);
+    let cookie = framed.header("set-cookie").unwrap();
+    assert!(
+        cookie.contains("SameSite=None; Secure; Partitioned"),
+        "{cookie}"
+    );
+    // In the app (top-level webview): Lax.
+    let top = app.request(post("telegram", INIT_DATA, "")).await;
+    let cookie = top.header("set-cookie").unwrap();
+    assert!(cookie.contains("SameSite=Lax; Secure") && !cookie.contains("Partitioned"));
+    // Only a Telegram Web App Channel gets it: LIFF never runs framed.
+    h.http().respond_with(200, claims("2000000000"));
+    let line = app.request(post("line", ID_TOKEN, "1")).await;
+    assert_eq!(line.status, 303, "{}", line.body);
+    let cookie = line.header("set-cookie").unwrap();
+    assert!(cookie.contains("SameSite=Lax") && !cookie.contains("Partitioned"));
+    // Without a session the entry page deletes both forms of the cookie.
+    let req = http::Request::get("/app")
+        .header("cookie", "app_session=gone")
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let cleared = app.request(req).await;
+    let all: Vec<_> = cleared.headers.get_all("set-cookie").iter().collect();
+    assert_eq!(all.len(), 2, "{all:?}");
+    assert!(
+        all.iter()
+            .all(|c| c.to_str().unwrap().contains("Max-Age=0"))
+    );
+    assert!(
+        all.iter()
+            .any(|c| c.to_str().unwrap().contains("Partitioned"))
+    );
+}
+
+#[tokio::test]
 async fn a_liff_id_token_line_accepts_opens_the_students_page() {
     let (h, app) = boot().await;
     h.http().respond_with(200, claims("2000000000"));
@@ -145,6 +222,9 @@ async fn a_liff_id_token_line_refuses_is_a_403_and_never_stored() {
         .await;
     assert_eq!(down.status, 500);
     assert!(!down.body.contains("upstream"));
+    // The runtime logs the kind only, never the message or the token.
+    let report = down.error_report.expect("the 500 is reported").to_string();
+    assert_eq!(report, "app.exchange: platform");
 }
 
 #[tokio::test]

@@ -107,7 +107,7 @@ impl<S: Send + Sync> FromRequestParts<S> for CurrentStaff {
 /// Outermost layer: gives each request a [`RequestCtx`], answers with its
 /// id in `x-request-id`, and adds `Cache-Control: no-store`,
 /// `X-Frame-Options: DENY` and `Referrer-Policy: same-origin` to every
-/// `/admin` response.
+/// `/admin` response, and [`APP_FRAME_ANCESTORS`] to every `/app` one.
 pub(crate) async fn request_ctx(
     State(state): State<AppState>,
     req: Request,
@@ -118,7 +118,9 @@ pub(crate) async fn request_ctx(
     let trust = state.config.staff.trust_forwarded_for;
     let ctx = RequestCtx::from_parts(&parts.headers, peer(&parts), trust, id.clone());
     parts.extensions.insert(ctx);
-    let admin = parts.uri.path() == "/admin" || parts.uri.path().starts_with("/admin/");
+    let under = |p: &str| parts.uri.path() == p || parts.uri.path().starts_with(&format!("{p}/"));
+    let admin = under("/admin");
+    let app = under("/app");
     let mut resp = next.run(Request::from_parts(parts, body)).await;
     let h = resp.headers_mut();
     if let Some(v) = id.and_then(|id| HeaderValue::from_str(&id).ok()) {
@@ -133,8 +135,21 @@ pub(crate) async fn request_ctx(
             HeaderValue::from_static("same-origin"),
         );
     }
+    if app {
+        h.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(APP_FRAME_ANCESTORS),
+        );
+    }
     resp
 }
+
+/// The Mini App may be framed only by itself and by Telegram Web: LIFF and
+/// the Telegram apps load it top-level. Without it, any page (another
+/// bot's Mini App inside web.telegram.org shares the partitioned cookie)
+/// could frame `/app/announcements/{id}` and steal a tap on "รับทราบ"
+/// (clickjacking; the CSRF token does not help, the click is ours).
+pub(crate) const APP_FRAME_ANCESTORS: &str = "frame-ancestors 'self' https://web.telegram.org";
 
 /// The guard on every back-office route.
 pub(crate) async fn guard(

@@ -1,7 +1,9 @@
 //! `POST /app/session`: the platform token for an App Session.
 //!
 //! The form carries `channel` (a Channel kind), `token` (the raw LIFF ID
-//! token or Telegram `initData`) and `next`. The Channel's `MiniApp`
+//! token or Telegram `initData`), `next`, and `framed` ("1" when the page
+//! runs in an iframe: on a Telegram Web App Channel the cookie is then
+//! [`session::Site::Framed`], for web.telegram.org). The Channel's `MiniApp`
 //! Capability verifies the token; the account must already exist (it
 //! chatted with the bot). Answers:
 //! - `Sec-Fetch-Site: cross-site`: 403 (login CSRF; the real exchange is a
@@ -17,7 +19,9 @@
 //!   Telegram `initData` older than an hour, which stays the same while
 //!   the webview is open): the "open it again from the chat" page, no
 //!   retry button, no event;
-//! - any other failure: 500, no details;
+//! - any other failure: 500, no details; the response carries an
+//!   [`ErrorReport`] (`app.exchange` and the error's kind, never its
+//!   message) for the runtime's log;
 //! - an account the Deployment has never seen: the "not linked" page,
 //!   without a session;
 //! - otherwise a new session (the account's expired ones deleted in the
@@ -46,7 +50,10 @@ use super::view::{answer, hint, not_linked};
 use super::{limit, session};
 use crate::audit::RequestCtx;
 use crate::port_types::{Statement, Value};
-use crate::{AppState, Error, Result};
+use crate::{AppState, Error, ErrorReport, Result, WebClient};
+
+/// [`ErrorReport::area`] of the exchange.
+const AREA: &str = "app.exchange";
 
 /// The exchange form.
 #[derive(Debug, Default, Deserialize)]
@@ -57,6 +64,8 @@ pub(crate) struct ExchangeForm {
     token: String,
     #[serde(default)]
     next: String,
+    #[serde(default)]
+    framed: String,
 }
 
 /// `next` when it is `/app` or a path under it made of plain characters,
@@ -80,8 +89,11 @@ pub(crate) async fn exchange(
     headers: HeaderMap,
     Form(f): Form<ExchangeForm>,
 ) -> Response {
-    let Ok(t) = super::texts(&s, &s.config.default_locale).await else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    let t = match super::texts(&s, &s.config.default_locale).await {
+        Ok(t) => t,
+        Err(e) => {
+            return ErrorReport::attach(StatusCode::SERVICE_UNAVAILABLE.into_response(), AREA, &e);
+        }
     };
     // The entry page posts from the same origin; a cross-site post would
     // sign the browser in as someone else (login CSRF).
@@ -96,15 +108,17 @@ pub(crate) async fn exchange(
     let Some(app) = d.channel(&f.channel).and_then(|c| c.mini_app()) else {
         return answer(&s, &t, StatusCode::NOT_FOUND, "kernel.app.not_found", None);
     };
+    // Never shown, and only its kind is logged: the message may echo the
+    // token.
     let fail = |e: &Error| {
-        let _ = e; // never shown or logged: it may echo the token
-        answer(
+        let page = answer(
             &s,
             &t,
             StatusCode::INTERNAL_SERVER_ERROR,
             "kernel.app.error",
             Some(next),
-        )
+        );
+        ErrorReport::attach(page, AREA, e)
     };
     let group = ctx.ip.as_deref().map(limit::ip_group);
     if let Some(g) = group.as_deref().filter(|_| networked(&s, &f.channel)) {
@@ -161,7 +175,7 @@ pub(crate) async fn exchange(
     );
     h.insert(
         header::SET_COOKIE,
-        session::cookie(Some(&token), s.config.staff.cookie_secure),
+        session::cookie(Some(&token), s.config.staff.cookie_secure, site(&s, &f)),
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     r
@@ -170,9 +184,21 @@ pub(crate) async fn exchange(
 /// The Channel's verification is a network call: LIFF (LINE's verify
 /// endpoint). Telegram and the Fake verify locally.
 fn networked(s: &AppState, channel: &str) -> bool {
-    Sdks::of(&s.deployment)
-        .liff
-        .is_some_and(|(kind, _)| kind == channel)
+    matches!(
+        Sdks::client_of(&s.deployment, channel),
+        Some(WebClient::Liff { .. })
+    )
+}
+
+/// [`session::Site::Framed`] for a Telegram Web App page in an iframe
+/// (Telegram Web); every other page is a top-level webview or tab.
+fn site(s: &AppState, f: &ExchangeForm) -> session::Site {
+    let telegram = Sdks::client_of(&s.deployment, &f.channel) == Some(WebClient::Telegram);
+    if telegram && f.framed == "1" {
+        session::Site::Framed
+    } else {
+        session::Site::Top
+    }
 }
 
 /// `channel_account.id` of (`channel`, `external_id`).

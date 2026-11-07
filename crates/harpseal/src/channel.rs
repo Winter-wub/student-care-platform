@@ -165,6 +165,28 @@ pub trait MiniApp: Send + Sync {
     /// Resolves the platform's signed token to a Channel Account (App
     /// Session).
     async fn verify_session(&self, signed_token: &str) -> Result<ChannelAccountId>;
+    /// The platform script the Mini App page loads to read the signed
+    /// token in the webview. `None` (the default): no script; the token
+    /// is posted some other way (the Fake Channel's tests post it).
+    fn web_client(&self) -> Option<WebClient> {
+        None
+    }
+}
+
+/// The platform's web SDK a Mini App page loads, as a [`MiniApp`] reports
+/// it. The Kernel's entry page loads the script and reads the token with
+/// it; the URL of the Mini App plays no part.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WebClient {
+    /// LINE's LIFF SDK, for a LIFF app or a LINE MINI App
+    /// (`liff.init({ liffId: id })`, then `liff.getIDToken()`).
+    Liff {
+        /// The LIFF id.
+        id: String,
+    },
+    /// Telegram's Web App script (`Telegram.WebApp.initData`).
+    Telegram,
 }
 
 /// Capability: send a file.

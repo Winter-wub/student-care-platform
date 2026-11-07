@@ -9,7 +9,9 @@
 //! - CSRF: `SHA-256("app-csrf:" + token)`, sent as the `_csrf` field (or
 //!   the `X-CSRF-Token` header HTMX adds) on every POST and compared in
 //!   constant time. `SameSite=Lax` already stops cross-site POSTs; the
-//!   field is defence in depth, as in the back office.
+//!   field is defence in depth, as in the back office. In a cross-site
+//!   iframe (Telegram Web) the cookie is `SameSite=None; Partitioned`
+//!   ([`Site::Framed`]) and the field is what stops them.
 
 use axum::http::{HeaderMap, HeaderValue};
 
@@ -130,20 +132,51 @@ fn text(rows: &Rows, col: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Where the Mini App page runs, for the cookie's `SameSite`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Site {
+    /// The chat app's webview or a browser tab: `SameSite=Lax`.
+    Top,
+    /// A cross-site iframe (Telegram Web, `web.telegram.org`), where a
+    /// `Lax` cookie is never sent: `SameSite=None; Secure; Partitioned`
+    /// (CHIPS: the cookie is kept per top-level site, so it is not a
+    /// tracking cookie). A browser without CHIPS ignores `Partitioned`
+    /// and keeps it as an ordinary third-party cookie, or blocks it if it
+    /// blocks those; the page then ends at "open from the chat", as it
+    /// did with `Lax`. `None` needs `Secure`: with `cookie_secure = false`
+    /// (local HTTP) the cookie stays `Lax`.
+    Framed,
+}
+
 /// `Set-Cookie` for a new session (or `None` to delete it).
-pub(crate) fn cookie(token: Option<&str>, secure: bool) -> HeaderValue {
+pub(crate) fn cookie(token: Option<&str>, secure: bool, site: Site) -> HeaderValue {
     let (value, age) = match token {
         Some(t) => (t, TTL_MS / 1000),
         None => ("", 0),
     };
-    let secure = if secure { "; Secure" } else { "" };
-    let s = format!("{COOKIE}={value}; Path=/app; HttpOnly; SameSite=Lax; Max-Age={age}{secure}");
+    let same_site = match site {
+        Site::Framed if secure => "None; Secure; Partitioned",
+        _ if secure => "Lax; Secure",
+        _ => "Lax",
+    };
+    let s = format!("{COOKIE}={value}; Path=/app; HttpOnly; SameSite={same_site}; Max-Age={age}");
     HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
+/// `Set-Cookie` headers deleting the cookie in both forms: a partitioned
+/// cookie is only deleted by a `Set-Cookie` that is itself `Partitioned`.
+/// Without `Secure` there is no partitioned form, so one header.
+pub(crate) fn clear(secure: bool) -> Vec<HeaderValue> {
+    let mut out = vec![cookie(None, secure, Site::Top)];
+    if secure {
+        out.push(cookie(None, secure, Site::Framed));
+    }
+    out
+}
+
 /// Deletes at most 500 sessions expired more than [`PRUNE_AFTER_MS`]
-/// before `now`; returns how many. (`app_session` has no `expires_at`
-/// index yet: a follow-up migration.)
+/// before `now`; returns how many (index `app_session_expires_idx`,
+/// Kernel migration `0008`).
 pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
     let stmt = Statement::new(
         "DELETE FROM app_session WHERE id IN \
@@ -151,4 +184,23 @@ pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
     )
     .bind(now - PRUNE_AFTER_MS);
     Ok(services.db.execute(stmt).await?.rows_affected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Site, clear, cookie};
+
+    #[test]
+    fn clearing_sends_the_partitioned_form_only_when_it_can_exist() {
+        let secure: Vec<_> = clear(true)
+            .iter()
+            .map(|h| h.to_str().unwrap().to_string())
+            .collect();
+        assert_eq!(secure.len(), 2);
+        assert!(secure[1].contains("SameSite=None; Secure; Partitioned; Max-Age=0"));
+        // Without Secure the framed form is Lax too: one header.
+        assert_eq!(clear(false).len(), 1);
+        let framed = cookie(Some("t"), false, Site::Framed);
+        assert!(framed.to_str().unwrap().contains("SameSite=Lax;"));
+    }
 }

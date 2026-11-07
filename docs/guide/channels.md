@@ -10,6 +10,14 @@ needs `LINE_LIFF_ID` and `TELEGRAM_WEB_APP_URL` or `build()` refuses to
 start. Both point at the Deployment's HTTPS origin: the LIFF app's endpoint
 URL (scope `openid`) and BotFather's Web App URL. `/` forwards to the Mini
 App page `/app`; an App Session cookie lasts one hour; `/notice` is public.
+Opened outside both chat apps (Staff typing the bare domain), the page
+shows links to `/notice` and `/admin/login` instead of starting LINE Login.
+A LINE MINI App is a LIFF app too: build the `LineConfig` with
+`.with_launch_base(LINE_MINI_APP_BASE)` so buttons open
+`https://miniapp.line.me/{liffId}`. On Telegram Web (web.telegram.org) the
+page runs in a cross-site iframe and its cookie is
+`SameSite=None; Secure; Partitioned`; a browser that blocks third-party
+cookies without supporting partitioned ones ends at "open from the chat".
 The Mini App still needs a manual check inside real LIFF and Telegram
 webviews before a release (the e2e walk opens it with the Fake Channel's
 token only).
