@@ -10,8 +10,9 @@
 //!   same-origin form post);
 //! - no such Channel, or no Mini App on it: 404;
 //! - on a Channel whose verification is a network call (LIFF: LINE's
-//!   verify endpoint), once an IP group has had 30 refused tokens in the
-//!   minute: 429 before verifying ([`super::limit`]);
+//!   verify endpoint), once an IP group has had 30 refused tokens or
+//!   `[mini_app] verify_per_minute` attempts (default 300) in the minute:
+//!   429 before verifying ([`super::limit`]);
 //! - a token the platform refuses (`BadSignature`): 403 with a retry
 //!   button and at most one Security Event `app.session_refused` per IP
 //!   group per minute (Channel kind and IP group, never the token);
@@ -35,13 +36,15 @@
 //! Trade-offs of the limits: Telegram's `initData` is checked locally (one
 //! HMAC), so it gets no limit at all; a limit keyed by IP would only lock
 //! out Students sharing campus Wi-Fi or carrier NAT. LINE's check costs a
-//! request to LINE, so refused tokens are capped per IP group (IPv6 /64):
-//! after 30 in a minute the group verifies nothing until the next one.
-//! Accepted tokens do not count (#86): every launch exchanges, and a class
-//! behind one campus NAT opening a Card at once must not be slowed down;
-//! the platform only issues valid tokens to its own signed-in users. One
-//! counter row per group per minute keeps the table small; the hourly Job
-//! deletes old windows. There is no
+//! request to LINE, so it is capped per IP group (IPv6 /64) twice: 30
+//! refused tokens a minute, and `[mini_app] verify_per_minute` attempts of
+//! any outcome (default 300, counted atomically before the call, so a
+//! burst sent at once or a replayed valid token is bounded too). Every
+//! launch exchanges (#86): the high ceiling lets a class behind one campus
+//! NAT open a Card at once. Each account keeps at most
+//! [`session::MAX_LIVE`] sessions, so replaying a valid token cannot grow
+//! the table either. Counter rows are one per group per minute; the hourly
+//! Job deletes old windows. There is no
 //! per-account limit: the account is known only after the verification
 //! the limit is meant to spare, and a valid token is never refused for
 //! being used again.
@@ -131,7 +134,7 @@ pub(crate) async fn exchange(
     // The group whose refused tokens count (networked Channels only).
     let limited = group.as_deref().filter(|_| networked(&s, &f.channel));
     if let Some(g) = limited {
-        match limit::verify_allowed(&s.services, g).await {
+        match limit::verify_allowed(&s.services, g, s.config.mini_app.verify_per_minute).await {
             Ok(true) => {}
             Ok(false) => {
                 return answer(

@@ -56,22 +56,27 @@ What the launch check cannot see, and what covers it:
 - **Back/forward, reload, a reopened tab**: browsers resend the original
   `same-origin`, or restore the page from the bfcache with no request. An
   App Session ends after `[mini_app] idle_minutes` without a request
-  (default 15, allowed 1 to 60; each request extends it, never past one
+  (default 15, allowed 2 to 60; each request extends it, never past one
   hour from the exchange), and a page restored from the bfcache reloads
   through the entry page. Within those minutes, Back can still show the
   previous Student's page: lower `idle_minutes` for lab PCs, and the
   Student can tap "sign out".
 - **Two tabs share one cookie**: each session page checks a stamp of its
   session against the tab's `sessionStorage` before it is painted; a page
-  of another tab's session hides itself and signs the tab in again.
+  of another tab's session hides itself and signs the tab in again. A
+  link opened in a new tab has no stamp yet, so it signs in afresh, which
+  ends the first tab's session too (its next page signs in again).
 - Any site can make the visitor sign in again (a cross-site link or image
   is a new launch); it cannot sign them in as anyone.
 
 The cost: one more round trip per launch (entry page, exchange, redirect,
 as for a launch without a cookie), and on LINE one call to LINE's verify
-endpoint per launch. Only refused tokens count toward the exchange's limit
-(30 a minute per IP group), so a class behind one campus Wi-Fi address can
-all open a Card at once. The home has a "sign out" button
+endpoint per launch. Per IP group and minute the exchange allows 30
+refused tokens and `[mini_app] verify_per_minute` attempts in all (default
+300, counted before LINE is called), so a class behind one campus Wi-Fi
+address can all open a Card at once and nobody can make LINE throttle the
+Deployment. An account keeps at most 5 App Sessions; a new one ends the
+oldest. The home has a "sign out" button
 (`POST /app/sign-out`) that ends the App Session at once and closes the
 Mini App inside LINE and Telegram. This protects the next honest user, not
 against someone at the keyboard who wants the previous session on purpose.

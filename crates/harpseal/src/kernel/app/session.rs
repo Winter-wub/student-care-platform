@@ -67,11 +67,17 @@ pub(crate) fn csrf_for(token: &str) -> String {
     sha256_hex(format!("app-csrf:{token}").as_bytes())
 }
 
+/// Live sessions one Channel Account may hold (a phone, a PC, a tablet…);
+/// a new one ends the oldest beyond this, so replaying a valid platform
+/// token cannot grow the table.
+pub(crate) const MAX_LIVE: i64 = 5;
+
 /// How rarely a request moves `expires_at` forward.
 const SLIDE_STEP_MS: i64 = 60_000;
 
 /// A new session for `account`, idle after `idle_ms`: (cookie token,
-/// statements). The batch also deletes the account's expired sessions.
+/// statements). The batch also deletes the account's expired sessions and
+/// all but its newest [`MAX_LIVE`] `- 1` live ones.
 pub(crate) fn create(
     services: &Services,
     account: &str,
@@ -80,9 +86,16 @@ pub(crate) fn create(
     let token = services.random_hex(32)?;
     let now = services.now_ms();
     let stmts = vec![
-        Statement::new("DELETE FROM app_session WHERE channel_account_id = ? AND expires_at <= ?")
-            .bind(account)
-            .bind(now),
+        // Expired ones, and all but the newest `MAX_LIVE - 1` live ones.
+        Statement::new(
+            "DELETE FROM app_session WHERE channel_account_id = ? AND (expires_at <= ? \
+             OR id NOT IN (SELECT id FROM app_session WHERE channel_account_id = ? \
+             ORDER BY created_at DESC, id LIMIT ?))",
+        )
+        .bind(account)
+        .bind(now)
+        .bind(account)
+        .bind(MAX_LIVE - 1),
         Statement::new(
             "INSERT INTO app_session (id, channel_account_id, created_at, expires_at) \
              VALUES (?, ?, ?, ?)",

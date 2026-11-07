@@ -84,9 +84,12 @@ const EXCHANGE_JS: &str = r#"(function () {
 /// Answer pages clear the loop guard: their retry is a deliberate tap. So
 /// does every page of a live session ([`TAB_JS`]): the stamp only stops a
 /// loop that never reaches one, and the next launch (#86) must exchange
-/// again at once.
-pub(crate) const CLEAR_GUARD_JS: &str =
-    "try { sessionStorage.removeItem('hs_app_x'); } catch (e) {}";
+/// again at once. An answer page also drops a `pending` tab mark (the
+/// exchange it was for ended here): left behind, a later page of another
+/// tab's session would adopt it. A real stamp stays.
+pub(crate) const CLEAR_GUARD_JS: &str = "try { sessionStorage.removeItem('hs_app_x'); \
+     if (sessionStorage.getItem('hs_app_s') === 'pending') { sessionStorage.removeItem('hs_app_s'); } \
+     } catch (e) {}";
 
 /// Runs first on every page of a live session (`ui::mini_app_session`),
 /// with `@STAMP@` this session's [`tab_stamp`] (#86):
