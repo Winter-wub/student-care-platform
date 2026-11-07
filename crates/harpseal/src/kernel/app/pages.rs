@@ -1,6 +1,7 @@
 //! The Mini App's GET pages and the acknowledge endpoint. Every handler
-//! resolves the App Session first; without one it answers the entry page
-//! for its own path (`next`), so a deep link survives the exchange.
+//! resolves the App Session first ([`open`]); without one, or on a new
+//! launch ([`super::launch`]), it answers the entry page for its own path
+//! (`next`), so a deep link survives the exchange.
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
@@ -121,6 +122,16 @@ pub(super) async fn open(
     headers: &HeaderMap,
     path: &str,
 ) -> Result<(AppVisitor, Texts), Box<Response>> {
+    // A new launch (#86): whoever opened the page proves it again before
+    // the session's Student shows.
+    if let Some(token) = crate::auth::cookie(headers, session::COOKIE)
+        && !super::launch::continues(headers)
+    {
+        if let Err(e) = session::drop_token(&s.services, &token).await {
+            return Err(Box::new(unavailable(&e)));
+        }
+        return Err(Box::new(entry(s, headers, path).await));
+    }
     let v = match visitor(s, headers).await {
         Ok(Some(v)) => v,
         Ok(None) => return Err(Box::new(entry(s, headers, path).await)),

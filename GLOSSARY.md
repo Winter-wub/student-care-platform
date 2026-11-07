@@ -124,7 +124,7 @@ A web page opened inside the chat app for what chat does poorly, such as long fo
 _Avoid_: LIFF, web app, webview
 
 **App Session** (เซสชันมินิแอป):
-The identity of a Mini App page view, resolved from the Channel's signed token to a Channel Account and, through its Link, to a Student. Students have no separate login.
+The identity of a Mini App page view, resolved from the Channel's signed token to a Channel Account and, through its Link, to a Student. Students have no separate login. It lasts one launch at most: each time the Mini App is opened from the chat the platform is asked again who is there, and the Student can sign out.
 
 **Announcement** (ข่าว/ประกาศ):
 A message Staff write once, in one or more Locales, and send to an Audience; it can expire, be edited, re-sent or retracted, and may ask each Student to acknowledge it. Once expired, Students can no longer open or acknowledge it; Staff still see it. Editing a sent one may notify its recipients where the Channel cannot edit the message (an Edit notice).

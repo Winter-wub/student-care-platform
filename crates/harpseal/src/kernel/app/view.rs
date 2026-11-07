@@ -79,17 +79,23 @@ const EXCHANGE_JS: &str = r#"(function () {
   if (inTg) { fail(); } else { show('xchg-out'); }
 })();"#;
 
-/// Answer pages clear the loop guard: their retry is a deliberate tap.
-const CLEAR_GUARD_JS: &str = "try { sessionStorage.removeItem('hs_app_x'); } catch (e) {}";
+/// Answer pages clear the loop guard: their retry is a deliberate tap. So
+/// does every page of a live session (`ui::mini_app_session`): the stamp
+/// only stops a loop that never reaches one, and the next launch (#86)
+/// must exchange again at once.
+pub(crate) const CLEAR_GUARD_JS: &str =
+    "try { sessionStorage.removeItem('hs_app_x'); } catch (e) {}";
 
-/// A whole Mini App response: never cached, no referrer.
+/// A whole Mini App response: never cached; the `Referer` only to this
+/// origin, where it marks a navigation inside the launch for a webview
+/// without Fetch Metadata ([`super::launch`]).
 pub(crate) fn respond(status: StatusCode, page: Markup) -> Response {
     let mut r = (status, Html(page.into_string())).into_response();
     let h = r.headers_mut();
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(
         header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
+        HeaderValue::from_static("same-origin"),
     );
     r
 }
@@ -235,6 +241,11 @@ pub(crate) fn home(s: &PageState, t: &Texts, v: &AppVisitor, h: &Home<'_>) -> Re
             }
             @if h.reconsent {
                 p class="app-consent app-wait" role="status" { (t.t("kernel.app.consent_pending")) }
+            }
+            // Ends the App Session (#86), e.g. on a shared computer.
+            form class="app-sign-out" method="post" action=(super::SIGN_OUT_PATH) {
+                input type="hidden" name="_csrf" value=(v.csrf);
+                button type="submit" class="link" { (t.t("kernel.app.sign_out")) }
             }
         }
         @if !h.links.is_empty() {

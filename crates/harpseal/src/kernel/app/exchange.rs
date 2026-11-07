@@ -28,6 +28,10 @@
 //!   same batch), its cookie, and 303 to `next` when it is a safe `/app`
 //!   path, else to `/app`.
 //!
+//! Once the token is verified, the session of the cookie the form came
+//! with (if any) is deleted, whichever account it was for (#86): the new
+//! session replaces it, and the "not linked" page clears its cookie.
+//!
 //! Trade-offs of the limits: Telegram's `initData` is checked locally (one
 //! HMAC), so it gets no limit at all; a limit keyed by IP would only lock
 //! out Students sharing campus Wi-Fi or carrier NAT. LINE's check costs a
@@ -154,13 +158,19 @@ pub(crate) async fn exchange(
         Err(e) => return fail(&e),
     };
     // The adapter vouches for the external id on its own Channel.
+    // The session this browser held, whoever it was for, ends here (#86):
+    // the platform has just said who is in front of it.
+    let old = crate::auth::cookie(&headers, session::COOKIE);
     let account = match account_of(&s, &f.channel, &who.external_id).await {
         Ok(Some(a)) => a,
-        Ok(None) => return not_linked(&s, &t, None),
+        Ok(None) => return unlinked(&s, &t, old.as_deref()).await,
         Err(e) => return fail(&e),
     };
     let started = match session::create(&s.services, &account) {
-        Ok((token, stmts)) => s.services.db.batch(stmts).await.map(|_| token),
+        Ok((token, mut stmts)) => {
+            stmts.extend(old.as_deref().map(session::drop_stmt));
+            s.services.db.batch(stmts).await.map(|_| token)
+        }
         Err(e) => Err(e),
     };
     let token = match started {
@@ -178,6 +188,29 @@ pub(crate) async fn exchange(
         session::cookie(Some(&token), s.config.staff.cookie_secure, site(&s, &f)),
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
+}
+
+/// The "not linked" page; the browser's old session, if any, is deleted
+/// and its cookie cleared.
+async fn unlinked(s: &AppState, t: &crate::kernel::text::Texts, old: Option<&str>) -> Response {
+    let Some(old) = old else {
+        return not_linked(s, t, None);
+    };
+    if let Err(e) = session::drop_token(&s.services, old).await {
+        let page = answer(
+            s,
+            t,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "kernel.app.error",
+            None,
+        );
+        return ErrorReport::attach(page, AREA, &e);
+    }
+    let mut r = not_linked(s, t, None);
+    for clear in session::clear(s.config.staff.cookie_secure) {
+        r.headers_mut().append(header::SET_COOKIE, clear);
+    }
     r
 }
 

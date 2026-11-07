@@ -166,6 +166,12 @@ pub fn mini_app_session(
     body: Markup,
 ) -> Markup {
     let brand = Brand::of(s);
+    // A page of a live session ends the entry page's loop guard: the next
+    // launch (#86) exchanges again at once, even within its 15 s.
+    let body = html! {
+        (body)
+        @if csrf.is_some() { script { (PreEscaped(crate::kernel::app::CLEAR_GUARD_JS)) } }
+    };
     let inner = mini_footer(brand.name, "/notice?app=1", notice_label, body);
     document(&brand, title, "mini", csrf, inner)
 }

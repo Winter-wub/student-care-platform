@@ -37,6 +37,26 @@ A LINE MINI App is a LIFF app too: build the `LineConfig` with
 page runs in a cross-site iframe and its cookie is
 `SameSite=None; Secure; Partitioned`; a browser that blocks third-party
 cookies without supporting partitioned ones ends at "open from the chat".
+
+Every launch asks the platform again who is there (#86). A page load that
+does not come from one of the Deployment's own pages (opened from the chat,
+LIFF's redirect, Telegram Web's iframe, a Card's deep link, a typed URL or
+a bookmark) drops the App Session, row and cookie, before anything is read
+and shows the entry page, which posts the current LIFF ID token or
+Telegram `initData` again. So the next person on a shared computer (a lab
+PC on Telegram Web, LIFF in an external browser) never sees the previous
+Student's pages: they get their own, or "not linked". Links, forms and
+HTMX inside the Mini App continue the launch at no extra cost. The browser
+says which is which with `Sec-Fetch-Site` (only `same-origin` continues);
+an older webview without it continues only when its `Referer` is the
+request's own host (Mini App pages send `Referrer-Policy: same-origin`).
+The cost: one more round trip per launch (entry page, exchange, redirect,
+as for a launch without a cookie), and on LINE one call to LINE's verify
+endpoint per launch, counted by the exchange's limit of 30 per IP group a
+minute. A reload may count as a launch. The home has a "sign out" button
+(`POST /app/sign-out`) that ends the App Session at once. This protects
+the next honest user, not against someone at the keyboard who wants the
+previous session on purpose.
 The Mini App still needs a manual check inside real LIFF and Telegram
 webviews before a release (the e2e walk opens it with the Fake Channel's
 token only). A Deployment's own Module adds pages under `/app/` and links on

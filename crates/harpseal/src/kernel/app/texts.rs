@@ -122,6 +122,12 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "เข้าสู่ระบบด้วย LINE",
         "Log in with LINE"
     ),
+    ("kernel.app.sign_out", "ออกจากระบบ", "Sign out"),
+    (
+        "kernel.app.signed_out",
+        "ออกจากระบบแล้ว ปิดหน้านี้ได้เลย ครั้งหน้าเปิดจากปุ่มในแชทอีกครั้ง",
+        "You have signed out. You can close this page; next time, open it again from a button in the chat."
+    ),
     (
         "kernel.app.notice_link",
         "ประกาศความเป็นส่วนตัว",

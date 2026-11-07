@@ -6,6 +6,11 @@
 //!   (LIFF ID token, Telegram `initData`) is itself short-lived.
 //! - Bound to one Channel Account; the Link and Student are read on every
 //!   request, so a revoke or block shows at once.
+//! - Bound to one launch (#86): a request that does not come from one of
+//!   our own pages drops it before anything is read, and the entry page
+//!   asks the platform again who is there ([`super::launch`]). The
+//!   exchange also deletes the row of a cookie it is sent; "sign out"
+//!   (`POST /app/sign-out`) deletes it on request.
 //! - CSRF: `SHA-256("app-csrf:" + token)`, sent as the `_csrf` field (or
 //!   the `X-CSRF-Token` header HTMX adds) on every POST and compared in
 //!   constant time. `SameSite=Lax` already stops cross-site POSTs; the
@@ -129,6 +134,16 @@ pub(crate) async fn resolve(
         locale,
         csrf: csrf_for(&token),
     }))
+}
+
+/// Deletes the session behind the cookie `token` (gone already: nothing).
+pub(crate) async fn drop_token(services: &Services, token: &str) -> Result<()> {
+    services.db.execute(drop_stmt(token)).await.map(|_| ())
+}
+
+/// The statement deleting the session behind the cookie `token`.
+pub(crate) fn drop_stmt(token: &str) -> Statement {
+    Statement::new("DELETE FROM app_session WHERE id = ?").bind(sha256_hex(token.as_bytes()))
 }
 
 fn text(rows: &Rows, col: &str) -> Option<String> {
