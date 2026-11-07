@@ -7,7 +7,7 @@ use harpseal::{ActionId, Delivery, Inbound, IncomingFile, Metering, ReplyToken, 
 use harpseal::{ChannelAccountId, WebhookRequest};
 use harpseal_channel_fake::{FakeChannel, FakeProfile, SIGNATURE_HEADER};
 
-use super::{Call, Fixtures, Target, Wire, WireLog};
+use super::{Call, Fixtures, SeenKey, Target, Wire, WireLog};
 
 /// Reads what the Fake Channel sent: the Action ids of every recorded
 /// object are its wire payloads.
@@ -53,13 +53,11 @@ impl Wire for FakeWire {
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize> {
         self.0.menu(to).flatten().map(|m| m.entries.len())
     }
-    fn menu_key(&self, to: &ChannelAccountId) -> Option<Option<String>> {
-        Some(
-            self.0
-                .menu(to)
-                .flatten()
-                .and_then(|m| m.key().map(String::from)),
-        )
+    fn menu_key(&self, to: &ChannelAccountId) -> SeenKey {
+        match self.0.menu(to).flatten().and_then(|m| m.key().cloned()) {
+            Some(k) => SeenKey::Key(k.as_str().into()),
+            None => SeenKey::None,
+        }
     }
 }
 

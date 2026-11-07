@@ -9,10 +9,11 @@
 //!
 //! The object and the image are hashed (`<hash>`, 32 hex). A Menu with a
 //! *Menu key* is named `harpseal-<key>-<generation>-<hash>`: the locked
-//! Menu has key [`LOCKED_KEY`], an unlocked Menu its own
-//! [`Menu::key`] (the Kernel's Menus carry their Locale's,
-//! [`harpseal::MenuKey::for_locale`], e.g. `th`, whatever `setting`
-//! overrides did to the labels); `<generation>` is
+//! Menu has key [`LOCKED_KEY`] (reserved: [`MenuKey::new`] refuses it, so
+//! no unlocked Menu can take it), an unlocked Menu its own [`Menu::key`]
+//! (the Kernel's Menus carry their effective Locale's,
+//! [`harpseal::Catalog::effective`] and [`MenuKey::for_locale`], e.g.
+//! `th`, whatever `setting` overrides did to the labels); `<generation>` is
 //! [`crate::LineConfig::menu_generation`] (default 1). An unlocked Menu
 //! without a key ([`Menu::new`]) is named `harpseal-<hash>` and is never
 //! cleaned up: each version of it stays until deleted by hand. The same
@@ -79,7 +80,7 @@ mod tidy;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use harpseal::{ChannelAccountId, Error, Menu, Result};
+use harpseal::{ChannelAccountId, Error, Menu, MenuKey, Result};
 use http::Method;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -165,9 +166,13 @@ fn hashed(menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
 /// The rich menu object for `menu` on `image` under Menu key and
 /// generation `tag`, and its name: `harpseal-<key>-<generation>-<hash>`,
 /// or `harpseal-<hash>` without a key.
-pub fn rich_menu(tag: Option<(&str, u32)>, menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
+pub fn rich_menu(
+    tag: Option<(&MenuKey, u32)>,
+    menu: &Menu,
+    image: &[u8],
+) -> Result<(String, Value)> {
     let (hash, mut obj) = hashed(menu, image)?;
-    let name = name::make(tag, &hash)?;
+    let name = name::make(tag, &hash);
     obj["name"] = Value::String(name.clone());
     Ok((name, obj))
 }
@@ -199,12 +204,13 @@ impl LineChannel {
         menu: Option<&Menu>,
     ) -> Result<()> {
         let user = path_id(&to.external_id)?;
+        let locked = MenuKey::locked();
         let (menu, image, key) = match menu {
             Some(m) => (m, &self.cfg.unlocked_menu_image, m.key()),
             None => (
                 &self.cfg.locked_menu,
                 &self.cfg.locked_menu_image,
-                Some(LOCKED_KEY),
+                Some(&locked),
             ),
         };
         if menu.entries.is_empty() {
@@ -228,6 +234,7 @@ impl LineChannel {
             found = self.rich_menu_id(&name, &obj, image, false).await?;
             self.link(user, &found.id).await?.map_err(fail)?;
         }
+        let tag = tag.map(|(k, g)| (k.as_str(), g));
         self.tidy(user, tag, &name, found).await;
         Ok(())
     }

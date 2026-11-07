@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use common::{LineApi, SECRET, TOKEN, USER, png};
 use harpseal::{
-    ActionContext, ActionId, Channel, ChannelAccountId, Deployment, Locale, MenuEntrySpec, Message,
-    Module, ModuleRegistrar,
+    ActionContext, ActionId, Channel, ChannelAccountId, Deployment, Locale, MenuEntrySpec, MenuKey,
+    Message, Module, ModuleRegistrar,
 };
 use harpseal_channel_line::richmenu::{LOCKED_KEY, name_key};
 use harpseal_channel_line::{KIND, LineChannel, LineConfig};
@@ -92,7 +92,11 @@ async fn a_label_edited_twice_keeps_its_menu_key_and_one_rich_menu_remains() {
         .unwrap();
     for menu in [d.menu_for(&th), edited("ข่าวสาร"), edited("ข่าวประจำวัน")]
     {
-        assert_eq!(menu.key(), Some("th"), "the key ignores the labels");
+        assert_eq!(
+            menu.key().map(MenuKey::as_str),
+            Some("th"),
+            "the key ignores the labels"
+        );
         ch.set_menu(&to(3), Some(&menu)).await.unwrap();
     }
     let th1 = |t: &(String, u32)| t == &("th".to_string(), 1);
@@ -125,6 +129,25 @@ async fn a_label_edited_twice_keeps_its_menu_key_and_one_rich_menu_remains() {
         .collect();
     assert_eq!(tags(&api), want, "{:#?}", api.live_names());
     assert_eq!(api.live_names().len(), 3, "{:#?}", api.live_names());
+}
+
+#[tokio::test]
+async fn stray_locale_tags_share_the_default_locales_rich_menu() {
+    let h = Harness::new();
+    let d = deployment(&h);
+    let api = LineApi::default();
+    let ch = line(&api, 1);
+    for (n, tag) in [(1, "th"), (2, "TH"), (3, "th-TH"), (4, "locked")] {
+        let menu = d.menu_for(&Locale::new(tag));
+        assert_eq!(menu.key().map(MenuKey::as_str), Some("th"), "{tag}");
+        ch.set_menu(&to(n), Some(&menu)).await.unwrap();
+    }
+    assert_eq!(
+        tags(&api),
+        [("th".to_string(), 1)],
+        "{:#?}",
+        api.live_names()
+    );
 }
 
 #[tokio::test]

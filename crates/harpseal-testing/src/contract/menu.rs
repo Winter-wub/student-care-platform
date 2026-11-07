@@ -2,8 +2,8 @@
 
 use harpseal::{Locale, Menu, MenuEntry, MenuKey};
 
-use super::Target;
 use super::checks::id;
+use super::{SeenKey, Target};
 
 fn news() -> Vec<MenuEntry> {
     vec![MenuEntry {
@@ -35,7 +35,8 @@ pub async fn keyed_menu_is_set(t: &Target) {
     let set = t.channel.set_menu(to, Some(&menu)).await;
     assert!(set.is_ok(), "{kind}: setting a keyed Menu failed: {set:?}");
     assert_eq!(t.wire.menu_entries(to), Some(1), "{kind}: the Menu is set");
-    if let Some(seen) = t.wire.menu_key(to) {
-        assert_eq!(seen.as_deref(), Some("th"), "{kind}: the Menu key");
+    let seen = t.wire.menu_key(to);
+    if seen != SeenKey::Hidden {
+        assert_eq!(seen, SeenKey::Key("th".into()), "{kind}: the Menu key");
     }
 }

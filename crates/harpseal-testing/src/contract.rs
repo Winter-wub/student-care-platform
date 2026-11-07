@@ -227,13 +227,24 @@ pub trait Wire: Send + Sync {
     /// Entries of the Menu `to` currently has on the platform, `None` when
     /// it shows the locked (pre-Link) Menu.
     fn menu_entries(&self, to: &ChannelAccountId) -> Option<usize>;
-    /// The Menu key of the Menu `to` currently has (`Some(None)`: a Menu
-    /// without a key), or `None` when the platform does not show keys
-    /// (the default).
-    fn menu_key(&self, to: &ChannelAccountId) -> Option<Option<String>> {
+    /// The Menu key of the Menu `to` currently has, as far as the
+    /// platform shows it (default: [`SeenKey::Hidden`]).
+    fn menu_key(&self, to: &ChannelAccountId) -> SeenKey {
         let _ = to;
-        None
+        SeenKey::Hidden
     }
+}
+
+/// The Menu key a [`Wire`] sees on the platform.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SeenKey {
+    /// The platform does not show Menu keys.
+    Hidden,
+    /// No Menu, or one without a key.
+    None,
+    /// This key.
+    Key(String),
 }
 
 /// One adapter under test.

@@ -231,8 +231,8 @@ impl Menu {
         self
     }
     /// The Menu key, if any.
-    pub fn key(&self) -> Option<&str> {
-        self.key.as_ref().map(MenuKey::as_str)
+    pub fn key(&self) -> Option<&MenuKey> {
+        self.key.as_ref()
     }
 }
 
@@ -241,18 +241,20 @@ impl Menu {
 /// other Menus: the Locale an unlocked Menu serves
 /// ([`MenuKey::for_locale`]), or [`MenuKey::LOCKED`] for the locked Menu.
 /// Invariant: 1 to [`MenuKey::MAX_LEN`] of `a-z0-9`, checked by
-/// [`MenuKey::new`].
+/// [`MenuKey::new`]; [`MenuKey::LOCKED`] only from [`MenuKey::locked`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MenuKey(String);
 
 impl MenuKey {
     /// Longest key.
     pub const MAX_LEN: usize = 16;
-    /// The locked Menu's key. No Locale maps to it.
+    /// The locked Menu's key, reserved for the adapters' locked Menu: no
+    /// Locale maps to it and [`MenuKey::new`] refuses it.
     pub const LOCKED: &'static str = "locked";
 
     /// Rejects anything but 1 to [`MenuKey::MAX_LEN`] lowercase ASCII
-    /// letters and digits.
+    /// letters and digits, and the reserved [`MenuKey::LOCKED`] (an
+    /// unlocked Menu under it would be taken for the locked one).
     pub fn new(key: impl Into<String>) -> crate::Result<Self> {
         let key = key.into();
         let ok = !key.is_empty()
@@ -260,7 +262,11 @@ impl MenuKey {
             && key
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
-        if ok {
+        if key == Self::LOCKED {
+            Err(crate::Error::Invalid(format!(
+                "Menu key {key:?} is reserved for the locked Menu"
+            )))
+        } else if ok {
             Ok(Self(key))
         } else {
             Err(crate::Error::Invalid(format!(
@@ -278,7 +284,9 @@ impl MenuKey {
     /// The key of the unlocked Menu in `locale`: the tag in lowercase
     /// without `-` and `_` (`zh-Hant` -> `zhhant`). The one mapping every
     /// adapter relies on. Fails when the result is not a valid key (too
-    /// long, other characters) or is [`MenuKey::LOCKED`].
+    /// long, other characters) or is [`MenuKey::LOCKED`]. The Kernel keys
+    /// by the *effective* Locale ([`crate::Catalog::effective`]), and
+    /// `build()` checks every catalog Locale maps to its own key.
     pub fn for_locale(locale: &Locale) -> crate::Result<Self> {
         let mapped: String = locale
             .as_str()
@@ -286,12 +294,6 @@ impl MenuKey {
             .filter(|c| !matches!(c, '-' | '_'))
             .flat_map(char::to_lowercase)
             .collect();
-        if mapped == Self::LOCKED {
-            return Err(crate::Error::Invalid(format!(
-                "Locale {:?} maps to the locked Menu's key",
-                locale.as_str()
-            )));
-        }
         Self::new(mapped)
     }
 
@@ -333,9 +335,11 @@ mod tests {
         assert!(MenuKey::new("").is_err());
         assert!(MenuKey::new("TH").is_err());
         assert!(MenuKey::new("zh-hant").is_err());
+        assert!(MenuKey::new("locked").is_err(), "reserved");
         assert_eq!(MenuKey::locked().as_str(), MenuKey::LOCKED);
         let m = Menu::new(Vec::new());
         assert_eq!(m.key(), None);
-        assert_eq!(m.with_key(MenuKey::locked()).key(), Some("locked"));
+        let m = m.with_key(MenuKey::locked());
+        assert_eq!(m.key().map(MenuKey::as_str), Some("locked"));
     }
 }

@@ -12,7 +12,7 @@ use common::{LineApi, SECRET, TOKEN, USER, fixture, json, png};
 use harpseal::{ActionId, ChannelAccountId, Delivery, Menu, MenuEntry, Metering, WebhookRequest};
 use harpseal_channel_line::richmenu::name_key;
 use harpseal_channel_line::{KIND, LineChannel, LineConfig, metering};
-use harpseal_testing::contract::{Call, Fixtures, Target, Wire, WireLog, run};
+use harpseal_testing::contract::{Call, Fixtures, SeenKey, Target, Wire, WireLog, run};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -144,10 +144,14 @@ impl Wire for LineWire {
         (data != [LOCKED_ACTION]).then_some(data.len())
     }
     /// The Menu key in the name of the rich menu linked last.
-    fn menu_key(&self, to: &ChannelAccountId) -> Option<Option<String>> {
-        let menu = self.linked(to)?;
-        let key = name_key(menu["name"].as_str()?)?;
-        Some(key.map(|(k, _)| k.to_string()))
+    fn menu_key(&self, to: &ChannelAccountId) -> SeenKey {
+        let name = self
+            .linked(to)
+            .and_then(|m| m["name"].as_str().map(String::from));
+        match name.as_deref().and_then(name_key).flatten() {
+            Some((k, _)) => SeenKey::Key(k.into()),
+            None => SeenKey::None,
+        }
     }
 }
 

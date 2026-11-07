@@ -43,11 +43,17 @@ adapter when it sets a Menu.
 Each Menu becomes one rich menu, created on first use and reused by name:
 `harpseal-<key>-<generation>-<hash>`. `<hash>` covers the rendered rich menu
 and its image; `<key>` says which Menu it is and comes from the Menu itself
-(`Menu::key`): `locked` for the locked Menu, and for an unlocked Menu the
-Menu key of its Locale (`MenuKey::for_locale`: the tag in lowercase without
-`-` or `_`, so `th`, `en`, `zh-Hant` -> `zhhant`). The Kernel's Menus
+(`Menu::key`): `locked` for the locked Menu (reserved: no unlocked Menu can
+take it), and for an unlocked Menu the Menu key of its *effective* Locale
+(`Catalog::effective`: the Student's Locale when the catalog has texts in it,
+else the default Locale; then `MenuKey::for_locale`: the tag in lowercase
+without `-` or `_`, so `th`, `en`, `zh-Hant` -> `zhhant`). A Student whose
+roster cell says `TH`, `en-US` or `locked` reads the default Locale's texts,
+and gets its Menu and key. `build()` refuses a catalog Locale that maps to no
+key or to the key of another (`BuildError::MenuKey`), so the Kernel's Menus
 (`Deployment::menu_for`, `menu_with`, and the chat flow's Menu with `setting`
-overrides) always carry that key, so a back-office label edit keeps it.
+overrides) always carry a key for every catalog Locale, and a back-office
+label edit keeps it.
 `<generation>` comes from `LineConfig::with_menu_generation` (default 1).
 Nothing needs registering:
 
@@ -79,10 +85,14 @@ names not made by the adapter (e.g. `harpseal-th-backup`) are never deleted.
 
 Limits to know:
 
+- **A label edit re-links nobody.** Linked Students keep the old labels until
+  their next `set_menu` (a Link, a Consent, a follow, a restore from
+  unreachable).
 - **Label edits within one generation leak.** A back-office label edit keeps
   the Menu key, but makes a new rich menu under the same generation, which is
   left alone like any same-generation version. The old ones go with the next
-  generation bump.
+  generation bump. Re-linking in bulk and retiring the previous version is
+  [#66](https://github.com/Winter-wub/student-care-platform/issues/66).
 - **Accounts on a deleted rich menu.** LINE cannot list the accounts linked to
   a rich menu. An account still on a deleted older generation sees the default
   rich menu set in the LINE Official Account Manager (or none) until its next

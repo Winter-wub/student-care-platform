@@ -216,3 +216,38 @@ async fn a_lockout_notifies_the_link_on_the_other_channel_in_english() {
         "Someone typed wrong codes for your student ID from another account. If that was not you, please tell Staff."
     );
 }
+
+#[tokio::test]
+async fn a_stray_locale_gets_the_default_locales_menu_and_key() {
+    let (h, app) = boot(FakeProfile::Full).await;
+    // As a roster import may store them: an upper-case tag, a region with
+    // no texts of its own, a `locked` cell. All read the default Locale.
+    for (id, code, locale) in [
+        ("s5", "68010005", "TH"),
+        ("s6", "68010006", "en-US"),
+        ("s7", "68010007", "locked"),
+    ] {
+        let row = format!(
+            "INSERT INTO student (id, student_code, display_name, email, locale, status, created_at, updated_at) \
+             VALUES ('{id}', '{code}', 'Seal {code}', 's{code}@student.sealbay.example', '{locale}', 'active', 1, 1)"
+        );
+        sql(&h, &row).await;
+    }
+    let mut menus = Vec::new();
+    for (who, code) in [
+        ("u1", "68010001"),
+        ("u5", "68010005"),
+        ("u6", "68010006"),
+        ("u7", "68010007"),
+    ] {
+        let mut c = Chat::new(&h, &app, who);
+        c.link(code).await;
+        let menu = c.menu().flatten().expect("Menu unlocked");
+        let labels: Vec<String> = menu.entries.iter().map(|e| e.label.clone()).collect();
+        menus.push((menu.key().map(|k| k.as_str().to_string()), labels));
+    }
+    assert_eq!(menus[0].0.as_deref(), Some("th"));
+    assert_eq!(menus[1], menus[0], "TH reads th: same key, same labels");
+    assert_eq!(menus[2], menus[0], "en-US has no texts: th, not `enus`");
+    assert_eq!(menus[3], menus[0], "a `locked` cell reads th, with a key");
+}

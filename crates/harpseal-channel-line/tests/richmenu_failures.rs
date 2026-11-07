@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use common::{LineApi, SECRET, TOKEN, USER, png};
 use harpseal::{ActionId, Channel, ChannelAccountId, HttpClient, Menu, MenuEntry, Result};
-use harpseal_channel_line::richmenu::{LOCKED_KEY, rich_menu};
+use harpseal_channel_line::richmenu::rich_menu;
 use harpseal_channel_line::{KIND, LineChannel, LineConfig};
 use serde_json::json;
 
@@ -35,9 +35,13 @@ fn to() -> ChannelAccountId {
 
 /// The name of the locked Menu's rich menu in `generation`.
 fn locked_name(generation: u32) -> String {
-    rich_menu(Some((LOCKED_KEY, generation)), &locked(), &png(2500, 843))
-        .unwrap()
-        .0
+    rich_menu(
+        Some((&harpseal::MenuKey::locked(), generation)),
+        &locked(),
+        &png(2500, 843),
+    )
+    .unwrap()
+    .0
 }
 
 const OLD: &str = "richmenu-0000000000000000000000000000000f";

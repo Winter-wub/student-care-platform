@@ -278,7 +278,7 @@ async fn an_edited_menu_label_keeps_the_menu_key() {
     let mut c = Chat::new(&h, &app, "linked");
     c.link("68010001").await;
     let before = c.menu().flatten().expect("Menu unlocked");
-    assert_eq!(before.key(), Some("th"));
+    assert_eq!(before.key().map(harpseal::MenuKey::as_str), Some("th"));
 
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
     let path = "/admin/texts/kernel.menu.unlink";

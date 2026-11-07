@@ -339,3 +339,37 @@ fn public_routes_under_admin_or_in_old_syntax_are_refused() {
         );
     }
 }
+
+fn texts_in(locales: &[&str]) -> DeploymentConfig {
+    let mut toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n".to_string();
+    for l in locales {
+        toml.push_str(&format!(
+            "[texts.\"{l}\"]\n\"kernel.notice.title\" = \"x\"\n"
+        ));
+    }
+    DeploymentConfig::from_toml(&toml).unwrap()
+}
+
+#[test]
+fn two_locales_with_one_menu_key() {
+    let h = Harness::new();
+    let err = build_err(h.builder().config(texts_in(&["zh-hant", "zhhant"])));
+    let BuildError::MenuKey { locale, reason } = &err else {
+        panic!("{err:?}")
+    };
+    assert_eq!(locale, "zhhant");
+    assert!(reason.contains("zh-hant"), "{reason}");
+}
+
+#[test]
+fn a_locale_without_a_menu_key() {
+    let h = Harness::new();
+    for bad in ["locked", "x-seal-bay-university"] {
+        let err = build_err(h.builder().config(texts_in(&[bad])));
+        assert!(
+            matches!(&err, BuildError::MenuKey { locale, .. } if locale == bad),
+            "{err:?}"
+        );
+    }
+    assert!(h.builder().config(texts_in(&["zh-Hant"])).build().is_ok());
+}

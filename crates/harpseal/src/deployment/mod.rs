@@ -138,9 +138,13 @@ impl Deployment {
 
     /// The unlocked Menu in `locale`: the Modules' entries by `order`,
     /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
-    /// `[student] self_unlink` is on. Its key is
-    /// [`MenuKey::for_locale`](crate::MenuKey::for_locale), or none when
-    /// the Locale maps to no valid key.
+    /// `[student] self_unlink` is on. Its key is that of the effective
+    /// Locale ([`Catalog::effective`], [`MenuKey::for_locale`]): a Student
+    /// in `TH` or `en-US` with no texts of their own reads the default
+    /// Locale, and gets its Menu and key. `build()` checked that every
+    /// catalog Locale has a key of its own.
+    ///
+    /// [`MenuKey::for_locale`]: crate::MenuKey::for_locale
     pub fn menu_for(&self, locale: &Locale) -> Menu {
         self.menu_with(locale, |key| self.catalog.t(locale, key))
     }
@@ -167,7 +171,11 @@ impl Deployment {
             });
         }
         let menu = Menu::new(entries);
-        match crate::MenuKey::for_locale(locale) {
+        let key = crate::MenuKey::for_locale(&self.catalog.effective(locale));
+        // Unreachable: the effective Locale is a catalog Locale, and
+        // `build()` refused any without a key (`BuildError::MenuKey`).
+        debug_assert!(key.is_ok(), "{locale:?}: {key:?}");
+        match key {
             Ok(key) => menu.with_key(key),
             Err(_) => menu,
         }

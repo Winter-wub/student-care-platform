@@ -130,7 +130,12 @@ async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
         "{:#?}",
         api.live_names()
     );
-    let (th_now, _) = rich_menu(Some(("th", 3)), &versions[2], &png(2500, 1686)).unwrap();
+    let (th_now, _) = rich_menu(
+        Some((&MenuKey::new("th").unwrap(), 3)),
+        &versions[2],
+        &png(2500, 1686),
+    )
+    .unwrap();
     assert!(
         api.live_names().contains(&th_now),
         "the current version stays"
