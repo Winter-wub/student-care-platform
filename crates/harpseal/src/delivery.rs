@@ -191,7 +191,10 @@ impl SendReceipt {
     /// Marks one more metered unit as replayed (its Push request was
     /// answered as already accepted), never beyond `metered_units`.
     pub fn add_replayed_unit(&mut self) {
-        self.replayed_units = (self.replayed_units + 1).min(self.metered_units);
+        self.replayed_units = self
+            .replayed_units
+            .saturating_add(1)
+            .min(self.metered_units);
     }
 }
 

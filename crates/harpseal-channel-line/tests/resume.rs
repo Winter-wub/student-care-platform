@@ -313,8 +313,11 @@ async fn three_pushes_push_2_lost_then_resumed_meters_3() {
 
 #[tokio::test]
 async fn a_resume_that_fails_again_carries_its_units_on_meters_3() {
-    // Push 2 fails; the resume sends push 2 and push 3 fails; the next
-    // resume sends push 3 only.
+    // One Message over push 1, 2 and 3. Push 2 fails; the resume sends push
+    // 2, and push 3 reaches LINE but its answer is lost (500). The next
+    // resume rebuilds push 3 only and LINE answers 409: the token must carry
+    // both earlier units (push 1 from the first token, push 2 now) so the
+    // 409 counts once against the 2 on record. LINE charged 3.
     let (h, app) = boot().await;
     let d = app.deployment();
     let msgs = [cards121()];
@@ -337,10 +340,12 @@ async fn a_resume_that_fails_again_carries_its_units_on_meters_3() {
     let second = pushes(&h.http().take_requests());
     assert_eq!(app.count(METERED).await, 2);
     assert_eq!(rows(&app).await, [(0, 2, false)]);
-    h.http().respond_with(200, OK);
-    d.send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
+    h.http().respond_with(409, ACCEPTED);
+    let done = d
+        .send_batch_with(&to(), None, &msgs, &Locale::th(), &opts.resume_after(&err))
         .await
         .unwrap();
+    assert_eq!((done[0].metered_units, done[0].replayed_units), (3, 3));
     assert_eq!(pushes(&h.http().take_requests()), [second[1].clone()]);
     assert_eq!(app.count(METERED).await, 3);
     assert_eq!(rows(&app).await, [(0, 3, true)]);

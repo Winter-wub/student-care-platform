@@ -152,7 +152,7 @@ impl LineChannel {
         // units it opened then are carried, as replayed ([`crate::resume`]).
         let skip = resume.as_ref().map_or(0, |r| r.skip);
         if let (Some(r), Some(first)) = (&resume, receipts.first_mut()) {
-            first.pushed = r.carried > 0;
+            first.pushed = skip > 0;
             first.set_metered_units(r.carried);
             *first = first.clone().with_replayed_units(r.carried);
         }

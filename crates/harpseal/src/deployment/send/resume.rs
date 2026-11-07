@@ -52,6 +52,11 @@ impl SendOptions {
         {
             self.first = *sent;
             self.resume = resume.clone();
+            debug_assert!(
+                self.key.is_none() || key.is_none() || self.key == *key,
+                "resume_after: the options' key {:?} is not the failed batch's {key:?}",
+                self.key
+            );
             if self.key.is_none() {
                 self.key = key.clone();
             }
