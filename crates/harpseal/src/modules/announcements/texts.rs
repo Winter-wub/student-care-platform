@@ -228,6 +228,11 @@ pub(crate) const FORM: &[E] = th_en![
         "More than this month's remaining Quota ({left} left). It still sends, over the Quota."
     ),
     (
+        "announcements.form.notify_closed",
+        "ข่าวนี้หมดอายุแล้ว (หรือจะหมดอายุเมื่อบันทึก) จึงแจ้งไม่ได้ ขยายวันหมดอายุก่อน แล้วค่อยแก้พร้อมแจ้งอีกครั้ง",
+        "This announcement has expired (or would on saving), so no notice can go out. Extend its expiry first, then edit again with the notice."
+    ),
+    (
         "announcements.form.notify_unchanged",
         "ข้อความไม่ได้เปลี่ยน จึงไม่มีอะไรต้องแจ้ง เอาเครื่องหมายออกหรือแก้ข้อความ",
         "No text changed, so there is nothing to notify: untick the box or change the text."

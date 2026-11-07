@@ -165,3 +165,72 @@ async fn an_expired_announcement_gets_no_notice_and_no_resend() {
         ["0sent"]
     );
 }
+
+#[tokio::test]
+async fn an_expired_announcement_offers_no_box_and_a_ticked_one_is_refused() {
+    let w = boot().await;
+    roster(&w).await;
+    let b = signed_in(&w, "Officer").await;
+    let id = sent(&w, &b).await;
+    let now = w.h.clock().now_ms();
+    run(
+        &w.h,
+        &format!(
+            "UPDATE announcement SET expires_at = {} WHERE id = '{id}'",
+            now - 1
+        ),
+    )
+    .await;
+    let page = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
+    assert!(!page.contains("name=\"notify\""), "no box once expired");
+    // Posted anyway (with a new expiry and a new text): an error, not a
+    // silent drop.
+    let r = post_edit(
+        &w,
+        &b,
+        &id,
+        &form("ใหม่", "ข้อความใหม่", "&expires=2026-12-31&notify=1"),
+    )
+    .await;
+    assert_eq!(r.status, 422);
+    assert!(
+        r.body
+            .contains("ข่าวนี้หมดอายุแล้ว (หรือจะหมดอายุเมื่อบันทึก) จึงแจ้งไม่ได้")
+    );
+    drain(&w).await;
+    assert!(notices(&w, "s1").is_empty() && notices(&w, "s3").is_empty());
+    assert_eq!(
+        texts(
+            &w,
+            "SELECT title FROM announcement_text WHERE locale = 'th'"
+        )
+        .await,
+        ["เดิม"],
+        "nothing saved"
+    );
+}
+
+#[tokio::test]
+async fn an_english_reader_without_english_text_is_notified_of_a_thai_change() {
+    let w = boot().await;
+    roster(&w).await;
+    // s5 reads English; the announcement has Thai only (s5 falls back).
+    student(
+        &w.h,
+        "s5",
+        "en",
+        "active",
+        r#"{"programme":"MSC","year":2}"#,
+    )
+    .await;
+    link(&w.h, "s5", "fake", "active").await;
+    let b = signed_in(&w, "Officer").await;
+    let id = sent(&w, &b).await;
+    edit(&w, &b, &id, "ใหม่", true).await;
+    drain(&w).await;
+    assert_eq!(notices(&w, "s5"), ["ใหม่"]);
+    assert_eq!(
+        texts(&w, "SELECT notice_report ->> 'total' FROM announcement").await,
+        ["3"]
+    );
+}

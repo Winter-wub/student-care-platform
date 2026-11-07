@@ -33,6 +33,15 @@
 //! (a retract landing between the check and the send) still goes out, as
 //! with the deliver children (#49, #58). A rate limit enqueues the chunk's
 //! continuation, as the edit chunks do.
+//!
+//! The Card is built from the texts at send time. A chunk retried after a
+//! later save without the notice (v3 saved while a v2 chunk retries) can
+//! send a Card with other content under the v2 key it already used. The
+//! LINE adapter derives each request's retry key from the batch key and
+//! the request's objects, so the changed Card gets a new retry key and
+//! LINE may deliver it although the first one went out: that recipient
+//! sees two notices (and both are metered). Rare: it needs a failed run
+//! and a text change between its attempts.
 
 use serde_json::{Value as Json, json};
 

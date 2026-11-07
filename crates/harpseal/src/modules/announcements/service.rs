@@ -106,10 +106,11 @@ pub(crate) async fn update(
             run_at: None,
         });
     }
-    // A notice only for a changed text of an announcement still open
-    // after this save (the page refuses the box otherwise).
+    // A notice only for a changed text of an announcement open now and
+    // still open after this save (the page refuses the box otherwise).
     let open_after = draft.expires_at.is_none_or(|e| e > now);
-    let notify = draft.notify && !locales.is_empty() && open_after;
+    let open_now = super::notice::open(&row, now);
+    let notify = draft.notify && !locales.is_empty() && open_now && open_after;
     if notify {
         jobs.push(JobReq {
             key: notice_key(id, next),

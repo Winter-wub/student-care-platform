@@ -24,7 +24,7 @@ pub(super) struct Cost {
 
 /// The cost of a notice for `row`'s next version (a sent one only).
 pub(super) async fn cost(d: &Deployment, row: &Row) -> Result<Option<Cost>> {
-    if row.status != "sent" {
+    if row.status != "sent" || !super::notice::open(row, d.services().now_ms()) {
         return Ok(None);
     }
     let per_channel = super::notice::reach(d, &row.id, row.version + 1, None).await?;
