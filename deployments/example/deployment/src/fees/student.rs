@@ -11,7 +11,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use harpseal::{AppState, AppStudent, CatalogEntry, Statement};
+use harpseal::{AppState, AppStudent, CatalogEntry, Error, Statement};
 use maud::html;
 
 use super::read::baht;
@@ -70,10 +70,16 @@ pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response 
         Ok(rows) => rows.get(0, "amount_satang").and_then(|v| v.as_i64()),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    // An Err (a saved value failing its check) shows "not set".
+    // A saved value failing its check reads as "not set"; any other
+    // error (the database) is a failure, never "not set".
     let settings = s.settings();
-    let bank = settings.text(super::BANK_NAME).await.ok();
-    let account = settings.text(super::BANK_ACCOUNT).await.ok();
+    let (bank, account) = match (
+        not_set_is_none(settings.text(super::BANK_NAME).await),
+        not_set_is_none(settings.text(super::BANK_ACCOUNT).await),
+    ) {
+        (Ok(bank), Ok(account)) => (bank, account),
+        _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let title = me.t("fees.mine");
     let body = html! {
         section class="card" {
@@ -101,4 +107,13 @@ pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response 
         p { a class="btn secondary" href="/app" { (me.t("fees.back")) } }
     };
     me.page(&s, &title, body)
+}
+
+/// `Ok(None)` for [`Error::SettingNotSet`]; every other error stays one.
+fn not_set_is_none(r: harpseal::Result<String>) -> harpseal::Result<Option<String>> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(Error::SettingNotSet(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
 }

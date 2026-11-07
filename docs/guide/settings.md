@@ -43,7 +43,7 @@ Each kind is checked on the server on every save:
 | `Number` | a whole number (`i64`), no separators or decimals | `SettingValue::Number` |
 | `Date` | a calendar day, `YYYY-MM-DD` | `SettingValue::Date` |
 | `Url` | `https://` and a host, up to 500 characters | `SettingValue::Url` |
-| `AccountNumber` | ASCII digits, `-` and spaces, at least one digit, up to 64 characters | `SettingValue::Text` |
+| `AccountNumber` | ASCII digits in groups joined by one `-` or one space (runs of spaces stored as one), a digit at both ends, up to 64 characters | `SettingValue::Text` |
 
 Values are trimmed. No kind accepts control characters (a multi-line
 text keeps its line breaks), nor characters that change how text reads
@@ -84,10 +84,13 @@ appears in the navigation for Staff who can see at least one:
   text and `number(key)` an `i64`.
 - Each read goes to the database, so a change shows on the next page view
   or Job run.
-- `Error::Invalid` for an undeclared key, for `number` on another kind,
-  and for a saved value that fails its kind's check. Such a value is never
+- `Error::SettingNotSet(key)` when the saved value fails its kind's check
+  (a restored row, a kind or check changed since). Such a value is never
   replaced by the default, which could show Students an outdated bank
-  account: show "not set" instead (the example does).
+  account: show "not set" for this error only.
+- `Error::Invalid` for an undeclared key or `number` on another kind (a
+  programming error), and any other error (the database) as is: answer
+  both as a failure, never as "not set" (the example answers 500).
 
 ## Storage and backups
 
@@ -104,4 +107,5 @@ The Fees Module (`deployments/example/deployment/src/fees.rs`) declares
 edited with `fees.bank_account.edit`, which only the `Finance` Role holds
 (Administrators see them read-only). The Student's Mini App page
 `/app/fees` (`fees/student.rs`) shows them beside the Student's own
-outstanding balance, or "not set" when a saved value fails its check.
+outstanding balance, or "not set" when a saved value fails its check
+(`Error::SettingNotSet`); any other error is a 500.

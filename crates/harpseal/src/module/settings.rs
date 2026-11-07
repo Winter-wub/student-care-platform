@@ -155,13 +155,14 @@ impl Settings {
     }
 
     /// The value of `key`: the saved one, or the default when none is
-    /// saved. An undeclared key is an [`Error::Invalid`], and so is a
-    /// saved value that no longer passes its kind's check (a restored row,
-    /// a Module that changed the kind or a check tightened since): never
-    /// the default in its place, which could show Students an outdated
-    /// value such as the built-in bank account. Answer such an error with
-    /// "not set"; `/admin/settings` flags the value for Staff to save
-    /// again.
+    /// saved. An undeclared key is an [`Error::Invalid`] (a programming
+    /// error). A saved value that no longer passes its kind's check (a
+    /// restored row, a Module that changed the kind or a check tightened
+    /// since) is [`Error::SettingNotSet`], never the default in its place,
+    /// which could show Students an outdated value such as the built-in
+    /// bank account: answer that one with "not set" (`/admin/settings`
+    /// flags the value for Staff to save again) and any other error as a
+    /// failure.
     pub async fn get(&self, key: &str) -> Result<SettingValue> {
         let spec = self
             .spec(key)
@@ -170,11 +171,7 @@ impl Settings {
             None => spec.default.to_string(),
             Some((v, _, _)) => match spec.kind.check(&v) {
                 Ok(ok) if ok == v => v,
-                _ => {
-                    return Err(Error::Invalid(format!(
-                        "the saved value of setting `{key}` fails its check; save it again"
-                    )));
-                }
+                _ => return Err(Error::SettingNotSet(key.to_string())),
             },
         };
         Ok(SettingValue::of(spec.kind, value))

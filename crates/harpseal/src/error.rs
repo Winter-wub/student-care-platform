@@ -36,6 +36,11 @@ pub enum Error {
         /// The Permission id required.
         permission: String,
     },
+    /// A Module setting's saved value no longer passes its kind's check (a
+    /// restored row, a kind or check changed since): show it as "not set"
+    /// until Staff save it again on `/admin/settings`, never the default.
+    /// Carries the setting key.
+    SettingNotSet(String),
     /// The change clashes with the current state (e.g. a live Link already
     /// exists, or the Link is already revoked).
     Conflict(String),
@@ -91,6 +96,9 @@ impl core::fmt::Display for Error {
             Error::Platform(m) => write!(f, "platform: {m}"),
             Error::QuotaExhausted(m) => write!(f, "platform quota exhausted: {m}"),
             Error::Conflict(m) => write!(f, "conflict: {m}"),
+            Error::SettingNotSet(k) => {
+                write!(f, "setting `{k}` fails its check; save it again")
+            }
             Error::Forbidden { permission } => {
                 write!(
                     f,
@@ -131,6 +139,7 @@ impl Error {
             Error::QuotaExhausted(_) => "quota_exhausted",
             Error::Forbidden { .. } => "forbidden",
             Error::Conflict(_) => "conflict",
+            Error::SettingNotSet(_) => "setting_not_set",
             Error::PartialSend { .. } => "partial_send",
         }
     }

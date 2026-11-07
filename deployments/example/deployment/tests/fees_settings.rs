@@ -168,3 +168,25 @@ async fn an_administrator_sees_the_bank_account_but_cannot_change_it() {
         .unwrap();
     assert_eq!(account, "000-0-00000-0");
 }
+
+#[tokio::test]
+async fn a_database_error_is_a_failure_never_not_set() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let student = app.browser();
+    student
+        .open_mini_app(&h.fake_channel(), "u-s1", fees::student::PATH)
+        .await;
+    assert_eq!(student.get(fees::student::PATH).await.status, 200);
+    // The settings read fails (texts still load: they read only key,
+    // locale and value): a database error, not a bad saved value.
+    run(&h, "ALTER TABLE setting RENAME TO setting_before").await;
+    run(
+        &h,
+        "CREATE TABLE setting (key TEXT, locale TEXT, value TEXT)",
+    )
+    .await;
+    let page = student.get(fees::student::PATH).await;
+    assert_eq!(page.status, 500);
+    assert!(!page.body.contains("ยังไม่ได้ตั้งค่า"), "{}", page.body);
+}

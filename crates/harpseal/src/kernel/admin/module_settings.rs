@@ -167,7 +167,7 @@ fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {
                 maxlength=(crate::module::MAX_MULTILINE_CHARS) aria-invalid=[bad] { (value) }
         },
         SettingKind::AccountNumber => html! {
-            input id=(id) name="value" type="text" inputmode="numeric" required maxlength="64"
+            input id=(id) name="value" type="text" inputmode="numeric" required maxlength=(crate::module::MAX_ACCOUNT_CHARS)
                 pattern="[0-9 \\-]+" autocomplete="off" value=(value) aria-invalid=[bad];
         },
         SettingKind::Number => html! {

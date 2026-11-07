@@ -28,6 +28,7 @@ pub use notify::{
     DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,
     NotifyReport, NotifySkip, NotifyTo,
 };
+pub(crate) use setting_kind::MAX_ACCOUNT_CHARS;
 pub use settings::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind, SettingValue, Settings};
 pub(crate) use settings::{SettingSpec, absorb as absorb_settings, check as check_settings};
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};

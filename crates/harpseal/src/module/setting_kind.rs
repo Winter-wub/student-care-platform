@@ -19,13 +19,14 @@ pub enum SettingKind {
     Date,
     /// An `https://` URL with a host, up to 500 characters.
     Url,
-    /// A bank or account number as Students copy it: ASCII digits, `-`
-    /// and spaces only, at least one digit, up to 64 characters.
+    /// A bank or account number as Students copy it: ASCII digits
+    /// separated by single `-` or spaces (runs of spaces stored as one),
+    /// a digit at both ends, up to 64 characters.
     AccountNumber,
 }
 
 /// Longest [`SettingKind::AccountNumber`], in characters.
-const MAX_ACCOUNT_CHARS: usize = 64;
+pub(crate) const MAX_ACCOUNT_CHARS: usize = 64;
 
 /// Code points that change how text is shown without being seen: bidi
 /// embeddings, overrides and isolates (U+202A-202E, U+2066-2069), the
@@ -56,6 +57,12 @@ impl SettingKind {
     pub fn check(self, raw: &str) -> core::result::Result<String, &'static str> {
         let v = match self {
             SettingKind::MultilineText => raw.replace("\r\n", "\n").trim().to_string(),
+            // What Students see and copy: one space between groups.
+            SettingKind::AccountNumber => raw
+                .split(' ')
+                .filter(|g| !g.is_empty())
+                .collect::<Vec<_>>()
+                .join(" "),
             _ => raw.trim().to_string(),
         };
         if v.is_empty() {
@@ -104,11 +111,15 @@ impl SettingKind {
     }
 }
 
-/// ASCII digits, `-` and spaces, with at least one digit.
+/// Groups of ASCII digits joined by one `-` or one space: a digit at
+/// both ends, never two separators in a row (`1 - 2`, `-1-` refused).
 fn account(v: &str) -> bool {
-    v.bytes().any(|b| b.is_ascii_digit())
-        && v.bytes()
-            .all(|b| b.is_ascii_digit() || b == b'-' || b == b' ')
+    let b = v.as_bytes();
+    let sep = |c: u8| c == b'-' || c == b' ';
+    b.first().is_some_and(u8::is_ascii_digit)
+        && b.last().is_some_and(u8::is_ascii_digit)
+        && b.iter().all(|&c| c.is_ascii_digit() || sep(c))
+        && !b.windows(2).any(|w| sep(w[0]) && sep(w[1]))
 }
 
 pub(super) fn number(v: &str) -> Option<i64> {
@@ -193,7 +204,13 @@ mod tests {
             Ok("000-0-00000-0".into())
         );
         assert!(AccountNumber.check("123 456 7890").is_ok());
+        assert_eq!(AccountNumber.check(" 123   456 "), Ok("123 456".into()));
         for bad in [
+            "1 - - 2",
+            "1 - 2",
+            "1--2",
+            "-1-",
+            "1-",
             "--",
             "๐๑๒-๓",
             "000-0-0000O-0",

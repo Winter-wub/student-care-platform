@@ -363,7 +363,13 @@ async fn a_saved_value_failing_its_check_is_an_error_never_the_default() {
         .await
         .unwrap();
     let read = app.deployment().settings().text("dues.title").await;
-    assert!(read.is_err(), "{read:?}");
+    assert!(
+        matches!(&read, Err(harpseal::Error::SettingNotSet(k)) if k == "dues.title"),
+        "{read:?}"
+    );
+    // An undeclared key stays a programming error, not "not set".
+    let undeclared = app.deployment().settings().text("dues.nope").await;
+    assert!(matches!(undeclared, Err(harpseal::Error::Invalid(_))));
     let page = signed_in(&h, &app, "Clerk").await.get(PAGE).await.body;
     assert!(page.contains("ไม่ผ่านการตรวจแล้ว"), "flagged for Staff");
 }
