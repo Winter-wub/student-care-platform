@@ -106,8 +106,10 @@ pub struct SkippedRow {
 pub struct Table {
     header_row: usize,
     headers: Vec<String>,
-    rows: Vec<Row>,
+    pub(super) rows: Vec<Row>,
     footer: Vec<SkippedRow>,
+    /// The footer rows' cells by header ([`Table::check_footer_total`]).
+    pub(super) footer_rows: Vec<Row>,
 }
 
 impl Table {
@@ -128,11 +130,13 @@ impl Table {
 
     /// The footer rows that were skipped (none unless the spec skips a
     /// footer). Show them: a skipped row is never silent.
+    #[must_use = "skipped rows must be shown, never dropped silently"]
     pub fn footer(&self) -> &[SkippedRow] {
         &self.footer
     }
 
     /// The data rows and the skipped footer rows.
+    #[must_use = "skipped rows must be shown, never dropped silently"]
     pub fn into_parts(self) -> (Vec<Row>, Vec<SkippedRow>) {
         (self.rows, self.footer)
     }
@@ -211,7 +215,9 @@ impl Sheet {
             .map_err(TableError::Header)
             .and_then(|(at, headers)| {
                 let t = self.table_at(at, headers, spec);
-                if t.rows.is_empty() && !t.footer.is_empty() {
+                let numeric = spec.footer.as_deref().unwrap_or_default();
+                // `รวม | 0` alone is an empty cohort, not swallowed data.
+                if t.rows.is_empty() && super::total::footer_has_values(&t, numeric) {
                     return Err(TableError::OnlyFooter {
                         sheet: self.name.clone(),
                         rows: t.footer,
@@ -290,6 +296,7 @@ impl Sheet {
             header_row: self.rows[at].number,
             rows: data.iter().map(|r| self.row(r, &headers)).collect(),
             footer: footer.iter().map(|r| self.skipped(r)).collect(),
+            footer_rows: footer.iter().map(|r| self.row(r, &headers)).collect(),
             headers,
         }
     }

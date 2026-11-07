@@ -91,6 +91,12 @@ fn xlsx_rows(
                 code: e.to_string(),
                 cell: format!("{}{}", column_name(c), r + 1),
             }),
+            // A whole number an f64 cannot hold exactly (an id or a
+            // payment reference of 16+ digits): never print a rounded one.
+            Data::Float(f) if f.fract() == 0.0 && f.abs() >= MAX_EXACT => Some(Cell::Unreadable {
+                code: TOO_LONG.into(),
+                cell: format!("{}{}", column_name(c), r + 1),
+            }),
             other => text_cell(&cell_text(&other)),
         };
         let Some(value) = value else { continue };
@@ -137,18 +143,29 @@ pub(crate) fn cell_text(d: &Data) -> String {
     }
 }
 
-/// A numeric cell as text, rounded to 15 significant digits first (what
-/// Excel shows and what an `f64` holds exactly): a calculated
-/// `12500.000000000002` reads `12500`, an `=AVERAGE` GPA of
-/// `3.3333333333333335` reads `3.33333333333333`, so the number helpers
-/// accept them. Text cells are never rounded.
+/// 2^53: every whole number below it is exact in an `f64`. 2^53 itself is
+/// not safe: a file holding `9007199254740993` reads as 2^53 too.
+pub(crate) const MAX_EXACT: f64 = 9_007_199_254_740_992.0;
+
+/// The code of a [`Cell::Unreadable`] holding a whole number of 2^53
+/// (9 007 199 254 740 992) or more, which cannot be read exactly (type it
+/// as text instead).
+pub const TOO_LONG: &str = "#TOO_LONG";
+
+/// A numeric cell as text. A whole number is exact (below 2^53; larger
+/// ones are [`TOO_LONG`] before they get here), so a 16-digit id stays
+/// itself. A number with a fractional part is rounded to 15 significant
+/// digits first (what Excel shows): a calculated `12500.000000000002`
+/// reads `12500`, an `=AVERAGE` GPA of `3.3333333333333335` reads
+/// `3.33333333333333`, so the number helpers accept them. Text cells are
+/// never rounded.
 pub(crate) fn number_text(f: f64) -> String {
-    let f = if f.is_finite() && f != 0.0 {
+    let f = if f.is_finite() && f.fract() != 0.0 {
         format!("{f:.14e}").parse::<f64>().unwrap_or(f)
     } else {
         f
     };
-    if f.fract() == 0.0 && f.abs() < 1e15 {
+    if f.fract() == 0.0 && f.abs() <= MAX_EXACT {
         format!("{}", f as i64)
     } else {
         f.to_string()
@@ -170,6 +187,11 @@ mod tests {
         assert_eq!(number_text(-0.1), "-0.1");
         assert_eq!(number_text(0.0), "0");
         assert_eq!(number_text(1e-7), "0.0000001");
+        // Whole numbers are never rounded: a 16-digit id stays itself.
+        assert_eq!(number_text(1234567890123456.0), "1234567890123456");
+        assert_eq!(number_text(9007199254740991.0), "9007199254740991");
+        assert_eq!(number_text(-9007199254740991.0), "-9007199254740991");
+        assert_eq!(number_text(999999999999999.0), "999999999999999");
         let amount = number_text(12500.000000000002);
         assert_eq!(
             number_scaled(&amount, 2, Blank::Missing),

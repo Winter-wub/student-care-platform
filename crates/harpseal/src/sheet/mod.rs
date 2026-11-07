@@ -42,7 +42,10 @@
 //! `YYYY-MM-DD` (with ` HH:MM:SS` when they hold a time), booleans as
 //! `TRUE` / `FALSE`, a formula as its cached value. An Excel error cell
 //! (`#REF!`, `#N/A`, `#DIV/0!`, …) is [`Cell::Unreadable`] with its code
-//! and cell reference, never text. Numbers stored as text go through
+//! and cell reference, never text. Number cells: whole numbers below 2^53
+//! are exact (a 16-digit id stays itself; 2^53 or more is unreadable with
+//! code [`TOO_LONG`]: type it as text), a fractional part is rounded to 15
+//! significant digits, as Excel shows it. Numbers stored as text go through
 //! [`number`] or, exactly (money), [`number_scaled`].
 //!
 //! ```
@@ -74,12 +77,16 @@
 pub(crate) mod csv;
 mod number;
 pub(crate) mod read;
+
+pub use read::TOO_LONG;
 mod table;
+mod total;
 
 use std::collections::BTreeMap;
 
 pub use number::{Blank, MAX_F64_DIGITS, MAX_SCALE, NotANumber, number, number_scaled};
 pub use table::{HeaderError, KeyTest, SkippedRow, Table, TableError, TableSpec, looks_like_key};
+pub use total::TotalError;
 
 /// Rows searched for the header, counting only non-empty ones.
 pub const HEADER_SEARCH_ROWS: usize = 10;

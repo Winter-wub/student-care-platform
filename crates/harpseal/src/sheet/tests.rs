@@ -4,6 +4,7 @@ const FEES: &[u8] = include_bytes!("../../tests/fixtures/roster/fees.xlsx");
 const COHORTS: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts.xlsx");
 const TRAILING: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts_trailing.xlsx");
 const CALC_FEES: &[u8] = include_bytes!("../../tests/fixtures/roster/calculated_fees.xlsx");
+const LONG: &[u8] = include_bytes!("../../tests/fixtures/roster/long_numbers.xlsx");
 const HIDDEN: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts_hidden.xlsx");
 
 const AMOUNT: &str = "ยอดค้างชำระ";
@@ -308,7 +309,7 @@ fn every_headed_column_counts_not_only_the_required_ones() {
 #[test]
 fn a_footer_that_would_swallow_every_row_is_an_error() {
     let spec = TableSpec::new(["id", "amount"]).skip_footer(["amount"]);
-    let book = Workbook::open(b"id,amount\nTotal,0\nNote: none\n", "a.csv").unwrap();
+    let book = Workbook::open(b"id,amount\nTotal,5\nNote: none\n", "a.csv").unwrap();
     match book.sheets()[0].table(&spec) {
         Err(TableError::OnlyFooter { sheet, rows }) => {
             assert_eq!(sheet, "");
@@ -339,4 +340,22 @@ fn calculated_amounts_read_as_excel_shows_them() {
     let third = number(t.rows()[2].get(AMOUNT).unwrap_or(""), Blank::Missing);
     assert_eq!(third, Ok(Some(3.33333333333333)));
     assert_eq!(t.footer()[0].text, "รวม | 12503.6333333333");
+}
+
+#[test]
+fn long_whole_numbers_stay_exact_or_are_unreadable() {
+    let book = Workbook::open(LONG, "l.xlsx").unwrap();
+    let spec = TableSpec::new(["รหัสอ้างอิง", "ยอด"]);
+    let t = book.sheets()[0].table(&spec).unwrap();
+    let rows = t.rows();
+    assert_eq!(rows[0].get("รหัสอ้างอิง"), Some("1234567890123456"));
+    assert_eq!(rows[1].get("รหัสอ้างอิง"), Some("9007199254740991"));
+    // 2^53 and 2^53 + 1 read as the same f64: neither is printed.
+    for (r, cell) in [(&rows[2], "A4"), (&rows[3], "A5")] {
+        assert_eq!(r.get("รหัสอ้างอิง"), None);
+        assert_eq!(
+            r.unreadable().collect::<Vec<_>>(),
+            vec![("รหัสอ้างอิง", TOO_LONG, cell)]
+        );
+    }
 }

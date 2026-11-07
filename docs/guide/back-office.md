@@ -46,8 +46,9 @@ sheets). **Every visible sheet with content must hold the header**: a
 workbook with an extra notes or lookup sheet that imported before #70 is now
 refused, naming that sheet; delete or hide it. Hidden sheets and empty
 sheets are skipped (hidden ones are listed); a workbook whose content is
-only in hidden sheets is refused naming them, and a hidden sheet that holds
-the roster header refuses a `full` import (its Students would become left:
+only in hidden sheets is refused naming them, and a hidden sheet whose
+header holds the student id column (even an old tab missing another column)
+refuses a `full` import (its Students would become left:
 unhide or delete it; `upsert` lists it as skipped). In each sheet the header
 row is found among its first 10 non-empty rows, so title rows above it are
 fine. A totals or notes row below the data is skipped only when its student
@@ -55,10 +56,16 @@ id cell holds a label (text with letters, such as `รวม` or a note) and the
 other columns are empty except the `integer` and `number` attributes; a row
 with a name but no id, a row with only numbers, an id like `6801 0002`, or
 an Excel error stays data and is reported. A sheet whose rows under the
-header would all be skipped this way is refused. Skipped rows and sheets are
+header would all be skipped this way is refused, unless they hold no number
+but zero (`รวม | 0` under an empty cohort's header is an empty sheet).
+Skipped rows and sheets are
 listed on the preview and in `report.csv`, with sheet, row and text.
 Numbers may be stored as text (`12,500`, `12,500.00`; a lone `-` counts as
-empty; exponents such as `1e3` are refused), and an Excel error cell
+empty; exponents such as `1e3` are refused). A calculated cell (`=AVERAGE`)
+reads as Excel shows it, a fractional part rounded to 15 significant
+digits; a whole number stays exact, and a number cell of
+9,007,199,254,740,992 or more cannot be read exactly and is refused as
+unreadable (type long ids as text). An Excel error cell
 (`#REF!`, `#N/A`) is refused as unreadable. The report names the sheet, row
 and cell of each problem; a student id repeated in two sheets is a
 duplicate.

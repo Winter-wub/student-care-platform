@@ -226,3 +226,20 @@ fn a_number_only_row_below_the_data_is_a_student_without_an_id() {
             .any(|p| at(p) == ("", 3, "รหัสนักศึกษา", "required"))
     );
 }
+
+#[test]
+fn a_hidden_tab_with_the_id_column_but_not_every_column_is_a_roster_sheet() {
+    let c = test_config();
+    let partial = include_bytes!("../../../tests/fixtures/roster/cohorts_hidden_partial.xlsx");
+    let r = read(partial, "p.xlsx", &c.roster).unwrap();
+    let hidden: Vec<_> = r
+        .skipped
+        .iter()
+        .filter(|s| s.row == 0)
+        .map(|s| (s.sheet.as_str(), s.reason.as_str()))
+        .collect();
+    assert_eq!(hidden, vec![("ปี 0", "hidden_roster_sheet")]);
+    // A hidden sheet without the id column stays a plain hidden sheet.
+    let lists = read(HIDDEN, "h.xlsx", &c.roster).unwrap();
+    assert!(lists.skipped.iter().any(|s| s.reason == "hidden_sheet"));
+}

@@ -202,3 +202,18 @@ write_book(f"{out}/calculated_fees.xlsx", [("ภาคเรียน 2", calc_f
 # a workbook whose only content is in a hidden sheet.
 write_book(f"{out}/cohorts_hidden_roster.xlsx", [("ปี 1", y1), ("ปี 2", y2, True)])
 write_book(f"{out}/only_hidden.xlsx", [("ว่าง", ""), ("ปี 2", y2, True)])
+
+# Long whole numbers in number cells (#70 review): 16-digit references stay
+# exact below 2^53; 2^53 and the value after it cannot be told apart.
+long_ids = (xrow(1, ["รหัสอ้างอิง", "ยอด"])
+    + xrow(2, [1234567890123456, 100])
+    + xrow(3, [9007199254740991, 200])
+    + '<row r="4"><c r="A4"><v>9007199254740992</v></c><c r="B4"><v>300</v></c></row>'
+    + '<row r="5"><c r="A5"><v>9007199254740993</v></c><c r="B5"><v>400</v></c></row>')
+write_book(f"{out}/long_numbers.xlsx", [("อ้างอิง", long_ids)])
+
+# A hidden old cohort tab whose header has the student id but lacks a
+# column (เกรดเฉลี่ย): still a roster sheet for the `full` rule.
+old_tab = (xrow(1, H[:-1])
+    + xrow(2, student(66010001, "ดาวทะเล ฟองคลื่น", 3)[:-1]))
+write_book(f"{out}/cohorts_hidden_partial.xlsx", [("ปี 1", y1), ("ปี 0", old_tab, True)])

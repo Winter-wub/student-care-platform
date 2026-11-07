@@ -143,3 +143,16 @@ async fn a_calculated_gpa_column_is_imported() {
     let id = previewed(&b, "calculated.xlsx", calc, "upsert").await;
     assert_eq!(counts(&h, &id).await["preview"]["new"], 3);
 }
+
+#[tokio::test]
+async fn a_hidden_old_cohort_missing_a_column_still_blocks_a_full_import() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let partial =
+        include_bytes!("../../harpseal/tests/fixtures/roster/cohorts_hidden_partial.xlsx");
+    let r = upload(&b, "p.xlsx", partial, "full").await;
+    let id = import_id(&r);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("ปี 0,0,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
+}

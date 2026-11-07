@@ -138,12 +138,14 @@ pub(crate) fn read(
     let mut out = Read::default();
     let mut mismatches = Vec::new();
     let mut any = false;
+    let id_only = TableSpec::new([roster.student_code.clone()]);
     let mut hidden = Vec::new();
     for s in book.sheets().iter().filter(|s| !s.is_empty()) {
         if s.is_hidden() {
-            // A hidden sheet that holds the roster header is listed apart:
-            // a `full` import must not make its Students left unseen.
-            let roster_sheet = !matches!(s.table(&spec), Err(TableError::Header(_)));
+            // A hidden sheet whose header holds the student id column (an
+            // old cohort tab, even one missing another column) is listed
+            // apart: a `full` import must not make its Students left unseen.
+            let roster_sheet = s.table(&id_only).is_ok();
             hidden.push(s.name().to_string());
             out.skipped.push(Skipped {
                 sheet: s.name().to_string(),
