@@ -62,7 +62,8 @@ pub use auth::{
     create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub use channel::{
-    Channel, DeleteMessage, EditMessage, MiniApp, Multicast, ResumeToken, SendAttachment, WebClient,
+    Channel, DeleteMessage, EditMessage, MenuRelinked, MenuRetire, MiniApp, Multicast, ResumeToken,
+    SendAttachment, WebClient,
 };
 pub use config::{
     AttrError, AttributeSpec, AttributeType, BrandingConfig, ConsentConfig, DeploymentConfig,

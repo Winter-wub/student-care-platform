@@ -29,7 +29,7 @@ pub use checks::{
     signature_is_checked_before_parsing,
 };
 pub use fake::{FakeWire, fake};
-pub use menu::{keyed_menu_is_set, menu_set_and_unset};
+pub use menu::{keyed_menu_is_set, menu_set_and_unset, relink_menu_reaches_the_account};
 pub use resume::a_foreign_resume_token_is_ignored;
 
 /// Recorded webhook calls, one event each, as the platform sends them.
@@ -281,6 +281,7 @@ pub async fn run(factory: impl Fn() -> Target) {
     metering_counts_push_requests(&factory()).await;
     menu_set_and_unset(&factory()).await;
     keyed_menu_is_set(&factory()).await;
+    relink_menu_reaches_the_account(&factory()).await;
     capabilities_agree(&factory()).await;
     degrade_keeps_every_action(&factory()).await;
     action_ids_round_trip(&factory()).await;

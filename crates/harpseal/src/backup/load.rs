@@ -53,8 +53,12 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 ///    batches of [`PAGE`] statements. The last batch also writes the audit
 ///    row `backup.restore` (actor System, `after` = `{manifest_sha256,
 ///    tables, rows, files, forced, deleted, newest_deleted_audit,
-///    dropped_sessions}`) and, with `opts.drop_sessions`, empties
-///    `staff_session` and `app_session`;
+///    dropped_sessions, menu_salt_redrawn}`), with `opts.drop_sessions`
+///    empties `staff_session` and `app_session`, draws a new Menu
+///    revision salt (`menu_salt`), so a restored copy on the same LINE
+///    token never names its rich menus like the original, and forgets the
+///    original's pending retires (`menu_retire`) and queued re-link Jobs
+///    (marked failed);
 /// 9. applies the Deployment's newer migrations, so data migrations run
 ///    over the restored rows.
 ///
@@ -181,6 +185,9 @@ pub async fn load(
         tables.push((name.clone(), n));
     }
 
+    // A restored copy may run next to its original on one LINE token: it
+    // gets its own Menu revision salt (#66).
+    let redraw_salt = current.iter().any(|t| t.name == "menu_salt");
     let drop_sessions: Vec<&str> = SESSION_TABLES
         .into_iter()
         .filter(|t| opts.drop_sessions && current.iter().any(|c| c.name == *t))
@@ -194,11 +201,16 @@ pub async fn load(
         "deleted": deleted,
         "newest_deleted_audit": newest_deleted_audit,
         "dropped_sessions": !drop_sessions.is_empty(),
+        "menu_salt_redrawn": redraw_salt,
     });
     let mut tail: Vec<Statement> = drop_sessions
         .iter()
         .map(|t| Statement::new(format!("DELETE FROM {}", quote(t))))
         .collect();
+    if redraw_salt {
+        tail.push(crate::kernel::menu::redraw_salt(s)?);
+        tail.extend(crate::kernel::menu::forget_runs(s));
+    }
     tail.push(audit::entry(
         s,
         &Actor::System,

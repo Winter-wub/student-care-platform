@@ -132,6 +132,11 @@ impl Deployment {
             .map(|c| c.as_ref())
     }
 
+    /// Every Channel, in registration order.
+    pub(crate) fn channels(&self) -> &[Arc<dyn Channel>] {
+        &self.channels
+    }
+
     pub(crate) fn channel_or_err(&self, kind: &str) -> Result<&dyn Channel> {
         self.channel(kind)
             .ok_or_else(|| Error::Invalid(format!("no channel {kind}")))
@@ -180,6 +185,17 @@ impl Deployment {
             Ok(key) => menu.with_key(key),
             Err(_) => menu,
         }
+    }
+
+    /// The catalog keys of the unlocked Menu's labels: the Modules'
+    /// entries, then `kernel.menu.unlink` when `[student] self_unlink` is
+    /// on. A back-office save of one of them re-links the Menu (#66).
+    pub(crate) fn menu_label_keys(&self) -> Vec<&'static str> {
+        let mut keys: Vec<&'static str> = self.registry.menu.iter().map(|e| e.label_key).collect();
+        if self.config.student.self_unlink {
+            keys.push("kernel.menu.unlink");
+        }
+        keys
     }
 
     /// The Module and handler registered for `action`: the exact id
