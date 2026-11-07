@@ -264,17 +264,17 @@ impl Turn<'_> {
         };
     }
 
-    /// Unlocks (`Some` Menu in `locale`) or locks (`None`) the Menu.
+    /// Unlocks (`Some` Menu in `locale`, at its newest Menu revision) or
+    /// locks (`None`) the Menu.
     pub(super) async fn set_menu(&self, unlocked: Option<&Locale>) -> Result<()> {
         let channel = self
             .d
             .channel(self.from.channel.as_str())
             .ok_or_else(|| crate::Error::Invalid(format!("no channel {}", self.from.channel)))?;
-        let menu = unlocked.map(|l| {
-            let l = self.d.catalog().effective(l);
-            let texts = self.texts.in_locale(&l);
-            self.d.menu_with(&l, |k| texts.t(k))
-        });
+        let menu = match unlocked {
+            Some(l) => Some(crate::kernel::menu::unlocked(self.d, &self.texts, l).await?),
+            None => None,
+        };
         channel.set_menu(&self.from, menu.as_ref()).await
     }
 

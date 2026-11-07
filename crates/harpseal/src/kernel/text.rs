@@ -52,6 +52,20 @@ impl Texts {
         })
     }
 
+    /// Texts from `overrides` ((locale, key) -> value) instead of the
+    /// table: what a Texts save is about to make live (#66).
+    pub(crate) fn with_overrides(
+        catalog: Arc<Catalog>,
+        overrides: HashMap<(String, String), String>,
+        locale: Locale,
+    ) -> Self {
+        Self {
+            catalog,
+            overrides: Arc::new(overrides),
+            locale,
+        }
+    }
+
     /// The same texts in another Locale.
     pub(crate) fn in_locale(&self, locale: &Locale) -> Self {
         Self {

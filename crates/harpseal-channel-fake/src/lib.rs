@@ -34,6 +34,7 @@
 #![forbid(unsafe_code)]
 
 mod hooks;
+mod menus;
 mod multicast;
 mod record;
 mod render;
@@ -48,6 +49,7 @@ use harpseal::{
     SendReceipt, WebhookRequest,
 };
 
+pub use menus::MenuEvent;
 use record::State;
 pub use record::{Call, FAILURE_RETRY_AFTER_SECS, Sent};
 use render::Limits;
@@ -326,6 +328,20 @@ impl Channel for FakeChannel {
         }
         s.menus.insert(to.clone(), menu.cloned());
         Ok(())
+    }
+    fn relink_chunk(&self) -> usize {
+        self.lock().relink_chunk.unwrap_or(100)
+    }
+    async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> harpseal::MenuRelinked {
+        self.relink(to, menu)
+    }
+    async fn retire_menus(
+        &self,
+        menu: &Menu,
+        previous: &[Menu],
+        _pending: Option<&str>,
+    ) -> Result<harpseal::MenuRetire> {
+        Ok(self.retire(menu, previous))
     }
     fn editor(&self) -> Option<&dyn EditMessage> {
         self.profile

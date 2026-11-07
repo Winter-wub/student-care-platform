@@ -84,6 +84,12 @@ pub(crate) struct State {
     /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).
     pub(crate) keys: Vec<String>,
     pub(crate) next_id: u64,
+    /// Re-links and retires ([`crate::FakeChannel::menu_events`]).
+    pub(crate) menu_events: Vec<crate::MenuEvent>,
+    /// The next re-link stops after this many accounts.
+    pub(crate) relink_fail_at: Option<usize>,
+    /// [`crate::FakeChannel::set_relink_chunk`].
+    pub(crate) relink_chunk: Option<usize>,
 }
 
 impl State {

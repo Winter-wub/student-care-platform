@@ -164,7 +164,17 @@ impl LineWire {
             "https://api.line.me/v2/bot/user/{}/richmenu",
             to.external_id
         );
-        let last = reqs.iter().rev().find(|r| r.uri.starts_with(&user))?;
+        let bulk = "https://api.line.me/v2/bot/richmenu/bulk/link";
+        let last = reqs.iter().rev().find(|r| {
+            r.uri.starts_with(&user)
+                || (r.uri == bulk
+                    && json(&r.body)["userIds"]
+                        .as_array()
+                        .is_some_and(|u| u.iter().any(|u| u == to.external_id.as_str())))
+        })?;
+        if last.uri == bulk {
+            return self.0.created(json(&last.body)["richMenuId"].as_str()?);
+        }
         if last.method == http::Method::DELETE {
             return None;
         }

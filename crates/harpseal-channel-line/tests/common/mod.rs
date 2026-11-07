@@ -34,6 +34,10 @@ struct ApiState {
     deleted: Vec<String>,
     /// (userId, linked richMenuId)
     links: Vec<(String, String)>,
+    /// Phases the progress endpoint answers before `succeeded`.
+    phases: std::collections::VecDeque<String>,
+    /// (request id, [(from, to)]) of each batch control request.
+    batches: Vec<(String, Vec<(String, String)>)>,
 }
 
 impl ApiState {
@@ -78,6 +82,30 @@ impl LineApi {
             .find(|(u, _)| u == user)
             .map(|(_, id)| id.clone())
     }
+    /// The progress endpoint answers `phase` once before `succeeded`.
+    pub fn queue_phase(&self, phase: &str) {
+        self.state.lock().unwrap().phases.push_back(phase.into());
+    }
+    /// The batch control requests: (request id, [(from, to)]).
+    pub fn batches(&self) -> Vec<(String, Vec<(String, String)>)> {
+        self.state.lock().unwrap().batches.clone()
+    }
+    /// The id of the live rich menu named `name`.
+    pub fn id_of(&self, name: &str) -> Option<String> {
+        let s = self.state.lock().unwrap();
+        s.menus
+            .iter()
+            .find(|(i, m)| s.live(i) && m["name"] == name)
+            .map(|(i, _)| i.clone())
+    }
+    /// Links `user` to rich menu `id` as an earlier `set_menu` did.
+    pub fn link_user(&self, user: &str, id: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .links
+            .push((user.into(), id.into()));
+    }
     /// Deletes rich menu `id` as someone in the LINE console would.
     pub fn delete_in_console(&self, id: &str) {
         self.state.lock().unwrap().deleted.push(id.into());
@@ -103,6 +131,60 @@ impl HttpClient for LineApi {
             return Ok(resp);
         }
         let mut s = self.state.lock().unwrap();
+        let accepted = |headers: &[(&str, String)]| {
+            let mut b = http::Response::builder().status(202);
+            for (k, v) in headers {
+                b = b.header(*k, v);
+            }
+            Ok(b.body(b"{}".to_vec()).unwrap())
+        };
+        if uri.ends_with("/v2/bot/richmenu/bulk/link") {
+            let id = body["richMenuId"].as_str().unwrap_or_default().to_string();
+            if !s.live(&id) {
+                return Ok(http::Response::builder()
+                    .status(404)
+                    .body(br#"{"message":"richmenu not found","details":[]}"#.to_vec())
+                    .unwrap());
+            }
+            for u in body["userIds"].as_array().into_iter().flatten() {
+                let u = u.as_str().unwrap_or_default().to_string();
+                s.links.push((u, id.clone()));
+            }
+            return accepted(&[]);
+        }
+        if uri.ends_with("/v2/bot/richmenu/batch") {
+            s.next += 1;
+            let request = format!("req-{}", s.next);
+            let mut ops = Vec::new();
+            for op in body["operations"].as_array().into_iter().flatten() {
+                let from = op["from"].as_str().unwrap_or_default().to_string();
+                let to = op["to"].as_str().unwrap_or_default().to_string();
+                let users: Vec<String> = s
+                    .links
+                    .iter()
+                    .map(|(u, _)| u.clone())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .filter(|u| {
+                        s.links.iter().rev().find(|(x, _)| x == u).map(|(_, i)| i) == Some(&from)
+                    })
+                    .collect();
+                for u in users {
+                    s.links.push((u, to.clone()));
+                }
+                ops.push((from, to));
+            }
+            s.batches.push((request.clone(), ops));
+            return accepted(&[("x-line-request-id", request)]);
+        }
+        if uri.contains("/v2/bot/richmenu/progress/batch") {
+            let phase = s.phases.pop_front().unwrap_or_else(|| "succeeded".into());
+            let answer = json!({ "phase": phase, "acceptedTime": "2026-11-07T03:00:00.000Z" });
+            return Ok(http::Response::builder()
+                .status(200)
+                .body(answer.to_string().into_bytes())
+                .unwrap());
+        }
         let answer = if uri.ends_with("/v2/bot/message/reply") || uri.ends_with("/message/push") {
             let n = body["messages"].as_array().map_or(0, Vec::len);
             let ids: Vec<Value> = (0..n)

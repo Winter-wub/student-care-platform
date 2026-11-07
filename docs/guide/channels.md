@@ -78,21 +78,48 @@ The same key and generation with another hash is left alone: during a gradual
 deploy, or with a staging Deployment on the production token, two versions
 link their own rich menus, and deleting each other's would cycle. So cleanup is
 clean only while one generation runs on a channel at a time. Bump the
-generation when a Menu change must win; changes within one generation only
-leak (the old rich menus stay until deleted by hand in the console). Higher
+generation when a Menu change must win; other changes within one generation
+(a new image, new entries) only leak (the old rich menus stay until deleted by
+hand in the console). A Menu label save is retired by the re-link below. Higher
 generations, other keys, rich menus without a key (`harpseal-<hash>`) and
 names not made by the adapter (e.g. `harpseal-th-backup`) are never deleted.
 
 Limits to know:
 
-- **A label edit re-links nobody.** Linked Students keep the old labels until
-  their next `set_menu` (a Link, a Consent, a follow, a restore from
-  unreachable).
-- **Label edits within one generation leak.** A back-office label edit keeps
-  the Menu key, but makes a new rich menu under the same generation, which is
-  left alone like any same-generation version. The old ones go with the next
-  generation bump. Re-linking in bulk and retiring the previous version is
-  [#66](https://github.com/Winter-wub/student-care-platform/issues/66).
+- **A label edit re-links every linked account** (#66). Saving (or
+  resetting) a Menu label on the Texts page records the next **Menu
+  revision** of each effective Locale whose labels change, and enqueues the
+  Kernel Job `kernel.menu.relink` for it. A Menu with a revision is named
+  `harpseal-<key>-<generation>-r<revision>-<hash>` (revision 0, the Menu
+  shown before the first edit, keeps the old name). The Job bulk-links
+  every account with an active Link and an unlocked Menu in that Locale
+  (`POST /v2/bot/richmenu/bulk/link`, at most 500 user ids per call, 2,000
+  requests a second:
+  <https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-users>),
+  2,500 accounts per Job run. A failed call fails the run, and the Job's
+  retry re-links that chunk again; nothing is retired yet.
+- **The previous revision is retired only after confirmed completion.**
+  The bulk link answers 202 and works in the background, so a 2xx proves
+  nothing. Once every account was bulk-linked, the adapter sends one
+  `POST /v2/bot/richmenu/batch` that moves anyone still on a previous
+  revision (`link` from its rich menu to the new one, with a
+  `resumeRequestKey`), polls `GET /v2/bot/richmenu/progress/batch` once a
+  minute, and deletes the previous revisions' rich menus only when it says
+  `succeeded`
+  (<https://developers.line.biz/en/reference/messaging-api/#batch-control-rich-menus-of-users>).
+  Batch control allows **3 requests an hour** (a 429 waits 20 minutes,
+  so the cleanup may lag; the new labels do not); progress and deletes
+  allow 100 an hour
+  (<https://developers.line.biz/en/reference/messaging-api/#rate-limits>).
+  A save during a run makes a newer revision: the older run stops, and
+  the newer one re-links everyone and retires both older revisions.
+- **Only the previous revisions of this Deployment are retired.** They are
+  found by exact name (this key and generation, each revision's own
+  labels). The same-generation KEEP rule above still holds for every other
+  rich menu: another Deployment's version (other labels, so another hash),
+  a revision not handed over, another key. Two Deployments on one token
+  with the same labels at the same revision share one rich menu, as they
+  always did.
 - **Accounts on a deleted rich menu.** LINE cannot list the accounts linked to
   a rich menu. An account still on a deleted older generation sees the default
   rich menu set in the LINE Official Account Manager (or none) until its next
@@ -129,6 +156,13 @@ Mapping a command for an account without a Link is safe, as the Kernel never
 dispatches its Actions to a Module. The adapter does not pace sends: a 429
 becomes `Error::RateLimited` with Telegram's `retry_after`, and bulk sends are
 paced by the Job runner.
+
+A Menu label save re-sets the commands of every linked chat (their
+descriptions are the labels): the Kernel Job `kernel.menu.relink` calls
+`set_menu` per account (`setMyCommands` and `setChatMenuButton`, two calls
+each), 100 accounts per Job run, and a 429 continues after Telegram's
+`retry_after`. Commands are per chat, not a shared object, so there is
+nothing to retire.
 
 Before a real webhook works: create the bot with BotFather (token), then call
 `setWebhook` with `url = https://<host>/webhook/telegram`, `secret_token =

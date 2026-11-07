@@ -1,5 +1,7 @@
 //! Rich menu names: `harpseal-<key>-<generation>-<hash>` for a Menu with a
-//! Menu key, `harpseal-<hash>` without one (see [`crate::richmenu`]).
+//! Menu key, `harpseal-<key>-<generation>-r<revision>-<hash>` for one with
+//! a Menu revision too, `harpseal-<hash>` without a key (see
+//! [`crate::richmenu`]).
 
 use harpseal::MenuKey;
 
@@ -9,9 +11,16 @@ use super::NAME_PREFIX;
 pub const HASH_LEN: usize = 32;
 
 /// The name of the rich menu with content hash `hash` under Menu key and
-/// generation `tag`, or without a key.
-pub(super) fn make(tag: Option<(&MenuKey, u32)>, hash: &str) -> String {
+/// generation `tag` at Menu revision `revision` (0: none), or without a
+/// key (the revision is then left out).
+pub(super) fn make(tag: Option<(&MenuKey, u32)>, revision: u32, hash: &str) -> String {
     match tag {
+        Some((key, generation)) if revision > 0 => {
+            format!(
+                "{NAME_PREFIX}{}-{generation}-r{revision}-{hash}",
+                key.as_str()
+            )
+        }
         Some((key, generation)) => {
             format!("{NAME_PREFIX}{}-{generation}-{hash}", key.as_str())
         }
@@ -20,7 +29,8 @@ pub(super) fn make(tag: Option<(&MenuKey, u32)>, hash: &str) -> String {
 }
 
 /// The Menu key and generation of a rich menu name: `Some(Some((key,
-/// generation)))` for `harpseal-<key>-<generation>-<hash>`, `Some(None)` for
+/// generation)))` for `harpseal-<key>-<generation>-<hash>` and
+/// `harpseal-<key>-<generation>-r<revision>-<hash>`, `Some(None)` for
 /// `harpseal-<hash>`, `None` for any other name (one this adapter did not
 /// make, e.g. a hand-made `harpseal-th-backup`). `<hash>` is exactly
 /// [`HASH_LEN`] lowercase hex digits.
@@ -29,14 +39,26 @@ pub fn name_key(name: &str) -> Option<Option<(&str, u32)>> {
     let parts: Vec<&str> = rest.split('-').collect();
     match parts.as_slice() {
         [hash] if is_hash(hash) => Some(None),
+        [key, generation, revision, hash] if is_hash(hash) && is_revision(revision) => {
+            Some(Some((valid_key(key)?, generation_of(generation)?)))
+        }
         [key, generation, hash] if is_hash(hash) => {
-            let key = valid_key(key)?;
-            let digits = !generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit());
-            let generation: u32 = generation.parse().ok().filter(|_| digits)?;
-            Some(Some((key, generation)))
+            Some(Some((valid_key(key)?, generation_of(generation)?)))
         }
         _ => None,
     }
+}
+
+fn generation_of(generation: &str) -> Option<u32> {
+    let digits = !generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit());
+    generation.parse().ok().filter(|_| digits)
+}
+
+/// `r` and a revision from 1, without a leading zero.
+fn is_revision(s: &str) -> bool {
+    s.strip_prefix('r').is_some_and(|n| {
+        !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit())
+    }) && s[1..].parse::<u32>().is_ok()
 }
 
 fn is_hash(s: &str) -> bool {
@@ -71,12 +93,23 @@ mod tests {
             Some(Some(("locked", 42)))
         );
         assert_eq!(name_key(&format!("harpseal-{H}")), Some(None));
-        assert_eq!(make(Some((&key("th"), 3)), H), format!("harpseal-th-3-{H}"));
         assert_eq!(
-            make(Some((&MenuKey::locked(), 2)), H),
+            name_key(&format!("harpseal-th-2-r7-{H}")),
+            Some(Some(("th", 2)))
+        );
+        assert_eq!(
+            make(Some((&key("th"), 3)), 0, H),
+            format!("harpseal-th-3-{H}")
+        );
+        assert_eq!(
+            make(Some((&key("th"), 3)), 12, H),
+            format!("harpseal-th-3-r12-{H}")
+        );
+        assert_eq!(
+            make(Some((&MenuKey::locked(), 2)), 0, H),
             format!("harpseal-locked-2-{H}")
         );
-        assert_eq!(make(None, H), format!("harpseal-{H}"));
+        assert_eq!(make(None, 5, H), format!("harpseal-{H}"));
     }
 
     #[test]
@@ -90,6 +123,10 @@ mod tests {
             format!("harpseal-th-+1-{H}"),
             format!("harpseal-th-1-{}", H.to_uppercase()),
             format!("harpseal-th-1-{H}0"),
+            format!("harpseal-th-1-r0-{H}"),
+            format!("harpseal-th-1-r01-{H}"),
+            format!("harpseal-th-1-7-{H}"),
+            format!("harpseal-th-1-r-{H}"),
             "harpseal-0a1b".into(),
             "spring-fair".into(),
         ] {

@@ -127,6 +127,49 @@ pub trait Channel: Send + Sync {
     /// pre-Link Menu.
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()>;
 
+    /// Most accounts the Kernel hands [`Channel::relink_menu`] in one Job
+    /// run. The default (100) suits an adapter with one or two platform
+    /// calls per account; one with a bulk call (LINE) raises it.
+    fn relink_chunk(&self) -> usize {
+        100
+    }
+
+    /// Shows `menu`, a newer revision of its key ([`Menu::revision`]), to
+    /// every account in `to`: the Kernel's Menu-label re-link after a
+    /// back-office save. Accounts are processed in order; the receipt says
+    /// how many from the start are done and why it stopped early, so the
+    /// Kernel resumes at `to[done..]`. The default calls
+    /// [`Channel::set_menu`] per account and stops at the first error.
+    async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
+        for (done, account) in to.iter().enumerate() {
+            if let Err(error) = self.set_menu(account, Some(menu)).await {
+                return MenuRelinked::stopped(done, error);
+            }
+        }
+        MenuRelinked::all(to.len())
+    }
+
+    /// Retires the platform objects of the `previous` revisions of
+    /// `menu`'s key, once every account was re-linked to `menu`. Called
+    /// by the Kernel only after [`Channel::relink_menu`] finished for
+    /// every linked account. An adapter must touch nothing but the
+    /// versions named by `previous` (never another key, another
+    /// Deployment's version or a revision not listed). When the platform
+    /// works asynchronously, the adapter answers [`MenuRetire::Pending`]
+    /// with a token, and the Kernel calls again with it later; a version
+    /// must not be deleted before the platform confirmed nobody is left
+    /// on it. The default retires nothing (an adapter whose Menu is no
+    /// platform object, e.g. per-chat commands).
+    async fn retire_menus(
+        &self,
+        menu: &Menu,
+        previous: &[Menu],
+        pending: Option<&str>,
+    ) -> Result<MenuRetire> {
+        let _ = (menu, previous, pending);
+        Ok(MenuRetire::Done)
+    }
+
     /// Channel Capability: edit a sent message.
     fn editor(&self) -> Option<&dyn EditMessage> {
         None
@@ -252,6 +295,46 @@ pub trait Multicast: Send + Sync {
         locale: &Locale,
         key: &str,
     ) -> BatchReceipt;
+}
+
+/// What [`Channel::relink_menu`] got through.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct MenuRelinked {
+    /// Accounts done, counted from the start of `to`.
+    pub done: usize,
+    /// Why it stopped before the end, if it did.
+    pub error: Option<Error>,
+}
+
+impl MenuRelinked {
+    /// Every one of `done` accounts.
+    pub fn all(done: usize) -> Self {
+        Self { done, error: None }
+    }
+    /// Stopped by `error` after `done` accounts.
+    pub fn stopped(done: usize, error: Error) -> Self {
+        Self {
+            done,
+            error: Some(error),
+        }
+    }
+}
+
+/// What [`Channel::retire_menus`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MenuRetire {
+    /// The previous revisions are gone (or never existed).
+    Done,
+    /// The platform is still moving accounts off them: call again after
+    /// `retry_after_secs` with `token`.
+    Pending {
+        /// The adapter's own encoding of what it is waiting for.
+        token: String,
+        /// Seconds to wait before asking again.
+        retry_after_secs: u32,
+    },
 }
 
 /// Where an adapter can resume a batch that stopped part-way: opaque to

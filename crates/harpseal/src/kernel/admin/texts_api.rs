@@ -6,8 +6,7 @@
 
 use super::settings::{self, Refused};
 use crate::audit::{Actor, RequestCtx};
-use crate::manifest::Catalog;
-use crate::{Deployment, DeploymentConfig, Error, Result, Services};
+use crate::{Deployment, Error, Result};
 
 /// The Permission [`set_override`] requires.
 pub const SETTING_PERMISSION: &str = "kernel.setting.edit";
@@ -30,11 +29,11 @@ pub(super) enum Written {
 /// Stores `value` (CRLF made LF) as the text of `key` in `locale`.
 /// `version`, when given, is the form's compare-and-set token
 /// ([`settings::version`] of the value it was rendered from).
+/// A save of a Menu label also records the next Menu revision and
+/// enqueues its re-link, in the same batch ([`crate::kernel::menu`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn write(
-    s: &Services,
-    catalog: &Catalog,
-    config: &DeploymentConfig,
+    d: &Deployment,
     key: &str,
     locale: &str,
     value: &str,
@@ -42,6 +41,7 @@ pub(super) async fn write(
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<Written> {
+    let (s, catalog, config) = (d.services(), d.catalog(), d.config());
     if !settings::editable(catalog, key)
         || !settings::locales(catalog, config)
             .iter()
@@ -65,7 +65,12 @@ pub(super) async fn write(
     }
     let expected = current.map(String::as_str);
     let before = expected.unwrap_or(&row.base);
-    let done = settings::save(s, actor, key, locale, &value, expected, before, ctx).await?;
+    let relink =
+        |gate: &str| crate::kernel::menu::on_save(d, &stored, key, locale, Some(&value), gate);
+    let done = settings::save(
+        s, actor, key, locale, &value, expected, before, ctx, &relink,
+    )
+    .await?;
     Ok(Written::Saved(done))
 }
 
@@ -85,20 +90,7 @@ pub async fn set_override(
     ctx: &RequestCtx,
 ) -> Result<bool> {
     crate::auth::roles::require(d.services(), actor, SETTING_PERMISSION).await?;
-    let (catalog, config) = (d.catalog(), d.config());
-    match write(
-        d.services(),
-        catalog,
-        config,
-        key,
-        locale,
-        value,
-        None,
-        actor,
-        ctx,
-    )
-    .await?
-    {
+    match write(d, key, locale, value, None, actor, ctx).await? {
         Written::Saved(done) => Ok(done),
         Written::Unchanged | Written::Stale => Ok(false),
         Written::NotEditable => Err(Error::Invalid(format!(

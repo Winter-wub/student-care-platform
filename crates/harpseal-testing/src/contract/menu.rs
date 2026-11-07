@@ -40,3 +40,22 @@ pub async fn keyed_menu_is_set(t: &Target) {
         assert_eq!(seen, SeenKey::Key("th".into()), "{kind}: the Menu key");
     }
 }
+
+/// A Menu re-link ([`harpseal::Channel::relink_menu`]) reaches the account,
+/// and a retire with nothing previous is done at once.
+pub async fn relink_menu_reaches_the_account(t: &Target) {
+    let kind = t.channel.kind();
+    let key = MenuKey::for_locale(&Locale::th()).expect("th is a valid key");
+    let to = &t.fixtures.to;
+    let menu = Menu::keyed(key, news()).with_revision(2);
+    let got = t.channel.relink_menu(std::slice::from_ref(to), &menu).await;
+    assert!(got.error.is_none(), "{kind}: re-link failed: {got:?}");
+    assert_eq!(got.done, 1, "{kind}: one account re-linked");
+    assert_eq!(t.wire.menu_entries(to), Some(1), "{kind}: the Menu is set");
+    let retired = t.channel.retire_menus(&menu, &[], None).await;
+    assert_eq!(
+        retired.ok(),
+        Some(harpseal::MenuRetire::Done),
+        "{kind}: nothing to retire"
+    );
+}

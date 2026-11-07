@@ -16,7 +16,9 @@
 //! - Menu ([`richmenu`]): one rich menu per Menu and image, reused by hash
 //!   and linked per account; lower generations of a keyed Menu
 //!   ([`harpseal::Menu::key`], [`LineConfig::menu_generation`]) are
-//!   deleted. `set_menu(None)` links
+//!   deleted. After a Menu label save the Kernel re-links in bulk and
+//!   retires the previous revision through batch control (#66).
+//!   `set_menu(None)` links
 //!   [`LineConfig::locked_menu`]; the Kernel is expected to pass its
 //!   locked Menu (e.g. a "เริ่มใช้งาน" entry) through this config (#19).
 //! - Capabilities: Mini App (LIFF, [`liff`]) when a LIFF id is configured;
@@ -43,8 +45,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use harpseal::{
     BatchReceipt, Channel, ChannelAccountId, ChannelKind, Delivery, Error, HttpClient, Inbound,
-    IncomingFile, Locale, Menu, Message, MiniApp, Multicast, RenderCx, Result, ResumeToken,
-    SendReceipt, WebhookRequest,
+    IncomingFile, Locale, Menu, MenuRelinked, MenuRetire, Message, MiniApp, Multicast, RenderCx,
+    Result, ResumeToken, SendReceipt, WebhookRequest,
 };
 use http::Method;
 
@@ -277,6 +279,23 @@ impl Channel for LineChannel {
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         self.rich_menu_set(to, menu).await
+    }
+    fn relink_chunk(&self) -> usize {
+        richmenu::RELINK_CHUNK
+    }
+    /// `POST /v2/bot/richmenu/bulk/link`, 500 user ids per call.
+    async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
+        self.relink(to, menu).await
+    }
+    /// `POST /v2/bot/richmenu/batch` (link previous -> new), then the
+    /// progress endpoint until `succeeded`, then the deletes.
+    async fn retire_menus(
+        &self,
+        menu: &Menu,
+        previous: &[Menu],
+        pending: Option<&str>,
+    ) -> Result<MenuRetire> {
+        self.retire(menu, previous, pending).await
     }
     fn mini_app(&self) -> Option<&dyn MiniApp> {
         (!self.cfg.liff_id.is_empty()).then_some(self as &dyn MiniApp)

@@ -221,13 +221,18 @@ fn still(key: &str, locale: &str, expected: Option<&str>) -> Statement {
         .bind(expected.map(str::to_string))
 }
 
+/// Builds more statements for a write's batch from its audit row id.
+pub(super) type Then<'a> = &'a (dyn Fn(&str) -> Result<Vec<Statement>> + Send + Sync);
+
 fn target(key: &str, locale: &str) -> Target {
     Target::new("setting", format!("{key}:{locale}"))
 }
 
 /// Writes `value` for `(key, locale)` if the row still holds `expected`,
 /// with the audit row `setting.update` (before = the old effective text)
-/// in the same batch. `false` when the row changed meanwhile.
+/// in the same batch, and the statements `then` builds from the audit
+/// row's id (gated on it: the Menu re-link of a Menu label, #66). `false`
+/// when the row changed meanwhile.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn save(
     s: &Services,
@@ -238,6 +243,7 @@ pub(super) async fn save(
     expected: Option<&str>,
     before: &str,
     ctx: &RequestCtx,
+    then: Then<'_>,
 ) -> Result<bool> {
     let (row, gate) = audit::entry_if(
         s,
@@ -264,14 +270,18 @@ pub(super) async fn save(
     .bind(value)
     .bind(s.now_ms())
     .bind(by)
-    .bind(gate);
-    let done = s.db.batch(vec![row, upsert]).await?;
+    .bind(gate.as_str());
+    let mut stmts = vec![row, upsert];
+    stmts.extend(then(&gate)?);
+    let done = s.db.batch(stmts).await?;
     Ok(done.first().is_some_and(|r| r.rows_affected == 1))
 }
 
 /// Deletes the `setting` row `(key, locale)` if it still holds
 /// `expected`, audited as `setting.reset` (after = the text it falls back
-/// to). `false` when it changed or was already gone.
+/// to), with the statements `then` builds as in [`save`]. `false` when it
+/// changed or was already gone.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn reset(
     s: &Services,
     actor: &Actor,
@@ -280,6 +290,7 @@ pub(super) async fn reset(
     expected: &str,
     fallback: &str,
     ctx: &RequestCtx,
+    then: Then<'_>,
 ) -> Result<bool> {
     let (row, gate) = audit::entry_if(
         s,
@@ -297,8 +308,10 @@ pub(super) async fn reset(
     )
     .bind(key)
     .bind(locale)
-    .bind(gate);
-    let done = s.db.batch(vec![row, delete]).await?;
+    .bind(gate.as_str());
+    let mut stmts = vec![row, delete];
+    stmts.extend(then(&gate)?);
+    let done = s.db.batch(stmts).await?;
     Ok(done.first().is_some_and(|r| r.rows_affected == 1))
 }
 
@@ -346,6 +359,7 @@ pub(super) async fn set_version(
         expected,
         before,
         ctx,
+        &|_| Ok(Vec::new()),
     )
     .await
 }
