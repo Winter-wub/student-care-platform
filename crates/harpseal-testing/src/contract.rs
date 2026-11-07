@@ -17,6 +17,7 @@
 mod checks;
 mod fake;
 mod menu;
+mod resume;
 
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ pub use checks::{
 };
 pub use fake::{FakeWire, fake};
 pub use menu::{keyed_menu_is_set, menu_set_and_unset};
+pub use resume::a_foreign_resume_token_is_ignored;
 
 /// Recorded webhook calls, one event each, as the platform sends them.
 /// Build with [`Fixtures::builder`]: new fixtures can be added later
@@ -282,4 +284,5 @@ pub async fn run(factory: impl Fn() -> Target) {
     capabilities_agree(&factory()).await;
     degrade_keeps_every_action(&factory()).await;
     action_ids_round_trip(&factory()).await;
+    a_foreign_resume_token_is_ignored(&factory()).await;
 }

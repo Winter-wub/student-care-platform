@@ -37,13 +37,19 @@ pub enum Error {
     /// A batch (or one multi-part Message) stopped part-way. The first
     /// `sent` of its `total` Messages went out and were recorded
     /// (`outbound_message` rows and `usage_daily`), as were the parts of
-    /// Message `sent` that went out before the failure, if any. A retry
-    /// resumes with Messages `sent..`; nothing before `sent` is sent again.
-    /// The parts of Message `sent` that were already delivered may be
-    /// delivered twice, on any Channel (Telegram cannot de-duplicate, and
-    /// a LINE resume packs its requests differently, so the retry keys
-    /// differ). That is the accepted trade-off: a repeated Card beats a
-    /// lost one.
+    /// Message `sent` that went out before the failure, if any. Resume with
+    /// [`crate::SendOptions::resume_after`] and the same key: the Kernel
+    /// sends Messages `sent..` and hands `resume` back to the Channel.
+    /// Nothing before `sent` is sent again. With a `resume` token from an
+    /// adapter with retry keys (LINE) no part of Message `sent` reaches the
+    /// Student twice; without one (Telegram, the Fake Channel: one part per
+    /// request, no retry keys) the parts of Message `sent` already
+    /// delivered go again. That is the accepted trade-off there: a repeated
+    /// Card beats a lost one.
+    ///
+    /// The variant is `#[non_exhaustive]`: build it with
+    /// [`Error::partial_send`] and match it with `..`.
+    #[non_exhaustive]
     PartialSend {
         /// Messages wholly sent and recorded.
         sent: usize,
@@ -51,6 +57,15 @@ pub enum Error {
         total: usize,
         /// Why it stopped (e.g. `RateLimited`).
         source: Box<Error>,
+        /// The adapter's token for resuming from the failing request
+        /// ([`crate::Channel::send_batch_resumed`]), if it gave one.
+        resume: Option<crate::ResumeToken>,
+        /// The batch key the Kernel sent with (its own fresh one for an
+        /// unkeyed send), which [`crate::SendOptions::resume_after`]
+        /// restores: a resume needs the same key to find the batch's rows
+        /// and, on LINE, its retry keys. `None` when not built by the
+        /// Kernel.
+        key: Option<String>,
     },
 }
 
@@ -80,6 +95,7 @@ impl core::fmt::Display for Error {
                 sent,
                 total,
                 source,
+                ..
             } => write!(f, "sent {sent} of {total} messages, then: {source}"),
         }
     }
@@ -118,6 +134,34 @@ impl Error {
         match self {
             Error::PartialSend { source, .. } => source.root(),
             e => e,
+        }
+    }
+
+    /// A [`Error::PartialSend`]: `sent` of `total` Messages went out before
+    /// `source`; no resume token, no batch key.
+    pub fn partial_send(sent: usize, total: usize, source: Error) -> Self {
+        Error::PartialSend {
+            sent,
+            total,
+            source: Box::new(source),
+            resume: None,
+            key: None,
+        }
+    }
+
+    /// The batch key of a [`Error::PartialSend`] the Kernel returned.
+    pub fn batch_key(&self) -> Option<&str> {
+        match self {
+            Error::PartialSend { key, .. } => key.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The resume token of a [`Error::PartialSend`], if the adapter gave one.
+    pub fn resume_token(&self) -> Option<&crate::ResumeToken> {
+        match self {
+            Error::PartialSend { resume, .. } => resume.as_ref(),
+            _ => None,
         }
     }
 }

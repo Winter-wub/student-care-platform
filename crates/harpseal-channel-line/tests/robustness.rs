@@ -227,3 +227,111 @@ async fn multicast_reports_whole_groups_and_a_retry_reuses_their_keys() {
     let retried = retry_keys(&api.take());
     assert_eq!(retried[0], first[2]);
 }
+
+#[tokio::test]
+async fn a_resume_token_rebuilds_the_failed_push_even_when_it_fails_again() {
+    // [X, A(6)]: push 1 = X + A1..A4, push 2 = A5 A6 fails twice.
+    let (ch, api) = channel();
+    let msgs = [Message::text("ก่อน"), cards61()];
+    let th = Locale::th();
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(500, r#"{"message":"boom"}"#);
+    let first = ch
+        .send_batch_keyed(&to(), &Delivery::Push, &msgs, &th, "k")
+        .await;
+    let t1 = first.resume.expect("a token: A started in push 1");
+    let push2 = api.take().pop().unwrap();
+    for _ in 0..2 {
+        api.http().respond_with(500, r#"{"message":"boom"}"#);
+        let again = ch
+            .send_batch_resumed(&to(), &Delivery::Push, &msgs[1..], &th, "k", Some(&t1))
+            .await;
+        assert!(again.receipts.is_empty());
+        assert!(again.unfinished.is_some(), "A is still part-way");
+        assert_eq!(again.resume.as_ref(), Some(&t1), "the same place");
+        let reqs = api.take();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].body, push2.body, "A5 A6 only");
+        assert_eq!(retry_keys(&reqs), retry_keys(std::slice::from_ref(&push2)));
+    }
+    api.http().respond_with(200, "{}");
+    let done = ch
+        .send_batch_resumed(&to(), &Delivery::Push, &msgs[1..], &th, "k", Some(&t1))
+        .await
+        .into_result()
+        .unwrap();
+    assert_eq!(done[0].metered_units, 1, "A opened push 2");
+}
+
+#[tokio::test]
+async fn a_token_for_other_messages_is_ignored_and_the_resume_starts_at_part_1() {
+    let (ch, api) = channel();
+    let th = Locale::th();
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(500, r#"{"message":"boom"}"#);
+    let token = ch
+        .send_batch_keyed(
+            &to(),
+            &Delivery::Push,
+            &[Message::text("ก่อน"), cards61()],
+            &th,
+            "k",
+        )
+        .await
+        .resume
+        .unwrap();
+    api.take();
+    // Other Messages: dropping 4 parts would lose them, so every part goes
+    // (36 000 chars are 8 text objects, then 6 carousels: 3 Pushes).
+    for _ in 0..3 {
+        api.http().respond_with(200, "{}");
+    }
+    let other = Message::text("ข่าวอื่น ".repeat(4_000));
+    ch.send_batch_resumed(
+        &to(),
+        &Delivery::Push,
+        &[other, cards61()],
+        &th,
+        "k",
+        Some(&token),
+    )
+    .await
+    .into_result()
+    .unwrap();
+    let sizes: Vec<usize> = api
+        .take()
+        .iter()
+        .map(|r| json(&r.body)["messages"].as_array().unwrap().len())
+        .collect();
+    assert_eq!(sizes, [5, 5, 4], "every part of both");
+}
+
+#[tokio::test]
+async fn a_token_used_for_another_account_is_ignored_and_nothing_is_lost() {
+    let (ch, api) = channel();
+    let th = Locale::th();
+    let msgs = [Message::text("ก่อน"), cards61()];
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(500, r#"{"message":"boom"}"#);
+    let token = ch
+        .send_batch_keyed(&to(), &Delivery::Push, &msgs, &th, "k")
+        .await
+        .resume
+        .unwrap();
+    api.take();
+    // The same batch key and Messages to U2: its first 4 carousels never
+    // went out, so all 6 go.
+    let other = ChannelAccountId::new(KIND, "U0000000000000000000000000000beef");
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(200, "{}");
+    ch.send_batch_resumed(&other, &Delivery::Push, &msgs[1..], &th, "k", Some(&token))
+        .await
+        .into_result()
+        .unwrap();
+    let sizes: Vec<usize> = api
+        .take()
+        .iter()
+        .map(|r| json(&r.body)["messages"].as_array().unwrap().len())
+        .collect();
+    assert_eq!(sizes, [5, 1], "every carousel");
+}

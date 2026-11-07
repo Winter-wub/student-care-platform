@@ -86,6 +86,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0009_inbound_event_done",
         include_str!("../../migrations/0009_inbound_event_done.sql"),
     ),
+    (
+        "0010_outbound_message_index",
+        include_str!("../../migrations/0010_outbound_message_index.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

@@ -4,7 +4,7 @@
 
 use harpseal::{
     ActionContext, ActionId, Card, CardList, Error, Inbound, Locale, Message, Module,
-    ModuleRegistrar, ReplyToken, Statement, Timestamp,
+    ModuleRegistrar, ReplyToken, SendOptions, Statement, Timestamp,
 };
 use harpseal_channel_fake::{FAILURE_RETRY_AFTER_SECS, FakeChannel, FakeProfile};
 use harpseal_testing::{Harness, START_MS, TestApp};
@@ -112,30 +112,31 @@ async fn a_batch_failing_at_part_2_of_3_records_part_1_and_the_retry_sends_only_
     let fake = h.fake_channel();
     let msgs = texts(3);
     fake.fail_next_batch_at(1);
+    let opts = SendOptions::new().key("job-7/u1");
     let got = d
-        .send_batch_with_key(&to, None, &msgs, &Locale::th(), "job-7/u1")
+        .send_batch_with(&to, None, &msgs, &Locale::th(), &opts)
         .await;
-    let sent = match got {
-        Err(Error::PartialSend {
-            sent,
-            total,
-            source,
-        }) => {
-            assert_eq!((sent, total), (1, 3));
+    let err = match got {
+        Err(
+            e @ Error::PartialSend {
+                sent: 1, total: 3, ..
+            },
+        ) => {
             assert!(matches!(
-                *source,
+                e.root(),
                 Error::RateLimited {
                     retry_after_secs: FAILURE_RETRY_AFTER_SECS
                 }
             ));
-            sent
+            assert!(e.resume_token().is_none(), "the Fake resumes per Message");
+            e
         }
         other => panic!("{other:?}"),
     };
     assert_eq!(app.count(OUTBOUND).await, 1, "part 1 is recorded");
     assert_eq!(app.count(FREE).await, 1);
     let retry = d
-        .send_batch_with_key(&to, None, &msgs[sent..], &Locale::th(), "job-7/u1")
+        .send_batch_with(&to, None, &msgs, &Locale::th(), &opts.resume_after(&err))
         .await
         .unwrap();
     assert_eq!(retry.len(), 2);
@@ -299,4 +300,40 @@ async fn a_tick_forgets_event_ids_older_than_a_week_and_keeps_younger_ones() {
         .map(|i| rows.get(i, "event_id").unwrap().as_text().unwrap())
         .collect();
     assert_eq!(ids, ["new", "young"]);
+}
+
+#[tokio::test]
+async fn a_fake_resume_without_a_token_meters_what_the_platform_charged_4() {
+    // LineLike [X, A(6)]: push 1 = X + 4 carousels, push 2 opens with the
+    // fifth and the batch fails before the sixth. The Fake has no retry
+    // keys and gives no token: the resume sends A whole (2 more Pushes),
+    // and every Push the platform charged counts once: 4.
+    let (h, app) = linked(FakeProfile::LineLike).await;
+    let d = app.deployment();
+    let to = FakeChannel::account("u1");
+    let fake = h.fake_channel();
+    let msgs = [Message::text("ประกาศ: สอบปลายภาค"), cards(61)];
+    let opts = SendOptions::new().key("job-8/u1");
+    fake.fail_next_batch_at(6);
+    let err = d
+        .send_batch_with(&to, None, &msgs, &Locale::th(), &opts)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::PartialSend { sent: 1, .. }), "{err}");
+    assert!(err.resume_token().is_none());
+    d.send_batch_with(&to, None, &msgs, &Locale::th(), &opts.resume_after(&err))
+        .await
+        .unwrap();
+    let charged = fake
+        .calls()
+        .iter()
+        .filter(|c| c.metering == harpseal::Metering::Metered)
+        .count();
+    assert_eq!(charged, 4);
+    assert_eq!(app.count(METERED).await, 4);
+    assert_eq!(
+        app.count(OUTBOUND).await,
+        2,
+        "A's partly sent row completed"
+    );
 }

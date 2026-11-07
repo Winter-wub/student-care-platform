@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub use builder::DeploymentBuilder;
+pub use send::SendOptions;
 pub use send_many::ManySent;
 pub use tick::TickReport;
 
