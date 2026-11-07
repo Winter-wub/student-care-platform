@@ -224,6 +224,19 @@ async fn read_upload(mut m: Multipart) -> Option<Upload> {
     Some(up)
 }
 
+/// 400 in the layout: a mode this Deployment does not allow (`key` says
+/// why), with a way back. Nothing was imported or queued.
+pub(super) fn refused(v: &View<'_>, key: &str) -> Response {
+    let text = v.t(key);
+    let body = html! {
+        div class="card" {
+            p { (text) }
+            a class="btn" href=(BASE) { (v.t("kernel.roster.back")) }
+        }
+    };
+    v.page(StatusCode::BAD_REQUEST, &text, body)
+}
+
 pub(super) async fn upload(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -248,14 +261,7 @@ pub(super) async fn upload(
         up.mode.as_str()
     };
     if !roster.allows_mode(mode) {
-        let text = v.t("kernel.roster.mode_not_allowed");
-        let body = html! {
-            div class="card" {
-                p { (text) }
-                a class="btn" href=(BASE) { (v.t("kernel.roster.back")) }
-            }
-        };
-        return v.page(StatusCode::BAD_REQUEST, &text, body);
+        return refused(&v, "kernel.roster.mode_not_allowed");
     }
     match preview::upload(&s.deployment, &up.name, bytes, mode, &staff.id, &ctx).await {
         Ok(Uploaded::Previewed(id)) => {

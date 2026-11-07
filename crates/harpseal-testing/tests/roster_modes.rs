@@ -11,12 +11,18 @@ use roster_support::*;
 const ACTIVE: &str = "SELECT count(*) FROM student WHERE status = 'active'";
 const LIVE_LINKS: &str = "SELECT count(*) FROM link WHERE status = 'active'";
 
-/// [`CONFIG`] with `extra` lines at the top of `[roster]`.
-async fn boot_with(extra: &str) -> (Harness, TestApp) {
+/// [`CONFIG`] with `extra` lines at the top of `[roster]`, booted on `h`
+/// (a second boot on the same Harness is a config change on a live
+/// database).
+async fn boot_in(h: &Harness, extra: &str) -> TestApp {
     let toml = CONFIG.replacen("[roster]\n", &format!("[roster]\n{extra}\n"), 1);
-    let h = Harness::new();
     let config = DeploymentConfig::from_toml(&toml).unwrap();
-    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    h.boot(h.builder().config(config).build().unwrap()).await
+}
+
+async fn boot_with(extra: &str) -> (Harness, TestApp) {
+    let h = Harness::new();
+    let app = boot_in(&h, extra).await;
     (h, app)
 }
 
@@ -132,7 +138,7 @@ async fn the_code_path_refuses_a_mode_the_config_does_not_allow() {
 }
 
 #[tokio::test]
-async fn full_only_and_full_default_keep_the_leave_warning() {
+async fn with_both_modes_and_an_upsert_default_a_full_preview_keeps_the_leave_warning() {
     // `full` allowed (both modes, default upsert): a full preview still
     // lists who will leave.
     let (h, app) = boot_with("default_mode = \"upsert\"").await;
@@ -147,4 +153,66 @@ async fn full_only_and_full_default_keep_the_leave_warning() {
     assert!(page.contains(r#"data-count="will_become_left""#), "{page}");
     assert!(page.contains("Old gone"), "{page}");
     assert!(page.contains(r#"role="alert""#), "the warning stays");
+}
+
+#[tokio::test]
+async fn a_full_only_deployment_offers_and_accepts_only_full() {
+    let (h, app) = boot_with("modes = [\"full\"]").await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let page = b.get("/admin/roster").await.body;
+    assert!(page.contains(r#"value="full" checked"#), "{page}");
+    assert!(!page.contains(r#"value="upsert""#), "{page}");
+    let r = upload(&b, "a.csv", &csv(0..3), "upsert").await;
+    assert_eq!(r.status, 400, "{}", r.body);
+    assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
+    previewed(&b, "a.csv", &csv(0..3), "full").await;
+}
+
+#[tokio::test]
+async fn a_full_preview_cannot_be_confirmed_after_the_deployment_went_upsert_only() {
+    // A cohort file previewed as `full` while both modes were allowed…
+    let (h, first) = boot_with("").await;
+    let b = signed_in(&h, &first, "Officer").await;
+    linked_student(&h, "other", "68000900", "active").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    // …then the Deployment turns `full` off, and the preview is still there.
+    let app = boot_in(&h, UPSERT_ONLY).await;
+    let b = app.browser();
+    assert_eq!(
+        b.login("officer@sealbay.example", PASSWORD).await.status,
+        303
+    );
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(page.contains("ผลตรวจไฟล์นี้ใช้แบบการนำเข้า"), "{page}");
+    assert!(
+        !page.contains(&format!("/admin/roster/{id}/confirm")),
+        "{page}"
+    );
+    let r = b.post(&format!("/admin/roster/{id}/confirm"), "").await;
+    assert_eq!(r.status, 400, "{}", r.body);
+    assert!(r.body.contains("กรุณาอัปโหลดไฟล์ใหม่"), "{}", r.body);
+    assert_eq!(import_text(&h, &id, "state").await, "previewed");
+    assert_eq!(run_jobs(&h, &app).await, 0, "no Job was queued");
+    assert_eq!(int(&h, ACTIVE, &[]).await, 1, "nobody was imported or left");
+    assert_eq!(int(&h, LIVE_LINKS, &[]).await, 1);
+    // The same from code, and the preview can still be cancelled.
+    let rows = h
+        .db()
+        .query(harpseal::Statement::new(
+            "SELECT id FROM staff WHERE email = 'officer@sealbay.example'",
+        ))
+        .await
+        .unwrap();
+    let staff = rows
+        .get(0, "id")
+        .and_then(|v| v.as_text())
+        .unwrap()
+        .to_string();
+    let actor = harpseal::Actor::Staff(staff);
+    let ctx = harpseal::RequestCtx::default();
+    let out = harpseal::roster::confirm(app.deployment(), &id, &actor, &ctx).await;
+    assert_eq!(out.unwrap(), harpseal::roster::Confirmed::ModeNotAllowed);
+    b.get(&format!("/admin/roster/{id}")).await;
+    b.post(&format!("/admin/roster/{id}/cancel"), "").await;
+    assert_eq!(import_text(&h, &id, "state").await, "cancelled");
 }
