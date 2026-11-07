@@ -15,6 +15,11 @@ pub const BULK_LINK_MAX: usize = 500;
 /// Accounts the Kernel hands one re-link call: 5 bulk calls, about 8
 /// subrequests with the lookup, well under any Workers limit.
 pub const RELINK_CHUNK: usize = 2500;
+/// Most per-user links one re-link call makes when a bulk call is refused
+/// for a reason that names no user: the call then stops early (no error)
+/// and the Kernel continues after them in its next Job run, so a run stays
+/// under the 50 subrequests of a Workers free-plan invocation.
+pub const ONE_BY_ONE_MAX: usize = 40;
 
 /// What one bulk call said.
 enum Bulk {
@@ -74,6 +79,7 @@ impl LineChannel {
             Err(e) => return MenuRelinked::stopped(0, e),
         };
         let mut recreated = false;
+        let mut budget = ONE_BY_ONE_MAX;
         for group in valid.chunks(BULK_LINK_MAX) {
             let first = group[0];
             let mut group = group.to_vec();
@@ -96,8 +102,15 @@ impl LineChannel {
                         got.skip(i, not_a_user(&to[i].external_id));
                     }
                     Ok(Bulk::Refused) => {
-                        if let Err(e) = self.one_by_one(to, &group, &found.id, &mut got).await {
+                        let take = group.len().min(budget);
+                        let some = &group[..take];
+                        if let Err(e) = self.one_by_one(to, some, &found.id, &mut got).await {
                             return stop(got, first, e);
+                        }
+                        budget -= take;
+                        if take < group.len() {
+                            // Out of budget: the Kernel goes on from here.
+                            return early(got, group[take]);
                         }
                         break;
                     }
@@ -126,8 +139,11 @@ impl LineChannel {
         }
     }
 
-    /// `group` (indices in `to`) linked one by one; a 400 skips that
-    /// account, anything else stops.
+    /// `group` (indices in `to`) linked one by one. A 400 about the user
+    /// id (LINE: "The value for the 'userId' parameter is invalid",
+    /// <https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-user-error-response>)
+    /// skips that account; any other 400 is about the rich menu (no
+    /// image, a bad id) and stops, like anything else.
     async fn one_by_one(
         &self,
         to: &[ChannelAccountId],
@@ -138,12 +154,25 @@ impl LineChannel {
         for i in group {
             match self.link(&to[*i].external_id, id).await? {
                 Ok(()) => {}
-                Err(f) if f.status == 400 => got.skip(*i, Error::Invalid(f.message)),
+                Err(f) if f.status == 400 && about_user(&f) => {
+                    got.skip(*i, Error::Invalid(f.message));
+                }
+                Err(f) if f.status == 400 => {
+                    return Err(Error::Platform(format!(
+                        "LINE refused rich menu {id}: {}",
+                        f.message
+                    )));
+                }
                 Err(f) => return Err(fail(f)),
             }
         }
         Ok(())
     }
+}
+
+/// Whether a 400 on a per-user link is about the user id, not the menu.
+fn about_user(f: &Failure) -> bool {
+    f.message.contains("'userId'")
 }
 
 /// The position in `userIds` a 400 names (`'userIds[3]'`), if any.
@@ -154,6 +183,14 @@ fn bad_user(f: &Failure) -> Option<usize> {
 
 fn not_a_user(id: &str) -> Error {
     Error::Invalid(format!("not a LINE user id: {id:?}"))
+}
+
+/// `got` done up to account `at` (not included), without an error: the
+/// Kernel continues at `to[at..]`.
+fn early(mut got: MenuRelinked, at: usize) -> MenuRelinked {
+    got.done = at;
+    got.skipped.retain(|(i, _)| *i < at);
+    got
 }
 
 /// `got` stopped at account `at` by `e`; skips past `at` are dropped
@@ -180,5 +217,12 @@ mod tests {
             "The property, 'userIds[3]', in the request body is invalid (line: -, column: -)";
         assert_eq!(bad_user(&f(named)), Some(3));
         assert_eq!(bad_user(&f("invalid richMenuId")), None);
+        assert!(about_user(&f(
+            "The value for the 'userId' parameter is invalid"
+        )));
+        assert!(!about_user(&f(
+            "The value for the 'richMenuId' parameter is invalid"
+        )));
+        assert!(!about_user(&f("richmenu has no image")));
     }
 }

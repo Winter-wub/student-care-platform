@@ -176,7 +176,18 @@ impl Step<'_> {
         if !marks.is_empty() {
             s.db.batch(marks).await?;
         }
+        // Where the next run picks up when the call stopped before the end.
+        let resume = |done: usize| match done {
+            0 => after.to_string(),
+            n => ids[n.min(ids.len()) - 1].clone(),
+        };
         match got.error {
+            // Stopped early within its budget: go on with the rest now.
+            None if got.done < to.len() => Ok(Some(Next {
+                after: resume(got.done),
+                secs: 0,
+                wait: false,
+            })),
             None if rows.len() < chunk => Ok(None),
             None => Ok(last.map(|after| Next {
                 after,
@@ -184,17 +195,11 @@ impl Step<'_> {
                 wait: false,
             })),
             Some(e) => match e.root() {
-                Error::RateLimited { retry_after_secs } => {
-                    let after = match got.done {
-                        0 => after.to_string(),
-                        n => ids[n.min(ids.len()) - 1].clone(),
-                    };
-                    Ok(Some(Next {
-                        after,
-                        secs: i64::from(*retry_after_secs).max(1),
-                        wait: true,
-                    }))
-                }
+                Error::RateLimited { retry_after_secs } => Ok(Some(Next {
+                    after: resume(got.done),
+                    secs: i64::from(*retry_after_secs).max(1),
+                    wait: true,
+                })),
                 // The Job's retry runs this chunk again; nothing retired.
                 _ => Err(e),
             },

@@ -143,7 +143,9 @@ pub trait Channel: Send + Sync {
     /// or whose id it refuses is listed in [`MenuRelinked::skipped`] and
     /// passed over; any other error stops the call, and
     /// [`MenuRelinked::done`] says how many from the start are done (the
-    /// Kernel resumes at `to[done..]`). The default calls
+    /// Kernel resumes at `to[done..]`). An adapter may also stop early
+    /// without an error (a call budget spent): the Kernel then goes on at
+    /// `to[done..]` in its next run. The default calls
     /// [`Channel::set_menu`] per account.
     async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
         let mut got = MenuRelinked::all(to.len());

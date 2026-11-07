@@ -3,6 +3,8 @@
 
 #![allow(dead_code)] // each test binary uses part of this
 
+pub mod relink;
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -40,6 +42,9 @@ struct ApiState {
     batches: Vec<(String, Vec<(String, String)>)>,
     /// User ids a bulk link refuses with a 400 naming their position.
     refused: Vec<String>,
+    /// Bulk links answer 400 with this message (naming no user); per-user
+    /// links too when the flag is set.
+    refuse_links: Option<(String, bool)>,
 }
 
 impl ApiState {
@@ -88,6 +93,11 @@ impl LineApi {
     /// LINE does for an invalid user id.
     pub fn refuse_user(&self, user: &str) {
         self.state.lock().unwrap().refused.push(user.into());
+    }
+    /// Every bulk link answers 400 with `message` (naming no user), and
+    /// every per-user link too when `per_user`; `None` stops it.
+    pub fn refuse_links(&self, refusal: Option<(&str, bool)>) {
+        self.state.lock().unwrap().refuse_links = refusal.map(|(m, p)| (m.to_string(), p));
     }
     /// The progress endpoint answers `phase` once before `succeeded`.
     pub fn queue_phase(&self, phase: &str) {
@@ -145,6 +155,21 @@ impl HttpClient for LineApi {
             }
             Ok(b.body(b"{}".to_vec()).unwrap())
         };
+        let refusal = |msg: &str| {
+            let body = serde_json::json!({ "message": msg }).to_string();
+            Ok(http::Response::builder()
+                .status(400)
+                .body(body.into_bytes())
+                .unwrap())
+        };
+        if let Some((msg, per_user)) = s.refuse_links.clone() {
+            let per_user_link = method == http::Method::POST
+                && uri.starts_with("https://api.line.me/v2/bot/user/")
+                && uri.contains("/richmenu/");
+            if uri.ends_with("/v2/bot/richmenu/bulk/link") || (per_user && per_user_link) {
+                return refusal(&msg);
+            }
+        }
         if uri.ends_with("/v2/bot/richmenu/bulk/link") {
             let id = body["richMenuId"].as_str().unwrap_or_default().to_string();
             if !s.live(&id) {

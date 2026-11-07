@@ -122,7 +122,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub use name::{HASH_LEN, SALT_LEN, name_key};
-pub use relink::{BULK_LINK_MAX, RELINK_CHUNK};
+pub use relink::{BULK_LINK_MAX, ONE_BY_ONE_MAX, RELINK_CHUNK};
 pub use retire::{BATCH_RETRY_SECS, PROGRESS_FIRST_POLL_SECS, PROGRESS_MAX_POLL_SECS, poll_delay};
 
 use crate::api::{API, API_DATA, Failure, parse, path_id};
