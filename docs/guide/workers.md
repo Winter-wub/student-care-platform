@@ -24,6 +24,15 @@ minutes. A Job whose runtime died mid-run (CPU limit, trap) is re-claimed when
 its 15-minute lock expires, while it has retries left, and is marked failed
 (`lock expired`) otherwise.
 
+Webhooks are answered 200 once the call is verified and its events are
+claimed; the handling runs after the response under `ctx.wait_until` (#97),
+so pass the `Context` of `#[event(fetch)]` to
+`harpseal_runtime_cloudflare::fetch`. That work still counts against the
+invocation's CPU limit and `waitUntil` window (about 30 seconds after the
+response). A webhook for a chat account whose earlier event this isolate is
+still handling waits behind it. Handling cut off by a limit keeps an
+unfinished claim, which the next Cron tick logs as `inbound.lost`.
+
 A preview on your own account:
 
 ```sh

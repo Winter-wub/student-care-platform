@@ -78,7 +78,8 @@ pub use delivery::{
     WebhookRequest,
 };
 pub use deployment::{
-    Deployment, DeploymentBuilder, ManySent, SendOptions, TickReport, WebhookReport,
+    Background, BackgroundTask, Deployment, DeploymentBuilder, ManySent, SendOptions, Spawner,
+    TickReport, WebhookReport,
 };
 pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;

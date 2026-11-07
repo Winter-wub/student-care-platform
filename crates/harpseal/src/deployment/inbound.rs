@@ -25,6 +25,23 @@ pub(crate) const INBOUND_LOST_SWEEP_LIMIT: i64 = 100;
 pub(crate) const ABANDONED: &str =
     "the handling of this event never finished (process killed?); it was not answered";
 
+/// An event whose id this call claimed (or that has no id), still to be
+/// handled.
+pub(super) struct Claimed {
+    ev: Inbound,
+    kind: &'static str,
+    from: ChannelAccountId,
+    id: Option<String>,
+}
+
+impl Claimed {
+    /// The chat account the event came from, as one key: events with the
+    /// same key are handled one at a time, in order (#97).
+    pub(super) fn account_key(&self) -> String {
+        format!("{}:{}", self.from.channel.as_str(), self.from.external_id)
+    }
+}
+
 /// What claiming an event id found.
 enum Claim {
     /// The id is new: handle the event.
@@ -56,15 +73,38 @@ impl Deployment {
     /// event (counted in [`WebhookReport::failed`] only), else by
     /// [`Deployment::tick`] (ADR-0009). Claims older than 7 days are
     /// deleted by the tick, never on the webhook path.
+    ///
+    /// Every event of the call is claimed before the first is handled, then
+    /// they are handled in call order, inside this call. The Router hands
+    /// the handling to a [`crate::Background`] instead when the runtime
+    /// provides one ([`Deployment::accept_webhook`]).
     pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
+        let (mut report, claimed) = self.claim_webhook(kind, req).await?;
+        for c in claimed {
+            if let Some(failed) = self.handle_claimed(c).await {
+                report.failed.push(failed);
+            }
+        }
+        Ok(report)
+    }
+
+    /// The part of a webhook call that runs before the 200: verify and
+    /// parse the call, then claim every event id in order. Returns the
+    /// report so far (duplicates, lost redeliveries, failed claims, each
+    /// already logged) and the events still to handle, in call order.
+    pub(super) async fn claim_webhook(
+        &self,
+        kind: &str,
+        req: WebhookRequest,
+    ) -> Result<(WebhookReport, Vec<Claimed>)> {
         let channel = self.channel_or_err(kind)?;
-        let channel_kind = channel.kind().as_str();
         let events = channel.parse_webhook(req).await?;
         let mut report = WebhookReport {
             events: events.len(),
             failed: Vec::new(),
             duplicates: 0,
         };
+        let mut claimed = Vec::with_capacity(events.len());
         for ev in events {
             let ev_kind = ev.kind();
             let from = ev.from().clone();
@@ -89,16 +129,31 @@ impl Deployment {
                     }
                 }
             }
-            if let Err(e) = self.handle_inbound(ev).await {
-                self.log_event(FAILED, &from, ev_kind, id.as_deref(), &e)
-                    .await;
-                report.failed.push((ev_kind, e));
-            }
-            if let Some(id) = &id {
-                self.finish_event(channel_kind, id).await;
-            }
+            claimed.push(Claimed {
+                ev,
+                kind: ev_kind,
+                from,
+                id,
+            });
         }
-        Ok(report)
+        Ok((report, claimed))
+    }
+
+    /// Handles one claimed event, logs `inbound.failed` when it fails, and
+    /// marks its claim done either way. Returns the failure, if any.
+    pub(super) async fn handle_claimed(&self, c: Claimed) -> Option<(&'static str, Error)> {
+        let Claimed { ev, kind, from, id } = c;
+        let failed = match self.handle_inbound(ev).await {
+            Ok(()) => None,
+            Err(e) => {
+                self.log_event(FAILED, &from, kind, id.as_deref(), &e).await;
+                Some((kind, e))
+            }
+        };
+        if let Some(id) = &id {
+            self.finish_event(from.channel.as_str(), id).await;
+        }
+        failed
     }
 
     /// Claims `(channel, event_id)` for an event of `kind` from `from`.

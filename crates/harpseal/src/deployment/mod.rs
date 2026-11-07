@@ -1,5 +1,6 @@
 //! A built Deployment: dispatches through the maps the builder validated.
 
+mod background;
 mod builder;
 pub(crate) mod day;
 mod inbound;
@@ -13,6 +14,7 @@ mod web;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+pub use background::{Background, BackgroundTask, Spawner};
 pub use builder::DeploymentBuilder;
 pub use send::SendOptions;
 pub use send_many::ManySent;
@@ -40,6 +42,8 @@ pub struct Deployment {
     verification: Arc<dyn VerificationMethod>,
     catalog: Arc<Catalog>,
     registry: Arc<Registry>,
+    /// Claimed webhook events waiting per chat account (#97).
+    inbound_queues: background::AccountQueues,
 }
 
 /// What the Modules registered, after validation.

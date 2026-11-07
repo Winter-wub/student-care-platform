@@ -34,9 +34,9 @@ fn build(services: harpseal::Services, env: &Env) -> Result<harpseal::Deployment
 async fn fetch(
     req: HttpRequest,
     env: Env,
-    _ctx: Context,
+    ctx: Context,
 ) -> worker::Result<harpseal_runtime_cloudflare::Response> {
-    harpseal_runtime_cloudflare::fetch(req, &env, &settings(), build).await
+    harpseal_runtime_cloudflare::fetch(req, &env, ctx, &settings(), build).await
 }
 
 #[event(scheduled)]

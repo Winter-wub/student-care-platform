@@ -13,6 +13,10 @@ We rejected option (a), letting a redelivery take the claim over and handle the 
 
 The lease is 60 seconds: beyond the platforms' webhook timeouts and a Worker's default CPU limit (30 s; configurable up to 5 minutes, and a Deployment that raises it should expect more spurious logs). A slow File copy (a large file downloaded from the platform and stored) is the expected reason a live handler exceeds it.
 
+## Amendment (#97): handling after the 200
+
+The claim used to run inside the webhook request, so a client closing the connection (LINE, a proxy) dropped the handler half way: claimed, never `done_at`, partly answered. Now the Router verifies the call, claims every event of it, answers 200 and hands the handling to a `Background` the runtime puts on the request: a tokio task on the native runtime (at most 16 at once), `ctx.wait_until` on Workers (still bounded by the invocation's CPU limit and `waitUntil` window). A bad signature (401), an unparseable body (400) and a duplicate are still decided before the answer. Handling failures are logged as `inbound.failed` as before, and a process that dies mid-handling, a panicking handler, or a Worker cut off by a limit leaves the claim unfinished for this ADR's sweep. Events of one chat account are handled one at a time in claim order, across calls: the Core keeps a FIFO per account and one drain task per account, so the runtime only spawns independent tasks and can bound them without deadlock. An account whose drain makes no progress for the 60-second lease is taken over by its next call, so a hung or silently stopped task does not block it for good. Without a `Background` (in-process tests, `Deployment::handle_webhook`) the events are handled inside the call, as before. Because every event of a call is claimed before the first is handled, the lease counts from the call, not from each event: a call whose events together take over 60 seconds risks a spurious `inbound.lost` for its last ones.
+
 ## Consequences
 
 - Migration 0009 adds `inbound_event.done_at`, `external_id` and `kind`, and a partial index on unfinished claims; claims made before it count as finished.

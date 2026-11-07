@@ -5,9 +5,10 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use harpseal::{Deployment, Services, Timestamp};
+use harpseal::{Background, BackgroundTask, Deployment, Services, Spawner, Timestamp};
 use tower_service::Service;
-use worker::{Env, HttpRequest, ScheduleContext, ScheduledEvent};
+use worker::send::SendWrapper;
+use worker::{Context, Env, HttpRequest, ScheduleContext, ScheduledEvent};
 
 use crate::{CloudflareSettings, install_panic_hook, services};
 
@@ -57,17 +58,39 @@ async fn app(env: &Env, settings: &CloudflareSettings, build: BuildFn) -> worker
     Ok(app)
 }
 
+/// [`Spawner`] over `ctx.wait_until`: the task runs after the response is
+/// sent, inside the same invocation (#97).
+struct WaitUntil(SendWrapper<Context>);
+
+impl Spawner for WaitUntil {
+    fn spawn(&self, task: BackgroundTask) {
+        self.0.0.wait_until(task);
+    }
+}
+
 /// The body of `#[event(fetch)]`: hands the request to the Deployment's
-/// axum Router. A response carrying a [`harpseal::ErrorReport`] logs its
+/// axum Router, with `ctx` as the request's [`Background`]: a webhook is
+/// answered 200 once its events are claimed and handled under
+/// `ctx.wait_until`. That work still counts against the invocation's CPU
+/// limit and `waitUntil` time (about 30 s after the response), and a
+/// webhook arriving while an earlier one of the same chat account is
+/// still being handled in this isolate queues behind it, under the
+/// earlier request's `wait_until`. Work cut off by a limit leaves its
+/// claim unfinished, logged as `inbound.lost` by the next Cron tick
+/// (ADR-0009). A response carrying a [`harpseal::ErrorReport`] logs its
 /// line with `console.error` (`wrangler tail`; the area and the error
 /// kind, never the message).
 pub async fn fetch(
     req: HttpRequest,
     env: &Env,
+    ctx: Context,
     settings: &CloudflareSettings,
     build: BuildFn,
 ) -> worker::Result<Response> {
     let mut router = app(env, settings, build).await?.router;
+    let mut req = req;
+    req.extensions_mut()
+        .insert(Background::new(WaitUntil(SendWrapper(ctx))));
     let resp = router.call(req).await.unwrap_or_else(|e| match e {});
     if let Some(report) = harpseal::ErrorReport::of(&resp) {
         let id = resp
