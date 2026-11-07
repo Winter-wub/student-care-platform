@@ -8,11 +8,8 @@ use super::super::{entries_from, revised};
 use super::{Next, Step};
 use crate::delivery::ChannelAccountId;
 use crate::message::{Menu, MenuKey};
-use crate::port_types::{Statement, Value};
+use crate::port_types::{Rows, Statement, Value};
 use crate::{Channel, Error, MenuRetire, Result};
-
-/// Accounts re-locked per Channel after a run.
-const RELOCK_LIMIT: i64 = 500;
 
 impl Step<'_> {
     /// Retires the revisions older than this one on every Channel from
@@ -63,39 +60,65 @@ impl Step<'_> {
         .bind(self.locale.as_str())
         .bind(self.revision);
         s.db.execute(retired).await?;
-        for ch in channels {
-            self.relock(ch.as_ref()).await?;
+        self.relock(channels, 0, "").await
+    }
+
+    /// Locks again the Menu of the accounts whose Link was revoked (an
+    /// unlink or a Staff revoke) or that were asked to consent again since
+    /// the run started, on every Channel from `start` after `after`: the
+    /// re-link or the platform's batch may have moved them to the unlocked
+    /// Menu. Onboarding accounts never had it and are left alone. A page of
+    /// [`crate::Channel::relink_chunk`] accounts per run, then a
+    /// continuation. A failed `set_menu` is left alone: the account gets
+    /// its Menu set again on its next Inbound.
+    pub(super) async fn relock(
+        &self,
+        channels: &[Arc<dyn Channel>],
+        start: usize,
+        after: &str,
+    ) -> Result<()> {
+        let mut after = after.to_string();
+        for ch in &channels[start..] {
+            let chunk = ch.relink_chunk().max(1);
+            let rows = self.locked_since(ch.as_ref(), &after, chunk).await?;
+            for i in 0..rows.len() {
+                if let Some(id) = rows.get(i, "external_id").and_then(Value::as_text) {
+                    let account = ChannelAccountId::new(ch.kind(), id);
+                    let _ = ch.set_menu(&account, None).await;
+                }
+            }
+            if rows.len() == chunk {
+                let last = rows.get(chunk - 1, "id").and_then(Value::as_text);
+                let next = Next {
+                    after: last.unwrap_or_default().to_string(),
+                    secs: 0,
+                    wait: false,
+                };
+                return self.continue_at(ch.as_ref(), "relock", next).await;
+            }
+            after.clear();
         }
         Ok(())
     }
 
-    /// Locks again the Menu of `ch`'s accounts locked since the run
-    /// started: an account unlinked (or revoked, or asked to consent
-    /// again) mid-run may have been re-linked, or moved by the platform's
-    /// batch, to the unlocked Menu. A failure is left alone: the account
-    /// gets its Menu set again on its next Inbound.
-    async fn relock(&self, ch: &dyn Channel) -> Result<()> {
-        let rows = self
-            .cx
-            .services
-            .db
-            .query(
-                Statement::new(
-                    "SELECT external_id FROM channel_account WHERE channel = ? \
-                     AND flow_state <> 'linked' AND updated_at >= ? ORDER BY id LIMIT ?",
-                )
-                .bind(ch.kind().as_str())
-                .bind(self.started)
-                .bind(RELOCK_LIMIT),
-            )
-            .await?;
-        for i in 0..rows.len() {
-            if let Some(id) = rows.get(i, "external_id").and_then(Value::as_text) {
-                let account = ChannelAccountId::new(ch.kind(), id);
-                let _ = ch.set_menu(&account, None).await;
-            }
-        }
-        Ok(())
+    /// Up to `chunk` accounts of `ch` after `after` (by id) whose Menu is
+    /// locked now and was locked by a revoke or a re-consent since the run
+    /// started.
+    async fn locked_since(&self, ch: &dyn Channel, after: &str, chunk: usize) -> Result<Rows> {
+        let st = Statement::new(
+            "SELECT ca.id, ca.external_id FROM channel_account ca \
+             WHERE ca.channel = ? AND ca.id > ? AND ca.flow_state <> 'linked' \
+             AND (ca.flow_state = 'awaiting_reconsent' AND ca.updated_at >= ? \
+             OR EXISTS (SELECT 1 FROM link l WHERE l.channel_account_id = ca.id \
+             AND l.status = 'revoked' AND l.revoked_at >= ?)) \
+             ORDER BY ca.id LIMIT ?",
+        )
+        .bind(ch.kind().as_str())
+        .bind(after)
+        .bind(self.started)
+        .bind(self.started)
+        .bind(i64::try_from(chunk).unwrap_or(i64::MAX));
+        self.cx.services.db.query(st).await
     }
 
     /// The token of the retire `ch` is still working on for this Locale.

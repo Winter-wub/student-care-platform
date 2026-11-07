@@ -2,7 +2,7 @@
 //! accounts to its newest Menu revision, then retire the older revisions.
 //!
 //! Payload: `{"locale"}` from the save; its continuations add `revision`
-//! (the revision they work for), `phase` (`relink` or `retire`), `channel`
+//! (the revision they work for), `phase` (`relink`, `retire` or `relock`), `channel`
 //! (the Channel kind being worked on), `after` (the last
 //! `channel_account.id` done), `started` (since when unlinks are looked
 //! for), `hop` (for the continuation's key) and `waits`. Each run does one
@@ -22,9 +22,10 @@
 //! (`owner`); a later save's Job that finds the newest revision claimed,
 //! or already `live`, does nothing.
 //!
-//! When everything is retired, accounts whose Menu was locked since the
-//! run started (an unlink or a revoke while it ran) get the locked Menu
-//! again, in case the re-link or the platform's batch moved them.
+//! When everything is retired, accounts whose Link was revoked or that
+//! were asked to consent again since the run started get the locked Menu
+//! again (a page per run), in case the re-link or the platform's batch
+//! moved them.
 
 use serde_json::{Value as Json, json};
 
@@ -61,7 +62,11 @@ pub(super) async fn run(cx: JobContext, job: Job) -> Result<()> {
     let started = match p["revision"].as_i64() {
         // Superseded: the newer save's Job takes over (and any retire
         // still pending, from `menu_retire`).
-        Some(r) if r != top.revision => return Ok(()),
+        // A re-lock page goes on: a newer run looks only from its own
+        // saves on.
+        Some(r) if r != top.revision && p["phase"].as_str() != Some("relock") => {
+            return Ok(());
+        }
         Some(_) => p["started"].as_i64().unwrap_or(0),
         None => {
             if top.state != "linking" || !claim(&cx, &locale, top.revision, &job.id).await? {
@@ -92,6 +97,10 @@ pub(super) async fn run(cx: JobContext, job: Job) -> Result<()> {
         .as_str()
         .and_then(|k| channels.iter().position(|c| c.kind().as_str() == k))
         .unwrap_or(0);
+    if p["phase"].as_str() == Some("relock") {
+        let after = p["after"].as_str().unwrap_or_default();
+        return step.relock(channels, start, after).await;
+    }
     if p["phase"].as_str() != Some("retire") {
         let mut after = p["after"].as_str().unwrap_or_default().to_string();
         for ch in &channels[start..] {

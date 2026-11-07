@@ -192,3 +192,57 @@ async fn a_run_past_the_wait_limit_fails_visibly() {
         .to_string();
     assert!(err.contains("after 200 waits"), "{err}");
 }
+
+#[tokio::test]
+async fn the_relock_pages_through_unlinks_and_leaves_onboarding_alone() {
+    let (h, app) = boot().await;
+    let accounts = linked(&h, 7, "th").await;
+    let fake = h.fake_channel();
+    fake.set_relink_chunk(2);
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    app.deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    // Mid-run: five Students unlink; three new followers start onboarding
+    // (their ids sort first, so a first-N selection would take them).
+    h.clock().advance_minutes(1);
+    let now = h.clock().now_ms();
+    let mut sql = Vec::new();
+    for i in 0..5 {
+        sql.push(format!(
+            "UPDATE channel_account SET flow_state = 'awaiting_student_id', updated_at = {now} \
+             WHERE id = 'ca-th0{i}'"
+        ));
+        sql.push(format!(
+            "UPDATE link SET status = 'revoked', revoked_at = {now} WHERE id = 'ln-th0{i}'"
+        ));
+    }
+    for i in 0..3 {
+        sql.push(format!(
+            "INSERT INTO channel_account (id, channel, external_id, first_seen_at, flow_state, \
+             updated_at) VALUES ('ca-a{i}', 'fake', 'new-{i}', {now}, 'awaiting_consent', {now})"
+        ));
+    }
+    for q in sql {
+        h.db().execute(Statement::new(q)).await.unwrap();
+    }
+    drain(&h, &app).await;
+
+    for (i, a) in accounts.iter().enumerate().take(5) {
+        assert!(matches!(fake.menu(a), Some(None)), "unlinked {i}: locked");
+    }
+    for i in 0..3 {
+        let a = FakeChannel::account(format!("new-{i}"));
+        assert!(fake.menu(&a).is_none(), "onboarding {i}: untouched");
+    }
+    assert_eq!(revision_of(&h, &accounts[6]), 1);
+    let pages = count(
+        &h,
+        "SELECT count(*) AS n FROM job WHERE kind = 'kernel.menu.relink' \
+         AND json_extract(payload, '$.phase') = 'relock'",
+    )
+    .await;
+    assert_eq!(pages, 2, "5 accounts, pages of 2: two continuations");
+}
