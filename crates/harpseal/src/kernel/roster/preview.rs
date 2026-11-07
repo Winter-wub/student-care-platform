@@ -37,11 +37,6 @@ pub(crate) enum Uploaded {
     Busy(Box<Import>),
 }
 
-/// `full` or `upsert`.
-pub(crate) fn mode_ok(mode: &str) -> bool {
-    matches!(mode, "full" | "upsert")
-}
-
 /// Stores, reads and previews `bytes`; see the module docs.
 pub(crate) async fn upload(
     d: &Deployment,
@@ -51,7 +46,9 @@ pub(crate) async fn upload(
     staff_id: &str,
     ctx: &RequestCtx,
 ) -> Result<Uploaded> {
-    if !mode_ok(mode) {
+    // The Deployment's `[roster] modes`, for every caller (page and code).
+    let config = d.config();
+    if !config.roster.allows_mode(mode) {
         return Err(Error::Invalid("roster import mode".into()));
     }
     let s = d.services();
@@ -69,7 +66,6 @@ pub(crate) async fn upload(
     let read = if bytes.len() > MAX_FILE_BYTES {
         Err(vec![problem("too_large")])
     } else {
-        let config = d.config();
         file::read(&bytes, &name, &config.roster)
             .map_err(|e: FileError| validate::file_problems(&e))
             .and_then(|r| {
