@@ -204,7 +204,8 @@ the restore too**, so no tick or request writes in between. It:
 7. inserts the rows parents first; the last batch also writes the audit row
    `backup.restore` (manifest SHA-256, counts, what `--force` deleted),
    with `--drop-sessions` empties `staff_session` and `app_session`, and
-   draws a new Menu revision salt (`menu_salt`, see below);
+   draws a new Menu revision salt (`menu_salt`) and drops the original's
+   Menu re-link work (see below);
 8. applies this Deployment's newer migrations, so data migrations added
    since the backup run over the restored rows.
 
@@ -237,7 +238,13 @@ run it again with `--force`.
   therefore never retires rich menus named with the old salt; they stay
   until the next `menu_generation` bump or are deleted by hand in the LINE
   console. Its linked Students get rich menus under the new salt at their
-  next Menu change.
+  next Menu change. For the same reason the restore forgets the original's
+  Menu re-link work: retires still pending on LINE (`menu_retire`, whose
+  batch request ids belong to the original) are cleared, and queued or
+  running `kernel.menu.relink` Jobs are marked `failed` ("cancelled by the
+  restore of a backup"), so the copy never polls the original's batch nor
+  bulk-links its users. A revision such a Job left `linking` is picked up by
+  the next Menu label save.
 
 **D1.** The CLI runs natively and has no D1 adapter yet, so a Worker
 Deployment is backed up with Cloudflare's own export

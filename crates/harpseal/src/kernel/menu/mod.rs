@@ -59,6 +59,26 @@ pub(crate) fn redraw_salt(s: &Services) -> Result<Statement> {
     Ok(Statement::new("UPDATE menu_salt SET salt = ?").bind(new_salt(s)?))
 }
 
+/// What a restore must not carry over from the Deployment it came from:
+/// retires still pending there (their tokens name that Deployment's
+/// platform requests, e.g. a LINE batch id) and its queued or running
+/// re-link Jobs (they would link its accounts, on its platform account, to
+/// this Deployment's Menus). The Jobs are marked failed with a reason; the
+/// revisions they worked for stay `linking` until the next label save.
+pub(crate) fn forget_runs(s: &Services) -> Vec<Statement> {
+    vec![
+        Statement::new("DELETE FROM menu_retire"),
+        Statement::new(
+            "UPDATE job SET state = 'failed', last_error = ?, finished_at = ?, \
+             lock_token = NULL, locked_until = NULL \
+             WHERE kind = ? AND state IN ('queued', 'running')",
+        )
+        .bind("cancelled by the restore of a backup")
+        .bind(s.now_ms())
+        .bind(RELINK),
+    ]
+}
+
 /// The newest Menu revision of the effective Locale `locale` (0 when no
 /// Menu label was ever saved there) and the Deployment's revision salt.
 pub(crate) async fn revision(s: &Services, locale: &Locale) -> Result<(u32, Option<String>)> {
