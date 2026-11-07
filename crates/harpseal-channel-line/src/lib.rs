@@ -118,6 +118,36 @@ impl LineConfig {
         self
     }
 
+    /// Whether the rich menu images can be uploaded, for a Deployment to
+    /// call at startup so a missing or wrong image refuses to start instead
+    /// of failing the first `set_menu` (an Inbound recorded as failed).
+    ///
+    /// Checks the unlocked image, and the locked one when
+    /// [`LineConfig::locked_menu`] has entries (see [`richmenu::png_size`]:
+    /// a PNG of 2500 x 843 or 2500 x 1686 px, at most 1 MB). With an empty
+    /// `access_token` (no real LINE credentials: demos, tests, the Fake
+    /// Channel's e2e) nothing is checked. The error names the Menu, not a
+    /// setting: the Deployment, which knows where the images come from,
+    /// adds that.
+    pub fn check_menu_images(&self) -> Result<(), Error> {
+        if self.access_token.is_empty() {
+            return Ok(());
+        }
+        let check = |which: &str, image: &[u8]| {
+            richmenu::png_size(image).map(drop).map_err(|e| {
+                let why = match e {
+                    Error::Invalid(m) => m.trim_start_matches("LINE rich menu image: ").to_string(),
+                    other => other.to_string(),
+                };
+                Error::Invalid(format!("{which} Menu image: {why}"))
+            })
+        };
+        if !self.locked_menu.entries.is_empty() {
+            check("locked", &self.locked_menu_image)?;
+        }
+        check("unlocked", &self.unlocked_menu_image)
+    }
+
     /// The LINE Login channel id, when it is not the `liff_id` prefix.
     pub fn with_login_channel_id(mut self, id: impl Into<String>) -> Self {
         self.login_channel_id = id.into();

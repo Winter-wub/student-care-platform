@@ -16,7 +16,11 @@ use harpseal_runtime_cloudflare::worker::{
 use harpseal_runtime_cloudflare::{CloudflareSettings, env_value};
 
 /// Bindings: D1 `DB`, R2 `FILES` (optional), secret `RESEND_API_KEY`,
-/// var `EMAIL_FROM`.
+/// var `EMAIL_FROM`. LINE's rich menu images are the PNGs bundled in the
+/// Deployment crate (`example_deployment::menu_images`, about 116 KB of the
+/// wasm): Workers have no files, so there is no `LINE_MENU_IMAGE_*`
+/// override here yet (a customer bundles its own bytes or reads an asset
+/// binding).
 fn settings() -> CloudflareSettings {
     CloudflareSettings::new()
 }
