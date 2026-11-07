@@ -26,6 +26,11 @@ use crate::{Module, ModuleRegistrar};
 /// Module name of the Kernel; its migrations are recorded under it.
 pub(crate) const NAME: &str = "kernel";
 
+/// Create a Manual Link. Before #80 it also covered revoking a Link.
+pub(crate) const LINK_MANAGE: &str = "kernel.link.manage";
+/// Revoke a Student's Link (Staff unlink), split off from [`LINK_MANAGE`].
+pub(crate) const LINK_REVOKE: &str = "kernel.link.revoke";
+
 /// Permissions the Kernel declares (spec, "Back office").
 pub(crate) const PERMISSIONS: &[Permission] = &[
     Permission::new(
@@ -36,11 +41,8 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
         "kernel.student.edit",
         "Edit Student fields and Tags by hand",
     ),
-    Permission::new("kernel.link.manage", "Create Manual Links"),
-    Permission::new(
-        "kernel.link.revoke",
-        "Revoke a Student's Link (Staff unlink)",
-    ),
+    Permission::new(LINK_MANAGE, "Create Manual Links"),
+    Permission::new(LINK_REVOKE, "Revoke a Student's Link (Staff unlink)"),
     Permission::new("kernel.roster.view", "See roster imports"),
     Permission::new("kernel.roster.edit", "Edit roster data"),
     Permission::new("kernel.roster.import", "Upload and apply roster files"),

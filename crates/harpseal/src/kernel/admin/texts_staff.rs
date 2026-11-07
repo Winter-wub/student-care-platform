@@ -152,8 +152,8 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     (
         "kernel.admin.roles.toml_help",
-        "บทบาทนี้กำหนดไว้ใน deployment.toml แก้ที่นี่ได้ แต่ทุกครั้งที่ migrate ระบบจะเพิ่มสิทธิ์ตาม deployment.toml กลับมา และสร้างบทบาทใหม่หากถูกลบ",
-        "This Role is defined in deployment.toml. Edits here hold until the next migrate, which grants its TOML Permissions again (and re-creates it if deleted)."
+        "บทบาทนี้กำหนดไว้ใน deployment.toml แก้ที่นี่ได้ แต่ทุกครั้งที่ migrate ระบบจะเพิ่มสิทธิ์ตาม deployment.toml กลับมา (หากระบุ kernel.link.manage โดยไม่มี kernel.link.revoke จะได้ kernel.link.revoke ด้วย) และสร้างบทบาทใหม่หากถูกลบ",
+        "This Role is defined in deployment.toml. Edits here hold until the next migrate, which grants its TOML Permissions again (a Role listing kernel.link.manage without kernel.link.revoke also gets kernel.link.revoke) and re-creates it if deleted."
     ),
     ("kernel.admin.roles.delete", "ลบบทบาท", "Delete the Role"),
     (

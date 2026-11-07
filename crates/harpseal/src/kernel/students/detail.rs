@@ -13,6 +13,7 @@ use super::read::{self, LinkRow, StudentRow};
 use super::view::{View, channel_label};
 use super::{attribute_field, service};
 use crate::config::AttributeSpec;
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result};
 
 pub(super) async fn page(
@@ -114,8 +115,8 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
 
 fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
     // Staff unlink and Manual Link are separate Permissions (#80).
-    let can_revoke = v.staff.can("kernel.link.revoke");
-    let can_link = v.staff.can("kernel.link.manage");
+    let can_revoke = v.staff.can(LINK_REVOKE);
+    let can_link = v.staff.can(LINK_MANAGE);
     let kinds = v.s.deployment.channel_kinds();
     let base = format!("/admin/students/{}", row.id);
     let history: Vec<&LinkRow> = links.iter().filter(|l| l.status == "revoked").collect();

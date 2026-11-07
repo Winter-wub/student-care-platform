@@ -225,11 +225,16 @@ fn parse_staff(rest: &[&str]) -> Result<StaffArgs, CliError> {
 /// one-line report.
 pub async fn migrate(d: &Deployment) -> Result<String, CliError> {
     let r = d.migrate().await?;
-    Ok(format!(
+    let mut line = format!(
         "migrations: {} applied, {} already done",
         r.applied.len(),
         r.skipped
-    ))
+    );
+    for n in &r.notices {
+        line.push_str("\nnotice: ");
+        line.push_str(n);
+    }
+    Ok(line)
 }
 
 /// What `staff create` did.

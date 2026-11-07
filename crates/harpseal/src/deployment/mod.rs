@@ -118,9 +118,9 @@ impl Deployment {
     /// is a no-op.
     pub async fn migrate(&self) -> Result<MigrationReport> {
         let now = self.services.now_ms();
-        let report =
+        let mut report =
             crate::migrate::migrate(self.services.db.as_ref(), self.migrations(), now).await?;
-        crate::auth::roles::seed(&self.services, &self.config.roles).await?;
+        report.notices = crate::auth::roles::seed(&self.services, &self.config.roles).await?;
         Ok(report)
     }
 

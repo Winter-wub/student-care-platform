@@ -3,16 +3,12 @@
 
 use std::collections::BTreeMap;
 
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::port_types::{Rows, Statement};
 use crate::{Error, Result, Services};
 
 /// Name of the Role the CLI gives the first Administrator.
 pub(crate) const ADMINISTRATOR: &str = "Administrator";
-
-/// The Permission that, before #80, also covered revoking a Link.
-const LINK_MANAGE: &str = "kernel.link.manage";
-/// The Permission split off from [`LINK_MANAGE`] for Staff unlink (#80).
-const LINK_REVOKE: &str = "kernel.link.revoke";
 
 /// What a TOML Role is granted for the Permissions it lists: a Role that
 /// lists `kernel.link.manage` and not `kernel.link.revoke` was written when
@@ -32,15 +28,30 @@ fn with_legacy_link_grant(perms: &[String]) -> Vec<String> {
 /// `kernel.link.manage` also gets `kernel.link.revoke`, see
 /// [`with_legacy_link_grant`]). Add-only and idempotent: Permissions
 /// granted in the database, and Roles created there, are kept.
-pub(crate) async fn seed(services: &Services, roles: &BTreeMap<String, Vec<String>>) -> Result<()> {
+///
+/// Returns one notice per Role the legacy rule widened, for the migrate
+/// report: the Core has no logger, and the Deployment's author should list
+/// what the Role means.
+pub(crate) async fn seed(
+    services: &Services,
+    roles: &BTreeMap<String, Vec<String>>,
+) -> Result<Vec<String>> {
     let mut stmts = Vec::new();
+    let mut notices = Vec::new();
     for (name, perms) in roles {
-        stmts.extend(ensure_role(services, name, &with_legacy_link_grant(perms))?);
+        let granted = with_legacy_link_grant(perms);
+        if granted.len() != perms.len() {
+            notices.push(format!(
+                "[roles] {name} lists {LINK_MANAGE} without {LINK_REVOKE}, so it is also \
+                 granted {LINK_REVOKE}; list both, or {LINK_REVOKE} alone, to say what it means"
+            ));
+        }
+        stmts.extend(ensure_role(services, name, &granted)?);
     }
-    if stmts.is_empty() {
-        return Ok(());
+    if !stmts.is_empty() {
+        services.db.batch(stmts).await?;
     }
-    services.db.batch(stmts).await.map(|_| ())
+    Ok(notices)
 }
 
 /// Statements creating Role `name` if absent and granting `perms`.

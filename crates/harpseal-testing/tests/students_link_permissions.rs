@@ -241,6 +241,19 @@ async fn a_toml_role_with_only_the_old_permission_gets_both() {
 }
 
 #[tokio::test]
+async fn migrate_tells_the_author_which_roles_relied_on_the_legacy_rule() {
+    let (_h, app) = boot().await;
+    let report = app.deployment().migrate().await.unwrap();
+    assert_eq!(report.notices.len(), 1, "{:?}", report.notices);
+    assert!(
+        report.notices[0].contains("[roles] Legacy"),
+        "{:?}",
+        report.notices
+    );
+    assert!(report.notices[0].contains("kernel.link.revoke"));
+}
+
+#[tokio::test]
 async fn the_migration_grants_revoke_to_every_database_role_that_managed_links() {
     let (h, app) = boot().await;
     // Roles as an Administrator made them before the split.

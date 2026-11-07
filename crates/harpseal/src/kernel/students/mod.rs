@@ -38,6 +38,7 @@ pub use service::{StatusChange, clear_override, record_view, set_status, update}
 pub use tags::{add_manual_tag, remove_manual_tag};
 pub(crate) use view::{channel_label, format_ms, is_htmx};
 
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::message::Locale;
 use crate::module::ModuleRegistrar;
 
@@ -178,8 +179,8 @@ pub(crate) fn format_time(ms: i64, offset_minutes: i32) -> String {
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     const VIEW: &str = "kernel.student.view";
     const EDIT: &str = "kernel.student.edit";
-    const LINK: &str = "kernel.link.manage";
-    const REVOKE: &str = "kernel.link.revoke";
+    const LINK: &str = LINK_MANAGE;
+    const REVOKE: &str = LINK_REVOKE;
     r.messages(texts::DEFAULTS)
         .back_office_page(
             VIEW,
