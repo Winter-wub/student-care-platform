@@ -140,6 +140,8 @@ only in the environment or Worker secrets, never in TOML.
 
 - [Building a Deployment](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/deployment.md): the builder, what
   `build()` refuses, Jobs, sends, retries, webhook duplicates, writing from code
+- [Notifying chosen Students](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/notify.md): a Module's Notice,
+  chat when linked, email otherwise, never twice
 - [Self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md): settings, the CLI, the demo
   seed, dev mode, reverse proxies, backup and restore
 - [The back office](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/back-office.md): every page and its Permission

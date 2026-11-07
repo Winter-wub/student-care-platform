@@ -39,6 +39,21 @@ pub trait FileStore: Send + Sync {
 pub trait EmailSender: Send + Sync {
     /// Sends one email.
     async fn send(&self, email: Email) -> Result<()>;
+
+    /// Sends one email with an idempotency `key` (at most 256 bytes): a
+    /// sender whose provider de-duplicates on it ([`EmailSender::dedupes`])
+    /// sends a repeat with the same key only once. The default ignores the
+    /// key and calls [`EmailSender::send`].
+    async fn send_keyed(&self, email: Email, key: &str) -> Result<()> {
+        let _ = key;
+        self.send(email).await
+    }
+
+    /// Whether [`EmailSender::send_keyed`] de-duplicates on its key (Resend:
+    /// the `Idempotency-Key` header, 24 hours). Default `false` (SMTP).
+    fn dedupes(&self) -> bool {
+        false
+    }
 }
 
 /// Outgoing HTTP for Channel adapters and email APIs.

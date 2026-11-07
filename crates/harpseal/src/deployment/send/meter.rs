@@ -106,6 +106,24 @@ impl Deployment {
         Ok(out)
     }
 
+    /// How many Messages from the start of `msgs` the rows of `key` record
+    /// as wholly sent to `to` (same index, same kind, no `error`): a
+    /// notice (#73) sends only the rest, so a retry delivers nothing twice
+    /// even on a Channel without retry keys.
+    pub(crate) async fn sent_prefix(
+        &self,
+        to: &ChannelAccountId,
+        key: &str,
+        msgs: &[Message],
+    ) -> Result<usize> {
+        let rows = self.recorded(to, key).await?;
+        let done = |(i, m): &(usize, &Message)| {
+            rows.get(i)
+                .is_some_and(|r| r.complete && r.kind == m.kind())
+        };
+        Ok(msgs.iter().enumerate().take_while(done).count())
+    }
+
     /// Ensures the `channel_account` row, then per Message sent its usage
     /// upsert and its `outbound_message` row, inserted or (seen by an
     /// earlier attempt with the key) updated. The Message the batch

@@ -96,6 +96,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
             ("kernel".into(), "0012_link_revoke_permission".into()),
             ("kernel".into(), "0013_backup_run".into()),
             ("kernel".into(), "0014_module_upload".into()),
+            ("kernel".into(), "0015_notify_delivery".into()),
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
@@ -128,10 +129,10 @@ async fn a_module_migration_runs_after_the_kernel_and_once() {
         names,
         [
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
-            "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "notes"
+            "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "notes"
         ]
     );
-    assert_eq!(d.migrate().await.unwrap().applied.len(), 15);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 16);
     assert!(d.migrate().await.unwrap().applied.is_empty());
 }
 

@@ -75,11 +75,15 @@ impl Random for SeqRandom {
 }
 
 /// An EmailSender that keeps every email instead of sending it. Addresses
-/// marked with [`CapturingEmail::fail_for`] are refused (not kept).
+/// marked with [`CapturingEmail::fail_for`] are refused (not kept). Keyed
+/// sends record their key; with [`CapturingEmail::set_dedupes`] a repeated
+/// key is accepted and not kept again, as Resend does.
 #[derive(Debug, Clone, Default)]
 pub struct CapturingEmail {
     sent: Arc<Mutex<Vec<Email>>>,
     failing: Arc<Mutex<Vec<String>>>,
+    keys: Arc<Mutex<Vec<String>>>,
+    dedupes: Arc<Mutex<bool>>,
 }
 
 impl CapturingEmail {
@@ -98,6 +102,15 @@ impl CapturingEmail {
             .filter(|e| e.to == to)
             .cloned()
             .collect()
+    }
+    /// The idempotency key of every keyed send so far, in order.
+    pub fn keys(&self) -> Vec<String> {
+        lock(&self.keys).clone()
+    }
+    /// Makes keyed sends de-duplicate on their key (default: they do not,
+    /// like SMTP).
+    pub fn set_dedupes(&self, on: bool) {
+        *lock(&self.dedupes) = on;
     }
     /// Makes every later send to `to` fail with `Error::Platform`
     /// (`false` undoes it).
@@ -121,6 +134,20 @@ impl EmailSender for CapturingEmail {
         }
         lock(&self.sent).push(email);
         Ok(())
+    }
+
+    async fn send_keyed(&self, email: Email, key: &str) -> Result<()> {
+        let seen = lock(&self.keys).iter().any(|k| k == key);
+        if self.dedupes() && seen {
+            return Ok(());
+        }
+        self.send(email).await?;
+        lock(&self.keys).push(key.to_string());
+        Ok(())
+    }
+
+    fn dedupes(&self) -> bool {
+        *lock(&self.dedupes)
     }
 }
 

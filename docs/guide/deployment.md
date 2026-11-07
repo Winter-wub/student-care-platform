@@ -1,8 +1,9 @@
 # Building a Deployment
 
 How a Deployment is assembled from the Core, what `build()` refuses, how
-Jobs run, and how sends, retries and webhook duplicates behave. Back to the
-[README](https://github.com/Winter-wub/student-care-platform#readme).
+Jobs run, and how sends, retries and webhook duplicates behave. A Module's
+Notice to chosen Students (chat or email) is in [its own page](notify.md).
+Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ### Public API rules
 
