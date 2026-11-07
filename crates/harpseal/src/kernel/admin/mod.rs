@@ -8,6 +8,7 @@
 //! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{roles,status,password,unlock}` | `kernel.staff.manage` |
 //! | `GET/POST /admin/roles`, `GET/POST /admin/roles/{id}`, `POST …/delete` | `kernel.staff.manage` |
 //! | `GET /admin/texts`, `GET/POST /admin/texts/{key}`, `POST /admin/texts/consent` | `kernel.setting.edit` |
+//! | `GET/POST /admin/settings` (Module settings, #75; see [`module_settings`]) | each setting's own Permission |
 //! | `GET /admin/backups`, `POST …/now`, `GET …/{id}/download`, `GET …/export.xlsx` | `kernel.backup.manage` ([`backups`]) |
 //!
 //! Reads of Security Events and the audit log are logged as sensitive
@@ -18,6 +19,8 @@
 mod audit;
 mod audit_detail;
 pub(crate) mod backups;
+mod module_settings;
+mod module_settings_texts;
 mod roles_pages;
 mod security;
 mod settings;
@@ -34,6 +37,14 @@ use axum::routing::{get, post};
 use crate::module::ModuleRegistrar;
 
 pub(crate) use backups::backup_schedule;
+pub(crate) use module_settings::nav as settings_nav;
+
+/// The Module settings page's handlers, mounted by `Deployment::router`
+/// for any signed-in Staff member (the page checks each setting's
+/// Permission).
+pub(crate) fn settings_route() -> axum::routing::MethodRouter<crate::AppState> {
+    get(module_settings::page).post(module_settings::submit)
+}
 
 /// Registers the pages on the Kernel, after Students (10) and the roster.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
@@ -44,6 +55,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     backups::register(r);
     r.messages(texts::DEFAULTS)
         .messages(texts::STAFF)
+        .messages(module_settings_texts::TEXTS)
         .back_office_page(
             SECURITY,
             "/security",

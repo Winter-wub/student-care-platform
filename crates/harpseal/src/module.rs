@@ -18,6 +18,8 @@ use crate::{Result, Services};
 mod kept;
 mod mini_app;
 mod notify;
+mod setting_kind;
+pub(crate) mod settings;
 mod upload;
 pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
 pub(crate) use kept::{RouteModule, sweep_uploads};
@@ -26,6 +28,9 @@ pub use notify::{
     DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,
     NotifyReport, NotifySkip, NotifyTo,
 };
+pub(crate) use setting_kind::MAX_ACCOUNT_CHARS;
+pub use settings::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind, SettingValue, Settings};
+pub(crate) use settings::{SettingSpec, absorb as absorb_settings, check as check_settings};
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
 
 /// A switchable part of the Core or customer code.
@@ -56,6 +61,11 @@ impl PageState {
     /// A text in the default Locale.
     pub fn t(&self, key: &str) -> String {
         self.catalog.t(&self.config.default_locale, key)
+    }
+
+    /// The Module settings, read fresh on every call (#75).
+    pub fn settings(&self) -> Settings {
+        self.deployment.settings()
     }
 }
 
@@ -147,6 +157,11 @@ impl JobContext {
         .bind(token.as_str());
         self.services.db.execute(stmt).await.map(|_| ())
     }
+
+    /// The Module settings, read fresh on every call (#75).
+    pub fn settings(&self) -> Settings {
+        self.deployment.settings()
+    }
 }
 
 /// Runs one Job. Must be idempotent: a Job may run again after a crash.
@@ -186,6 +201,8 @@ pub struct ModuleRegistrar {
     pub(crate) nav: Vec<NavSpec>,
     /// Links on the Mini App home (#72).
     pub(crate) app_links: Vec<AppLinkSpec>,
+    /// Typed settings (#75).
+    pub(crate) settings: Vec<SettingSpec>,
 }
 
 /// A back-office upload route (paths under `/admin`, as registered).
@@ -224,6 +241,7 @@ impl ModuleRegistrar {
             mini_app_paths: Vec::new(),
             nav: Vec::new(),
             app_links: Vec::new(),
+            settings: Vec::new(),
         }
     }
 

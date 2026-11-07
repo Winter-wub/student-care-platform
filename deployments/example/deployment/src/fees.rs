@@ -18,8 +18,16 @@
 //!    `fees_balance` and deletes it ([`KeptUpload::finish`]). A Job that
 //!    finds no upload succeeds only if `fees_balance` holds its rows.
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
+//!
+//! Where Students pay is two Module settings (#75), the bank and branch
+//! [`BANK_NAME`] and the account number [`BANK_ACCOUNT`] (digits, `-` and
+//! spaces only, so no hidden character can change what Students copy),
+//! edited on `/admin/settings` only with [`BANK_ACCOUNT_EDIT`] (not with
+//! `kernel.setting.edit` alone) and shown
+//! on the Student's Mini App page [`student::PATH`].
 
 pub mod read;
+pub mod student;
 mod texts;
 
 use axum::extract::{Path, State};
@@ -29,7 +37,7 @@ use axum::routing::{get, post};
 use harpseal::audit::{self, Actor, RequestCtx, Target};
 use harpseal::{
     AppState, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module, ModuleRegistrar,
-    Permission, Result, SheetUpload, Statement, UploadRejection, Uploads,
+    Permission, Result, SettingKind, SheetUpload, Statement, UploadRejection, Uploads,
 };
 use maud::{Markup, html};
 
@@ -41,6 +49,12 @@ pub const NAME: &str = "fees";
 pub const IMPORT: &str = "fees.import";
 /// The Job that imports a confirmed file.
 pub const JOB: &str = "fees.import";
+/// The setting: the bank and branch Students pay at (fictional default).
+pub const BANK_NAME: &str = "fees.bank_name";
+/// The setting: the account number Students pay into (fictional default).
+pub const BANK_ACCOUNT: &str = "fees.bank_account";
+/// The only Permission that edits [`BANK_ACCOUNT`].
+pub const BANK_ACCOUNT_EDIT: &str = "fees.bank_account.edit";
 /// The pages, under `/admin`.
 pub const BASE: &str = "/admin/fees";
 
@@ -57,7 +71,30 @@ impl Module for Fees {
             IMPORT,
             "Upload and import outstanding fees",
         ))
+        .permission(Permission::new(
+            BANK_ACCOUNT_EDIT,
+            "Change the bank account Students pay fees into",
+        ))
         .messages(texts::TEXTS)
+        .messages(student::TEXTS)
+        .setting(
+            BANK_NAME,
+            SettingKind::Text,
+            "ธนาคารทะเลใส สาขาอ่าวแมวน้ำ บัญชี มหาวิทยาลัยซีลเบย์",
+            BANK_ACCOUNT_EDIT,
+            "fees.bank_name_label",
+            "fees.bank_name_help",
+        )
+        .setting(
+            BANK_ACCOUNT,
+            SettingKind::AccountNumber,
+            "000-0-00000-0",
+            BANK_ACCOUNT_EDIT,
+            "fees.bank_account_label",
+            "fees.bank_account_help",
+        )
+        .public(student::PATH, get(student::page))
+        .mini_app_link("fees.mine", student::PATH, 60)
         .migration(
             "0001_fees_balance",
             include_str!("../migrations/fees/0001_fees_balance.sql"),
