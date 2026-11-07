@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+mod announcements;
 mod backup;
 mod roster;
 
+pub use announcements::AnnouncementsConfig;
 pub use backup::BackupConfig;
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
 
@@ -67,6 +69,11 @@ pub struct DeploymentConfig {
     /// The nightly backup ([`BackupConfig`], #78).
     #[serde(default)]
     pub backup: BackupConfig,
+    /// The Announcements Module's settings ([`AnnouncementsConfig`]). A
+    /// Core section for a built-in Module until Modules can declare their
+    /// own config: a Module-config hook should replace it.
+    #[serde(default)]
+    pub announcements: AnnouncementsConfig,
 }
 
 fn default_offset() -> String {
@@ -295,6 +302,7 @@ impl DeploymentConfig {
         c.branding.check()?;
         c.roster.check()?;
         c.backup.check()?;
+        c.announcements.check()?;
         Ok(c)
     }
 

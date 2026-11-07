@@ -276,8 +276,8 @@ pub(crate) async fn retract(cx: JobContext, job: Job) -> Result<()> {
     Ok(())
 }
 
-/// A maintenance Job (edit or retract, any version, chunks and late pass
-/// included) of announcement `id` is waiting or running: the detail page
+/// A maintenance Job (edit, retract or edit notice, any version, chunks
+/// and late pass included) of announcement `id` is waiting or running: the detail page
 /// shows "in progress".
 pub(crate) async fn in_progress(s: &crate::Services, id: &str) -> Result<bool> {
     let rows =
@@ -285,8 +285,11 @@ pub(crate) async fn in_progress(s: &crate::Services, id: &str) -> Result<bool> {
             Statement::new(
                 "SELECT 1 AS x FROM job WHERE state IN ('queued', 'running') \
                  AND (unique_key LIKE ? || ':' || ? || ':edit:v%' \
-                 OR unique_key LIKE ? || ':' || ? || ':retract:v%') LIMIT 1",
+                 OR unique_key LIKE ? || ':' || ? || ':retract:v%' \
+                 OR unique_key LIKE ? || ':' || ? || ':notice:v%') LIMIT 1",
             )
+            .bind(NAME)
+            .bind(id)
             .bind(NAME)
             .bind(id)
             .bind(NAME)

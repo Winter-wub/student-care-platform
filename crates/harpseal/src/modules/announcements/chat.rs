@@ -9,9 +9,6 @@ use crate::module::ActionContext;
 use crate::port_types::Statement;
 use crate::{Deployment, Result, Services};
 
-/// Announcements the "ข่าวล่าสุด" Menu entry lists.
-pub(crate) const LATEST_LIMIT: i64 = 5;
-
 /// The ack Action of announcement `id` (≤ 64 bytes for a UUIDv7 id).
 pub fn ack_action(id: &str) -> Result<ActionId> {
     ActionId::new(format!("{ACK_PREFIX}{id}"))
@@ -61,6 +58,10 @@ pub enum AckOutcome {
     /// The announcement was retracted: nothing recorded. Only for a
     /// Student with a delivery row (otherwise [`AckOutcome::Unknown`]).
     Retracted,
+    /// The announcement expired (`expires_at` passed): nothing recorded,
+    /// the Student is told it is no longer available (#77). Only for a
+    /// Student with a delivery row.
+    Expired,
     /// No such announcement, or the Student is not in its Audience.
     Unknown,
 }
@@ -70,9 +71,10 @@ pub enum AckOutcome {
 /// every round) still without one, in one conditional statement, so it is
 /// idempotent and two taps racing record it once. It is once per Student:
 /// after an acknowledgement (any round), a later tap is
-/// [`AckOutcome::Already`]. Expired announcements
-/// still accept it; retracted ones do not. For the chat Action and the
-/// Mini App's ack endpoint.
+/// [`AckOutcome::Already`]. Retracted and expired announcements refuse
+/// it ([`AckOutcome::Retracted`], [`AckOutcome::Expired`]; #77: before,
+/// an expired one still took it). For the chat Action and the Mini App's
+/// ack endpoint.
 pub async fn ack(d: &Deployment, id: &str, student: &str) -> Result<AckOutcome> {
     ack_with(d.services(), id, student).await
 }
@@ -99,6 +101,10 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
     if row.status == "retracted" {
         return Ok(AckOutcome::Retracted);
     }
+    let now = s.now_ms();
+    if row.expires_at.is_some_and(|e| e <= now) {
+        return Ok(AckOutcome::Expired);
+    }
     // Once per Student: an earlier acknowledgement (any round, any
     // Channel) stands, and covers rows added since (a resend).
     let earlier = store::int(&rows, 0, "acked");
@@ -107,12 +113,14 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
             Statement::new(
                 "UPDATE announcement_delivery SET acked_at = ? WHERE announcement_id = ? \
                  AND student_id = ? AND acked_at IS NULL \
-                 AND EXISTS (SELECT 1 FROM announcement WHERE id = ? AND status <> 'retracted')",
+                 AND EXISTS (SELECT 1 FROM announcement WHERE id = ? AND status <> 'retracted' \
+                 AND (expires_at IS NULL OR expires_at > ?))",
             )
-            .bind(earlier.unwrap_or_else(|| s.now_ms()))
+            .bind(earlier.unwrap_or(now))
             .bind(id)
             .bind(student)
-            .bind(id),
+            .bind(id)
+            .bind(now),
         )
         .await?;
     Ok(if earlier.is_none() && done.rows_affected > 0 {
@@ -136,6 +144,7 @@ pub(crate) async fn on_ack(cx: ActionContext) -> Result<Vec<Message>> {
             AckOutcome::Recorded => "announcements.ack.thanks",
             AckOutcome::Already => "announcements.ack.again",
             AckOutcome::Retracted => "announcements.ack.retracted",
+            AckOutcome::Expired => "announcements.ack.expired",
             AckOutcome::Unknown => "announcements.ack.unknown",
         }
     };
@@ -143,7 +152,7 @@ pub(crate) async fn on_ack(cx: ActionContext) -> Result<Vec<Message>> {
 }
 
 /// The `limit` newest announcements Student `student` was sent (the Menu
-/// entry shows 5), unexpired and not retracted, the ones waiting for an
+/// entry shows `[announcements] latest`, default 5), unexpired and not retracted, the ones waiting for an
 /// acknowledgement first; texts in `locale` (Thai fallback). The Menu
 /// entry's query; the Mini App lists with it too.
 pub async fn latest(
@@ -156,12 +165,14 @@ pub async fn latest(
     store::for_student(s, student, locale, s.now_ms(), limit).await
 }
 
-/// `announcements.latest`: a Card List of [`latest`] with "รับทราบ" on
+/// `announcements.latest`: a Card List of the `[announcements] latest`
+/// newest ([`latest`]) with "รับทราบ" on
 /// those waiting for it and "ดูทั้งหมด" on the last Card, or a Text when
 /// there is none.
 pub(crate) async fn on_latest(cx: ActionContext) -> Result<Vec<Message>> {
     let s = &cx.services;
-    let list = store::for_student(s, &cx.student.0, &cx.locale, s.now_ms(), LATEST_LIMIT).await?;
+    let limit = i64::from(cx.config.announcements.latest);
+    let list = store::for_student(s, &cx.student.0, &cx.locale, s.now_ms(), limit).await?;
     if list.is_empty() {
         return Ok(vec![Message::text(cx.t("announcements.latest.empty"))]);
     }

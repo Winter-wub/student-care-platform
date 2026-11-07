@@ -152,7 +152,7 @@ impl Deployment {
     }
 
     /// A keyed Push on behalf of `module` ([`Deployment::send_many_with_key`]).
-    pub(super) async fn deliver_with(
+    pub(crate) async fn deliver_with(
         &self,
         to: &ChannelAccountId,
         msgs: &[Message],

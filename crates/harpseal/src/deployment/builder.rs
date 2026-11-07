@@ -70,6 +70,10 @@ impl DeploymentBuilder {
             .backup
             .check()
             .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
+        config
+            .announcements
+            .check()
+            .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
         let services = self.services.ok_or(BuildError::Missing(Part::Runtime))?;
         let verification = self
             .verification

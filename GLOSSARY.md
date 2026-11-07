@@ -127,7 +127,10 @@ _Avoid_: LIFF, web app, webview
 The identity of a Mini App page view, resolved from the Channel's signed token to a Channel Account and, through its Link, to a Student. Students have no separate login.
 
 **Announcement** (ข่าว/ประกาศ):
-A message Staff write once, in one or more Locales, and send to an Audience; it can expire, be edited, re-sent or retracted, and may ask each Student to acknowledge it.
+A message Staff write once, in one or more Locales, and send to an Audience; it can expire, be edited, re-sent or retracted, and may ask each Student to acknowledge it. Once expired, Students can no longer open or acknowledge it; Staff still see it. Editing a sent one may notify its recipients where the Channel cannot edit the message (an Edit notice).
+
+**Edit notice** (แจ้งการแก้ไข):
+One short Push per recipient of an edited Announcement, on a Channel that cannot edit a sent message (LINE), linking to the updated Announcement. Staff choose it when they save an edit that changes a text; only recipients whose text changed get it, including those who already acknowledged (their Acknowledgement stands). Each edit notifies again; metered like any Push.
 
 **Acknowledgement** (การรับทราบ):
 A Student's one-time confirmation that they have read an Announcement, counted per Student regardless of how many Channels received it.

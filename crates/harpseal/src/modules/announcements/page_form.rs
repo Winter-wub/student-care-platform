@@ -8,10 +8,12 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
 
+use super::draft::changed_locales;
 use super::form::{Fields, MAX_BODY, MAX_TITLE};
+use super::notice;
 use super::store::{self, Row};
 use super::view::View;
-use super::{page_count, page_detail, page_pick, service};
+use super::{page_count, page_detail, page_notice, page_pick, service};
 use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
@@ -23,7 +25,7 @@ pub(super) async fn new_page(State(s): State<AppState>, staff: CurrentStaff) -> 
         when: "now".into(),
         ..Fields::default()
     };
-    form_page(&v, StatusCode::OK, None, &fields, &[])
+    form_page(&v, StatusCode::OK, None, &fields, &[], None)
 }
 
 pub(super) async fn new_post(
@@ -37,7 +39,16 @@ pub(super) async fn new_post(
     let d = s.deployment.as_ref();
     let draft = match f.draft(&d.config().roster, v.offset(), d.services().now_ms()) {
         Ok(draft) => draft,
-        Err(errors) => return form_page(&v, StatusCode::UNPROCESSABLE_ENTITY, None, &f, &errors),
+        Err(errors) => {
+            return form_page(
+                &v,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                None,
+                &f,
+                &errors,
+                None,
+            );
+        }
     };
     let actor = Actor::staff(&staff);
     let id = match service::create(d, &draft, &actor, &ctx).await {
@@ -74,7 +85,11 @@ pub(super) async fn edit_page(
         return v.redirect(&detail(&id), false, "announcements.flash.not_editable");
     }
     let fields = Fields::of(&row, &texts, v.offset());
-    form_page(&v, StatusCode::OK, Some(&row), &fields, &[])
+    let cost = match page_notice::cost(&s.deployment, &row).await {
+        Ok(c) => c,
+        Err(e) => return v.error(&e),
+    };
+    form_page(&v, StatusCode::OK, Some(&row), &fields, &[], cost.as_ref())
 }
 
 pub(super) async fn edit_post(
@@ -103,15 +118,39 @@ pub(super) async fn edit_post(
         f.unreachable = row.audience.include_unreachable;
         f.when = "now".into();
     }
-    let draft = match f.draft(&d.config().roster, v.offset(), d.services().now_ms()) {
+    let now = d.services().now_ms();
+    let mut draft = f.draft(&d.config().roster, v.offset(), now);
+    // #77: a notice needs an announcement open now and after this save
+    // (Students could not open it otherwise) and a changed text (else it
+    // would only cost Pushes); a box ticked in vain is an error, not a
+    // silent drop.
+    if let Ok(dr) = &draft
+        && row.status == "sent"
+        && f.notify
+    {
+        let closes = !notice::open(&row, now) || dr.expires_at.is_some_and(|e| e <= now);
+        match store::texts(d.services(), &id).await {
+            Ok(_) if closes => {
+                draft = Err(vec![("notify", "announcements.form.notify_closed")]);
+            }
+            Ok(old) if changed_locales(&old, dr).is_empty() => {
+                draft = Err(vec![("notify", "announcements.form.notify_unchanged")]);
+            }
+            Ok(_) => {}
+            Err(e) => return v.error(&e),
+        }
+    }
+    let draft = match draft {
         Ok(draft) => draft,
         Err(errors) => {
+            let cost = page_notice::cost(d, &row).await.ok().flatten();
             return form_page(
                 &v,
                 StatusCode::UNPROCESSABLE_ENTITY,
                 Some(&row),
                 &f,
                 &errors,
+                cost.as_ref(),
             );
         }
     };
@@ -141,6 +180,7 @@ fn form_page(
     row: Option<&Row>,
     f: &Fields,
     errors: &[(&'static str, &'static str)],
+    cost: Option<&page_notice::Cost>,
 ) -> Response {
     let title = v.t(if row.is_some() {
         "announcements.page.edit"
@@ -194,6 +234,13 @@ fn form_page(
                 }
             } @else if f.require_ack {
                 input type="hidden" name="require_ack" value="1";
+            }
+            // #77: LINE cannot edit a sent Card; one Push per recipient.
+            // Not offered once expired: Students could not open it.
+            @if sent && row.is_some_and(|r| notice::open(r, v.s.services.now_ms())) {
+                (page_notice::field(v, f, cost, err("notify")))
+            } @else {
+                (err("notify"))
             }
             div class="field" {
                 label for="expires" { (v.t("announcements.form.expires")) }

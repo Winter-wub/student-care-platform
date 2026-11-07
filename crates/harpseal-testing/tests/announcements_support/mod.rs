@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+pub mod notice;
+
 use axum::body::Body;
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
@@ -55,17 +57,34 @@ pub struct World {
 /// Boots the Deployment; `max_recipients` sets the LineLike multicast
 /// group size.
 pub async fn boot_with(max_recipients: usize) -> World {
+    boot_config(CONFIG, max_recipients).await
+}
+
+/// [`boot_with`] on the `deployment.toml` `src` (e.g. [`CONFIG`] plus a
+/// section).
+pub async fn boot_config(src: &str, max_recipients: usize) -> World {
+    boot_line(src, max_recipients, |line| line).await
+}
+
+/// [`boot_config`] with the LineLike Channel registered as `wrap(line)`
+/// (e.g. a wrapper answering a repeated key as LINE does); `World::line`
+/// stays the inner Fake.
+pub async fn boot_line<C: harpseal::Channel + 'static>(
+    src: &str,
+    max_recipients: usize,
+    wrap: impl FnOnce(FakeChannel) -> C,
+) -> World {
     let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
     let line = h.fake_channel().with_max_recipients(max_recipients);
     let tg = FakeChannel::new(TG_SECRET)
         .unwrap()
         .telegram_like()
         .with_kind(TG);
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
+    let config = DeploymentConfig::from_toml(src).unwrap();
     let d = Deployment::builder()
         .config(config.clone())
         .runtime(h.services())
-        .channel(line.clone())
+        .channel(wrap(line.clone()))
         .channel(tg.clone())
         .verification(EmailOtp::new(config.otp))
         .module(Announcements)

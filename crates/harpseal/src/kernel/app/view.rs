@@ -311,6 +311,18 @@ pub(crate) fn acked(t: &Texts) -> Markup {
     html! { p class="app-acked" role="status" { (t.t("kernel.app.acked")) } }
 }
 
+/// The line a Student sees instead of an announcement no longer shown:
+/// retracted, or expired (#77).
+pub(crate) fn gone_key(a: &StudentAnnouncement) -> Option<&'static str> {
+    if a.retracted {
+        Some("kernel.app.retracted")
+    } else if a.expired {
+        Some("kernel.app.unavailable")
+    } else {
+        None
+    }
+}
+
 /// The page of one announcement (a deep link from a Card).
 pub(crate) fn detail(
     s: &PageState,
@@ -318,8 +330,10 @@ pub(crate) fn detail(
     v: &AppVisitor,
     a: &StudentAnnouncement,
 ) -> Response {
-    let body = if a.retracted {
-        html! { div class="card app-center" { p { (t.t("kernel.app.retracted")) } } }
+    // Retracted or expired (#77): a line instead of the text.
+    let gone = gone_key(a);
+    let body = if let Some(key) = gone {
+        html! { div class="card app-center" { p { (t.t(key)) } } }
     } else {
         html! {
             article class="card" {
@@ -330,8 +344,8 @@ pub(crate) fn detail(
             }
         }
     };
-    let title = if a.retracted {
-        t.t("kernel.app.retracted")
+    let title = if let Some(key) = gone {
+        t.t(key)
     } else {
         a.title.clone()
     };
