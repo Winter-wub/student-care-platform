@@ -16,6 +16,22 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Search by name or student ID"
     ),
     ("kernel.students.total", "ทั้งหมด", "Total"),
+    (
+        "kernel.students.missing_filter",
+        "เฉพาะนักศึกษาที่ข้อมูลไม่ครบ",
+        "Only Students with missing data"
+    ),
+    ("kernel.students.missing_badge", "ข้อมูลไม่ครบ", "Missing data"),
+    (
+        "kernel.students.missing_no_email",
+        "ไม่มีอีเมล (เริ่มเชื่อมบัญชีแชทไม่ได้)",
+        "No email (cannot start linking a chat account)"
+    ),
+    (
+        "kernel.students.missing_bad_email",
+        "อีเมลไม่ถูกต้อง",
+        "Invalid email"
+    ),
     ("kernel.students.none", "ไม่พบนักศึกษา", "No Students found"),
     ("kernel.students.prev", "ก่อนหน้า", "Previous"),
     ("kernel.students.next", "ถัดไป", "Next"),

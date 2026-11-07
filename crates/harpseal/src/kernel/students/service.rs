@@ -128,7 +128,7 @@ pub async fn update(
         &gate,
         vec![
             crate::Value::from(fields.display_name.clone()),
-            crate::Value::from(fields.email.clone()),
+            crate::Value::from(super::email::normalise(fields.email.as_deref())),
             crate::Value::from(fields.locale.0.clone()),
             crate::Value::from(Json::Object(fields.attributes.clone()).to_string()),
             crate::Value::from(json!(overrides).to_string()),

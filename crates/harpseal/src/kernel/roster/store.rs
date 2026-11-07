@@ -1,7 +1,7 @@
 //! `roster_import` rows, their `counts` JSON, and the Students an import
 //! compares the file with.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -78,6 +78,10 @@ pub(crate) struct Counts {
     /// sheets, shown on the preview and in the report.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) skipped: Vec<super::file::Skipped>,
+    /// The warnings of a file that imports (#71), shown on the preview and
+    /// in the report.
+    #[serde(skip_serializing_if = "Warned::is_empty")]
+    pub(crate) warnings: Warned,
     /// What the chunks applied so far.
     pub(crate) result: Tally,
     /// Students the last chunk marked left, Links it revoked, revoked
@@ -94,14 +98,44 @@ pub(crate) struct Counts {
     pub(crate) run: String,
 }
 
+/// The warnings of a file that imports (#71).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct Warned {
+    /// Every warning found, also those not kept.
+    pub(crate) total: u64,
+    /// Warnings per class (reason code).
+    pub(crate) classes: BTreeMap<String, u64>,
+    /// The warnings kept, at most `MAX_PROBLEMS`, in file order.
+    pub(crate) problems: Vec<Problem>,
+}
+
+impl Warned {
+    pub(crate) fn new(warnings: Vec<Problem>) -> Self {
+        Self {
+            total: super::warnings::total(&warnings),
+            classes: super::warnings::classes(&warnings),
+            problems: super::warnings::kept(warnings),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.total == 0
+    }
+}
+
 /// `roster_import.error`: a refused file or a failed Job.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Failure {
-    /// The refused file's report, at most `MAX_PROBLEMS` rows.
+    /// The refused file's blocking problems, at most `MAX_PROBLEMS` rows.
+    /// Its warnings are in `Counts::warnings`, as for a file that imports.
     pub(crate) problems: Vec<Problem>,
-    /// Every problem found, also those not kept.
+    /// Every blocking problem found, also those not kept.
     pub(crate) total: u64,
+    /// Blocking problems per class (reason code) (#71).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) classes: BTreeMap<String, u64>,
     /// Why the Job failed (never file contents).
     pub(crate) job: Option<String>,
 }

@@ -24,7 +24,8 @@ async fn refused(name: &str, bytes: &[u8]) -> (harpseal_testing::Harness, String
         report.header("content-type"),
         Some("text/csv; charset=utf-8")
     );
-    assert!(report.body.starts_with("\u{feff}แถว,คอลัมน์,ปัญหา\r\n"));
+    // A fourth column, the level, appears when the report has warnings.
+    assert!(report.body.starts_with("\u{feff}แถว,คอลัมน์,ปัญหา"));
     // Uploading a refused file is audited; it writes no `roster.import`.
     let audit = "SELECT count(*) FROM audit_log WHERE action = 'roster.import.upload' \
                  AND json_extract(after, '$.state') = 'failed'";
@@ -60,15 +61,18 @@ async fn a_duplicate_student_id_is_refused() {
 }
 
 #[tokio::test]
-async fn a_bad_email_is_refused_and_an_empty_one_is_only_counted() {
-    let file = csv_lines(&["68000001,นก,nok@sealbay,,,MSC,1,"]);
-    let (_, _, report) = refused("a.csv", &file).await;
-    assert!(report.contains("2,อีเมล,อีเมลไม่ถูกรูปแบบ"), "{report}");
-
+async fn a_bad_email_and_an_empty_one_only_warn_and_are_counted() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv_lines(&["68000001,นก,,,,MSC,1,"]), "full").await;
-    assert_eq!(counts(&h, &id).await["preview"]["empty_email"], 1);
+    let file = csv_lines(&[
+        "68000001,นก,nok@sealbay,,,MSC,1,3.0",
+        "68000002,ปลา,,,,MSC,1,3.0",
+    ]);
+    let id = previewed(&b, "a.csv", &file, "full").await;
+    let c = counts(&h, &id).await;
+    assert_eq!(c["preview"]["empty_email"], 1);
+    assert_eq!(c["warnings"]["classes"]["invalid_email"], 1);
+    assert_eq!(c["warnings"]["classes"]["missing_email"], 1);
 }
 
 #[tokio::test]
@@ -113,5 +117,6 @@ async fn data_without_a_header_is_reported_not_dropped() {
     let (_, _, report) = refused("a.csv", file.as_bytes()).await;
     assert!(report.contains("2,D,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
     assert!(report.contains("3,J,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
-    assert_eq!(report.lines().count(), 3, "{report}");
+    let blocking = report.lines().filter(|l| !l.ends_with(",เตือน")).count();
+    assert_eq!(blocking, 3, "the header and the two rows: {report}");
 }

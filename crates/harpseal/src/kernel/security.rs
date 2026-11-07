@@ -1,6 +1,6 @@
 //! Security Events: append-only records of suspicious acts around
 //! Verification (spec, "Kernel data model"). Kinds written by the chat
-//! flow: `link.duplicate_attempt`, `otp.lockout`; the webhook path writes
+//! flow: `link.duplicate_attempt`, `link.shared_email` (#71), `otp.lockout`; the webhook path writes
 //! `inbound.failed`; Staff sign-in writes `staff.lockout`. `details` never
 //! carries a secret (no code, no hash).
 

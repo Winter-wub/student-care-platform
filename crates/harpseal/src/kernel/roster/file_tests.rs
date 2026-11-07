@@ -144,6 +144,10 @@ fn formula_cells_read_their_cached_value_and_error_cells_are_unreadable() {
     let unreadable: Vec<_> = rows[0].unreadable().collect();
     assert_eq!(unreadable, vec![("เกรดเฉลี่ย", "#DIV/0!", "H2")]);
     let problems = crate::kernel::roster::validate::validate(&rows, &c).unwrap_err();
+    let problems: Vec<_> = problems
+        .iter()
+        .filter(|p| p.severity.is_blocking())
+        .collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert_eq!(problems[0].reason, "unreadable");
     assert_eq!(

@@ -15,6 +15,9 @@
 //! # and a request without a mode uses. Both default to today's behaviour.
 //! modes        = ["full", "upsert"]
 //! default_mode = "full"
+//! # Warning classes that block the file (#71): `missing_email`,
+//! # `invalid_email`, `duplicate_email`, `empty_attribute`. Default: none.
+//! blocking     = ["invalid_email"]
 //!
 //! [roster.attributes.year]
 //! column = "ชั้นปี"
@@ -68,6 +71,11 @@ pub struct RosterConfig {
     /// The mode the upload form preselects and a request without a mode
     /// uses; one of [`RosterConfig::modes`]. Default `full`.
     pub default_mode: String,
+    /// Warning classes this Deployment makes blocking (#71): `missing_email`,
+    /// `invalid_email`, `duplicate_email`, `empty_attribute`. A file with one
+    /// is refused like one with a malformed id. Default: none, so each only
+    /// warns.
+    pub blocking: Vec<String>,
     /// The attribute schema of `student.attributes`, keyed by attribute
     /// key (the JSON key and the `manual_overrides` entry
     /// `attributes.<key>`). Shown sorted by [`AttributeSpec::order`],
@@ -93,11 +101,23 @@ impl Default for RosterConfig {
             tags: None,
             modes: vec!["full".into(), "upsert".into()],
             default_mode: "full".into(),
+            blocking: Vec::new(),
             attributes: BTreeMap::new(),
             declared: false,
         }
     }
 }
+
+/// The problem classes of a roster file that only warn unless the
+/// Deployment lists them in `blocking` (#71). Every other
+/// problem (an empty or malformed id, a duplicate id, an unreadable value,
+/// a required value missing) always blocks.
+pub const WARNING_CLASSES: [&str; 4] = [
+    "missing_email",
+    "invalid_email",
+    "duplicate_email",
+    "empty_attribute",
+];
 
 /// `locale = { column = "..", default = "th" }`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -286,6 +306,11 @@ impl RosterConfig {
         self.modes.iter().any(|m| m == mode)
     }
 
+    /// Whether warning class `class` is made blocking (#71).
+    pub fn blocks(&self, class: &str) -> bool {
+        self.blocking.iter().any(|c| c == class)
+    }
+
     /// The attributes in display order: `(key, spec)`.
     pub fn attributes_in_order(&self) -> Vec<(&str, &AttributeSpec)> {
         let mut v: Vec<(&str, &AttributeSpec)> = self
@@ -301,7 +326,8 @@ impl RosterConfig {
     /// repeated column headers, an `enum` without values (or with empty or
     /// repeated ones), `values` on a non-`enum`, an empty separator, no
     /// `modes` (or one that is not `full` / `upsert`, or repeated) and a
-    /// `default_mode` outside `modes`.
+    /// `default_mode` outside `modes`, and a `blocking` entry that is not a
+    /// warning class (or is repeated).
     pub(crate) fn check(&self) -> crate::Result<()> {
         let bad = |m: String| Err(crate::Error::Invalid(format!("[roster] {m}")));
         let mut columns = vec![&self.student_code, &self.display_name, &self.email];
@@ -324,6 +350,15 @@ impl RosterConfig {
         if !self.allows_mode(&self.default_mode) {
             let d = &self.default_mode;
             return bad(format!("default_mode `{d}` is not in modes"));
+        }
+        for (i, c) in self.blocking.iter().enumerate() {
+            if !WARNING_CLASSES.contains(&c.as_str()) {
+                let all = WARNING_CLASSES.join("`, `");
+                return bad(format!("blocking `{c}` must be one of `{all}`"));
+            }
+            if self.blocking[..i].contains(c) {
+                return bad(format!("blocking `{c}` is listed twice"));
+            }
         }
         for (key, a) in &self.attributes {
             let ok_key = key.len() <= 40

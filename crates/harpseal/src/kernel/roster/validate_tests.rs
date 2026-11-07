@@ -10,10 +10,12 @@ fn check(body: &str) -> Result<Valid, Vec<Problem>> {
     validate(&rows, &c)
 }
 
+/// The blocking problems of a refused file.
 fn reasons(body: &str) -> Vec<(usize, String, String)> {
     check(body)
         .unwrap_err()
         .into_iter()
+        .filter(|p| p.severity.is_blocking())
         .map(|p| (p.row, p.column, p.reason))
         .collect()
 }
@@ -62,7 +64,7 @@ fn a_duplicate_student_id_is_refused_on_its_second_row() {
 }
 
 #[test]
-fn a_bad_email_is_refused() {
+fn a_bad_email_only_warns_and_the_row_imports() {
     for bad in [
         "nok",
         "nok@sealbay",
@@ -70,10 +72,13 @@ fn a_bad_email_is_refused() {
         "a@-x.example",
         "a@x..example",
     ] {
+        let v = check(&format!("68010001,นก,{bad},,,MSC,1,\n")).unwrap();
+        let w: Vec<_> = v.warnings.iter().map(|p| p.reason.as_str()).collect();
+        assert!(w.contains(&"invalid_email"), "{bad}: {w:?}");
         assert_eq!(
-            reasons(&format!("68010001,นก,{bad},,,MSC,1,\n")),
-            one(2, "อีเมล", "bad_email"),
-            "{bad}"
+            v.records[0].fields.email.as_deref(),
+            Some(bad),
+            "kept as typed"
         );
     }
     assert!(is_email("first.last+tag@student.sealbay.example"));
@@ -114,7 +119,7 @@ fn tags_locale_and_every_problem_is_listed() {
         one(2, "ภาษา", "bad_locale")
     );
     let all = reasons("x,,bad,,,MBA,,\n");
-    assert_eq!(all.len(), 5, "{all:?}");
+    assert_eq!(all.len(), 4, "{all:?}");
 }
 
 #[test]
@@ -152,6 +157,7 @@ fn without_a_pattern_codes_follow_the_chat_flow_default() {
         parse(body.as_bytes(), "r.csv", &c.roster).unwrap()
     };
     let bad = validate(&rows("abc,นก,,,,MSC,1,\nab cd,ปลา,,,,MSC,1,\n"), &c).unwrap_err();
+    let bad: Vec<_> = bad.iter().filter(|p| p.severity.is_blocking()).collect();
     assert_eq!(bad.len(), 2, "{bad:?}");
     assert!(bad.iter().all(|p| p.reason == "bad_code"));
     assert!(validate(&rows("SBU-2026-01,นก,,,,MSC,1,\n"), &c).is_ok());
