@@ -32,8 +32,9 @@ pub(crate) struct Failure {
 
 impl Failure {
     /// The Core error. `to_user`: the call sent messages to one account,
-    /// so a 403 means the account cannot be reached (blocked the bot or
-    /// never added it) and becomes `Error::Unreachable`.
+    /// so a 403 whose message is about that account ([`Failure::blocked`])
+    /// becomes `Error::Unreachable`. Any other 403 (channel-wide: plan,
+    /// permission) is `Error::Platform`, so the Kernel keeps the Link.
     pub(crate) fn into_error(self, to_user: bool) -> Error {
         match self.status {
             429 if self.monthly_limit() => Error::Platform(format!(
@@ -43,7 +44,7 @@ impl Failure {
             429 => Error::RateLimited {
                 retry_after_secs: self.retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS),
             },
-            403 if to_user => Error::Unreachable,
+            403 if to_user && self.blocked() => Error::Unreachable,
             401 => Error::Platform("LINE refused the channel access token (401)".into()),
             s => Error::Platform(format!("LINE answered {s}: {}", self.message)),
         }
@@ -57,11 +58,26 @@ impl Failure {
         self.message.to_ascii_lowercase().contains("monthly limit")
     }
 
+    /// A 403 that says the message could not reach this user (blocked the
+    /// account, never added it, unknown id). LINE documents no 403 body for
+    /// that case, so these are the messages seen on a per-user push:
+    /// `Failed to send messages` (documented for a failed send) and
+    /// `Not found` (#16). Anything else, e.g. `Access to this API is not
+    /// available for your account`, is channel-wide
+    /// (<https://developers.line.biz/en/reference/messaging-api/#error-messages>).
+    fn blocked(&self) -> bool {
+        let m = self.message.trim().to_ascii_lowercase();
+        BLOCKED_MESSAGES.contains(&m.as_str())
+    }
+
     /// LINE refused the reply token (expired or already used).
     pub(crate) fn bad_reply_token(&self) -> bool {
         self.status == 400 && self.message.to_ascii_lowercase().contains("reply token")
     }
 }
+
+/// 403 messages (lowercase) that mean one user cannot be reached.
+const BLOCKED_MESSAGES: [&str; 2] = ["failed to send messages", "not found"];
 
 /// What a call returned.
 pub(crate) type Answer = std::result::Result<Vec<u8>, Failure>;
@@ -256,8 +272,21 @@ mod tests {
             }
         ));
         assert!(matches!(
-            fail(403, None, "{}").into_error(true),
+            fail(403, None, r#"{"message":"Failed to send messages"}"#).into_error(true),
             Error::Unreachable
+        ));
+        assert!(matches!(
+            fail(403, None, r#"{"message":"Not found"}"#).into_error(true),
+            Error::Unreachable
+        ));
+        assert!(matches!(
+            fail(403, None, "{}").into_error(true),
+            Error::Platform(_)
+        ));
+        let wide = r#"{"message":"Access to this API is not available for your account"}"#;
+        assert!(matches!(
+            fail(403, None, wide).into_error(true),
+            Error::Platform(_)
         ));
         assert!(matches!(
             fail(403, None, "{}").into_error(false),

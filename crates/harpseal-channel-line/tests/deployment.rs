@@ -305,3 +305,53 @@ async fn a_resume_completes_the_row_of_its_own_batch_key_only() {
     assert_eq!(row(0), ("job-7/a1".into(), harpseal::Value::Integer(0)));
     assert_eq!(row(1), ("news-1/a1".into(), harpseal::Value::Integer(1)));
 }
+
+/// The recorded 403 body `tests/fixtures/errors/<name>.json`.
+fn error_fixture(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/tests/fixtures/errors/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(path).expect("fixture exists")
+}
+
+/// A Push answered 403 with `fixture`: the error, and the Link's status.
+async fn push_403(fixture: &str) -> (harpseal::Error, String) {
+    let (h, app) = linked().await;
+    h.http().respond_with(403, error_fixture(fixture));
+    let to = harpseal::ChannelAccountId::new(harpseal_channel_line::KIND, USER);
+    let msg = Message::text("ประกาศ: หยุดเรียนวันศุกร์");
+    let err = app
+        .deployment()
+        .send(&to, None, &msg, &harpseal::Locale::th())
+        .await
+        .unwrap_err();
+    let rows = app.query("SELECT status FROM link WHERE id = 'l1'").await;
+    let status = rows
+        .get(0, "status")
+        .unwrap()
+        .as_text()
+        .unwrap()
+        .to_string();
+    (err, status)
+}
+
+#[tokio::test]
+async fn a_channel_wide_403_is_a_platform_error_and_keeps_the_link() {
+    let (err, status) = push_403("push_403_channel").await;
+    assert!(
+        matches!(err.root(), harpseal::Error::Platform(_)),
+        "{err:?}"
+    );
+    assert_eq!(status, "active", "no Link revoked for a plan or permission");
+}
+
+#[tokio::test]
+async fn a_per_user_403_is_unreachable_and_marks_the_link() {
+    let (err, status) = push_403("push_403_user").await;
+    assert!(
+        matches!(err.root(), harpseal::Error::Unreachable),
+        "{err:?}"
+    );
+    assert_eq!(status, "unreachable");
+}

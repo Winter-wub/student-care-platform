@@ -8,10 +8,13 @@
 //!   Flex bubbles/carousels and quick replies, with the degrade rules of
 //!   `docs/prototypes/message-render.md`. One batch spends the reply token
 //!   on its first 5 objects (free); the rest go as Pushes of 5, each one
-//!   metered unit. HTTP 403 on a send is `Error::Unreachable` (blocked),
+//!   metered unit. HTTP 403 on a send is `Error::Unreachable` only when
+//!   LINE's message is about the user (`Failed to send messages`,
+//!   `Not found`); any other 403 (plan, permission) is `Error::Platform`.
 //!   429 is `Error::RateLimited`.
 //! - Menu ([`richmenu`]): one rich menu per Menu and image, reused by hash
-//!   and linked per account. `set_menu(None)` links
+//!   and linked per account; superseded versions of a registered Menu
+//!   ([`LineChannel::with_menus`]) are deleted. `set_menu(None)` links
 //!   [`LineConfig::locked_menu`]; the Kernel is expected to pass its
 //!   locked Menu (e.g. a "เริ่มใช้งาน" entry) through this config (#19).
 //! - Capabilities: Mini App (LIFF, [`liff`]) when a LIFF id is configured;
@@ -139,11 +142,13 @@ impl core::fmt::Debug for LineConfig {
     }
 }
 
-/// The LINE Channel.
+/// The LINE Channel. Clones share the rich menu cache and the Menus
+/// registered with [`LineChannel::with_menus`].
+#[derive(Clone)]
 pub struct LineChannel {
     cfg: LineConfig,
     http: Arc<dyn HttpClient>,
-    menus: richmenu::MenuCache,
+    menus: Arc<richmenu::MenuCache>,
 }
 
 impl LineChannel {
