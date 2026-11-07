@@ -12,12 +12,14 @@
 //! | `Clock` | [`SystemClock`] |
 //! | `Random` | [`OsRandom`] (getrandom) |
 //!
-//! [`serve`] runs the Router with `axum::serve`; [`spawn_ticker`] calls
+//! [`serve`] (or [`serve_until`]) runs the Router with `axum::serve`, handling webhooks on a
+//! [`NativeBackground`] after the 200; [`spawn_ticker`] calls
 //! [`Deployment::tick`] once a minute.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod background;
 mod email;
 mod files;
 mod http;
@@ -30,6 +32,7 @@ use std::time::Duration;
 
 use harpseal::{Clock, Deployment, Error, Random, Result, Services, Timestamp};
 
+pub use background::{BACKGROUND_LIMIT, NativeBackground};
 pub use email::Smtp;
 pub use files::LocalFiles;
 pub use http::ReqwestHttp;
@@ -87,18 +90,52 @@ pub fn services(s: &NativeSettings) -> Result<Services> {
     })
 }
 
-/// `axum::serve` on a TCP listener at `addr`. Each request carries the
-/// peer's IP as [`harpseal::PeerIp`] (audit rows fall back to it when there
-/// is no `X-Forwarded-For`). A response carrying a
-/// [`harpseal::ErrorReport`] logs its line and `x-request-id` to stderr (the area and the
-/// error kind, never the message).
+/// How long [`serve_until`] waits, after it stopped taking requests, for
+/// webhook handling still running in the background.
+pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(8);
+
+/// `axum::serve` on a TCP listener at `addr`, until the process is killed.
+/// Each request carries the peer's IP as [`harpseal::PeerIp`] (audit rows
+/// fall back to it when there is no `X-Forwarded-For`) and a
+/// [`harpseal::Background`]: a webhook is answered 200 once its events are
+/// claimed, and handled on a [`NativeBackground`] task
+/// ([`BACKGROUND_LIMIT`] events at once, one at a time per chat account), so a
+/// client closing the connection does not stop it. A response carrying a
+/// [`harpseal::ErrorReport`] logs its line and `x-request-id` to stderr
+/// (the area and the error kind, never the message).
+///
+/// Handling cut off by a kill leaves its claim unfinished; the next
+/// process's tick logs it as `inbound.lost` (ADR-0009). Use
+/// [`serve_until`] to let it finish on shutdown.
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
+    serve_until(router, addr, std::future::pending()).await
+}
+
+/// [`serve`] until `shutdown` completes (for example a SIGTERM future):
+/// then it stops taking connections, lets requests in flight finish,
+/// waits up to [`SHUTDOWN_GRACE`] for background handling, and returns.
+pub async fn serve_until(
+    router: axum::Router,
+    addr: &str,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let bg = NativeBackground::new(BACKGROUND_LIMIT);
     let app = router
+        .layer(axum::Extension(bg.background()))
         .layer(axum::middleware::map_response(log_report))
         .layer(axum::middleware::from_fn(peer_ip));
     let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
-    axum::serve(listener, app).await
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
+    if !bg.wait_idle(SHUTDOWN_GRACE).await {
+        eprintln!(
+            "shutdown: {} webhook task(s) still running; the tick will log them as inbound.lost",
+            bg.pending()
+        );
+    }
+    Ok(())
 }
 
 async fn log_report(r: axum::response::Response) -> axum::response::Response {

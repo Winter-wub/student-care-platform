@@ -2,6 +2,9 @@
 //! what came back through `/dev/outbox`, the OTP from `/dev/email`, the
 //! acknowledgement, the Mini App and the self-unlink.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
 use harpseal::{ActionId, Inbound};
 use harpseal_channel_fake::FakeChannel;
 use serde_json::Value;
@@ -20,8 +23,24 @@ impl World {
         Ok((new, out["menu"].clone()))
     }
 
+    /// Delivers `ev` with a new platform event id, as LINE does, and waits
+    /// until its claim is done: the webhook answers 200 before the event
+    /// is handled (#97).
     async fn event(&self, ev: Inbound) -> R<(Vec<Value>, Value)> {
-        self.c.webhook(&[ev]).await?;
+        static NEXT: AtomicUsize = AtomicUsize::new(1);
+        let id = format!("e2e-{}", NEXT.fetch_add(1, Ordering::Relaxed));
+        self.c
+            .webhook(&[ev.with_event_id(Some(id.clone()), false)])
+            .await?;
+        let done = "SELECT count(*) FROM inbound_event WHERE event_id = ? AND done_at IS NOT NULL";
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.int(done, &[&id])? == 0 {
+            ensure(
+                Instant::now() < deadline,
+                format!("event {id} not handled in 10 s"),
+            )?;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         self.news().await
     }
 

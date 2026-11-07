@@ -21,7 +21,11 @@ impl Deployment {
     ///   accepted (a failing event is logged, never turned into an error
     ///   status, or the platform would resend the whole call), 401 on a bad
     ///   signature, 400 when the body cannot be parsed, 404 for an unknown
-    ///   Channel;
+    ///   Channel. When the request carries a [`crate::Background`]
+    ///   extension (both runtimes add one), the 200 comes right after the
+    ///   events are claimed and the handling runs on it, independent of the
+    ///   connection ([`Deployment::accept_webhook`]); without one the
+    ///   events are handled before the answer;
     /// - `GET /static/app.css`: the shared stylesheet;
     /// - Module public routes at the root (the Kernel's `/notice`);
     /// - `/admin/login`, `/admin/logout`, `/admin/password` and the `/admin`
@@ -125,6 +129,7 @@ impl Deployment {
 
 async fn webhook(
     axum::Extension(d): axum::Extension<Arc<Deployment>>,
+    bg: Option<axum::Extension<crate::Background>>,
     Path(kind): Path<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -136,7 +141,11 @@ async fn webhook(
         headers,
         body: body.to_vec(),
     };
-    match d.handle_webhook(&kind, req).await {
+    let accepted = match bg {
+        Some(axum::Extension(bg)) => d.accept_webhook(&kind, req, &bg).await,
+        None => d.handle_webhook(&kind, req).await,
+    };
+    match accepted {
         Ok(_) => StatusCode::OK,
         Err(Error::BadSignature) => StatusCode::UNAUTHORIZED,
         Err(_) => StatusCode::BAD_REQUEST,
