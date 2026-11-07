@@ -267,6 +267,16 @@ pub enum BuildError {
         /// The Module that registered the path first.
         first: &'static str,
     },
+    /// A Module setting (`ModuleRegistrar::setting`) is declared wrongly:
+    /// its key, its default, its Permission or its texts.
+    InvalidSetting {
+        /// The Module that declared it.
+        module: &'static str,
+        /// The key as declared.
+        key: String,
+        /// What is wrong with it.
+        reason: String,
+    },
     /// A route path axum cannot mount: it must start with `/`, must not use
     /// the old `:param` / `*rest` syntax, and a public route must not be
     /// under `/admin`.
@@ -300,6 +310,14 @@ impl core::fmt::Display for BuildError {
             BuildError::UnguardedRoute { module, permission } => write!(
                 f,
                 "module `{module}` guards a back-office route with unknown permission `{permission}`"
+            ),
+            BuildError::InvalidSetting {
+                module,
+                key,
+                reason,
+            } => write!(
+                f,
+                "module `{module}` declares setting `{key}` wrongly: {reason}"
             ),
             BuildError::MiniAppUnavailable { module, channel } => write!(
                 f,

@@ -68,6 +68,8 @@ struct Registry {
     nav: Vec<crate::auth::NavItem>,
     /// Links on the Mini App home, sorted (#72).
     app_links: Vec<crate::kernel::app::AppLink>,
+    /// Module settings, in registration order (#75).
+    settings: Arc<[crate::module::SettingSpec]>,
 }
 
 /// One registered route's handler.
@@ -118,6 +120,10 @@ impl Deployment {
     /// The Verification Method.
     pub fn verification(&self) -> &dyn VerificationMethod {
         self.verification.as_ref()
+    }
+    /// The Module settings (#75): each read returns the latest saved value.
+    pub fn settings(&self) -> crate::Settings {
+        crate::Settings::new(self.services.clone(), self.registry.settings.clone())
     }
     /// Kernel migrations first, then Modules in registration order.
     pub fn migrations(&self) -> &[Migration] {

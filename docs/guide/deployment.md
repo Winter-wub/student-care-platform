@@ -397,3 +397,69 @@ no file behind. Backups leave kept uploads out, rows and files (see
 `deployments/example/deployment/src/fees.rs` is a worked example: outstanding
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.
+
+## A Module's settings
+
+A value Staff change from the back office instead of a release, such as
+the bank account Students pay fees into, is a Module setting (Core change
+in #75). Declare it in `register`:
+
+```rust
+r.permission(Permission::new("fees.bank_account.edit", "Change the bank account"))
+    .setting(
+        "fees.bank_account",          // key: "<module name>.<name>", a-z 0-9 _ .
+        SettingKind::MultilineText,   // Text, MultilineText, Number, Date, Url
+        "ธนาคารทะเลใส\nเลขที่บัญชี 000-0-00000-0", // default until the first save
+        "fees.bank_account.edit",     // the only Permission that changes it
+        "fees.bank_account",          // label (catalog key)
+        "fees.bank_account_help",     // help text (catalog key)
+    );
+```
+
+A setting holds one value for the whole Deployment, not one per Locale
+(those are Texts). `build()` refuses (`BuildError::InvalidSetting`) a key
+outside the Module's name, a key declared twice, a default its kind
+refuses, an undeclared Permission and a label or help key without a text
+in the default Locale.
+
+Each kind is checked on the server on every save:
+
+| Kind | Accepted | Read as |
+|---|---|---|
+| `Text` | one line, 1 to 500 characters | `SettingValue::Text` |
+| `MultilineText` | 1 to 5 000 characters, CRLF stored as LF | `SettingValue::Text` |
+| `Number` | a whole number (`i64`), no separators or decimals | `SettingValue::Number` |
+| `Date` | a calendar day, `YYYY-MM-DD` | `SettingValue::Date` |
+| `Url` | `https://` and a host, up to 500 characters | `SettingValue::Url` |
+
+Values are trimmed, and no kind accepts control characters (a multi-line
+text keeps its line breaks).
+
+**The page.** `/admin/settings` lists every Module's settings, grouped by
+Module, and appears in the navigation for Staff who can see at least one.
+A setting has a Save button only for Staff holding its own Permission.
+Staff holding `kernel.setting.edit` see every setting read-only, with the
+Permission that edits it; that Permission alone never changes one (a POST
+is a 403). Staff who can see none get a 403. The form carries the CSRF
+token and a compare-and-set token of the value it showed: when someone
+else saved first, the save is refused with the conflict message and
+nothing is written. A refused value is shown again with its error (422).
+Every change writes an audit row `setting.update` (target
+`setting`/`<key>:`) with the value before and after, in the same batch as
+the value.
+
+**Reading.** `state.settings()` in a page handler, `cx.settings()` in a
+Job and `deployment.settings()` elsewhere return `Settings`;
+`settings.get(key)` gives the `SettingValue`, `text(key)` any kind as
+text and `number(key)` an `i64`. Each read goes to the database, so a
+change shows on the next page view or Job run. An undeclared key, or
+`number` on another kind, is `Error::Invalid`.
+
+**Storage and backups.** Values live in the Kernel's `setting` table with
+an empty Locale (no migration); no row means the default. Backups and
+restores carry them with the rest of the table.
+
+The example's Fees Module (`deployments/example/deployment/src/fees.rs`)
+declares `fees.bank_account`, edited by the `Finance` role, and shows it
+on the Student's Mini App page `/app/fees` (`fees/student.rs`) beside
+their outstanding balance.

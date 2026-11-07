@@ -44,6 +44,10 @@ Officer = [
     "reminders.send",
 ]
 Viewer = ["kernel.student.view", "kernel.usage.view", "announcements.view"]
+# Finance edits the bank account Students pay into (a Module setting on
+# /admin/settings). Administrators see it there, read-only: kernel.setting.edit
+# alone does not change it.
+Finance = ["fees.import", "fees.bank_account.edit"]
 
 # Warn Staff at 80% and 100% of metered pushes per calendar month (local
 # days in utc_offset): a banner on every back-office page and one email per

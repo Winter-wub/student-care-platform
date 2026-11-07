@@ -170,5 +170,9 @@ _Avoid_: cron, task, queue message
 A copy of a Deployment's database and files, in backup format 1, that `harpseal restore` loads into an empty Deployment. A Job takes one every night into the Deployment's own file storage and keeps them for a set number of days; `harpseal backup` takes one by hand. "Download all data" (an Excel workbook without secrets) is a data export, not a Backup: it cannot be restored.
 _Avoid_: dump, snapshot, export
 
+**Setting** (ค่าตั้งค่า):
+A typed value a Module declares for the whole Deployment, such as the bank account Students pay into, with a default. Staff change it in the back office only with the Permission the Module names for it; each change is audited. Unlike a text, it has one value, not one per Locale.
+_Avoid_: config, option, preference
+
 **Fake Channel** (ช่องทางจำลอง):
 An in-memory Channel adapter used in tests and demos; it must pass the same contract tests as real Channels.

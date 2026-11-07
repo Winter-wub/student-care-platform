@@ -99,8 +99,9 @@ pub use message::{
 pub use migrate::{MigrationReport, migrate};
 pub use module::{
     ActionContext, ActionHandler, AppState, CONFIRMED_KEEP_MS, JobContext, JobHandler, KeptUpload,
-    MAX_UPLOAD_BYTES, Module, ModuleRegistrar, PageState, SheetKind, SheetUpload, UPLOAD_KEEP_MS,
-    UploadRejection, Uploads,
+    MAX_LINE_CHARS, MAX_MULTILINE_CHARS, MAX_UPLOAD_BYTES, Module, ModuleRegistrar, PageState,
+    SettingKind, SettingValue, Settings, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection,
+    Uploads,
 };
 pub use module::{
     DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,

@@ -198,12 +198,15 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         .into();
     let held = |p: &str| permissions.iter().any(|q| q == p);
     let forbidden_permission = gate.permission.filter(|p| !held(p));
-    let nav: Arc<[(String, String)]> = cx
-        .nav
-        .iter()
-        .filter(|n| held(n.permission))
-        .map(|n| (state.catalog.t(&live.locale, n.title_key), n.path.clone()))
-        .collect();
+    // A path is listed once, under the first Permission held that shows
+    // it (the Module settings page has one entry per Permission, #75).
+    let mut nav: Vec<(String, String)> = Vec::new();
+    for n in cx.nav.iter().filter(|n| held(n.permission)) {
+        if !nav.iter().any(|(_, p)| *p == n.path) {
+            nav.push((state.catalog.t(&live.locale, n.title_key), n.path.clone()));
+        }
+    }
+    let nav: Arc<[(String, String)]> = nav.into();
     let flash = cookies::read_flash(req.headers())
         .map(|(ok, key)| (ok, state.catalog.t(&live.locale, &key)));
     let had_flash = cookies::get(req.headers(), FLASH_COOKIE).is_some();
@@ -295,7 +298,11 @@ fn to_login(req: &Request, cookie: Option<HeaderValue>) -> Response {
 }
 
 /// The 403 page, inside the back-office layout.
-fn forbidden(state: &AppState, staff: &CurrentStaff, permission: &str) -> Response {
+pub(crate) fn forbidden(
+    state: &crate::PageState,
+    staff: &CurrentStaff,
+    permission: &str,
+) -> Response {
     let title = staff_t(state, staff, "kernel.auth.forbidden_title");
     let body = html! {
         div class="card" {
@@ -309,7 +316,7 @@ fn forbidden(state: &AppState, staff: &CurrentStaff, permission: &str) -> Respon
     (StatusCode::FORBIDDEN, Html(page.into_string())).into_response()
 }
 
-fn staff_t(state: &AppState, staff: &CurrentStaff, key: &str) -> String {
+fn staff_t(state: &crate::PageState, staff: &CurrentStaff, key: &str) -> String {
     state.catalog.t(&staff.locale, key)
 }
 

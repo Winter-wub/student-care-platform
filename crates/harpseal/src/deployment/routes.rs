@@ -18,6 +18,9 @@ use crate::error::BuildError;
 /// Paths the Kernel mounts itself in `Deployment::router`.
 pub(super) const WEBHOOK_PATH: &str = "/webhook/{kind}";
 
+/// The Module settings page (#75), any signed-in Staff member.
+pub(super) const SETTINGS_PATH: &str = "/admin/settings";
+
 /// Prefix of every back-office path.
 pub(super) const ADMIN: &str = "/admin";
 
@@ -50,6 +53,7 @@ impl Routes {
             crate::auth::LOGIN_PATH,
             crate::auth::LOGOUT_PATH,
             crate::auth::PASSWORD_PATH,
+            SETTINGS_PATH,
         ];
         Self(
             own.iter()
