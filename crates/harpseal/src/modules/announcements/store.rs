@@ -26,11 +26,14 @@ pub(crate) struct Row {
     pub(crate) snapshot_round: i64,
     pub(crate) version: i64,
     pub(crate) edit_report: Option<Json>,
+    /// The last edit notice run (#77): `{"version", "at", "sent",
+    /// "failed", "total"}`.
+    pub(crate) notice_report: Option<Json>,
 }
 
 pub(crate) const COLUMNS: &str = "a.id, a.status, a.audience, a.send_at, a.expires_at, \
     a.require_ack, a.created_at, a.sent_at, a.retracted_at, a.round, a.snapshot_round, \
-    a.version, a.edit_report";
+    a.version, a.edit_report, a.notice_report";
 
 pub(crate) fn text(rows: &Rows, i: usize, c: &str) -> String {
     rows.get(i, c)
@@ -57,11 +60,15 @@ pub(crate) fn row_at(rows: &Rows, i: usize) -> Row {
         round: int(rows, i, "round").unwrap_or(0),
         snapshot_round: int(rows, i, "snapshot_round").unwrap_or(-1),
         version: int(rows, i, "version").unwrap_or(0),
-        edit_report: rows
-            .get(i, "edit_report")
-            .and_then(Value::as_text)
-            .and_then(|t| serde_json::from_str(t).ok()),
+        edit_report: json_col(rows, i, "edit_report"),
+        notice_report: json_col(rows, i, "notice_report"),
     }
+}
+
+fn json_col(rows: &Rows, i: usize, c: &str) -> Option<Json> {
+    rows.get(i, c)
+        .and_then(Value::as_text)
+        .and_then(|t| serde_json::from_str(t).ok())
 }
 
 /// The announcement `id`, if it exists.

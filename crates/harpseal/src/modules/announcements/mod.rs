@@ -18,11 +18,20 @@
 //!   are `skipped`. The Audience can name Students by hand (their student
 //!   ids, pasted or picked): ANDed with the other filters. "ส่งซ้ำ" is a new round with a new Job key.
 //! - **Chat**: the Card's "รับทราบ" button is Action `announcements.ack.<id>`
-//!   ([`ack`]); Menu entry `announcements.latest` ("ข่าวล่าสุด", [`latest`]).
+//!   ([`ack`]); Menu entry `announcements.latest` ("ข่าวล่าสุด", [`latest`]): the
+//!   `[announcements] latest` newest (default 5, `1..=10`).
 //! - **Edit / retract**: Jobs `announcements.edit` (`EditMessage` where
 //!   the Channel has it) and `announcements.retract` (`DeleteMessage`,
 //!   within 48 hours, plus a late pass 16 minutes later), each fanned out
-//!   into paced chunk Jobs that resume after a rate limit.
+//!   into paced chunk Jobs that resume after a rate limit. An edit saved
+//!   with "notify recipients of the edit" also runs `announcements.notice`
+//!   (Module migration `0002_edit_notice`): one metered Push per recipient
+//!   on Channels that cannot edit (LINE), linking to the updated
+//!   announcement.
+//! - **Expiry**: past `expires_at` an announcement leaves the Menu and the
+//!   Mini App list, and a Student opening or acknowledging it (chat Action,
+//!   Mini App deep link) is told it is no longer available (#77). Staff
+//!   still see it, marked expired.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
@@ -32,10 +41,12 @@
 mod api;
 mod chat;
 mod deliver;
+mod draft;
 mod form;
 mod gate;
 mod maint;
 mod maint_chunk;
+mod notice;
 mod outcome;
 mod page_actions;
 mod page_count;
@@ -78,6 +89,8 @@ pub(crate) const EDIT: &str = "announcements.edit";
 pub(crate) const RETRACT: &str = "announcements.retract";
 pub(crate) const EDIT_CHUNK: &str = "announcements.edit.chunk";
 pub(crate) const RETRACT_CHUNK: &str = "announcements.retract.chunk";
+pub(crate) const NOTICE: &str = "announcements.notice";
+pub(crate) const NOTICE_CHUNK: &str = "announcements.notice.chunk";
 pub(crate) const SWEEP: &str = "announcements.sweep";
 /// How often stuck rounds are looked for.
 const SWEEP_SCHEDULE: &str = "*/10 * * * *";
@@ -119,6 +132,10 @@ impl Module for Announcements {
             "0001_announcements",
             include_str!("../../../migrations/announcements/0001_announcements.sql"),
         )
+        .migration(
+            "0002_edit_notice",
+            include_str!("../../../migrations/announcements/0002_edit_notice.sql"),
+        )
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
@@ -131,6 +148,8 @@ impl Module for Announcements {
         .job(JobSpec::new(RETRACT), maint::retract)
         .job(JobSpec::new(EDIT_CHUNK), maint_chunk::edit_chunk)
         .job(JobSpec::new(RETRACT_CHUNK), maint_chunk::retract_chunk)
+        .job(JobSpec::new(NOTICE), notice::notice)
+        .job(JobSpec::new(NOTICE_CHUNK), notice::notice_chunk)
         .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job);
         pages(r);
     }

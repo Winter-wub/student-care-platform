@@ -96,7 +96,7 @@ fn results(v: &View<'_>, rows: &[Listed], page: i64, pages: i64) -> Markup {
                                 td data-label=(v.t("announcements.form.title")) {
                                     a class="name" href=(format!("/admin/announcements/{}", l.row.id)) { (l.title) }
                                 }
-                                td data-label=(v.t("announcements.page.status")) { (v.status_chip(&l.row.status)) }
+                                td data-label=(v.t("announcements.page.status")) { (v.status_chip(&l.row.status)) (v.expired_chip(&l.row)) }
                                 td data-label=(v.t("announcements.page.time")) {
                                     (v.time(l.row.sent_at.or(l.row.send_at).or(Some(l.row.created_at))))
                                 }

@@ -95,6 +95,7 @@ pub(super) async fn act(t: &mut Turn<'_>, link: &LinkRow, action: ActionId) -> R
                 let cx = ActionContext {
                     services: t.s().clone(),
                     catalog: t.texts.catalog(),
+                    config: t.d.config_arc(),
                     student: StudentId(link.student.clone()),
                     account: t.from.clone(),
                     locale: link.locale.clone(),

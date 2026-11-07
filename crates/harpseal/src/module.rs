@@ -61,6 +61,8 @@ pub struct ActionContext {
     pub services: Services,
     /// Merged texts.
     pub catalog: Arc<Catalog>,
+    /// The Deployment's configuration (e.g. `[announcements] latest`).
+    pub config: Arc<DeploymentConfig>,
     /// The linked Student.
     pub student: StudentId,
     /// The account that pressed the button.

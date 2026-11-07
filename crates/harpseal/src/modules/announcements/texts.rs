@@ -32,6 +32,16 @@ pub(crate) const CHAT: &[E] = th_en![
         "This announcement was withdrawn."
     ),
     (
+        "announcements.ack.expired",
+        "ข่าวนี้ไม่เปิดให้ดูแล้ว",
+        "This announcement is no longer available."
+    ),
+    (
+        "announcements.notice.title",
+        "ข่าวนี้มีการแก้ไข กดดูฉบับล่าสุดได้เลย",
+        "This announcement was edited. Open it for the latest version."
+    ),
+    (
         "announcements.ack.unknown",
         "ไม่พบข่าวนี้",
         "This announcement could not be found."
@@ -90,6 +100,12 @@ pub(crate) const PAGES: &[E] = th_en![
         "Sent messages edited"
     ),
     ("announcements.page.edit_failed", "ไม่สำเร็จ", "failed"),
+    (
+        "announcements.page.notice",
+        "แจ้งการแก้ไข (ช่องทางที่แก้ข้อความไม่ได้)",
+        "Edit notice (Channels that cannot edit)"
+    ),
+    ("announcements.page.expired", "หมดอายุแล้ว", "Expired"),
     (
         "announcements.page.in_progress",
         "กำลังดำเนินการ",
@@ -183,6 +199,16 @@ pub(crate) const FORM: &[E] = th_en![
         "announcements.form.expires",
         "หมดอายุหลังวันที่",
         "Expires after"
+    ),
+    (
+        "announcements.form.notify",
+        "แจ้งผู้รับว่ามีการแก้ไข",
+        "Notify recipients of the edit"
+    ),
+    (
+        "announcements.form.notify_help",
+        "LINE แก้ข้อความที่ส่งไปแล้วไม่ได้ จึงส่งข้อความสั้น ๆ พร้อมลิงก์ไปหาผู้รับคนละ 1 ข้อความ (นับโควตา push) ส่วน Telegram แก้ข้อความเดิมให้เลยโดยไม่ส่งเพิ่ม",
+        "LINE cannot edit a sent message, so each recipient there gets one short message with a link (counts against the push Quota). Telegram edits the message in place and sends nothing more."
     ),
     ("announcements.form.when", "เวลาส่ง", "When to send"),
     (

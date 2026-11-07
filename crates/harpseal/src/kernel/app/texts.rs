@@ -96,6 +96,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "ข่าวนี้ถูกถอนแล้ว",
         "This announcement was withdrawn."
     ),
+    (
+        "kernel.app.unavailable",
+        "ข่าวนี้ไม่เปิดให้ดูแล้ว",
+        "This announcement is no longer available."
+    ),
     // {version}
     (
         "kernel.app.notice_version",

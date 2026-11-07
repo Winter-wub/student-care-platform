@@ -82,6 +82,15 @@ impl<'a> View<'a> {
         };
         html! { span class=(class) { (self.t(&format!("announcements.status.{status}"))) } }
     }
+
+    /// "หมดอายุแล้ว" next to the status of a sent announcement whose
+    /// `expires_at` has passed (#77): Students no longer open it.
+    pub(crate) fn expired_chip(&self, row: &super::store::Row) -> Markup {
+        let now = self.s.services.now_ms();
+        let gone = matches!(row.status.as_str(), "sending" | "sent")
+            && row.expires_at.is_some_and(|e| e <= now);
+        html! { @if gone { " " span class="chip warn" { (self.t("announcements.page.expired")) } } }
+    }
 }
 
 /// A fragment for an HTMX request (not a history restore), else the full

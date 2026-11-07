@@ -89,7 +89,8 @@ sends it now or at a set time: Job `announcements.deliver` snapshots one
 delivery row per live Link and starts one `announcements.deliver.channel` per
 multicast group of 500 (LINE) or 25 accounts (Telegram, paced). The Card has
 "รับทราบ" (`announcements.ack.<id>`) and a Mini App button; the Menu gets
-"ข่าวล่าสุด". The Audience can also be a hand-picked list of student IDs (up to
+"ข่าวล่าสุด", the Student's `[announcements] latest` newest (default 5, 1 to 10),
+with "ดูทั้งหมด" to the Mini App list on the last Card. The Audience can also be a hand-picked list of student IDs (up to
 2,000): paste them one per line or separated by commas or spaces, or search the
 Students and press "เพิ่ม" (needs `kernel.student.view`). The list is one more
 AND filter; on its own it is the whole Audience. The preview lists the IDs that
@@ -105,7 +106,19 @@ Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
 The detail page shows acknowledged / in Audience and every
-delivery; edits reach Telegram through `EditMessage`, "ส่งซ้ำ" is a new round,
+delivery; edits reach Telegram through `EditMessage`. LINE cannot edit a sent
+message: tick "แจ้งผู้รับว่ามีการแก้ไข" when saving the edit of a sent
+announcement and Job `announcements.notice` sends each recipient there (the
+newest delivery per live Link, hand-picked ones included) one short Push
+linking to the updated announcement, metered like any Push and keyed per edit
+version and recipient, so a re-run notifies no one twice. A later save with the
+notice stops a run still going; a retract stops it too. The detail page shows
+sent / recipients and failures, and the audit log `announcement.notice` with
+the count. Past its expiry date an announcement leaves the Menu and the Mini
+App list, and a Student opening it from a Card (the Mini App deep link) or
+pressing "รับทราบ" is told "ข่าวนี้ไม่เปิดให้ดูแล้ว" and nothing is recorded
+(before #77 an expired one still took the acknowledgement); Staff still see it
+with "หมดอายุแล้ว". "ส่งซ้ำ" is a new round,
 and a retract deletes where the Channel can (Telegram, within 48 h). Edits and
 deletions are paced (about 250 a minute per Channel, resuming after a rate
 limit) and a final retract pass runs 16 minutes later; the detail page shows

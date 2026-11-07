@@ -66,8 +66,8 @@ pub(super) async fn page(
         let title = texts.pick(&staff.locale).0.to_string();
         let body = html! {
             h1 {
-                (title) " " (v.status_chip(&row.status))
-                // Edit or retract Jobs still queued or running (#49).
+                (title) " " (v.status_chip(&row.status)) (v.expired_chip(&row))
+                // Edit, retract or notice Jobs still queued or running (#49).
                 @if busy {
                     " " span class="chip" role="status" { (v.t("announcements.page.in_progress")) }
                 }
@@ -118,6 +118,15 @@ fn summary(v: &View<'_>, row: &Row, st: &Stats) -> Markup {
                     dd {
                         (r["edited"])
                         @if let Some(total) = r.get("total") { " / " (total) }
+                        " · " (v.t("announcements.page.edit_failed")) " " (r["failed"])
+                    }
+                }
+                // The last edit notice run (#77): sent / recipients.
+                @if let Some(r) = &row.notice_report {
+                    dt { (v.t("announcements.page.notice")) }
+                    dd {
+                        (r["sent"])
+                        @if let Some(total) = r.get("total").filter(|t| !t.is_null()) { " / " (total) }
                         " · " (v.t("announcements.page.edit_failed")) " " (r["failed"])
                     }
                 }

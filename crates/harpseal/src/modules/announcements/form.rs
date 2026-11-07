@@ -31,6 +31,8 @@ pub(crate) struct Fields {
     /// Hand-picked student ids as typed (newline, comma or space separated).
     pub(crate) students: String,
     pub(crate) unreachable: bool,
+    /// "Notify recipients of the edit" (a sent announcement only; #77).
+    pub(crate) notify: bool,
     pub(crate) version: Option<i64>,
     /// The submit button pressed: `draft` or `confirm`.
     pub(crate) submit: String,
@@ -59,6 +61,7 @@ impl Fields {
                 "tags" => f.tags.clone_from(v),
                 "students" => f.students.clone_from(v),
                 "unreachable" => f.unreachable = true,
+                "notify" => f.notify = true,
                 "version" => f.version = v.parse().ok(),
                 "do" => f.submit.clone_from(v),
                 other => {
@@ -103,6 +106,7 @@ impl Fields {
             tags: row.audience.tags.join(", "),
             students: row.audience.students.join("\n"),
             unreachable: row.audience.include_unreachable,
+            notify: false,
             version: Some(row.version),
             submit: String::new(),
         }
@@ -205,6 +209,7 @@ impl Fields {
             require_ack: self.require_ack,
             expires_at,
             send_at,
+            notify: self.notify,
         })
     }
 }

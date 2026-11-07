@@ -25,19 +25,30 @@ pub struct StudentAnnouncement {
     pub at: i64,
     /// Staff retracted it.
     pub retracted: bool,
+    /// Its `expires_at` has passed (#77): a Student gets the "no longer
+    /// available" view, without its text.
+    pub expired: bool,
 }
 
 impl StudentAnnouncement {
     /// Still waiting for this Student's acknowledgement (never once
-    /// retracted).
+    /// retracted or expired).
     pub fn needs_ack(&self) -> bool {
-        self.require_ack && self.acked_at.is_none() && !self.retracted
+        self.require_ack && self.acked_at.is_none() && !self.unavailable()
+    }
+
+    /// Retracted or expired: a Student no longer sees its text nor
+    /// acknowledges it.
+    pub fn unavailable(&self) -> bool {
+        self.retracted || self.expired
     }
 }
 
 /// `max(acked_at)` of the Student's rows; binds the Student once.
 const ACKED: &str = "(SELECT max(acked_at) FROM announcement_delivery x \
      WHERE x.announcement_id = a.id AND x.student_id = ?) AS acked_at";
+/// Whether it expired; binds now once.
+const EXPIRED: &str = "(a.expires_at IS NOT NULL AND a.expires_at <= ?) AS expired";
 /// Title and body in the bound Locale, else Thai; binds the Locale once.
 const TEXT: &str = "coalesce(tl.title, tt.title, '') AS title, \
      coalesce(tl.body, tt.body, '') AS body FROM announcement a \
@@ -59,16 +70,18 @@ pub async fn list_for_student(
 ) -> Result<Vec<StudentAnnouncement>> {
     let s = d.services();
     let sql = format!(
-        "SELECT a.id, a.status, a.require_ack, {ACKED}, \
+        "SELECT a.id, a.status, a.require_ack, {ACKED}, {EXPIRED}, \
          coalesce(a.sent_at, a.send_at, a.created_at) AS at, {TEXT} \
          WHERE a.status IN ('sending', 'sent') \
          AND (a.expires_at IS NULL OR a.expires_at > ?) AND {DELIVERED} \
          ORDER BY (a.require_ack = 1 AND acked_at IS NULL) DESC, at DESC, a.id DESC LIMIT ?"
     );
+    let now = s.now_ms();
     let stmt = Statement::new(sql)
         .bind(student)
+        .bind(now)
         .bind(locale.as_str())
-        .bind(s.now_ms())
+        .bind(now)
         .bind(student)
         .bind(limit);
     let rows = s.db.query(stmt).await?;
@@ -80,10 +93,11 @@ pub async fn list_for_student(
 }
 
 /// Announcement `id` as Student `student` sees it, `None` when the Student
-/// has no delivery row for it (whether or not it exists). Expired ones are
-/// returned (an acknowledgement is still accepted); a retracted one comes
-/// back with [`StudentAnnouncement::retracted`] set and must not show its
-/// text.
+/// has no delivery row for it (whether or not it exists). A retracted or
+/// expired one comes back with [`StudentAnnouncement::retracted`] or
+/// [`StudentAnnouncement::expired`] set ([`StudentAnnouncement::unavailable`])
+/// and must not show its text (#77: a deep link to an expired one shows
+/// "no longer available").
 pub async fn detail_for_student(
     d: &Deployment,
     id: &str,
@@ -92,12 +106,13 @@ pub async fn detail_for_student(
 ) -> Result<Option<StudentAnnouncement>> {
     let s = d.services();
     let sql = format!(
-        "SELECT a.id, a.status, a.require_ack, {ACKED}, \
+        "SELECT a.id, a.status, a.require_ack, {ACKED}, {EXPIRED}, \
          coalesce(a.sent_at, a.send_at, a.created_at) AS at, {TEXT} \
          WHERE a.id = ? AND {DELIVERED}"
     );
     let stmt = Statement::new(sql)
         .bind(student)
+        .bind(s.now_ms())
         .bind(locale.as_str())
         .bind(id)
         .bind(student);
@@ -117,5 +132,6 @@ fn read(rows: &crate::port_types::Rows, i: usize) -> StudentAnnouncement {
         acked_at: int(rows, i, "acked_at"),
         at: int(rows, i, "at").unwrap_or(0),
         retracted: text(rows, i, "status") == "retracted",
+        expired: int(rows, i, "expired") == Some(1),
     }
 }

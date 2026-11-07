@@ -55,13 +55,19 @@ pub struct World {
 /// Boots the Deployment; `max_recipients` sets the LineLike multicast
 /// group size.
 pub async fn boot_with(max_recipients: usize) -> World {
+    boot_config(CONFIG, max_recipients).await
+}
+
+/// [`boot_with`] on the `deployment.toml` `src` (e.g. [`CONFIG`] plus a
+/// section).
+pub async fn boot_config(src: &str, max_recipients: usize) -> World {
     let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
     let line = h.fake_channel().with_max_recipients(max_recipients);
     let tg = FakeChannel::new(TG_SECRET)
         .unwrap()
         .telegram_like()
         .with_kind(TG);
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
+    let config = DeploymentConfig::from_toml(src).unwrap();
     let d = Deployment::builder()
         .config(config.clone())
         .runtime(h.services())

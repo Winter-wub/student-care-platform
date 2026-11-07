@@ -269,11 +269,14 @@ pub(crate) async fn ack(
         Err(e) => return error(&s, &t, &e),
     };
     // Nothing to acknowledge: answered like an unknown id.
-    if !a.require_ack && !a.retracted {
+    if !a.require_ack && !a.unavailable() {
         return not_found(&s, &t);
     }
+    // Retracted or expired (#77): nothing recorded, the line says why.
     let outcome = if a.retracted {
         AckOutcome::Retracted
+    } else if a.expired {
+        AckOutcome::Expired
     } else {
         match news::ack(&s.deployment, &id, &st.id).await {
             Ok(o) => o,
@@ -284,13 +287,17 @@ pub(crate) async fn ack(
         AckOutcome::Recorded | AckOutcome::Already if htmx => {
             view::respond(StatusCode::OK, view::acked(&t))
         }
-        AckOutcome::Retracted if htmx => view::respond(
-            StatusCode::OK,
-            maud::html! { p class="app-acked" role="status" { (t.t("kernel.app.retracted")) } },
-        ),
-        AckOutcome::Recorded | AckOutcome::Already | AckOutcome::Retracted => {
-            Redirect::to(&here).into_response()
+        AckOutcome::Retracted | AckOutcome::Expired if htmx => {
+            let key = view::gone_key(&a).unwrap_or("kernel.app.retracted");
+            view::respond(
+                StatusCode::OK,
+                maud::html! { p class="app-acked" role="status" { (t.t(key)) } },
+            )
         }
+        AckOutcome::Recorded
+        | AckOutcome::Already
+        | AckOutcome::Retracted
+        | AckOutcome::Expired => Redirect::to(&here).into_response(),
         _ => not_found(&s, &t),
     }
 }

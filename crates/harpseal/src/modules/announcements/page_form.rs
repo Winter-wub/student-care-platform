@@ -195,6 +195,14 @@ fn form_page(
             } @else if f.require_ack {
                 input type="hidden" name="require_ack" value="1";
             }
+            @if sent {
+                // #77: LINE cannot edit a sent Card; one Push per recipient.
+                label class="check" {
+                    input type="checkbox" name="notify" value="1" checked[f.notify];
+                    " " (v.t("announcements.form.notify"))
+                }
+                p class="muted" { (v.t("announcements.form.notify_help")) }
+            }
             div class="field" {
                 label for="expires" { (v.t("announcements.form.expires")) }
                 (err("expires"))

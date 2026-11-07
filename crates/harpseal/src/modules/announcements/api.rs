@@ -75,6 +75,7 @@ impl NewAnnouncement {
             tags: self.audience.tags.join(","),
             students: self.audience.students.join("\n"),
             unreachable: self.audience.include_unreachable,
+            notify: false,
             version: None,
             submit: String::new(),
         }
