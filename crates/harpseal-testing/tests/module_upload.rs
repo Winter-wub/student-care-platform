@@ -163,6 +163,9 @@ async fn a_confirm_just_before_expiry_pins_the_upload_for_the_job() {
     assert_eq!(r.body, "confirmed true");
     let r = b.post(&format!("/admin/probe/{id}/confirm"), "").await;
     assert_eq!(r.body, "confirmed false", "pinned once");
+    let r = b.post(&format!("/admin/probe/{id}/cancel"), "").await;
+    assert_eq!(r.status, 404, "a confirmed upload belongs to its Job");
+    assert_eq!(audited(&h, "module.upload.cancel").await, 0);
     assert_eq!(audited(&h, "module.upload.confirm").await, 1);
     // Past the 24 hours, and a sweep: the Job still finds it.
     h.clock().advance_ms(120_000);

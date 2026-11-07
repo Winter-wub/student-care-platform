@@ -251,3 +251,107 @@ async fn a_confirmed_upload_lost_before_the_import_fails_the_job() {
     assert_eq!(count(&h, failed).await, 1);
     assert_eq!(count(&h, "SELECT COUNT(*) AS n FROM fees_balance").await, 0);
 }
+
+const NEWER_CSV: &str = "รหัสนักศึกษา,ชื่อ-สกุล,ยอดค้างชำระ\n68010001,นกน้อย ทะเลใส,999\n";
+
+async fn tick(h: &Harness, app: &TestApp) -> harpseal::TickReport {
+    app.deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn cancel_after_confirm_leaves_the_import_to_its_job() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    // A stale tab still shows Cancel.
+    let token = b.csrf().unwrap();
+    assert_eq!(b.post(&format!("{path}/confirm"), "").await.status, 303);
+    let r = b
+        .post_raw(&format!("{path}/cancel"), &format!("_csrf={token}"))
+        .await;
+    assert_eq!(r.status, 303);
+    assert_eq!(
+        count(&h, "SELECT COUNT(*) AS n FROM module_upload").await,
+        1
+    );
+    let report = tick(&h, &app).await;
+    assert_eq!(report.failed + report.retried, 0, "{:?}", report.errors);
+    assert_eq!(count(&h, "SELECT COUNT(*) AS n FROM fees_balance").await, 2);
+}
+
+#[tokio::test]
+async fn a_retry_of_an_older_import_never_overwrites_a_newer_one() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    // A: imported, but its file was not deleted (its `finish` failed).
+    let a = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    assert_eq!(b.post(&format!("{a}/confirm"), "").await.status, 303);
+    let a_id = a.rsplit('/').next().unwrap().to_string();
+    let key = h
+        .files()
+        .keys()
+        .into_iter()
+        .find(|k| k.contains(&a_id))
+        .unwrap();
+    let bytes = harpseal::FileStore::get(h.files(), &key)
+        .await
+        .unwrap()
+        .unwrap();
+    let snap = "CREATE TABLE snap AS SELECT * FROM module_upload";
+    h.db().execute(Statement::new(snap)).await.unwrap();
+    assert_eq!(tick(&h, &app).await.failed, 0);
+    let back = "INSERT INTO module_upload SELECT * FROM snap";
+    h.db().execute(Statement::new(back)).await.unwrap();
+    harpseal::FileStore::put(h.files(), &key, bytes, "text/csv")
+        .await
+        .unwrap();
+    // B: newer balances, imported.
+    let newer = preview_path(&upload(&b, "newer.csv", NEWER_CSV.as_bytes()).await);
+    assert_eq!(b.post(&format!("{newer}/confirm"), "").await.status, 303);
+    assert_eq!(tick(&h, &app).await.failed, 0);
+    let b_amount = "SELECT COUNT(*) AS n FROM fees_balance \
+                    WHERE student_code = '68010001' AND amount_satang = 99900";
+    assert_eq!(count(&h, b_amount).await, 1);
+    // A's retry runs after B: it only deletes A's file.
+    let jobs = app.deployment().jobs();
+    let payload = serde_json::json!({ "upload": a_id });
+    jobs.enqueue(fees::JOB, payload, None).await.unwrap();
+    let report = tick(&h, &app).await;
+    assert_eq!(report.failed + report.retried, 0, "{:?}", report.errors);
+    assert_eq!(count(&h, b_amount).await, 1, "B's balance stands");
+    let left = "SELECT COUNT(*) AS n FROM module_upload";
+    assert_eq!(count(&h, left).await, 0, "A's file is deleted");
+}
+
+#[tokio::test]
+async fn a_failed_import_shows_on_the_preview() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    assert_eq!(b.post(&format!("{path}/confirm"), "").await.status, 303);
+    assert!(b.get(&path).await.body.contains("id=\"queued\""));
+    // Every write fails: the Job runs out of retries.
+    let broken = "DROP TABLE fees_import";
+    h.db().execute(Statement::new(broken)).await.unwrap();
+    let mut failed = 0;
+    for _ in 0..6 {
+        failed += tick(&h, &app).await.failed;
+        h.clock().advance_ms(31 * 60_000);
+    }
+    assert_eq!(failed, 1);
+    assert_eq!(
+        b.login("administrator@sealbay.example", PASSWORD)
+            .await
+            .status,
+        303
+    );
+    let page = b.get(&path).await;
+    assert!(page.body.contains("id=\"job-failed\""), "{}", page.body);
+    assert!(!page.body.contains("id=\"queued\""));
+}

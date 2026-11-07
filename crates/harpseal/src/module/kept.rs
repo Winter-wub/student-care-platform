@@ -267,10 +267,14 @@ impl Uploads {
 
     /// Deletes upload `id` (its file, then its record), audited
     /// `module.upload.cancel`; `false` when it is not visible
-    /// ([`Uploads::open`], expiry aside).
+    /// ([`Uploads::open`], expiry aside) or already confirmed: a confirmed
+    /// upload belongs to its Job, which deletes it ([`KeptUpload::finish`]).
     pub async fn discard(&self, id: &str, ctx: &RequestCtx) -> Result<bool> {
-        let q =
-            Statement::new("SELECT object_key, file_name FROM module_upload WHERE id = ?").bind(id);
+        let q = Statement::new(
+            "SELECT object_key, file_name FROM module_upload \
+             WHERE id = ? AND confirmed_at IS NULL",
+        )
+        .bind(id);
         let rows = self.services.db.query(self.visible(q)).await?;
         if rows.is_empty() {
             return Ok(false);

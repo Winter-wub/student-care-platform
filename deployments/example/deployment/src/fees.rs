@@ -20,6 +20,7 @@
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
 
 pub mod read;
+mod texts;
 
 use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
@@ -27,8 +28,8 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use harpseal::audit::{self, Actor, RequestCtx, Target};
 use harpseal::{
-    AppState, CatalogEntry, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module,
-    ModuleRegistrar, Permission, Result, SheetUpload, Statement, UploadRejection, Uploads,
+    AppState, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module, ModuleRegistrar,
+    Permission, Result, SheetUpload, Statement, UploadRejection, Uploads,
 };
 use maud::{Markup, html};
 
@@ -46,43 +47,6 @@ pub const BASE: &str = "/admin/fees";
 /// The Module.
 pub struct Fees;
 
-const TEXTS: &[CatalogEntry] = &[
-    CatalogEntry::new("fees.title", "th", "ยอดค้างชำระ"),
-    CatalogEntry::new("fees.title", "en", "Outstanding fees"),
-    CatalogEntry::new("fees.file", "th", "ไฟล์ CSV หรือ XLSX (ไม่เกิน 4 MB)"),
-    CatalogEntry::new("fees.file", "en", "CSV or XLSX file (up to 4 MB)"),
-    CatalogEntry::new("fees.check", "th", "ตรวจไฟล์"),
-    CatalogEntry::new("fees.check", "en", "Check the file"),
-    CatalogEntry::new("fees.stored", "th", "ยอดที่บันทึกไว้"),
-    CatalogEntry::new("fees.stored", "en", "Balances stored"),
-    CatalogEntry::new("fees.preview", "th", "ตรวจก่อนนำเข้า"),
-    CatalogEntry::new("fees.preview", "en", "Check before importing"),
-    CatalogEntry::new("fees.confirm", "th", "ยืนยันนำเข้า"),
-    CatalogEntry::new("fees.confirm", "en", "Confirm import"),
-    CatalogEntry::new("fees.cancel", "th", "ยกเลิก"),
-    CatalogEntry::new("fees.cancel", "en", "Cancel"),
-    CatalogEntry::new("fees.problems", "th", "ปัญหาที่ต้องแก้ก่อนนำเข้า"),
-    CatalogEntry::new("fees.problems", "en", "Fix these before importing"),
-    CatalogEntry::new("fees.skipped", "th", "ข้ามไม่นำเข้า"),
-    CatalogEntry::new("fees.skipped", "en", "Left out"),
-    CatalogEntry::new("fees.gone", "th", "ไม่พบไฟล์นี้ หรือหมดเวลาแล้ว อัปโหลดใหม่"),
-    CatalogEntry::new(
-        "fees.gone",
-        "en",
-        "This file is gone or expired. Upload it again.",
-    ),
-    CatalogEntry::new("fees.changed", "th", "ไฟล์ถูกแก้ไขหลังอัปโหลด นำเข้าไม่ได้"),
-    CatalogEntry::new(
-        "fees.changed",
-        "en",
-        "The file changed after upload; it cannot be imported.",
-    ),
-    CatalogEntry::new("fees.unreadable", "th", "อ่านไฟล์ไม่ได้"),
-    CatalogEntry::new("fees.unreadable", "en", "The file cannot be read."),
-    CatalogEntry::new("fees.queued", "th", "ยืนยันแล้ว กำลังนำเข้า"),
-    CatalogEntry::new("fees.queued", "en", "Confirmed; the import is queued."),
-];
-
 impl Module for Fees {
     fn name(&self) -> &'static str {
         NAME
@@ -93,10 +57,14 @@ impl Module for Fees {
             IMPORT,
             "Upload and import outstanding fees",
         ))
-        .messages(TEXTS)
+        .messages(texts::TEXTS)
         .migration(
             "0001_fees_balance",
             include_str!("../migrations/fees/0001_fees_balance.sql"),
+        )
+        .migration(
+            "0002_fees_import",
+            include_str!("../migrations/fees/0002_fees_import.sql"),
         )
         .back_office_page(IMPORT, "/fees", "fees.title", 60, get(page))
         .sheet_upload(IMPORT, "/fees/upload", post(upload))
@@ -206,6 +174,7 @@ async fn preview(
         Err(r) => return *r,
     };
     let action = |what: &str| format!("{BASE}/{}/{what}", kept.id);
+    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id).await;
     let body = html! {
         h1 { (t(&s, &staff, "fees.preview")) }
         p class="muted" { (kept.file_name) " · " span id="row-count" { (p.fees.len()) } }
@@ -231,7 +200,11 @@ async fn preview(
             }
         }
         @if kept.confirmed_at.is_some() {
-            div class="flash ok" role="status" id="queued" { (t(&s, &staff, "fees.queued")) }
+            @if failed {
+                div class="flash err" role="status" id="job-failed" { (t(&s, &staff, "fees.failed")) }
+            } @else {
+                div class="flash ok" role="status" id="queued" { (t(&s, &staff, "fees.queued")) }
+            }
         } @else {
             @if p.importable() {
                 form method="post" action=(action("confirm")) {
@@ -262,10 +235,19 @@ async fn confirm(
     if !p.importable() {
         return see_other(&format!("{BASE}/{}", kept.id));
     }
-    // Pinned first, so the sweep cannot take it before the Job runs. A
-    // second click finds it pinned; the Job key keeps it to one Job.
-    if uploads.confirm(&kept.id, &ctx).await.is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    // Already confirmed (a second click): its preview shows the Job.
+    if kept.confirmed_at.is_some() {
+        return see_other(&format!("{BASE}/{}", kept.id));
+    }
+    // Pinned first, so the sweep cannot take it before the Job runs.
+    match uploads.confirm(&kept.id, &ctx).await {
+        Ok(true) => {}
+        // Expired or confirmed since it was opened: no second Job.
+        Ok(false) => {
+            let text = t(&s, &staff, "fees.gone");
+            return notice(&s, &staff, StatusCode::CONFLICT, &text);
+        }
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
     let payload = serde_json::json!({ "upload": kept.id });
     let key = format!("{JOB}:{}", kept.id);
@@ -293,6 +275,13 @@ async fn confirm(
     see_other(BASE)
 }
 
+/// Whether the import Job of upload `id` failed for good.
+async fn job_failed(s: &AppState, id: &str) -> bool {
+    let q = Statement::new("SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed'")
+        .bind(format!("{JOB}:{id}"));
+    s.services.db.query(q).await.is_ok_and(|r| !r.is_empty())
+}
+
 async fn cancel(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Response {
     match uploads.discard(&id, &ctx).await {
         Ok(_) => see_other(BASE),
@@ -300,8 +289,10 @@ async fn cancel(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Re
     }
 }
 
-/// The Job: imports the confirmed file, then deletes it. Idempotent: a
-/// run after a finished one finds no file and the rows already written.
+/// The Job: imports the confirmed file, recording the import
+/// (`fees_import`) in the same batch as the balances, then deletes the
+/// file. A retry that finds the record only deletes the file, so it never
+/// writes older balances over a newer import's.
 async fn run(cx: JobContext, job: Job) -> Result<()> {
     let invalid = |m: &str| harpseal::Error::Invalid(format!("fees import: {m}"));
     let payload: serde_json::Value =
@@ -309,16 +300,16 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     let id = payload["upload"]
         .as_str()
         .ok_or_else(|| invalid("payload"))?;
-    let Some(kept) = KeptUpload::open_confirmed(&cx.services, NAME, id).await? else {
-        // Done only if a previous run wrote the rows; otherwise the file
-        // was lost before the import (expired, deleted): fail loudly.
-        let q = Statement::new("SELECT 1 FROM fees_balance WHERE upload_id = ? LIMIT 1").bind(id);
-        if cx.services.db.query(q).await?.is_empty() {
-            return Err(invalid(
-                "the confirmed upload is gone and nothing was imported",
-            ));
-        }
+    let done = Statement::new("SELECT 1 FROM fees_import WHERE upload_id = ?").bind(id);
+    if !cx.services.db.query(done).await?.is_empty() {
+        KeptUpload::finish(&cx.services, NAME, id).await?;
         return Ok(());
+    }
+    let Some(kept) = KeptUpload::open_confirmed(&cx.services, NAME, id).await? else {
+        // Not imported and the file is gone (expired, deleted): fail loudly.
+        return Err(invalid(
+            "the confirmed upload is gone and nothing was imported",
+        ));
     };
     let book = kept
         .workbook()
@@ -328,7 +319,13 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
         return Err(invalid("the file has problems"));
     }
     let now = cx.services.now_ms();
-    let stmts = p
+    let rows = i64::try_from(p.fees.len()).unwrap_or(i64::MAX);
+    let record =
+        Statement::new("INSERT INTO fees_import (upload_id, rows, imported_at) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(rows)
+            .bind(now);
+    let stmts: Vec<Statement> = p
         .fees
         .iter()
         .map(|f| {
@@ -343,6 +340,7 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
             .bind(id)
             .bind(now)
         })
+        .chain(std::iter::once(record))
         .collect();
     cx.services.db.batch(stmts).await?;
     KeptUpload::finish(&cx.services, NAME, id).await?;
