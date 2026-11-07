@@ -109,14 +109,14 @@ fn alt_text_is_cut_to_1500() {
 
 #[test]
 fn a_menu_over_20_entries_keeps_19_and_a_more_entry() {
-    let menu = Menu {
-        entries: (0..25)
+    let menu = Menu::new(
+        (0..25)
             .map(|i| MenuEntry {
                 label: format!("เมนู {i}"),
                 action: id(&format!("menu.{i}")),
             })
             .collect(),
-    };
+    );
     let v = render::menu(&menu);
     let areas = v["areas"].as_array().unwrap();
     assert_eq!(areas.len(), RICH_MENU_AREAS_MAX);

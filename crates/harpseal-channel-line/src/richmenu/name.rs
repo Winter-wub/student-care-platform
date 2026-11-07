@@ -1,22 +1,22 @@
 //! Rich menu names: `harpseal-<key>-<generation>-<hash>` for a Menu with a
 //! Menu key, `harpseal-<hash>` without one (see [`crate::richmenu`]).
 
-use harpseal::{Error, Result};
+use harpseal::MenuKey;
 
-use super::{KEY_MAX_LEN, NAME_PREFIX};
+use super::NAME_PREFIX;
 
 /// Hex digits in a name's content hash.
 pub const HASH_LEN: usize = 32;
 
 /// The name of the rich menu with content hash `hash` under Menu key and
 /// generation `tag`, or without a key.
-pub(super) fn make(tag: Option<(&str, u32)>, hash: &str) -> Result<String> {
-    Ok(match tag {
+pub(super) fn make(tag: Option<(&MenuKey, u32)>, hash: &str) -> String {
+    match tag {
         Some((key, generation)) => {
-            format!("{NAME_PREFIX}{}-{generation}-{hash}", valid_key(key)?)
+            format!("{NAME_PREFIX}{}-{generation}-{hash}", key.as_str())
         }
         None => format!("{NAME_PREFIX}{hash}"),
-    })
+    }
 }
 
 /// The Menu key and generation of a rich menu name: `Some(Some((key,
@@ -30,7 +30,7 @@ pub fn name_key(name: &str) -> Option<Option<(&str, u32)>> {
     match parts.as_slice() {
         [hash] if is_hash(hash) => Some(None),
         [key, generation, hash] if is_hash(hash) => {
-            let key = valid_key(key).ok()?;
+            let key = valid_key(key)?;
             let digits = !generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit());
             let generation: u32 = generation.parse().ok().filter(|_| digits)?;
             Some(Some((key, generation)))
@@ -45,20 +45,9 @@ fn is_hash(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// A Menu key: 1 to [`KEY_MAX_LEN`] lowercase ASCII letters and digits.
-pub(super) fn valid_key(key: &str) -> Result<&str> {
-    let ok = !key.is_empty()
-        && key.len() <= KEY_MAX_LEN
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
-    if ok {
-        Ok(key)
-    } else {
-        Err(Error::Invalid(format!(
-            "LINE Menu key {key:?}: 1 to {KEY_MAX_LEN} of a-z and 0-9"
-        )))
-    }
+/// A Menu key: [`MenuKey::LOCKED`] or one [`MenuKey::new`] accepts.
+fn valid_key(key: &str) -> Option<&str> {
+    (key == MenuKey::LOCKED || MenuKey::new(key).is_ok()).then_some(key)
 }
 
 #[cfg(test)]
@@ -66,6 +55,10 @@ mod tests {
     use super::*;
 
     const H: &str = "0123456789abcdef0123456789abcdef";
+
+    fn key(k: &str) -> MenuKey {
+        MenuKey::new(k).unwrap()
+    }
 
     #[test]
     fn names_carry_their_menu_key_and_generation() {
@@ -78,11 +71,12 @@ mod tests {
             Some(Some(("locked", 42)))
         );
         assert_eq!(name_key(&format!("harpseal-{H}")), Some(None));
+        assert_eq!(make(Some((&key("th"), 3)), H), format!("harpseal-th-3-{H}"));
         assert_eq!(
-            make(Some(("th", 3)), H).unwrap(),
-            format!("harpseal-th-3-{H}")
+            make(Some((&MenuKey::locked(), 2)), H),
+            format!("harpseal-locked-2-{H}")
         );
-        assert_eq!(make(None, H).unwrap(), format!("harpseal-{H}"));
+        assert_eq!(make(None, H), format!("harpseal-{H}"));
     }
 
     #[test]

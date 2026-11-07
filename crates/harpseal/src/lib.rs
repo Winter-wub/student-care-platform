@@ -86,7 +86,8 @@ pub use kernel::roster::api as roster;
 pub use kernel::students;
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{
-    ActionId, Attachment, Button, Card, CardList, Choices, Locale, Menu, MenuEntry, Message,
+    ActionId, Attachment, Button, Card, CardList, Choices, Locale, Menu, MenuEntry, MenuKey,
+    Message,
 };
 pub use migrate::{MigrationReport, migrate};
 pub use module::{

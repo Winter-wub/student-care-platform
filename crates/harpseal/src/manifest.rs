@@ -163,6 +163,27 @@ impl Catalog {
     pub fn default_locale(&self) -> Locale {
         self.default_locale.clone().unwrap_or_else(Locale::th)
     }
+
+    /// The Locale whose texts a Student in `locale` actually reads:
+    /// `locale` itself when the catalog has any text in it (exact,
+    /// case-sensitive, as [`Catalog::t`] looks it up), else the default
+    /// Locale. A roster cell `TH` or `en-US` reads the default Locale.
+    pub fn effective(&self, locale: &Locale) -> Locale {
+        if self.texts.keys().any(|(l, _)| *l == locale.0) {
+            locale.clone()
+        } else {
+            self.default_locale()
+        }
+    }
+
+    /// Every Locale with a text, and the default Locale, sorted.
+    pub(crate) fn locales(&self) -> Vec<Locale> {
+        let mut all: Vec<Locale> = self.texts.keys().map(|(l, _)| Locale::new(l)).collect();
+        all.push(self.default_locale());
+        all.sort();
+        all.dedup();
+        all
+    }
 }
 
 #[cfg(test)]
@@ -179,5 +200,10 @@ mod tests {
         assert_eq!(c.t(&Locale::en(), "a"), "ก");
         assert_eq!(c.t(&Locale::en(), "b"), "b");
         assert!(c.has(&Locale::th(), "a"));
+        assert_eq!(c.effective(&Locale::new("TH")), Locale::th());
+        assert_eq!(c.effective(&Locale::en()), Locale::th(), "no en text");
+        c.insert("en", "a", "a");
+        assert_eq!(c.effective(&Locale::en()), Locale::en());
+        assert_eq!(c.locales(), [Locale::en(), Locale::th()]);
     }
 }

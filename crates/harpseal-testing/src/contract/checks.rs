@@ -3,14 +3,14 @@
 
 use harpseal::{
     ActionId, Attachment, Button, Capability, Card, CardList, Choices, Delivery, Error, Inbound,
-    Locale, Menu, MenuEntry, Message, Metering, ReplyToken, SendReceipt, Timestamp,
+    Locale, Message, Metering, ReplyToken, SendReceipt, Timestamp,
 };
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::{Call, Target};
 
-fn id(s: &str) -> ActionId {
+pub(super) fn id(s: &str) -> ActionId {
     ActionId::new(s).expect("contract Action ids are short")
 }
 
@@ -253,24 +253,6 @@ pub async fn metering_counts_push_requests(t: &Target) {
             msg.kind()
         );
     }
-}
-
-/// The Menu can be set and reset to the locked Menu.
-pub async fn menu_set_and_unset(t: &Target) {
-    let kind = t.channel.kind();
-    let menu = Menu {
-        entries: vec![MenuEntry {
-            label: "ข่าวล่าสุด".into(),
-            action: id("contract.menu.news"),
-        }],
-    };
-    let to = &t.fixtures.to;
-    let set = t.channel.set_menu(to, Some(&menu)).await;
-    assert!(set.is_ok(), "{kind}: setting a Menu failed: {set:?}");
-    assert_eq!(t.wire.menu_entries(to), Some(1), "{kind}: the Menu is set");
-    let unset = t.channel.set_menu(to, None).await;
-    assert!(unset.is_ok(), "{kind}: locking the Menu failed: {unset:?}");
-    assert_eq!(t.wire.menu_entries(to), None, "{kind}: the Menu is locked");
 }
 
 /// `capabilities()` matches the accessors, and an attachment without the

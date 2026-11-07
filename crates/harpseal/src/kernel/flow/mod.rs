@@ -271,8 +271,9 @@ impl Turn<'_> {
             .channel(self.from.channel.as_str())
             .ok_or_else(|| crate::Error::Invalid(format!("no channel {}", self.from.channel)))?;
         let menu = unlocked.map(|l| {
-            let texts = self.texts.in_locale(l);
-            self.d.menu_with(|k| texts.t(k))
+            let l = self.d.catalog().effective(l);
+            let texts = self.texts.in_locale(&l);
+            self.d.menu_with(&l, |k| texts.t(k))
         });
         channel.set_menu(&self.from, menu.as_ref()).await
     }
@@ -283,7 +284,7 @@ impl Turn<'_> {
         let text = self.t("kernel.menu.pick");
         let options: Vec<Button> = self
             .d
-            .menu_with(|k| self.texts.t(k))
+            .menu_with(self.texts.locale(), |k| self.texts.t(k))
             .entries
             .into_iter()
             .map(|e| Button::action(e.label, e.action))

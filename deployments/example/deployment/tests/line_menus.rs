@@ -1,9 +1,10 @@
-//! The example registers its unlocked Menus with the LINE Channel, so their
-//! rich menus are named by Locale and older generations get cleaned up.
+//! The example's unlocked Menus carry their Locale as Menu key, so their
+//! LINE rich menus are named by Locale and older generations get cleaned
+//! up, with no registration.
 
 use std::sync::Arc;
 
-use example_deployment::{Secrets, builder, register_line_menus};
+use example_deployment::{Secrets, builder};
 use harpseal::{Channel, ChannelAccountId, Locale};
 use harpseal_channel_line::{KIND, LineChannel, LineConfig};
 use harpseal_testing::Harness;
@@ -32,7 +33,6 @@ async fn each_locale_menu_gets_a_keyed_rich_menu() {
     let cfg = LineConfig::new("seal-bay-secret", "seal-bay-token", "")
         .with_menu_images(png(2500, 843), png(2500, 1686));
     let line = LineChannel::new(cfg, Arc::new(h.http().clone()));
-    register_line_menus(&line, &d).unwrap();
 
     let to = ChannelAccountId::new(KIND, "U5ea1ba7000000000000000000000c0de");
     for (locale, key) in [(Locale::th(), "th"), (Locale::en(), "en")] {

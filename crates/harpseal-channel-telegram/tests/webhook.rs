@@ -15,12 +15,10 @@ fn id(s: &str) -> ActionId {
 }
 
 fn news_menu() -> Menu {
-    Menu {
-        entries: vec![MenuEntry {
-            label: "ประกาศล่าสุด".into(),
-            action: id("news.latest"),
-        }],
-    }
+    Menu::new(vec![MenuEntry {
+        label: "ประกาศล่าสุด".into(),
+        action: id("news.latest"),
+    }])
 }
 
 #[tokio::test]
@@ -138,12 +136,10 @@ async fn a_command_in_the_menu_is_an_action_otherwise_text() {
 #[tokio::test]
 async fn set_menu_overlays_the_construction_time_map_per_account() {
     let (tg, _) = channel();
-    let faq = Menu {
-        entries: vec![MenuEntry {
-            label: "คำถามที่พบบ่อย".into(),
-            action: id("faq.list"),
-        }],
-    };
+    let faq = Menu::new(vec![MenuEntry {
+        label: "คำถามที่พบบ่อย".into(),
+        action: id("faq.list"),
+    }]);
     tg.set_menu(&chat(), Some(&faq)).await.unwrap();
     let got = tg.parse_webhook(text_update("/faq_list")).await.unwrap();
     assert!(matches!(&got[..], [Inbound::Action { action, .. }] if action.as_str() == "faq.list"));

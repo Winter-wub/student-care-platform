@@ -139,24 +139,20 @@ fn entry(label: &str, action_id: &str) -> MenuEntry {
 
 /// (e) Menu before a Link: only what an unverified Student may do.
 pub fn menu_locked() -> Menu {
-    Menu {
-        entries: vec![
-            entry("ผูกบัญชีนักศึกษา", "link.start"),
-            entry("ติดต่อเจ้าหน้าที่", "inbox.open"),
-        ],
-    }
+    Menu::new(vec![
+        entry("ผูกบัญชีนักศึกษา", "link.start"),
+        entry("ติดต่อเจ้าหน้าที่", "inbox.open"),
+    ])
 }
 
 /// (e) Menu after a Link: 4 entries.
 pub fn menu_unlocked() -> Menu {
-    Menu {
-        entries: vec![
-            entry("ประกาศล่าสุด", "news.latest"),
-            entry("ติดต่อเจ้าหน้าที่", "inbox.open"),
-            entry("คำถามที่พบบ่อย", "faq.list"),
-            entry("ยกเลิกการเชื่อมต่อ", "link.revoke"),
-        ],
-    }
+    Menu::new(vec![
+        entry("ประกาศล่าสุด", "news.latest"),
+        entry("ติดต่อเจ้าหน้าที่", "inbox.open"),
+        entry("คำถามที่พบบ่อย", "faq.list"),
+        entry("ยกเลิกการเชื่อมต่อ", "link.revoke"),
+    ])
 }
 
 // ── Degrade samples: not in the first slice, they exercise the rules. ──

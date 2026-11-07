@@ -14,8 +14,8 @@
 //!   defensive `Error::Unreachable` (see `docs/guide/channels.md`). 429 is
 //!   `Error::RateLimited`.
 //! - Menu ([`richmenu`]): one rich menu per Menu and image, reused by hash
-//!   and linked per account; lower generations of a registered Menu
-//!   ([`LineChannel::with_menus`], [`LineConfig::menu_generation`]) are
+//!   and linked per account; lower generations of a keyed Menu
+//!   ([`harpseal::Menu::key`], [`LineConfig::menu_generation`]) are
 //!   deleted. `set_menu(None)` links
 //!   [`LineConfig::locked_menu`]; the Kernel is expected to pass its
 //!   locked Menu (e.g. a "เริ่มใช้งาน" entry) through this config (#19).
@@ -77,6 +77,8 @@ pub struct LineConfig {
     pub launch_base: String,
     /// The locked Menu (before a Link), shown by `set_menu(None)`. Empty:
     /// `set_menu(None)` unlinks, showing the account's default rich menu.
+    /// Its rich menu always has Menu key [`richmenu::LOCKED_KEY`] (any key
+    /// on this Menu is ignored).
     pub locked_menu: Menu,
     /// PNG for the locked Menu's rich menu (see [`richmenu`] for the size).
     pub locked_menu_image: Vec<u8>,
@@ -163,8 +165,7 @@ impl core::fmt::Debug for LineConfig {
     }
 }
 
-/// The LINE Channel. Clones share the rich menu cache and the Menus
-/// registered with [`LineChannel::with_menus`].
+/// The LINE Channel. Clones share the rich menu cache.
 #[derive(Clone)]
 pub struct LineChannel {
     cfg: LineConfig,
