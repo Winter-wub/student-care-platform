@@ -33,11 +33,12 @@ impl LineChannel {
         } else {
             "/"
         };
-        let base = match self.cfg.launch_base.as_str() {
-            "" => LIFF_BASE,
+        // With or without its trailing slash.
+        let base = match self.cfg.launch_base.trim_end_matches('/') {
+            "" => LIFF_BASE.trim_end_matches('/'),
             b => b,
         };
-        format!("{base}{}{sep}{path}", self.cfg.liff_id)
+        format!("{base}/{}{sep}{path}", self.cfg.liff_id)
     }
 
     /// The LINE Login channel id of the LIFF app.

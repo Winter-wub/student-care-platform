@@ -223,9 +223,29 @@ pub(crate) async fn ack(
 ) -> Response {
     let here = format!("{NEWS_PATH}/{id}");
     let htmx = is_htmx(&headers);
+    // A real ack is same-origin, even in Telegram Web's iframe; with the
+    // partitioned `SameSite=None` cookie this is defence in depth next to
+    // the CSRF token.
+    if headers
+        .get("sec-fetch-site")
+        .is_some_and(|v| v == "cross-site")
+    {
+        return match super::texts(&s, &s.config.default_locale).await {
+            Ok(t) => view::answer(&s, &t, StatusCode::FORBIDDEN, "kernel.app.forbidden", None),
+            Err(e) => unavailable(&e),
+        };
+    }
     let (v, t) = match open(&s, &headers, &here).await {
         Ok(x) => x,
-        Err(r) if htmx && ErrorReport::of(&r).is_none() => return hx_redirect(&here),
+        // HTMX does not swap an error status: a full reload of the detail
+        // page shows the entry page or the error, and the report travels.
+        Err(r) if htmx => {
+            let mut to = hx_redirect(&here);
+            if let Some(report) = ErrorReport::of(&r).copied() {
+                to.extensions_mut().insert(report);
+            }
+            return to;
+        }
         Err(r) => return *r,
     };
     let sent = headers

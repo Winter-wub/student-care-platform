@@ -63,16 +63,23 @@ async fn outside_both_chat_apps_the_entry_page_links_the_notice_and_staff_sign_i
     let root = w.app.get("/").await;
     assert_eq!(root.header("location"), Some("/app"));
     let page = w.app.get("/app").await.body;
-    // Without script: the plain links in <noscript>, and no "opening" text
-    // left showing (the script unhides it).
-    let noscript = &page[page.find("<noscript>").expect("a noscript part")..];
+    // Without script: the plain links in <noscript>, and the "opening"
+    // text hidden by a <noscript> style.
+    let links = page
+        .find("<noscript><div")
+        .expect("a noscript part with the links");
+    let noscript = &page[links..];
     let noscript = &noscript[..noscript.find("</noscript>").unwrap()];
     for link in ["href=\"/notice\"", "href=\"/admin/login\""] {
         assert!(noscript.contains(link), "{link}: {noscript}");
         assert!(page.matches(link).count() >= 2, "also in #xchg-out");
     }
     assert!(noscript.contains("เปิดจากปุ่มในแชท LINE หรือ Telegram"));
-    assert!(page.contains("id=\"xchg-wait\" hidden"), "{page}");
+    assert!(page.contains("<noscript><style>#xchg-wait{display:none}</style></noscript>"));
+    assert!(
+        !page.contains("id=\"xchg-wait\" hidden"),
+        "shown while the SDKs load"
+    );
     assert!(page.contains("id=\"xchg-out\" hidden"));
     // The script decides between the exchange, "open from the chat" and
     // the plain page; a framed page says so to the exchange.
@@ -103,8 +110,8 @@ async fn a_newer_notice_version_shows_the_reconsent_line() {
     assert!(page.contains("ยอมรับประกาศความเป็นส่วนตัวฉบับ 1 แล้ว"));
     assert!(page.contains(PENDING), "{page}");
 
-    // Accepting the new version (in the chat) clears it, whatever order
-    // the rows were written in.
+    // A Consent row for the new version (as the chat writes on accept)
+    // clears it.
     run(
         &w.h,
         "INSERT INTO consent (id, student_id, channel_account_id, notice_version, locale, \
@@ -157,4 +164,65 @@ async fn the_prune_job_has_an_expires_at_index() {
         )
         .await;
     assert_eq!(n, 1);
+}
+
+#[tokio::test]
+async fn app_pages_may_be_framed_only_by_themselves_and_telegram_web() {
+    let w = boot().await;
+    roster(&w).await;
+    seeded(&w, "n1", "s1", "fake", 1_000, true, None).await;
+    let csp = "frame-ancestors 'self' https://web.telegram.org";
+    // The entry page, the Student's page, a detail page and the ack.
+    assert_eq!(
+        w.app.get("/app").await.header("content-security-policy"),
+        Some(csp)
+    );
+    let b = open(&w, "fake", "s1").await;
+    for path in ["/app", "/app/announcements", "/app/announcements/n1"] {
+        let r = b.get(path).await;
+        assert_eq!(r.status, 200, "{path}");
+        assert_eq!(r.header("content-security-policy"), Some(csp), "{path}");
+    }
+    let ack = b.post_raw("/app/announcements/n1/ack", "").await;
+    assert_eq!(ack.header("content-security-policy"), Some(csp));
+    // The back office stays unframeable, and other pages are untouched.
+    assert!(
+        w.app
+            .get("/notice")
+            .await
+            .header("content-security-policy")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_cross_site_ack_is_refused_even_with_the_session_and_token() {
+    let w = boot().await;
+    roster(&w).await;
+    seeded(&w, "n1", "s1", TG, 1_000, true, None).await;
+    // A Telegram Web session (its cookie is sent in the iframe).
+    let b = open(&w, TG, "s1").await;
+    let page = b.get("/app/announcements/n1").await.body;
+    let csrf = csrf_of(&page);
+    let post = |form: String| {
+        http::Request::post("/app/announcements/n1/ack")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("sec-fetch-site", "cross-site")
+            .body(axum::body::Body::from(form))
+            .unwrap()
+    };
+    assert_eq!(b.send(post(String::new())).await.status, 403);
+    assert_eq!(b.send(post(format!("_csrf={csrf}"))).await.status, 403);
+    let acked = w
+        .app
+        .count("SELECT count(*) FROM announcement_delivery WHERE acked_at IS NOT NULL")
+        .await;
+    assert_eq!(acked, 0);
+    // The same post from our own page goes through.
+    let ok = http::Request::post("/app/announcements/n1/ack")
+        .header("content-type", "application/x-www-form-urlencoded")
+        .header("sec-fetch-site", "same-origin")
+        .body(axum::body::Body::from(format!("_csrf={csrf}")))
+        .unwrap();
+    assert_eq!(b.send(ok).await.status, 303);
 }

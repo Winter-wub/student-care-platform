@@ -61,15 +61,18 @@ const EXCHANGE_JS: &str = r#"(function () {
     .some(function (k) { return q.has(k); }) ||
     /^https:\/\/(liff|miniapp)\.line\.me\//.test(document.referrer);
   if (f.dataset.liff && lf) {
-    var b = document.getElementById('xchg-line');
-    if (b) { b.hidden = false; b.onclick = login; }
     lf.init({ liffId: f.dataset.liff }).then(function () {
       if (q.has('liff.state')) { return; }
       var t = lf.getIDToken();
       if (t) { go(f.dataset.line, t); }
       else if (lf.isInClient() || inTg) { fail(); }
       else if (viaLiff) { login(); }
-      else { show('xchg-out'); }
+      else {
+        // Only an initialised SDK can log in.
+        var b = document.getElementById('xchg-line');
+        if (b) { b.onclick = login; b.hidden = false; }
+        show('xchg-out');
+      }
     }, function () { if (inTg || viaLiff) { fail(); } else { show('xchg-out'); } });
     return;
   }
@@ -102,7 +105,9 @@ fn page(s: &PageState, t: &Texts, csrf: Option<&str>, title: &str, body: Markup)
 pub(crate) fn entry(s: &PageState, t: &Texts, sdks: &Sdks, next: &str) -> Response {
     let (line, liff) = sdks.liff.clone().unzip();
     let body = html! {
-        div class="card app-center" id="xchg-wait" hidden { p { (t.t("kernel.app.opening")) } }
+        // Shown while the SDKs download; without script, the links instead.
+        div class="card app-center" id="xchg-wait" { p { (t.t("kernel.app.opening")) } }
+        noscript { style { "#xchg-wait{display:none}" } }
         div class="card app-center" id="xchg-fail" hidden { p { (t.t("kernel.app.open_in_chat")) } }
         div class="card app-center" id="xchg-out" hidden {
             (outside(t))

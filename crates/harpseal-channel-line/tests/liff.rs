@@ -53,6 +53,16 @@ async fn a_line_mini_app_launches_under_its_own_base_with_the_same_sdk() {
 }
 
 #[tokio::test]
+async fn a_launch_base_without_its_trailing_slash_gets_one() {
+    let cfg = LineConfig::new(SECRET, TOKEN, LIFF).with_launch_base("https://miniapp.line.me");
+    let ch = LineChannel::new(cfg, Arc::new(LineApi::default()));
+    assert_eq!(
+        ch.mini_app().unwrap().launch_url("/app"),
+        "https://miniapp.line.me/2000000000-SealBay0/app"
+    );
+}
+
+#[tokio::test]
 async fn a_valid_id_token_resolves_to_the_line_user() {
     let (ch, api) = channel(LIFF);
     api.http().respond_with(200, claims("2000000000"));

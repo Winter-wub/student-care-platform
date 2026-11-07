@@ -70,6 +70,7 @@ textarea { min-height: 120px; resize: vertical; }
 input:focus, select:focus, textarea:focus, button:focus-visible {
   outline: 3px solid rgba(15, 92, 122, .35); outline-offset: 1px; border-color: var(--brand);
 }
+[hidden] { display: none !important; }
 button, .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: var(--tap); min-width: var(--tap); padding: 0 20px;

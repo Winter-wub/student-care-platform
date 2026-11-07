@@ -165,11 +165,13 @@ pub(crate) fn cookie(token: Option<&str>, secure: bool, site: Site) -> HeaderVal
 
 /// `Set-Cookie` headers deleting the cookie in both forms: a partitioned
 /// cookie is only deleted by a `Set-Cookie` that is itself `Partitioned`.
-pub(crate) fn clear(secure: bool) -> [HeaderValue; 2] {
-    [
-        cookie(None, secure, Site::Top),
-        cookie(None, secure, Site::Framed),
-    ]
+/// Without `Secure` there is no partitioned form, so one header.
+pub(crate) fn clear(secure: bool) -> Vec<HeaderValue> {
+    let mut out = vec![cookie(None, secure, Site::Top)];
+    if secure {
+        out.push(cookie(None, secure, Site::Framed));
+    }
+    out
 }
 
 /// Deletes at most 500 sessions expired more than [`PRUNE_AFTER_MS`]
@@ -182,4 +184,23 @@ pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
     )
     .bind(now - PRUNE_AFTER_MS);
     Ok(services.db.execute(stmt).await?.rows_affected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Site, clear, cookie};
+
+    #[test]
+    fn clearing_sends_the_partitioned_form_only_when_it_can_exist() {
+        let secure: Vec<_> = clear(true)
+            .iter()
+            .map(|h| h.to_str().unwrap().to_string())
+            .collect();
+        assert_eq!(secure.len(), 2);
+        assert!(secure[1].contains("SameSite=None; Secure; Partitioned; Max-Age=0"));
+        // Without Secure the framed form is Lax too: one header.
+        assert_eq!(clear(false).len(), 1);
+        let framed = cookie(Some("t"), false, Site::Framed);
+        assert!(framed.to_str().unwrap().contains("SameSite=Lax;"));
+    }
 }

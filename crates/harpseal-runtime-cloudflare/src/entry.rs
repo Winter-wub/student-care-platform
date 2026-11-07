@@ -70,7 +70,12 @@ pub async fn fetch(
     let mut router = app(env, settings, build).await?.router;
     let resp = router.call(req).await.unwrap_or_else(|e| match e {});
     if let Some(report) = harpseal::ErrorReport::of(&resp) {
-        worker::console_error!("error: {report}");
+        let id = resp
+            .headers()
+            .get(harpseal::audit::REQUEST_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-");
+        worker::console_error!("error: {report} (request {id})");
     }
     Ok(resp)
 }

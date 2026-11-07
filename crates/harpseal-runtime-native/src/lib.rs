@@ -90,7 +90,7 @@ pub fn services(s: &NativeSettings) -> Result<Services> {
 /// `axum::serve` on a TCP listener at `addr`. Each request carries the
 /// peer's IP as [`harpseal::PeerIp`] (audit rows fall back to it when there
 /// is no `X-Forwarded-For`). A response carrying a
-/// [`harpseal::ErrorReport`] logs its line to stderr (the area and the
+/// [`harpseal::ErrorReport`] logs its line and `x-request-id` to stderr (the area and the
 /// error kind, never the message).
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -103,7 +103,12 @@ pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
 
 async fn log_report(r: axum::response::Response) -> axum::response::Response {
     if let Some(report) = harpseal::ErrorReport::of(&r) {
-        eprintln!("error: {report}");
+        let id = r
+            .headers()
+            .get(harpseal::audit::REQUEST_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-");
+        eprintln!("error: {report} (request {id})");
     }
     r
 }
