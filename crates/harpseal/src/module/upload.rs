@@ -19,7 +19,7 @@ pub const MAX_UPLOAD_BYTES: usize = crate::kernel::roster::preview::MAX_FILE_BYT
 /// Largest request body of a Module upload route: the file and the
 /// form's other fields (the roster import's limit).
 pub(crate) const UPLOAD_BODY_LIMIT: usize = MAX_UPLOAD_BYTES + 64 * 1024;
-/// How long [`SheetUpload::keep`] keeps a file for its confirm: 24 hours.
+/// How long [`crate::Uploads::keep`] keeps a file for its confirm: 24 hours.
 /// The tick deletes it after that.
 pub const UPLOAD_KEEP_MS: i64 = 86_400_000;
 
@@ -43,7 +43,7 @@ impl ModuleRegistrar {
     /// The handler extracts [`SheetUpload`] (or `Result<SheetUpload,
     /// UploadRejection>` to answer refusals with its own page), reads it
     /// with [`SheetUpload::workbook`] and keeps it for a later confirm with
-    /// [`SheetUpload::keep`]. `build()` refuses a path registered twice
+    /// [`crate::Uploads::keep`]. `build()` refuses a path registered twice
     /// ([`crate::BuildError::DuplicateRoute`]).
     pub fn sheet_upload(
         &mut self,
@@ -122,6 +122,9 @@ pub enum UploadRejection {
     NoFile,
     /// Not a CSV or XLSX by its bytes and name ([`SheetKind::sniff`], 415).
     Unsupported,
+    /// Named `.csv` but not UTF-8 (a Thai CSV saved as TIS-620 or
+    /// Windows-874; 415).
+    NotUtf8,
     /// Not a readable `multipart/form-data` body, or two `file` parts (400).
     Malformed,
 }
@@ -131,7 +134,7 @@ impl UploadRejection {
     pub fn status(self) -> StatusCode {
         match self {
             Self::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::Unsupported => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::Unsupported | Self::NotUtf8 => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::NoFile | Self::Malformed => StatusCode::BAD_REQUEST,
         }
     }
@@ -142,6 +145,7 @@ impl UploadRejection {
             Self::TooLarge => "ไฟล์ใหญ่เกิน 4 MB",
             Self::NoFile => "ไม่พบไฟล์ที่อัปโหลด",
             Self::Unsupported => "รับเฉพาะไฟล์ CSV หรือ XLSX",
+            Self::NotUtf8 => "ไฟล์ CSV ต้องเป็น UTF-8 (บันทึกแบบ CSV UTF-8)",
             Self::Malformed => "อ่านแบบฟอร์มที่ส่งมาไม่ได้",
         }
     }
@@ -183,11 +187,7 @@ impl SheetUpload {
     async fn read(mut m: Multipart) -> Result<Self, UploadRejection> {
         let mut file: Option<(String, Vec<u8>)> = None;
         let mut fields = BTreeMap::new();
-        while let Some(mut field) = m
-            .next_field()
-            .await
-            .map_err(|_| UploadRejection::Malformed)?
-        {
+        while let Some(mut field) = m.next_field().await.map_err(rejection)? {
             let name = field.name().unwrap_or_default().to_string();
             if name == FILE_FIELD {
                 if file.is_some() {
@@ -195,11 +195,7 @@ impl SheetUpload {
                 }
                 let file_name = field.file_name().unwrap_or_default().to_string();
                 let mut bytes = Vec::new();
-                while let Some(chunk) = field
-                    .chunk()
-                    .await
-                    .map_err(|_| UploadRejection::Malformed)?
-                {
+                while let Some(chunk) = field.chunk().await.map_err(rejection)? {
                     if bytes.len() + chunk.len() > MAX_UPLOAD_BYTES {
                         return Err(UploadRejection::TooLarge);
                     }
@@ -207,7 +203,7 @@ impl SheetUpload {
                 }
                 file = Some((file_name, bytes));
             } else {
-                let text = field.text().await.map_err(|_| UploadRejection::Malformed)?;
+                let text = field.text().await.map_err(rejection)?;
                 if name != crate::auth::CSRF_FIELD {
                     fields.insert(name, text);
                 }
@@ -217,7 +213,14 @@ impl SheetUpload {
             return Err(UploadRejection::NoFile);
         };
         let file_name = crate::kernel::roster::file::safe_name(&name);
-        let kind = SheetKind::sniff(&bytes, &file_name).ok_or(UploadRejection::Unsupported)?;
+        let kind = SheetKind::sniff(&bytes, &file_name).ok_or_else(|| {
+            let csv = file_name.to_ascii_lowercase().ends_with(".csv");
+            if csv && !bytes.starts_with(b"PK\x03\x04") && std::str::from_utf8(&bytes).is_err() {
+                UploadRejection::NotUtf8
+            } else {
+                UploadRejection::Unsupported
+            }
+        })?;
         Ok(Self {
             file_name,
             kind,
@@ -231,10 +234,29 @@ impl<S: Send + Sync> FromRequest<S> for SheetUpload {
     type Rejection = UploadRejection;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        // A body sent with the CSRF header was not read by the guard: its
+        // declared length is checked here, and axum's limit while reading.
+        let declared = req
+            .headers()
+            .get(axum::http::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        if declared.is_some_and(|n| n > UPLOAD_BODY_LIMIT as u64) {
+            return Err(UploadRejection::TooLarge);
+        }
         let m = Multipart::from_request(req, state)
             .await
             .map_err(|_| UploadRejection::Malformed)?;
         Self::read(m).await
+    }
+}
+
+/// A body over axum's limit is 413; any other reading error is malformed.
+fn rejection(e: axum::extract::multipart::MultipartError) -> UploadRejection {
+    if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        UploadRejection::TooLarge
+    } else {
+        UploadRejection::Malformed
     }
 }
 

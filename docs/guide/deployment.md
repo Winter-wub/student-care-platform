@@ -346,30 +346,45 @@ UploadRejection>` to answer refusals with its own page): the `file` part,
 its cleaned `file_name`, its `kind` (`SheetKind::Csv` or `Xlsx`, told by
 the bytes — a ZIP signature or UTF-8 text — and the name must agree, else
 415), and the form's other text parts in `fields`. An empty or missing
-file is 400, a file over 4 MiB 413.
+file is 400, a file over 4 MiB 413, and a `.csv` that is not UTF-8 (a
+Thai CSV saved as TIS-620 / Windows-874) 415 with "save as CSV UTF-8".
 
-Preview, then confirm, like the roster:
+Preview, then confirm, like the roster. Back-office handlers extract
+`Uploads`: the kept uploads of the Module that registered the route, as
+the signed-in Staff member sees them. By default only the uploader sees an
+upload (another Staff member with the same Permission gets `None`, as if
+the id did not exist); `uploads.shared_with("<module>.<permission>")`
+opens every upload of the Module to Staff holding a Permission you choose.
 
 1. Read it: `up.workbook()` is `harpseal::sheet` with the roster's limits.
-2. Keep it: `up.keep(&s.services, "<module name>", &staff, &ctx)` stores
-   the file in the FileStore under `module-upload/<module>/<id>.<kind>`,
-   records its SHA-256 and an expiry 24 hours later (`UPLOAD_KEEP_MS`;
-   Kernel table `module_upload`, migration 0014) and writes the audit row
-   `module.upload`. Redirect to a preview page carrying `kept.id`.
-3. Preview: `KeptUpload::open(&services, "<module name>", &id)` gives the
-   file back (`None` when it is not this Module's, was discarded or
-   expired). Show the rows, the problems with sheet and row, and the
-   skipped footer rows and hidden sheets.
+2. Keep it: `uploads.keep(up, &ctx)` records it (Kernel table
+   `module_upload`, migration 0014: uploader, file name, kind, size,
+   SHA-256, an expiry 24 hours later, `UPLOAD_KEEP_MS`), audited
+   `module.upload`, then stores the file under
+   `module-upload/<module>/<id>.<kind>`. Redirect to a preview page
+   carrying the returned id.
+3. Preview: `uploads.open(&id)` gives the file back (`None` when it is not
+   visible, was discarded or expired). Show the rows, the problems with
+   sheet and row, and the skipped footer rows and hidden sheets.
 4. Confirm: `open` again (it refuses, `Error::Invalid`, a file whose hash
-   changed since the upload) and enqueue your import Job with the id in
-   its payload (`enqueue_unique` with a key on the id stops a double
-   click). The Job opens it once more, imports, then calls
-   `KeptUpload::discard`. Treat `None` in the Job as "already done".
-5. Cancel: `KeptUpload::discard(&services, "<module name>", &id)`.
+   changed since the upload), then `uploads.confirm(&id, &ctx)`, which
+   pins it for the Job (audited `module.upload.confirm`; it is kept
+   `CONFIRMED_KEEP_MS`, a week, from now, so a confirm a minute before the
+   24 hours run out still reaches the Job), then enqueue your import Job
+   with the id in its payload (`enqueue_unique` with a key on the id
+   stops a double click).
+5. The Job reads it with `KeptUpload::open_confirmed(&services, "<module
+   name>", &id)`, imports, then calls `KeptUpload::finish`. When it finds
+   no upload, it is done only if its own rows show the import happened
+   (the example stores the upload id beside each row); otherwise return an
+   error, never `Ok`.
+6. Cancel: `uploads.discard(&id, &ctx)`, audited `module.upload.cancel`.
 
 The tick deletes every upload past its expiry (50 per tick,
 `TickReport::module_uploads_swept`), so a preview nobody confirmed leaves
-no file behind. A backup carries kept uploads like any `file_key` row.
+no file behind. Backups leave kept uploads out, rows and files (see
+[backups](backups.md)).
+
 `deployments/example/deployment/src/fees.rs` is a worked example: outstanding
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.

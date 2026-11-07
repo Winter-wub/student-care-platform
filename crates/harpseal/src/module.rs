@@ -18,8 +18,8 @@ use crate::{Result, Services};
 mod kept;
 mod mini_app;
 mod upload;
-pub use kept::KeptUpload;
-pub(crate) use kept::sweep_uploads;
+pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
+pub(crate) use kept::{RouteModule, sweep_uploads};
 pub(crate) use mini_app::AppLinkSpec;
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
 

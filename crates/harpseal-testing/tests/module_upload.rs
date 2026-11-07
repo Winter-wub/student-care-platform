@@ -5,10 +5,10 @@
 
 mod module_upload_support;
 
-use harpseal::{MAX_UPLOAD_BYTES, Services, UPLOAD_KEEP_MS};
+use harpseal::{CONFIRMED_KEEP_MS, MAX_UPLOAD_BYTES, Services, UPLOAD_KEEP_MS};
 use module_upload_support::{
-    Csrf, FEES_CSV, FEES_XLSX, PASSWORD, UPLOAD, boot, kept_id, kept_keys, send, signed_in, tick,
-    upload_file, uploads,
+    Csrf, FEES_CSV, FEES_XLSX, PASSWORD, UPLOAD, audited, boot, job_sees, kept_id, kept_keys, send,
+    signed_in, tick, upload_file, uploads,
 };
 
 /// A CSV of `n` bytes that reads (one header, padded rows).
@@ -127,23 +127,100 @@ async fn confirm_reads_the_kept_file_and_refuses_one_whose_hash_changed() {
 }
 
 #[tokio::test]
-async fn another_module_cannot_open_or_discard_the_upload() {
+async fn only_the_uploader_or_a_shared_permission_reaches_an_upload() {
+    let (h, app) = boot().await;
+    let mine = signed_in(&h, &app, "Uploader").await;
+    let id = kept_id(&upload_file(&mine, "fees.csv", FEES_CSV.as_bytes()).await);
+    // Same Permission, another Staff member: as if the id did not exist.
+    let clerk = signed_in(&h, &app, "Clerk").await;
+    assert_eq!(clerk.get("/admin").await.status, 200);
+    let r = clerk.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    assert_eq!(r.status, 404);
+    let r = clerk.post(&format!("/admin/probe/{id}/cancel"), "").await;
+    assert_eq!(r.status, 404);
+    assert_eq!(uploads(&h).await, 1, "still there");
+    // Not confirmed: the import Job does not see it either.
+    assert!(!job_sees(&h, &id).await);
+    // The Module's override Permission (`Uploads::shared_with`).
+    let boss = signed_in(&h, &app, "Supervisor").await;
+    let r = boss.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    assert_eq!(r.body, "confirmed true");
+    assert!(job_sees(&h, &id).await);
+    let other = harpseal::KeptUpload::open_confirmed(&h.services(), "fees", &id).await;
+    assert!(other.unwrap().is_none(), "another Module's name");
+}
+
+#[tokio::test]
+async fn a_confirm_just_before_expiry_pins_the_upload_for_the_job() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Uploader").await;
     let id = kept_id(&upload_file(&b, "fees.csv", FEES_CSV.as_bytes()).await);
-    let s = h.services();
+    h.clock().advance_ms(UPLOAD_KEEP_MS - 60_000);
+    let r = b.login("uploader@sealbay.example", PASSWORD).await;
+    assert_eq!(r.status, 303);
+    assert_eq!(b.get("/admin").await.status, 200);
+    let r = b.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    assert_eq!(r.body, "confirmed true");
+    let r = b.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    assert_eq!(r.body, "confirmed false", "pinned once");
+    assert_eq!(audited(&h, "module.upload.confirm").await, 1);
+    // Past the 24 hours, and a sweep: the Job still finds it.
+    h.clock().advance_ms(120_000);
+    assert_eq!(tick(&h, &app).await.module_uploads_swept, 0);
+    assert!(job_sees(&h, &id).await);
     assert!(
-        harpseal::KeptUpload::open(&s, "fees", &id)
+        harpseal::KeptUpload::finish(&h.services(), "probe", &id)
             .await
             .unwrap()
-            .is_none()
     );
+    assert_eq!(uploads(&h).await, 0);
+    assert!(kept_keys(&h).is_empty());
+    // A confirmed upload the Job never finished goes after the week.
+    let id = kept_id(&upload_file(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    b.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    h.clock().advance_ms(CONFIRMED_KEEP_MS - 1);
+    assert_eq!(tick(&h, &app).await.module_uploads_swept, 0);
+    h.clock().advance_ms(1);
+    assert_eq!(tick(&h, &app).await.module_uploads_swept, 1);
+}
+
+#[tokio::test]
+async fn a_backup_leaves_kept_uploads_out() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Uploader").await;
+    let id = kept_id(&upload_file(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    b.post(&format!("/admin/probe/{id}/confirm"), "").await;
+    kept_id(&upload_file(&b, "fees_terms.xlsx", FEES_XLSX).await);
+    let mut sink = harpseal::backup::MemoryBackup::new();
+    let dumped = harpseal::backup::dump(app.deployment(), &mut sink)
+        .await
+        .unwrap();
     assert!(
-        !harpseal::KeptUpload::discard(&s, "fees", &id)
-            .await
-            .unwrap()
+        dumped
+            .manifest
+            .files
+            .iter()
+            .all(|f| !f.key.starts_with("module-upload/")),
+        "{:?}",
+        dumped.manifest.files
     );
-    assert_eq!(uploads(&h).await, 1);
+    let rows = sink.entries.get("tables/module_upload.ndjson").unwrap();
+    assert!(rows.is_empty(), "no kept upload row");
+    assert_eq!(uploads(&h).await, 2, "the live ones are untouched");
+}
+
+#[tokio::test]
+async fn the_header_token_and_a_non_utf8_csv_get_clear_refusals() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Uploader").await;
+    let big = big_csv(MAX_UPLOAD_BYTES + 128 * 1024);
+    let r = send(&b, UPLOAD, "big.csv", &big, Csrf::Header).await;
+    assert_eq!(r.status, 413, "{}", r.body);
+    // "รหัส" in TIS-620.
+    let r = upload_file(&b, "fees.csv", b"\xc3\xcb\xd1\xca,a\n1,2\n").await;
+    assert_eq!(r.status, 415);
+    assert!(r.body.contains("UTF-8"), "{}", r.body);
+    assert_eq!(uploads(&h).await, 0);
 }
 
 #[tokio::test]
@@ -154,6 +231,7 @@ async fn cancel_deletes_the_file_and_its_record() {
     assert_eq!(kept_keys(&h).len(), 1);
     let r = b.post(&format!("/admin/probe/{id}/cancel"), "").await;
     assert_eq!(r.status, 200);
+    assert_eq!(audited(&h, "module.upload.cancel").await, 1);
     assert!(kept_keys(&h).is_empty());
     assert_eq!(uploads(&h).await, 0);
     let r = b.post(&format!("/admin/probe/{id}/confirm"), "").await;

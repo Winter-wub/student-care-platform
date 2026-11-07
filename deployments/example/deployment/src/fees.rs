@@ -5,15 +5,18 @@
 //! 1. `GET /admin/fees`: the upload form and how many balances are stored.
 //! 2. `POST /admin/fees/upload` ([`ModuleRegistrar::sheet_upload`]: the
 //!    roster's 4 MiB limit, 413 above it): the file must read
-//!    ([`harpseal::sheet`]), then it is kept ([`SheetUpload::keep`]) and
-//!    the browser goes to its preview.
+//!    ([`harpseal::sheet`]), then it is kept ([`Uploads::keep`]) and the
+//!    browser goes to its preview. Only the uploader sees it afterwards.
 //! 3. `GET /admin/fees/{id}`: the rows, the problems (sheet and row), the
 //!    skipped totals rows and hidden sheets, with Confirm (only when
 //!    nothing blocks) and Cancel.
-//! 4. `POST …/confirm` re-reads the kept file ([`KeptUpload::open`]
-//!    refuses one whose hash changed) and enqueues the Job `fees.import`;
-//!    `POST …/cancel` deletes it ([`KeptUpload::discard`]).
-//! 5. The Job reads it once more, writes `fees_balance` and discards it.
+//! 4. `POST …/confirm` re-reads the kept file ([`Uploads::open`] refuses
+//!    one whose hash changed), pins it for the Job ([`Uploads::confirm`]:
+//!    kept a week instead of the rest of the 24 hours) and enqueues the Job
+//!    `fees.import`; `POST …/cancel` deletes it ([`Uploads::discard`]).
+//! 5. The Job reads it once more ([`KeptUpload::open_confirmed`]), writes
+//!    `fees_balance` and deletes it ([`KeptUpload::finish`]). A Job that
+//!    finds no upload succeeds only if `fees_balance` holds its rows.
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
 
 pub mod read;
@@ -25,7 +28,7 @@ use axum::routing::{get, post};
 use harpseal::audit::{self, Actor, RequestCtx, Target};
 use harpseal::{
     AppState, CatalogEntry, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module,
-    ModuleRegistrar, Permission, Result, SheetUpload, Statement, UploadRejection,
+    ModuleRegistrar, Permission, Result, SheetUpload, Statement, UploadRejection, Uploads,
 };
 use maud::{Markup, html};
 
@@ -76,6 +79,8 @@ const TEXTS: &[CatalogEntry] = &[
     ),
     CatalogEntry::new("fees.unreadable", "th", "อ่านไฟล์ไม่ได้"),
     CatalogEntry::new("fees.unreadable", "en", "The file cannot be read."),
+    CatalogEntry::new("fees.queued", "th", "ยืนยันแล้ว กำลังนำเข้า"),
+    CatalogEntry::new("fees.queued", "en", "Confirmed; the import is queued."),
 ];
 
 impl Module for Fees {
@@ -150,6 +155,7 @@ async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
 async fn upload(
     State(s): State<AppState>,
     staff: CurrentStaff,
+    uploads: Uploads,
     ctx: RequestCtx,
     up: std::result::Result<SheetUpload, UploadRejection>,
 ) -> Response {
@@ -162,8 +168,8 @@ async fn upload(
         let text = t(&s, &staff, "fees.unreadable");
         return notice(&s, &staff, StatusCode::UNPROCESSABLE_ENTITY, &text);
     }
-    match up.keep(&s.services, NAME, &staff, &ctx).await {
-        Ok(kept) => see_other(&format!("{BASE}/{}", kept.id)),
+    match uploads.keep(up, &ctx).await {
+        Ok(id) => see_other(&format!("{BASE}/{id}")),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -172,10 +178,11 @@ async fn upload(
 async fn open(
     s: &AppState,
     staff: &CurrentStaff,
+    uploads: &Uploads,
     id: &str,
 ) -> std::result::Result<(KeptUpload, Parsed), Box<Response>> {
     let gone = |key: &str, status| Box::new(notice(s, staff, status, &t(s, staff, key)));
-    match KeptUpload::open(&s.services, NAME, id).await {
+    match uploads.open(id).await {
         Ok(Some(k)) => match k.workbook() {
             Ok(book) => {
                 let parsed = read::parse(&book);
@@ -191,9 +198,10 @@ async fn open(
 async fn preview(
     State(s): State<AppState>,
     staff: CurrentStaff,
+    uploads: Uploads,
     Path(id): Path<String>,
 ) -> Response {
-    let (kept, p) = match open(&s, &staff, &id).await {
+    let (kept, p) = match open(&s, &staff, &uploads, &id).await {
         Ok(x) => x,
         Err(r) => return *r,
     };
@@ -222,15 +230,19 @@ async fn preview(
                 @for h in &p.hidden { li { "ชีตที่ซ่อน: " (h) } }
             }
         }
-        @if p.importable() {
-            form method="post" action=(action("confirm")) {
-                (staff.csrf_field())
-                button type="submit" { (t(&s, &staff, "fees.confirm")) }
+        @if kept.confirmed_at.is_some() {
+            div class="flash ok" role="status" id="queued" { (t(&s, &staff, "fees.queued")) }
+        } @else {
+            @if p.importable() {
+                form method="post" action=(action("confirm")) {
+                    (staff.csrf_field())
+                    button type="submit" { (t(&s, &staff, "fees.confirm")) }
+                }
             }
-        }
-        form method="post" action=(action("cancel")) {
-            (staff.csrf_field())
-            button class="secondary" type="submit" { (t(&s, &staff, "fees.cancel")) }
+            form method="post" action=(action("cancel")) {
+                (staff.csrf_field())
+                button class="secondary" type="submit" { (t(&s, &staff, "fees.cancel")) }
+            }
         }
     };
     render(&s, &staff, StatusCode::OK, body)
@@ -239,24 +251,28 @@ async fn preview(
 async fn confirm(
     State(s): State<AppState>,
     staff: CurrentStaff,
+    uploads: Uploads,
     ctx: RequestCtx,
     Path(id): Path<String>,
 ) -> Response {
-    let (kept, p) = match open(&s, &staff, &id).await {
+    let (kept, p) = match open(&s, &staff, &uploads, &id).await {
         Ok(x) => x,
         Err(r) => return *r,
     };
     if !p.importable() {
         return see_other(&format!("{BASE}/{}", kept.id));
     }
+    // Pinned first, so the sweep cannot take it before the Job runs. A
+    // second click finds it pinned; the Job key keeps it to one Job.
+    if uploads.confirm(&kept.id, &ctx).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     let payload = serde_json::json!({ "upload": kept.id });
     let key = format!("{JOB}:{}", kept.id);
-    if s.jobs
-        .enqueue_unique(&key, JOB, payload, None)
-        .await
-        .is_err()
-    {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    match s.jobs.enqueue_unique(&key, JOB, payload, None).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return see_other(BASE),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
     let after = serde_json::json!({ "file_name": kept.file_name, "sha256": kept.sha256,
                                     "rows": p.fees.len() });
@@ -277,19 +293,15 @@ async fn confirm(
     see_other(BASE)
 }
 
-async fn cancel(
-    State(s): State<AppState>,
-    _staff: CurrentStaff,
-    Path(id): Path<String>,
-) -> Response {
-    match KeptUpload::discard(&s.services, NAME, &id).await {
+async fn cancel(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Response {
+    match uploads.discard(&id, &ctx).await {
         Ok(_) => see_other(BASE),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-/// The Job: imports the kept file, then discards it. Idempotent: a file
-/// already discarded means a previous run finished.
+/// The Job: imports the confirmed file, then deletes it. Idempotent: a
+/// run after a finished one finds no file and the rows already written.
 async fn run(cx: JobContext, job: Job) -> Result<()> {
     let invalid = |m: &str| harpseal::Error::Invalid(format!("fees import: {m}"));
     let payload: serde_json::Value =
@@ -297,7 +309,15 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     let id = payload["upload"]
         .as_str()
         .ok_or_else(|| invalid("payload"))?;
-    let Some(kept) = KeptUpload::open(&cx.services, NAME, id).await? else {
+    let Some(kept) = KeptUpload::open_confirmed(&cx.services, NAME, id).await? else {
+        // Done only if a previous run wrote the rows; otherwise the file
+        // was lost before the import (expired, deleted): fail loudly.
+        let q = Statement::new("SELECT 1 FROM fees_balance WHERE upload_id = ? LIMIT 1").bind(id);
+        if cx.services.db.query(q).await?.is_empty() {
+            return Err(invalid(
+                "the confirmed upload is gone and nothing was imported",
+            ));
+        }
         return Ok(());
     };
     let book = kept
@@ -325,6 +345,6 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
         })
         .collect();
     cx.services.db.batch(stmts).await?;
-    KeptUpload::discard(&cx.services, NAME, id).await?;
+    KeptUpload::finish(&cx.services, NAME, id).await?;
     Ok(())
 }

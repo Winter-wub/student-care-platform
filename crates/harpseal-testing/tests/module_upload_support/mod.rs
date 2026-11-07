@@ -5,13 +5,13 @@
 #![allow(dead_code)]
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use harpseal::{
-    AppState, CurrentStaff, DeploymentConfig, KeptUpload, Module, ModuleRegistrar, Permission,
-    RequestCtx, SheetUpload, Statement, Timestamp, UploadRejection,
+    DeploymentConfig, KeptUpload, Module, ModuleRegistrar, Permission, RequestCtx, SheetUpload,
+    Statement, Timestamp, UploadRejection, Uploads,
 };
 use harpseal_testing::{Browser, Harness, TEST_CONFIG, TestApp, TestResponse};
 use http::{Request, header};
@@ -37,6 +37,7 @@ impl Module for Probe {
 
     fn register(&self, r: &mut ModuleRegistrar) {
         r.permission(Permission::new("probe.upload", "Upload probe files"))
+            .permission(Permission::new("probe.all", "Every probe upload"))
             .sheet_upload("probe.upload", "/probe/upload", post(upload))
             .back_office("probe.upload", "/probe/{id}/confirm", post(confirm))
             .back_office("probe.upload", "/probe/{id}/cancel", post(cancel));
@@ -45,8 +46,7 @@ impl Module for Probe {
 
 /// `kept <id> <kind> sheets=<names> rows=<data rows per sheet> note=<field>`.
 async fn upload(
-    State(s): State<AppState>,
-    staff: CurrentStaff,
+    uploads: Uploads,
     ctx: RequestCtx,
     up: Result<SheetUpload, UploadRejection>,
 ) -> Response {
@@ -76,31 +76,37 @@ async fn upload(
         .filter(|s| !s.is_hidden())
         .map(|s| s.table(&spec).map_or(0, |t| t.rows().len()).to_string())
         .collect();
-    let kept = match up.keep(&s.services, NAME, &staff, &ctx).await {
-        Ok(k) => k,
+    let note = up.fields.get("note").cloned().unwrap_or_default();
+    let kind = up.kind.as_str();
+    let id = match uploads.keep(up, &ctx).await {
+        Ok(id) => id,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
-    let note = up.fields.get("note").cloned().unwrap_or_default();
     let body = format!(
-        "kept {} {} sheets={} rows={} note={note}",
-        kept.id,
-        kept.kind.as_str(),
+        "kept {id} {kind} sheets={} rows={} note={note}",
         names.join("|"),
         rows.join("|")
     );
     (StatusCode::OK, body).into_response()
 }
 
-async fn confirm(State(s): State<AppState>, Path(id): Path<String>) -> Response {
-    match KeptUpload::open(&s.services, NAME, &id).await {
-        Ok(Some(k)) => (StatusCode::OK, format!("confirmed {}", k.sha256)).into_response(),
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
-        Err(_) => StatusCode::CONFLICT.into_response(),
+/// Opens (hash check), then pins: `confirmed <pinned now?>`. Staff
+/// holding `probe.all` see every upload.
+async fn confirm(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Response {
+    let uploads = uploads.shared_with("probe.all");
+    match uploads.open(&id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => return StatusCode::CONFLICT.into_response(),
+    }
+    match uploads.confirm(&id, &ctx).await {
+        Ok(pinned) => (StatusCode::OK, format!("confirmed {pinned}")).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-async fn cancel(State(s): State<AppState>, Path(id): Path<String>) -> Response {
-    match KeptUpload::discard(&s.services, NAME, &id).await {
+async fn cancel(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Response {
+    match uploads.shared_with("probe.all").discard(&id, &ctx).await {
         Ok(true) => StatusCode::OK.into_response(),
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -112,7 +118,8 @@ pub async fn boot() -> (Harness, TestApp) {
     let h = Harness::new();
     let toml = TEST_CONFIG.replace(
         "Viewer = [\"kernel.student.view\"]",
-        "Viewer = [\"kernel.student.view\"]\nUploader = [\"probe.upload\"]",
+        "Viewer = [\"kernel.student.view\"]\nUploader = [\"probe.upload\"]\n\
+         Clerk = [\"probe.upload\"]\nSupervisor = [\"probe.upload\", \"probe.all\"]",
     );
     let config = DeploymentConfig::from_toml(&toml).unwrap();
     let d = h.builder().config(config).module(Probe).build().unwrap();
@@ -197,6 +204,21 @@ pub fn kept_id(r: &TestResponse) -> String {
         .nth(1)
         .expect("kept <id>")
         .to_string()
+}
+
+/// The confirmed upload `id` as the import Job reads it.
+pub async fn job_sees(h: &Harness, id: &str) -> bool {
+    KeptUpload::open_confirmed(&h.services(), NAME, id)
+        .await
+        .unwrap()
+        .is_some()
+}
+
+/// Audit rows with `action`.
+pub async fn audited(h: &Harness, action: &str) -> i64 {
+    let q = Statement::new("SELECT COUNT(*) AS n FROM audit_log WHERE action = ?").bind(action);
+    let rows = h.db().query(q).await.unwrap();
+    rows.get(0, "n").and_then(|v| v.as_i64()).unwrap_or(-1)
 }
 
 /// `module_upload` rows.

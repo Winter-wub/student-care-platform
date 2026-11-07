@@ -193,3 +193,61 @@ async fn the_page_needs_its_permission_and_the_upload_its_size() {
         0
     );
 }
+
+#[tokio::test]
+async fn a_confirm_a_minute_before_expiry_is_still_imported_after_it() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    h.clock().advance_ms(harpseal::UPLOAD_KEEP_MS - 60_000);
+    assert_eq!(
+        b.login("administrator@sealbay.example", PASSWORD)
+            .await
+            .status,
+        303
+    );
+    assert_eq!(b.get(&path).await.status, 200, "a fresh token, still kept");
+    assert_eq!(b.post(&format!("{path}/confirm"), "").await.status, 303);
+    let page = b.get(&path).await;
+    assert!(page.body.contains("id=\"queued\""), "confirmed once");
+    // The Job runs only after the 24 hours are over.
+    h.clock().advance_ms(120_000);
+    let report = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(report.failed + report.retried, 0, "{:?}", report.errors);
+    assert_eq!(count(&h, "SELECT COUNT(*) AS n FROM fees_balance").await, 2);
+    assert_eq!(
+        count(&h, "SELECT COUNT(*) AS n FROM module_upload").await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_confirmed_upload_lost_before_the_import_fails_the_job() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    assert_eq!(b.post(&format!("{path}/confirm"), "").await.status, 303);
+    let id = path.rsplit('/').next().unwrap();
+    // Lost behind the Job's back (an operator, a failed object store).
+    assert!(
+        harpseal::KeptUpload::finish(&h.services(), fees::NAME, id)
+            .await
+            .unwrap()
+    );
+    let report = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(report.retried, 1, "never reported as done");
+    let failed = "SELECT COUNT(*) AS n FROM job WHERE kind = 'fees.import' \
+                  AND state <> 'done' AND last_error LIKE '%nothing was imported%'";
+    assert_eq!(count(&h, failed).await, 1);
+    assert_eq!(count(&h, "SELECT COUNT(*) AS n FROM fees_balance").await, 0);
+}
