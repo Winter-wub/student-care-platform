@@ -284,4 +284,56 @@ pub(crate) const FORM: &[E] = th_en![
         "เงื่อนไขผู้รับไม่ถูกต้อง",
         "The Audience filters are not valid."
     ),
+    (
+        "announcements.form.students_too_many",
+        "เลือกรายชื่อเองได้ไม่เกิน 2000 รหัส",
+        "A hand-picked list holds at most 2000 student IDs."
+    ),
+    (
+        "announcements.form.hand_picked",
+        "รายชื่อที่เลือกเอง (รหัสนักศึกษา)",
+        "Hand-picked Students (student IDs)"
+    ),
+    (
+        "announcements.form.hand_picked_help",
+        "วางรหัสนักศึกษา บรรทัดละรหัส หรือคั่นด้วย , หรือเว้นวรรค ถ้ามีเงื่อนไขอื่นด้วย ต้องอยู่ในรายชื่อและตรงเงื่อนไขอื่นพร้อมกัน ถ้ากรอกแค่รายชื่อ จะส่งเฉพาะคนในรายชื่อ",
+        "Paste student IDs, one per line or separated by , or spaces. With other filters a Student must be on the list and match them; on its own the list is the whole Audience."
+    ),
+    (
+        "announcements.form.pick_search",
+        "ค้นหานักศึกษาเพื่อเพิ่มเข้ารายชื่อ (ชื่อหรือรหัส)",
+        "Find Students to add (name or ID)"
+    ),
+    ("announcements.form.pick_add", "เพิ่ม", "Add"),
+    (
+        "announcements.form.pick_none",
+        "ไม่พบนักศึกษา",
+        "No Students found."
+    ),
+    (
+        "announcements.form.pick_more",
+        "แสดง 50 คนแรก ค้นหาให้แคบลงเพื่อเห็นคนอื่น",
+        "Showing the first 50: narrow the search to see others."
+    ),
+    (
+        "announcements.form.hp_listed",
+        "รหัสในรายชื่อ",
+        "IDs on the list"
+    ),
+    (
+        "announcements.form.hp_unknown",
+        "ไม่พบรหัสเหล่านี้ จะไม่ส่ง",
+        "Not found, will not be sent"
+    ),
+    (
+        "announcements.form.hp_unlinked",
+        "ยังไม่ได้เชื่อมบัญชี จะไม่ส่ง",
+        "No live Link, will not be sent"
+    ),
+    (
+        "announcements.form.hp_filtered",
+        "ไม่ตรงเงื่อนไขอื่น จะไม่ส่ง:",
+        "Do not match the other filters, will not be sent:"
+    ),
+    ("announcements.form.hp_more", "และอีก", "and"),
 ];

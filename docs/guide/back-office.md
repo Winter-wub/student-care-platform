@@ -39,7 +39,14 @@ sends it now or at a set time: Job `announcements.deliver` snapshots one
 delivery row per live Link and starts one `announcements.deliver.channel` per
 multicast group of 500 (LINE) or 25 accounts (Telegram, paced). The Card has
 "รับทราบ" (`announcements.ack.<id>`) and a Mini App button; the Menu gets
-"ข่าวล่าสุด". The detail page shows acknowledged / in Audience and every
+"ข่าวล่าสุด". The Audience can also be a hand-picked list of student IDs (up to
+2,000): paste them one per line or separated by commas or spaces, or search the
+Students and press "เพิ่ม" (needs `kernel.student.view`). The list is one more
+AND filter; on its own it is the whole Audience. The preview lists the IDs that
+match nobody (or do not fit `[student] id_pattern`) and the Students without a
+live Link; none of them is sent to. The list is saved with the announcement
+(shown on its detail page) and the audit rows record its size, not the IDs.
+The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`, "ส่งซ้ำ" is a new round,
 and a retract deletes where the Channel can (Telegram, within 48 h). Edits and
 deletions are paced (about 250 a minute per Channel, resuming after a rate

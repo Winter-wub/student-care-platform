@@ -53,7 +53,7 @@ The tie between a Channel Account and a Student, created after Verification. A S
 _Avoid_: binding, registration, connection
 
 **Audience** (กลุ่มผู้รับ):
-A set of Students selected by attribute (year, programme, Locale, link status) or Tag. Announcements and reminders are sent to an Audience.
+A set of Students selected by attribute (year, programme, Locale, link status), Tag or a hand-picked list of student IDs; the filters combine with AND. Announcements and reminders are sent to an Audience.
 _Avoid_: target group, segment, recipients
 
 **Tag** (ป้าย):

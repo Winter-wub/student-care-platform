@@ -1,27 +1,21 @@
-//! `GET/POST /admin/announcements/new`, `GET/POST …/{id}/edit` and the
-//! live Audience count `POST …/audience` (an HTMX fragment: Students,
-//! Links per Channel and the metered Push estimate).
+//! `GET/POST /admin/announcements/new` and `GET/POST …/{id}/edit`. The
+//! live Audience count is [`super::page_count`], the Student picker
+//! [`super::page_pick`].
 
 use axum::Form;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::Response;
 use maud::{Markup, html};
 
 use super::form::{Fields, MAX_BODY, MAX_TITLE};
 use super::store::{self, Row};
 use super::view::View;
-use super::{page_detail, service};
-use crate::audience::{self, Counts};
+use super::{page_count, page_detail, page_pick, service};
 use crate::config::AttributeType;
-use crate::kernel::students::channel_label;
-use crate::kernel::text::fill;
-use crate::kernel::usage::{self, MonthSummary};
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 type Posted = Form<Vec<(String, String)>>;
-
-const AUDIENCE_PATH: &str = "/admin/announcements/audience";
 
 pub(super) async fn new_page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     let v = View::new(&s, &staff);
@@ -105,6 +99,7 @@ pub(super) async fn edit_post(
         // Only texts and expiry change once sent.
         f.attrs = row.audience.attributes.clone();
         f.tags = row.audience.tags.join(", ");
+        f.students = row.audience.students.join("\n");
         f.unreachable = row.audience.include_unreachable;
         f.when = "now".into();
     }
@@ -132,97 +127,12 @@ pub(super) async fn edit_post(
     }
 }
 
-/// The live count fragment for the posted form.
-pub(super) async fn audience_fragment(
-    State(s): State<AppState>,
-    staff: CurrentStaff,
-    Form(pairs): Posted,
-) -> Response {
-    let v = View::new(&s, &staff);
-    let a = Fields::from_pairs(&pairs).audience();
-    let counts = audience::count(&s.deployment, &a).await.ok();
-    let kinds: Vec<String> = counts
-        .iter()
-        .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))
-        .collect();
-    let used = usage::month_summaries(&s.deployment, &kinds)
-        .await
-        .unwrap_or_default();
-    (
-        StatusCode::OK,
-        Html(count_box(&v, counts.as_ref(), &used).into_string()),
-    )
-        .into_response()
-}
-
 fn detail(id: &str) -> String {
     format!("/admin/announcements/{id}")
 }
 
 fn editable(row: &Row) -> bool {
     matches!(row.status.as_str(), "draft" | "scheduled" | "sent")
-}
-
-/// Count, per Channel, and "จะใช้ push ประมาณ x ครั้ง": one metered unit per
-/// recipient on a metered Channel (one Card is one Push request).
-/// `used`: this month's usage per Channel (#26), shown beside the estimate.
-fn count_box(v: &View<'_>, counts: Option<&Counts>, used: &[(String, MonthSummary)]) -> Markup {
-    let Some(c) = counts else {
-        return html! {
-            div id="audience-count" class="card count" hx-post=(AUDIENCE_PATH)
-                hx-trigger="change from:closest form" hx-include="closest form"
-                hx-target="this" hx-swap="outerHTML" {
-                p class="muted" { (v.t("announcements.form.audience_invalid")) }
-            }
-        };
-    };
-    let d = v.s.deployment.as_ref();
-    let metered = |kind: &str| {
-        d.channel(kind).is_some_and(|ch| ch.multicast().is_some())
-            || d.config().quotas.contains_key(kind)
-    };
-    let units: usize = c
-        .per_channel
-        .iter()
-        .filter(|(k, _)| metered(k))
-        .map(|(_, (active, _))| *active)
-        .sum();
-    html! {
-        div id="audience-count" class="card count" hx-post=(AUDIENCE_PATH)
-            hx-trigger="change from:closest form" hx-include="closest form"
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" {
-            p { strong { (v.t("announcements.form.students")) " " (c.students) } }
-            ul class="list" {
-                @for (kind, (active, unreachable)) in &c.per_channel {
-                    li {
-                        (channel_label(kind)) ": " (active) " " (v.t("announcements.form.links"))
-                        @if *unreachable > 0 {
-                            " (" (unreachable) " " (v.t("announcements.form.unreachable_skipped")) ")"
-                        }
-                        @if metered(kind) {
-                            " · " (v.t("announcements.form.estimate_channel")) " " (active)
-                        }
-                        @if let Some((_, m)) = used.iter().find(|(k, _)| k == kind) {
-                            " · " span class="month-used" { (month_used(v, m)) }
-                        }
-                    }
-                }
-            }
-            p class="estimate" { (v.t("announcements.form.estimate")) " " (units) " " (v.t("announcements.form.times")) }
-        }
-    }
-}
-
-/// "ใช้ไปแล้ว X/Y เดือนนี้" (or without a Quota, "ใช้ไปแล้ว X เดือนนี้").
-fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
-    let used = m.used.to_string();
-    match m.cap {
-        Some(cap) => fill(
-            &v.t("kernel.usage.send_used"),
-            &[("used", &used), ("cap", &cap.to_string())],
-        ),
-        None => fill(&v.t("kernel.usage.send_used_no_cap"), &[("used", &used)]),
-    }
 }
 
 fn form_page(
@@ -333,11 +243,12 @@ fn form_page(
                         label for="tags" { (v.t("announcements.form.tags")) }
                         input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));
                     }
+                    (page_pick::field(v, f))
                     label class="check" {
                         input type="checkbox" name="unreachable" value="1" checked[f.unreachable];
                         " " (v.t("announcements.form.include_unreachable"))
                     }
-                    (count_box_placeholder(v))
+                    (page_count::placeholder(v))
                 }
             }
             (page_detail::preview(v, &f.title_th, &f.body_th, f.require_ack))
@@ -355,15 +266,4 @@ fn form_page(
         }
     };
     v.page(status, &title, body)
-}
-
-/// The count box before its first HTMX load.
-fn count_box_placeholder(v: &View<'_>) -> Markup {
-    html! {
-        div id="audience-count" class="card count" hx-post=(AUDIENCE_PATH)
-            hx-trigger="load, change from:closest form" hx-include="closest form"
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" {
-            p class="muted" { (v.t("announcements.form.counting")) }
-        }
-    }
 }
