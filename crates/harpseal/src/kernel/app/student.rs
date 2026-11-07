@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value as Json};
 
 use super::view;
-use crate::auth::{CSRF_FIELD, CSRF_HEADER, ct_eq, form_field};
+use crate::auth::{CSRF_FIELD, CSRF_HEADER, ct_eq, form_field, over_limit};
 use crate::kernel::students::is_htmx;
 use crate::kernel::text::Texts;
 use crate::{AppState, ErrorReport, Locale, PageState, StudentId};
@@ -37,15 +37,21 @@ const FORM_LIMIT: usize = 64 * 1024;
 /// - a session whose account has no active Link (revoked, `left`): the
 ///   "go back to the chat and link" page;
 /// - the database unreachable: a bare 503;
-/// - an HTMX request in any of these cases: `HX-Redirect` to this path,
-///   so the whole page reloads into the answer instead of a fragment.
+/// - an HTMX request in any of these cases: `HX-Redirect`, so the whole
+///   page reloads into the answer instead of a fragment: to this path for
+///   a `GET`, else to the page the request came from (`HX-Current-URL`,
+///   kept on `/app`), since HTMX follows the redirect with a `GET`.
 ///
 /// **Requests that may change data** (any method but `GET`, `HEAD`,
 /// `OPTIONS`) are refused with 403 when `Sec-Fetch-Site` says
 /// `cross-site`, and unless they carry this session's CSRF token in the
 /// `X-CSRF-Token` header (HTMX sends it from [`AppStudent::page`]). A
 /// plain HTML form cannot set a header: take [`AppForm`] instead, which
-/// reads the `_csrf` field. A handler cannot skip the check.
+/// reads the `_csrf` field. A handler cannot skip the check. `OPTIONS`
+/// counts as safe: never change data on it (e.g. through `any(..)`).
+/// A `multipart/form-data` form has no `AppForm`: send it with HTMX
+/// (`hx-encoding="multipart/form-data"`) or `fetch`, which carry the
+/// header; a plain multipart `<form>` always gets 403.
 ///
 /// A route outside `/app` never sees the cookie (`Path=/app`), so its
 /// handler always answers the entry page, which then signs in to `/app`.
@@ -143,14 +149,21 @@ impl AppStudent {
             ));
         }
         let htmx = is_htmx(headers);
+        // Where HTMX reloads the whole page: this path for a GET, the page
+        // the request came from otherwise (a POST-only path would be 405).
+        let reload = if matches!(parts.method, Method::GET | Method::HEAD) {
+            path.clone()
+        } else {
+            super::safe_next(current_path(headers)).to_string()
+        };
         let (v, texts) = match super::pages::open(s, headers, &path).await {
             Ok(x) => x,
-            Err(r) if htmx => return Err(Box::new(super::pages::hx_redirect_from(&path, &r))),
+            Err(r) if htmx => return Err(Box::new(super::pages::hx_redirect_from(&reload, &r))),
             Err(r) => return Err(r),
         };
         let Some(st) = v.student else {
             if htmx {
-                return Err(Box::new(super::pages::hx_redirect(&path)));
+                return Err(Box::new(super::pages::hx_redirect(&reload)));
             }
             return Err(Box::new(view::not_linked(s, &texts, Some(&v.csrf))));
         };
@@ -186,6 +199,18 @@ fn cross_site(headers: &HeaderMap) -> bool {
         .is_some_and(|v| v == "cross-site")
 }
 
+/// The path of HTMX's `HX-Current-URL` (the page the request came from),
+/// `""` without one; [`super::safe_next`] then keeps it on `/app`.
+fn current_path(headers: &HeaderMap) -> &str {
+    let url = headers
+        .get("hx-current-url")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default();
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let path = rest.find('/').map_or("", |i| &rest[i..]);
+    path.split(['?', '#']).next().unwrap_or_default()
+}
+
 fn header_token(headers: &HeaderMap) -> &str {
     headers
         .get(CSRF_HEADER)
@@ -207,7 +232,8 @@ impl FromRequestParts<AppState> for AppStudent {
 
 /// A form posted from a Module's Mini App page, and the [`AppStudent`]
 /// who posted it: the extractor for a plain `<form method="post">`
-/// (`application/x-www-form-urlencoded`, at most 64 KiB) that carries
+/// (`application/x-www-form-urlencoded` only, at most 64 KiB: a larger
+/// body is 413, a broken one 400) that carries
 /// `<input type="hidden" name="_csrf" value=(me.csrf_token())>`.
 ///
 /// It answers like [`AppStudent`] (cross-site 403, entry page, …), then
@@ -233,8 +259,13 @@ where
     async fn from_request(req: Request, s: &AppState) -> Result<Self, Response> {
         let (parts, body) = req.into_parts();
         let student = AppStudent::load(&parts, s).await.map_err(|r| *r)?;
-        let Ok(bytes) = axum::body::to_bytes(body, FORM_LIMIT).await else {
-            return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
+        let bytes = match axum::body::to_bytes(body, FORM_LIMIT).await {
+            Ok(b) => b,
+            Err(e) if over_limit(&e) => {
+                return Err(StatusCode::PAYLOAD_TOO_LARGE.into_response());
+            }
+            // A client that went away, a broken body: not "too large".
+            Err(_) => return Err(StatusCode::BAD_REQUEST.into_response()),
         };
         let text = std::str::from_utf8(&bytes).unwrap_or_default();
         let sent = match header_token(&parts.headers) {

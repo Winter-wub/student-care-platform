@@ -90,7 +90,7 @@ pub(crate) async fn check_csrf(
 }
 
 /// Whether reading stopped at the length limit (anywhere in the chain).
-fn over_limit(e: &axum::Error) -> bool {
+pub(crate) fn over_limit(e: &axum::Error) -> bool {
     let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(e);
     while let Some(err) = cur {
         if err.is::<LengthLimitError>() {

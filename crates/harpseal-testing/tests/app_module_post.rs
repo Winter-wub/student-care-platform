@@ -109,31 +109,55 @@ async fn cross_site_posts_are_refused_even_with_the_token() {
 }
 
 #[tokio::test]
-async fn without_a_session_a_post_gets_the_entry_page_and_htmx_a_redirect() {
+async fn without_a_session_a_post_gets_the_entry_page_and_htmx_a_redirect_to_its_page() {
     let (h, app) = boot().await;
     let r = app.request(post(FORM, &[], "text=hi&_csrf=00")).await;
     assert!(is_entry(&r), "{}", r.body);
-    // HTMX would swap the entry page into the fragment: a full reload.
-    let hx = [("hx-request", "true")];
+    // HTMX would swap the entry page into the fragment: a full reload, and
+    // HTMX follows `HX-Redirect` with a GET, so a POST goes back to the
+    // page it came from (never to its own POST-only path: 405, blank).
+    let from = ("hx-current-url", "https://sealbay.example/app/probe?x=1");
+    let hx = [("hx-request", "true"), from];
     let r = app.request(post(NOTE, &hx, "")).await;
     assert_eq!(r.status, 200);
-    assert_eq!(r.header("hx-redirect"), Some(NOTE));
+    assert_eq!(r.header("hx-redirect"), Some(PAGE));
     assert!(!r.body.contains("xchg"));
+    assert!(is_entry(&app.get(PAGE).await), "the reload signs in again");
+    // No HX-Current-URL, or one off `/app`: the home.
+    for current in [None, Some("https://evil.example//evil.example/x")] {
+        let mut hx = vec![("hx-request", "true")];
+        hx.extend(current.map(|c| ("hx-current-url", c)));
+        let r = app.request(post(NOTE, &hx, "")).await;
+        assert_eq!(r.header("hx-redirect"), Some("/app"), "{current:?}");
+    }
+    // A GET reloads itself.
     let get = http::Request::get(PAGE)
         .header("hx-request", "true")
         .body(Body::empty())
         .unwrap();
     assert_eq!(app.request(get).await.header("hx-redirect"), Some(PAGE));
-    // A revoked Link: the same for HTMX, the not-linked page otherwise.
+    // A revoked Link: the same for HTMX; the reload shows "not linked".
     let b = signed_in(&h, &app, "line").await;
     let t = token(&b).await;
     run(&h, "UPDATE link SET status = 'revoked' WHERE id = 'l-line'").await;
     let r = b
         .send(post(
             NOTE,
-            &[("hx-request", "true"), ("x-csrf-token", &t)],
+            &[("hx-request", "true"), ("x-csrf-token", &t), from],
             "",
         ))
         .await;
-    assert_eq!(r.header("hx-redirect"), Some(NOTE));
+    assert_eq!(r.header("hx-redirect"), Some(PAGE));
+    let page = b.get(PAGE).await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("ยังไม่ได้เชื่อมกับรหัสนักศึกษา"));
+}
+
+#[tokio::test]
+async fn a_form_over_64_kib_is_413() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "line").await;
+    let t = token(&b).await;
+    let big = format!("_csrf={t}&text={}", "a".repeat(64 * 1024));
+    assert_eq!(b.send(post(FORM, &[], &big)).await.status, 413);
 }

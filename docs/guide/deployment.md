@@ -78,8 +78,10 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   called: the Student gets the Kernel's entry page, which signs in through
   the platform and comes back to the same path. An account whose Link was
   revoked gets the "go back to the chat" page. For an HTMX request both
-  answer `HX-Redirect` to the same path, so the whole page reloads. None
-  of these is a 500.
+  answer `HX-Redirect`, so the whole page reloads: to the same path for a
+  `GET`, else to the page the request came from (`HX-Current-URL`, kept on
+  `/app`), because HTMX follows the redirect with a `GET`. None of these
+  is a 500.
 - **Changing data is CSRF-checked by the extractors.** For any method but
   `GET`, `HEAD` and `OPTIONS`, both extractors refuse with 403 a request
   whose `Sec-Fetch-Site` is `cross-site` (another bot's Mini App inside
@@ -88,8 +90,14 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   a page rendered with `me.page`. A plain `<form method="post">` takes
   `AppForm<T>` instead: it also accepts the `_csrf` field
   (`input type="hidden" name="_csrf" value=(me.csrf_token())`), then
-  decodes the body as `T` and gives `f.student` and `f.form`. A handler
-  cannot skip the check.
+  decodes the body as `T` and gives `f.student` and `f.form`
+  (urlencoded only, at most 64 KiB). A handler cannot skip the check.
+- `AppForm` does not read `multipart/form-data`: a plain multipart
+  `<form>` always gets 403 (it fails closed). Send a file with HTMX
+  (`hx-encoding="multipart/form-data"`) or `fetch`, which carry the
+  `X-CSRF-Token` header that `AppStudent` checks.
+- `OPTIONS` counts as safe, like `GET` and `HEAD`: never change data on
+  it, for example through `any(..)` routing.
 - `me.t(key)` and `me.tf(key, args)` read texts in the Student's Locale
   with the back office's overrides. `me.page(&s, title, body)` renders the
   Mini App shell (branding, CSRF header for HTMX). Every `/app` response,
