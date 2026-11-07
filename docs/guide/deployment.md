@@ -1,8 +1,9 @@
 # Building a Deployment
 
 How a Deployment is assembled from the Core, what `build()` refuses, how
-Jobs run, and how sends, retries and webhook duplicates behave. Back to the
-[README](https://github.com/Winter-wub/student-care-platform#readme).
+Jobs run, and how sends, retries and webhook duplicates behave. A Module's
+Notice to chosen Students (chat or email) is in [its own page](notify.md).
+Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ### Public API rules
 
@@ -121,12 +122,6 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
 - Test it at the seam: `Browser::open_mini_app(&fake, external_id, path)`
   signs in on the Fake Channel. See `deployments/example` (`my_info.rs`)
   and `crates/harpseal-testing/tests/app_module*.rs` for LINE and Telegram.
-
-#### Notifying chosen Students
-
-A Module sends a Notice to Students it chose (chat when linked, email
-otherwise) with `JobContext::notify` or `PageState::notify`: see
-[Notifying chosen Students](notify.md).
 
 #### Jobs
 
