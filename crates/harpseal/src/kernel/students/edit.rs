@@ -177,13 +177,16 @@ fn render(
                             option value=(cur) selected { (cur) }
                         }
                         @for opt in &spec.values {
-                            option value=(opt) selected[*opt == cur] { (opt) }
+                            option value=(opt) selected[*opt == cur] { (v.value_label(spec, opt)) }
                         }
                     }
                 }
             }
             AttributeType::Date => text_input(&name, "date"),
-            AttributeType::Integer | AttributeType::Number => text_input(&name, "text"),
+            AttributeType::Integer | AttributeType::Number => html! {
+                (text_input(&name, "text"))
+                @if let Some(range) = spec.range_text() { " " span class="muted" { (range) } }
+            },
             _ => text_input(&name, "text"),
         };
         fields.push(Field {

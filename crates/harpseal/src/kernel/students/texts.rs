@@ -152,6 +152,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Must be a date (YYYY-MM-DD)"
     ),
     (
+        "kernel.students.err_range",
+        "ค่าอยู่นอกช่วงที่กำหนด",
+        "Outside the allowed range"
+    ),
+    (
         "kernel.students.err_enum",
         "ต้องเลือกจากรายการ",
         "Must be one of the listed values"

@@ -106,6 +106,11 @@ tags         = { column = "กลุ่ม", separator = ";" }
 column = "หลักสูตร"
 type = "enum"
 values = ["MSC", "MSC-Intl"]
+# What Staff read for each value (Students list, detail, edit form, Audience
+# form); the stored value and the roster column keep `MSC` / `MSC-Intl`. A
+# roster cell may hold the value or the label in the default Locale (here
+# Thai); a Locale without a label falls back to the default Locale's.
+value_labels = { MSC = { th = "วิทยาศาสตรมหาบัณฑิต", en = "Master of Science" }, MSC-Intl = { th = "วิทยาศาสตรมหาบัณฑิต (นานาชาติ)", en = "Master of Science (International)" } }
 label = { th = "หลักสูตร", en = "Programme" }
 shown_in_list = true
 # Shown to the Student on the "My info" Mini App page.
@@ -115,6 +120,9 @@ order = 1
 [roster.attributes.year]
 column = "ชั้นปี"
 type = "integer"
+# Inclusive: a year outside 1-6 blocks the roster import and the edit form.
+min = 1
+max = 6
 label = { th = "ชั้นปี", en = "Year" }
 shown_in_list = true
 student_visible = true

@@ -242,7 +242,9 @@ pub(crate) fn validate_against(
         }
         let mut attributes = Map::new();
         for (key, spec) in roster.attributes_in_order() {
-            match spec.parse(row.get(&spec.column).unwrap_or_default()) {
+            // An enum cell may name the value by its label (#81).
+            let cell = row.get(&spec.column).unwrap_or_default();
+            match spec.parse_import(cell, &config.default_locale) {
                 Ok(Some(v)) => {
                     attributes.insert(key.to_string(), v);
                 }
@@ -347,6 +349,7 @@ fn attr_reason(e: AttrError) -> &'static str {
         AttrError::NotInteger => "not_integer",
         AttrError::NotNumber => "not_number",
         AttrError::NotDate => "not_date",
+        AttrError::OutOfRange => "out_of_range",
         _ => "not_in_list",
     }
 }

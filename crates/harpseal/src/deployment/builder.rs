@@ -64,7 +64,7 @@ impl DeploymentBuilder {
             .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
         config
             .roster
-            .check()
+            .check(&config.default_locale)
             .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
         config
             .backup

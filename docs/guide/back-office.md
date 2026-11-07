@@ -51,6 +51,38 @@ The attributes come from `[roster.attributes.<key>]` in
 on a Module's Mini App page only when `true`) and `order` (see
 `harpseal::RosterConfig`).
 
+An `integer` or `number` attribute can set `min` and `max` (inclusive; either
+one alone is fine): `min = 1`, `max = 6` for a year level. A value outside the
+range is a **blocking** problem of the import (row, column and the range in the
+report) and the Student's edit form refuses it with the same message; only the
+fields Staff change are checked, so a Student already stored outside a newly
+set range can still be edited. An `enum` attribute can give each value a
+display label per Locale:
+
+```toml
+[roster.attributes.status]
+column = "สถานะ"
+type = "enum"
+values = ["current", "graduated"]
+value_labels = { current = { th = "กำลังศึกษา", en = "Studying" }, graduated = { th = "จบการศึกษา" } }
+```
+
+Staff read the label (in their own Locale, else the default Locale's, else the
+value) on the Students list and Student page, the edit form's select, the
+import page's list of what a cell may hold, the import report (the allowed
+values, each as `label (value)`) and the Audience form and its summary. Stored
+data, the Audience filter and a Module's Mini App page keep the **value**. A
+roster cell may hold the value or the label in the Deployment's default Locale
+(exact after trimming; ASCII letters in either case, so `studying` matches
+`Studying`); the Student is stored with the value. A cell that is a value is
+never read as a label. A label in another Locale is not read. The Deployment
+does not build if `min` is above `max`, `min` / `max` sit on a type that is not
+a number (or are not whole numbers on an `integer`), `value_labels` sit on a
+type that is not an `enum`, name a value that is not in `values`, are empty,
+are shared by two values in one Locale, or (in the default Locale) equal
+another value. Configs without these keys behave as before, and any other key
+is refused.
+
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
@@ -65,7 +97,7 @@ empty, hold only `full` / `upsert` and include `default_mode`; a bad value stops
 the Deployment from building). The preview and the import page name the mode.
 A **blocking** problem refuses the
 whole file with a CSV report: an empty or malformed student id, a duplicate id in
-the file, a required value missing or off its type or list, an unreadable value,
+the file, a required value missing or off its type, list or range, an unreadable value,
 data in a column without a header, a hidden roster sheet in `full` mode. A
 **warning** does not: the row imports and the preview lists it (sheet, row, column
 and a count per class, with the same list in `report.csv`, which gains a level

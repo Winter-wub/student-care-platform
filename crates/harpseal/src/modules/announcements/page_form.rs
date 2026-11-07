@@ -277,7 +277,7 @@ fn form_page(
                                     label class="check" {
                                         input type="checkbox" name=(format!("attr.{key}")) value=(value)
                                             checked[chosen.contains(value)];
-                                        " " (value)
+                                        " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
                                     }
                                 }
                             } @else {
