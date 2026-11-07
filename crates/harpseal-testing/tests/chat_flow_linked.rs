@@ -203,15 +203,7 @@ async fn blocked_then_unblocked_welcomes_back_without_a_new_code() {
     c.link("68010001").await;
     let emails = h.emails().len();
 
-    assert!(
-        c.send(Inbound::Blocked {
-            from: c.who.clone(),
-            event_id: None,
-            redelivery: false
-        })
-        .await
-        .is_empty()
-    );
+    assert!(c.send(Inbound::blocked(c.who.clone())).await.is_empty());
     let link = app.query("SELECT status FROM link").await;
     assert_eq!(
         link.get(0, "status").unwrap().as_text(),
@@ -240,12 +232,7 @@ async fn blocked_then_unblocked_welcomes_back_without_a_new_code() {
     assert_eq!(h.emails().len(), emails, "no new OTP");
 
     // Blocked again, then any Inbound (an Action) also recovers and runs.
-    c.send(Inbound::Blocked {
-        from: c.who.clone(),
-        event_id: None,
-        redelivery: false,
-    })
-    .await;
+    c.send(Inbound::blocked(c.who.clone())).await;
     let seen = c.press("hello.say").await;
     assert_eq!(
         text_of(&seen[0]),
@@ -259,19 +246,7 @@ async fn a_blocked_account_before_link_starts_over_when_back() {
     let (h, app) = boot(FakeProfile::Full).await;
     let mut c = Chat::new(&h, &app, "u1");
     c.follow().await;
-    c.send(Inbound::Blocked {
-        from: c.who.clone(),
-        event_id: None,
-        redelivery: false,
-    })
-    .await;
-    let seen = c
-        .send(Inbound::Unblocked {
-            from: c.who.clone(),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        })
-        .await;
+    c.send(Inbound::blocked(c.who.clone())).await;
+    let seen = c.send(Inbound::unblocked(c.who.clone(), None)).await;
     assert_eq!(seen.len(), 2, "welcome + Card again");
 }

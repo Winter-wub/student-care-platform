@@ -125,13 +125,7 @@ fn message(
     if let Some(text) = m["text"].as_str() {
         return Ok(Some(text_event(from, text, lookup)));
     }
-    Ok(incoming_file(m).map(|file| Inbound::File {
-        from,
-        file,
-        reply: None,
-        event_id: None,
-        redelivery: false,
-    }))
+    Ok(incoming_file(m).map(|file| Inbound::file(from, file, None)))
 }
 
 /// `/start` (with or without a deep-link payload) is the Follow; a known
@@ -143,30 +137,13 @@ fn text_event(
 ) -> Inbound {
     if let Some(cmd) = command(text) {
         if cmd == "start" {
-            return Inbound::Follow {
-                from,
-                reply: None,
-                event_id: None,
-                redelivery: false,
-            };
+            return Inbound::follow(from, None);
         }
         if let Some(action) = lookup(&from, &cmd) {
-            return Inbound::Action {
-                from,
-                action,
-                reply: None,
-                event_id: None,
-                redelivery: false,
-            };
+            return Inbound::action(from, action, None);
         }
     }
-    Inbound::Text {
-        from,
-        text: text.to_string(),
-        reply: None,
-        event_id: None,
-        redelivery: false,
-    }
+    Inbound::text(from, text.to_string(), None)
 }
 
 /// `/news_latest`, `/news_latest@SealBayBot` or `/news_latest args` →
@@ -222,15 +199,7 @@ fn callback(q: &Value) -> Result<Parsed> {
     }
     let from = account(&chat["id"])?;
     match q["data"].as_str().map(ActionId::new) {
-        Some(Ok(action)) => {
-            parsed.event = Some(Inbound::Action {
-                from,
-                action,
-                reply: None,
-                event_id: None,
-                redelivery: false,
-            })
-        }
+        Some(Ok(action)) => parsed.event = Some(Inbound::action(from, action, None)),
         _ => parsed.refused = Some(invalid("callback_data is not an Action id")),
     }
     Ok(parsed)
@@ -244,17 +213,8 @@ fn member(m: &Value) -> Result<Option<Inbound>> {
     }
     let from = account(&m["chat"]["id"])?;
     Ok(match m["new_chat_member"]["status"].as_str() {
-        Some("kicked" | "left") => Some(Inbound::Blocked {
-            from,
-            event_id: None,
-            redelivery: false,
-        }),
-        Some("member") => Some(Inbound::Unblocked {
-            from,
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        }),
+        Some("kicked" | "left") => Some(Inbound::blocked(from)),
+        Some("member") => Some(Inbound::unblocked(from, None)),
         _ => None,
     })
 }

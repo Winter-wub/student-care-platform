@@ -102,52 +102,24 @@ fn parse_event(kind: ChannelKind, v: &Value, reply_tokens: bool) -> Result<Inbou
     let event_id = v["id"].as_str().map(str::to_string);
     let redelivery = v["redelivery"].as_bool().unwrap_or(false);
     let ev = match text_field(v, "type")?.as_str() {
-        "follow" => Inbound::Follow {
-            from,
-            reply,
-            event_id: None,
-            redelivery: false,
-        },
-        "text" => Inbound::Text {
-            from,
-            text: text_field(v, "text")?,
-            reply,
-            event_id: None,
-            redelivery: false,
-        },
+        "follow" => Inbound::follow(from, reply),
+        "text" => Inbound::text(from, text_field(v, "text")?, reply),
         "file" => {
             let f = &v["file"];
-            Inbound::File {
+            Inbound::file(
                 from,
-                file: IncomingFile {
+                IncomingFile {
                     platform_file_id: text_field(f, "id")?,
                     file_name: f["name"].as_str().map(str::to_string),
                     content_type: f["content_type"].as_str().map(str::to_string),
                     size_bytes: f["size"].as_u64(),
                 },
                 reply,
-                event_id: None,
-                redelivery: false,
-            }
+            )
         }
-        "action" => Inbound::Action {
-            from,
-            action: ActionId::new(text_field(v, "data")?)?,
-            reply,
-            event_id: None,
-            redelivery: false,
-        },
-        "blocked" => Inbound::Blocked {
-            from,
-            event_id: None,
-            redelivery: false,
-        },
-        "unblocked" => Inbound::Unblocked {
-            from,
-            reply,
-            event_id: None,
-            redelivery: false,
-        },
+        "action" => Inbound::action(from, ActionId::new(text_field(v, "data")?)?, reply),
+        "blocked" => Inbound::blocked(from),
+        "unblocked" => Inbound::unblocked(from, reply),
         other => return Err(Error::Invalid(format!("fake event type `{other}`"))),
     };
     Ok(ev.with_event_id(event_id, redelivery))

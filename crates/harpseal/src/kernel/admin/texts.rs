@@ -75,6 +75,11 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "Inbound failed"
     ),
     (
+        "kernel.admin.kind.inbound_lost",
+        "ข้อความขาเข้าค้าง ไม่ได้ตอบ",
+        "Inbound lost (never answered)"
+    ),
+    (
         "kernel.admin.kind.otp_send_failed",
         "ส่งรหัสทางอีเมลไม่สำเร็จ",
         "Code email failed"

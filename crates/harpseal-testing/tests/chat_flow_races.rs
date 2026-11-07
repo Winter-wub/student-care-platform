@@ -12,16 +12,14 @@ use harpseal_testing::{Harness, TestApp};
 use support::{Chat, boot, text_of};
 
 fn typed(who: &str, text: &str) -> Inbound {
-    Inbound::Text {
-        from: FakeChannel::account(who),
-        text: text.into(),
-        reply: Some(ReplyToken {
+    Inbound::text(
+        FakeChannel::account(who),
+        text,
+        Some(ReplyToken {
             token: format!("{who}-{text}"),
             expires_at: Timestamp(harpseal_testing::START_MS + 60_000),
         }),
-        event_id: None,
-        redelivery: false,
-    }
+    )
 }
 
 /// `u1` waiting for its code; returns the right code and a wrong one.

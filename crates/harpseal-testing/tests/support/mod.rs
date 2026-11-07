@@ -106,47 +106,23 @@ impl<'a> Chat<'a> {
 
     pub async fn follow(&mut self) -> Vec<Message> {
         let reply = self.token();
-        self.send(Inbound::Follow {
-            from: self.who.clone(),
-            reply,
-            event_id: None,
-            redelivery: false,
-        })
-        .await
+        self.send(Inbound::follow(self.who.clone(), reply)).await
     }
     pub async fn text(&mut self, text: &str) -> Vec<Message> {
         let reply = self.token();
-        let ev = Inbound::Text {
-            from: self.who.clone(),
-            text: text.into(),
-            reply,
-            event_id: None,
-            redelivery: false,
-        };
+        let ev = Inbound::text(self.who.clone(), text, reply);
         self.send(ev).await
     }
     pub async fn press(&mut self, action: &str) -> Vec<Message> {
         let reply = self.token();
         let action = ActionId::new(action).unwrap();
-        self.send(Inbound::Action {
-            from: self.who.clone(),
-            action,
-            reply,
-            event_id: None,
-            redelivery: false,
-        })
-        .await
+        self.send(Inbound::action(self.who.clone(), action, reply))
+            .await
     }
     pub async fn file(&mut self, file: IncomingFile) -> Vec<Message> {
         let reply = self.token();
-        self.send(Inbound::File {
-            from: self.who.clone(),
-            file,
-            reply,
-            event_id: None,
-            redelivery: false,
-        })
-        .await
+        self.send(Inbound::file(self.who.clone(), file, reply))
+            .await
     }
 
     /// The code in the last email (the subject ends with it).

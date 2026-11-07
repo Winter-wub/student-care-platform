@@ -260,16 +260,14 @@ pub async fn press(w: &World, channel: &str, student: &str, action: &str) -> Vec
     let fake = if channel == TG { &w.tg } else { &w.line };
     let who = fake_account(channel, student);
     fake.take_sent();
-    let ev = Inbound::Action {
-        from: who.clone(),
-        action: ActionId::new(action).unwrap(),
-        reply: (channel != TG).then(|| ReplyToken {
+    let ev = Inbound::action(
+        who.clone(),
+        ActionId::new(action).unwrap(),
+        (channel != TG).then(|| ReplyToken {
             token: format!("r-{}", w.h.clock().now_ms()),
             expires_at: Timestamp(w.h.clock().now_ms() + 60_000),
         }),
-        event_id: None,
-        redelivery: false,
-    };
+    );
     let body = FakeChannel::encode(&[ev]);
     let req = Request::post(format!("/webhook/{channel}"))
         .header(SIGNATURE_HEADER, fake.sign(&body))

@@ -69,12 +69,7 @@ pub fn fake(profile: FakeProfile) -> Target {
     };
     let action_id = ActionId::new("contract.fixture.ack").expect("short id");
     let one = |ev: Inbound| ch.webhook(&[ev]);
-    let follow = one(Inbound::Follow {
-        from: to.clone(),
-        reply: reply(),
-        event_id: None,
-        redelivery: false,
-    });
+    let follow = one(Inbound::follow(to.clone(), reply()));
     let wrong = |mut req: WebhookRequest| {
         req.headers.insert(
             SIGNATURE_HEADER,
@@ -86,46 +81,23 @@ pub fn fake(profile: FakeProfile) -> Target {
     missing_signature.headers.remove(SIGNATURE_HEADER);
     let fixtures = Fixtures::builder(to.clone())
         .follow(follow.clone())
-        .text(one(Inbound::Text {
-            from: to.clone(),
-            text: "สวัสดีครับ".into(),
-            reply: reply(),
-            event_id: None,
-            redelivery: false,
-        }))
-        .file(one(Inbound::File {
-            from: to.clone(),
-            file: IncomingFile {
+        .text(one(Inbound::text(to.clone(), "สวัสดีครับ", reply())))
+        .file(one(Inbound::file(
+            to.clone(),
+            IncomingFile {
                 platform_file_id: "file-1".into(),
                 file_name: Some("ใบลา.pdf".into()),
                 content_type: Some("application/pdf".into()),
                 size_bytes: Some(2048),
             },
-            reply: reply(),
-            event_id: None,
-            redelivery: false,
-        }))
+            reply(),
+        )))
         .action(
-            one(Inbound::Action {
-                from: to.clone(),
-                action: action_id.clone(),
-                reply: reply(),
-                event_id: None,
-                redelivery: false,
-            }),
+            one(Inbound::action(to.clone(), action_id.clone(), reply())),
             action_id,
         )
-        .blocked(one(Inbound::Blocked {
-            from: to.clone(),
-            event_id: None,
-            redelivery: false,
-        }))
-        .unblocked(one(Inbound::Unblocked {
-            from: to.clone(),
-            reply: reply(),
-            event_id: None,
-            redelivery: false,
-        }))
+        .blocked(one(Inbound::blocked(to.clone())))
+        .unblocked(one(Inbound::unblocked(to.clone(), reply())))
         .bad_signature(wrong(ch.signed(b"{not json".to_vec())))
         .bad_signature_valid_body(wrong(follow))
         .missing_signature(missing_signature)

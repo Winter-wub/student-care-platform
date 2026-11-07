@@ -145,19 +145,21 @@ impl LineChannel {
         url: &str,
         body: &Value,
     ) -> Result<std::result::Result<Value, Failure>> {
-        self.post_json_keyed(url, body, None).await
+        let got = self.post_json_keyed(url, body, None).await?;
+        Ok(got.map(|a| a.body))
     }
 
     /// [`LineChannel::post_json`] with `X-Line-Retry-Key: retry_key`. LINE
     /// answers 409 when a request with that key was already accepted (it
-    /// went out earlier): that counts as sent, with no message ids
+    /// went out earlier): that counts as sent, with no message ids and
+    /// [`Keyed::replayed`] set
     /// (<https://developers.line.biz/en/docs/messaging-api/retrying-api-request/>).
     pub(crate) async fn post_json_keyed(
         &self,
         url: &str,
         body: &Value,
         retry_key: Option<&str>,
-    ) -> Result<std::result::Result<Value, Failure>> {
+    ) -> Result<std::result::Result<Keyed, Failure>> {
         let bytes = serde_json::to_vec(body).map_err(|e| Error::Platform(e.to_string()))?;
         let resp = self
             .request(
@@ -170,10 +172,26 @@ impl LineChannel {
             )
             .await?;
         Ok(match answer(resp) {
-            Err(f) if retry_key.is_some() && f.status == 409 => Ok(Value::Null),
-            got => got.map(|b| parse(&b)),
+            Err(f) if retry_key.is_some() && f.status == 409 => Ok(Keyed {
+                body: Value::Null,
+                replayed: true,
+            }),
+            got => got.map(|b| Keyed {
+                body: parse(&b),
+                replayed: false,
+            }),
         })
     }
+}
+
+/// A keyed request LINE accepted ([`LineChannel::post_json_keyed`]).
+#[derive(Debug)]
+pub(crate) struct Keyed {
+    /// The answer parsed (`Null` for a 409).
+    pub(crate) body: Value,
+    /// LINE answered 409: a request with this retry key was accepted on
+    /// an earlier attempt, and nothing went out now.
+    pub(crate) replayed: bool,
 }
 
 /// The body of a 2xx, or the failure with LINE's `message`.

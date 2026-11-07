@@ -27,35 +27,18 @@ impl World {
 
     async fn press(&self, action: &str) -> R<(Vec<Value>, Value)> {
         let action = ActionId::new(action).map_err(|e| e.to_string())?;
-        let ev = Inbound::Action {
-            from: FakeChannel::account(STUDENT),
-            action,
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        };
+        let ev = Inbound::action(FakeChannel::account(STUDENT), action, None);
         self.event(ev).await
     }
 
     async fn say(&self, text: &str) -> R<(Vec<Value>, Value)> {
-        let ev = Inbound::Text {
-            from: FakeChannel::account(STUDENT),
-            text: text.into(),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        };
+        let ev = Inbound::text(FakeChannel::account(STUDENT), text, None);
         self.event(ev).await
     }
 
     /// Follow: a greeting and the Consent Card; the Menu is locked.
     pub async fn follow(&self) -> R<String> {
-        let ev = Inbound::Follow {
-            from: FakeChannel::account(STUDENT),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        };
+        let ev = Inbound::follow(FakeChannel::account(STUDENT), None);
         let (ms, menu) = self.event(ev).await?;
         let card = ms
             .iter()

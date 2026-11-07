@@ -18,10 +18,11 @@ use crate::port_types::{Rows, Statement, Value};
 use crate::{AppState, CurrentStaff, RequestCtx, Result, Services};
 
 /// Kinds the Core writes, offered even before one happened.
-const KNOWN_KINDS: [&str; 5] = [
+const KNOWN_KINDS: [&str; 6] = [
     "otp.lockout",
     "link.duplicate_attempt",
     "inbound.failed",
+    "inbound.lost",
     "otp.send_failed",
     "staff.lockout",
 ];

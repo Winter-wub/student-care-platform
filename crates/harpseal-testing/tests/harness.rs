@@ -132,12 +132,7 @@ async fn webhook_with_a_bad_signature_is_rejected_before_parsing() {
     let h = Harness::new();
     let app = h.start().await;
     let fake = h.fake_channel();
-    let body = FakeChannel::encode(&[Inbound::Follow {
-        from: FakeChannel::account("u1"),
-        reply: None,
-        event_id: None,
-        redelivery: false,
-    }]);
+    let body = FakeChannel::encode(&[Inbound::follow(FakeChannel::account("u1"), None)]);
     assert_eq!(
         app.fake_webhook_raw(body.clone(), "wrong").await.status,
         401
@@ -154,16 +149,14 @@ async fn webhook_with_a_bad_signature_is_rejected_before_parsing() {
 }
 
 fn press(account: &str, action: &str, reply_expires_at: i64) -> Inbound {
-    Inbound::Action {
-        from: FakeChannel::account(account),
-        action: ActionId::new(action).unwrap(),
-        reply: Some(ReplyToken {
+    Inbound::action(
+        FakeChannel::account(account),
+        ActionId::new(action).unwrap(),
+        Some(ReplyToken {
             token: "r-1".into(),
             expires_at: Timestamp(reply_expires_at),
         }),
-        event_id: None,
-        redelivery: false,
-    }
+    )
 }
 
 #[tokio::test]

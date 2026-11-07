@@ -52,13 +52,11 @@ fn token(expires_at: i64) -> Option<ReplyToken> {
 }
 
 fn press(account: &str, action: &str) -> Inbound {
-    Inbound::Action {
-        from: FakeChannel::account(account),
-        action: id(action),
-        reply: token(START_MS + 60_000),
-        event_id: None,
-        redelivery: false,
-    }
+    Inbound::action(
+        FakeChannel::account(account),
+        id(action),
+        token(START_MS + 60_000),
+    )
 }
 
 /// A Deployment with the Bulk Module and `u1` linked to a Student.
@@ -267,42 +265,20 @@ async fn every_inbound_kind_can_be_posted_through_the_fake_channel() {
     let app = h.start().await;
     let from = FakeChannel::account("u2");
     let events = [
-        Inbound::Follow {
-            from: from.clone(),
-            reply: token(START_MS + 1),
-            event_id: None,
-            redelivery: false,
-        },
-        Inbound::Text {
-            from: from.clone(),
-            text: "สอบถามค่าเทอม".into(),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        },
-        Inbound::File {
-            from: from.clone(),
-            file: harpseal::IncomingFile {
+        Inbound::follow(from.clone(), token(START_MS + 1)),
+        Inbound::text(from.clone(), "สอบถามค่าเทอม", None),
+        Inbound::file(
+            from.clone(),
+            harpseal::IncomingFile {
                 platform_file_id: "f-1".into(),
                 file_name: Some("ใบลา.pdf".into()),
                 content_type: Some("application/pdf".into()),
                 size_bytes: Some(10),
             },
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        },
-        Inbound::Blocked {
-            from: from.clone(),
-            event_id: None,
-            redelivery: false,
-        },
-        Inbound::Unblocked {
-            from: from.clone(),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        },
+            None,
+        ),
+        Inbound::blocked(from.clone()),
+        Inbound::unblocked(from.clone(), None),
     ];
     let fake = h.fake_channel();
     let parsed = fake.parse_webhook(fake.webhook(&events)).await.unwrap();
