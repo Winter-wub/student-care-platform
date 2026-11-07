@@ -29,16 +29,15 @@ fn id(s: &str) -> ActionId {
 
 /// `u1` presses `echo.ping`, with the platform event id `event`.
 fn ping(event: Option<&str>, redelivery: bool) -> Inbound {
-    Inbound::Action {
-        from: FakeChannel::account("u1"),
-        action: id("echo.ping"),
-        reply: Some(ReplyToken {
+    Inbound::action(
+        FakeChannel::account("u1"),
+        id("echo.ping"),
+        Some(ReplyToken {
             token: format!("r-{}", event.unwrap_or("none")),
             expires_at: Timestamp(START_MS + 60_000),
         }),
-        event_id: event.map(str::to_string),
-        redelivery,
-    }
+    )
+    .with_event_id(event.map(str::to_string), redelivery)
 }
 
 /// A Deployment with the Echo Module and `u1` linked to a Student.

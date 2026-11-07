@@ -3,6 +3,16 @@
 Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
+## Writing an adapter
+
+Build `Inbound` events with the constructors (`Inbound::text`, `action`,
+`file`, `follow`, `blocked`, `unblocked`), then stamp the platform's id with
+`with_event_id` (and `with_redelivery`); match them with `..`. Each variant
+is `#[non_exhaustive]`, so struct literals do not compile outside the Core
+and a field added later breaks no adapter. A Channel that honours retry
+keys reports a request the platform answered as already accepted (LINE 409)
+in `SendReceipt::replayed_units` (`add_replayed_unit`).
+
 ## Mini App (LIFF and Telegram Web App)
 
 The Announcements Module sends Mini App buttons, so a Deployment with it

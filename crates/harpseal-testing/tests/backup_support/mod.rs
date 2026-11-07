@@ -86,14 +86,7 @@ pub async fn populated_on(h: Harness) -> (Harness, TestApp) {
     assert_eq!(app.count("SELECT count(*) FROM student").await, 3);
 
     let who = FakeChannel::account("u-backup");
-    let r = app
-        .fake_webhook([Inbound::Follow {
-            from: who,
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        }])
-        .await;
+    let r = app.fake_webhook([Inbound::follow(who, None)]).await;
     assert_eq!(r.status, 200, "{}", r.body);
     let student = text(&h, "SELECT id FROM student WHERE student_code = '68010001'").await;
     links::manual_link(d, &student, "fake", "u-backup", &officer, &ctx)

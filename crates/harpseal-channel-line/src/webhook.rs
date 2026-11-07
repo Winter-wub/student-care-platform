@@ -89,32 +89,12 @@ fn event(ev: &Value) -> Option<Inbound> {
     let redelivery = ev["deliveryContext"]["isRedelivery"].as_bool() == Some(true);
     let inbound = match ev["type"].as_str().unwrap_or("") {
         "message" => message(from, &ev["message"], reply),
-        "postback" => Some(Inbound::Action {
-            from,
-            action: postback(&ev["postback"])?,
-            reply,
-            event_id: None,
-            redelivery: false,
-        }),
+        "postback" => Some(Inbound::action(from, postback(&ev["postback"])?, reply)),
         "follow" if ev["follow"]["isUnblocked"].as_bool() == Some(true) => {
-            Some(Inbound::Unblocked {
-                from,
-                reply,
-                event_id: None,
-                redelivery: false,
-            })
+            Some(Inbound::unblocked(from, reply))
         }
-        "follow" => Some(Inbound::Follow {
-            from,
-            reply,
-            event_id: None,
-            redelivery: false,
-        }),
-        "unfollow" => Some(Inbound::Blocked {
-            from,
-            event_id: None,
-            redelivery: false,
-        }),
+        "follow" => Some(Inbound::follow(from, reply)),
+        "unfollow" => Some(Inbound::blocked(from)),
         _ => None,
     };
     inbound.map(|e| e.with_event_id(event_id, redelivery))
@@ -129,13 +109,7 @@ fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Opti
     let kind = m["type"].as_str()?;
     if kind == "text" {
         let text = m["text"].as_str()?.to_string();
-        return Some(Inbound::Text {
-            from,
-            text,
-            reply,
-            event_id: None,
-            redelivery: false,
-        });
+        return Some(Inbound::text(from, text, reply));
     }
     if !matches!(kind, "image" | "video" | "audio" | "file") {
         return None;
@@ -152,13 +126,7 @@ fn message(from: ChannelAccountId, m: &Value, reply: Option<ReplyToken>) -> Opti
         content_type: None,
         size_bytes: m["fileSize"].as_u64(),
     };
-    Some(Inbound::File {
-        from,
-        file,
-        reply,
-        event_id: None,
-        redelivery: false,
-    })
+    Some(Inbound::file(from, file, reply))
 }
 
 #[cfg(test)]

@@ -140,27 +140,10 @@ async fn re_consent_on_one_channel_counts_for_the_other() {
     }
     let d = app.deployment();
     let t1 = ChannelAccountId::new(ChannelKind("fake2"), "t1");
-    let press = |action: &str| Inbound::Action {
-        from: t1.clone(),
-        action: ActionId::new(action).unwrap(),
-        reply: None,
-        event_id: None,
-        redelivery: false,
-    };
+    let press = |action: &str| Inbound::action(t1.clone(), ActionId::new(action).unwrap(), None);
     let mut c = Chat::new(&h, &app, "u1");
     c.link("68010001").await;
-    on_t1(
-        &h,
-        &app,
-        &second,
-        Inbound::Follow {
-            from: t1.clone(),
-            reply: None,
-            event_id: None,
-            redelivery: false,
-        },
-    )
-    .await;
+    on_t1(&h, &app, &second, Inbound::follow(t1.clone(), None)).await;
     let staff = officer(&h).await;
     links::manual_link(d, "s1", "fake2", "t1", &staff, &RequestCtx::default())
         .await

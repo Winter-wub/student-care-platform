@@ -120,6 +120,7 @@ async fn a_409_for_an_accepted_retry_key_counts_as_sent() {
     assert!(out.error.is_none(), "{:?}", out.error);
     assert_eq!(out.receipts.len(), 2);
     assert_eq!(out.receipts[0].metered_units, 1);
+    assert_eq!(out.receipts[0].replayed_units, 1);
     assert!(out.receipts.iter().all(|r| r.message_id.is_none()));
     // Without a retry key a 409 is a failure.
     api.http().respond_with(409, r#"{"message":"conflict"}"#);
@@ -154,6 +155,34 @@ async fn a_message_whose_first_push_went_out_is_unfinished() {
     );
     assert!(matches!(out.error, Some(Error::RateLimited { .. })));
     assert_eq!(api.take().len(), 2);
+}
+
+#[tokio::test]
+async fn a_resumed_message_reports_the_pushes_answered_409_as_replayed() {
+    let (ch, api) = channel();
+    // Push 1 (5 carousels) goes out, push 2 (the sixth) fails.
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(500, r#"{"message":"boom"}"#);
+    let first = ch
+        .send_batch_keyed(&to(), &Delivery::Push, &[cards61()], &Locale::th(), "k")
+        .await;
+    let unfinished = first.unfinished.expect("push 1 went out");
+    assert_eq!(
+        (unfinished.metered_units, unfinished.replayed_units),
+        (1, 0)
+    );
+    // The resume rebuilds push 1 with the same retry key: LINE answers 409.
+    api.http()
+        .respond_with(409, r#"{"message":"The retry key is already accepted"}"#);
+    api.http().respond_with(200, "{}");
+    let again = ch
+        .send_batch_keyed(&to(), &Delivery::Push, &[cards61()], &Locale::th(), "k")
+        .await
+        .into_result()
+        .unwrap();
+    assert_eq!((again[0].metered_units, again[0].replayed_units), (2, 1));
+    let keys = retry_keys(&api.take());
+    assert_eq!(keys[0], keys[2], "the same key for the same request");
 }
 
 #[tokio::test]

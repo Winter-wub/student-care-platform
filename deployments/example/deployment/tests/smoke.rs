@@ -31,8 +31,8 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("มหาวิทยาลัยอ่าวแมวน้ำ"), "TOML text wins");
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
-    // Eight Kernel migrations and the Announcements Module's one.
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(9));
+    // Nine Kernel migrations and the Announcements Module's one.
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(10));
 }
 
 #[test]
@@ -55,13 +55,11 @@ fn example_has_three_roles_and_the_contact_menu() {
 async fn unlinked_student_pressing_contact_gets_the_consent_card() {
     let h = Harness::new();
     let app = boot(&h).await;
-    app.fake_webhook([Inbound::Action {
-        from: FakeChannel::account("u1"),
-        action: ActionId::new("contact.show").unwrap(),
-        reply: None,
-        event_id: None,
-        redelivery: false,
-    }])
+    app.fake_webhook([Inbound::action(
+        FakeChannel::account("u1"),
+        ActionId::new("contact.show").unwrap(),
+        None,
+    )])
     .await;
     let seen = h.fake_channel().sent_to(&FakeChannel::account("u1"));
     // Modules never see pre-Link Inbounds: the Kernel greets and asks

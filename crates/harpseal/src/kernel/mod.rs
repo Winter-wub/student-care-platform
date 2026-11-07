@@ -82,6 +82,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0008_app_session_expires_idx",
         include_str!("../../migrations/0008_app_session_expires_idx.sql"),
     ),
+    (
+        "0009_inbound_event_done",
+        include_str!("../../migrations/0009_inbound_event_done.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

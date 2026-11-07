@@ -52,6 +52,9 @@ pub struct TickReport {
     /// Webhook event claims (`inbound_event`) older than 7 days deleted,
     /// at most 500 per tick (#35).
     pub events_pruned: u64,
+    /// Webhook event claims left unfinished past the 60 s lease and logged
+    /// as `inbound.lost`, at most 100 per tick (#44).
+    pub events_lost: u64,
 }
 
 impl core::fmt::Display for TickReport {
@@ -246,6 +249,10 @@ impl Deployment {
         match crate::jobs::prune(&self.services, now, self.config.retention.job_days).await {
             Ok(n) => report.jobs_pruned = n,
             Err(e) => report.errors.push(format!("job prune: {e}")),
+        }
+        match self.sweep_lost_inbound(now.ms()).await {
+            Ok(n) => report.events_lost = n,
+            Err(e) => report.errors.push(format!("lost webhook event sweep: {e}")),
         }
         match self.prune_inbound_events(now.ms()).await {
             Ok(n) => report.events_pruned = n,

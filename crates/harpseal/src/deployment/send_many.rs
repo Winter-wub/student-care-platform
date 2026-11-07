@@ -5,7 +5,7 @@
 //! in `usage_daily`, in one `Db::batch` per call.
 
 use super::Deployment;
-use super::send::civil_day;
+use super::day::civil_day;
 use crate::delivery::{BatchReceipt, ChannelAccountId, SendReceipt};
 use crate::message::{Locale, Message};
 use crate::port_types::Statement;
