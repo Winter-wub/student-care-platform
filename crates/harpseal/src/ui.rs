@@ -166,11 +166,11 @@ pub fn mini_app_session(
     body: Markup,
 ) -> Markup {
     let brand = Brand::of(s);
-    // A page of a live session ends the entry page's loop guard: the next
-    // launch (#86) exchanges again at once, even within its 15 s.
+    // A page of a live session checks it is this tab's before it is
+    // painted, and ends the entry page's loop guard (#86).
     let body = html! {
+        @if let Some(t) = csrf { script { (PreEscaped(crate::kernel::app::tab_js(t))) } }
         (body)
-        @if csrf.is_some() { script { (PreEscaped(crate::kernel::app::CLEAR_GUARD_JS)) } }
     };
     let inner = mini_footer(brand.name, "/notice?app=1", notice_label, body);
     document(&brand, title, "mini", csrf, inner)

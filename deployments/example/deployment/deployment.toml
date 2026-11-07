@@ -63,6 +63,10 @@ retention_days = 30
 [announcements]
 latest = 5
 
+# A Mini App session ends after this long without use (1-60, default 15).
+[mini_app]
+idle_minutes = 15
+
 [otp]
 digits = 6
 ttl_minutes = 5

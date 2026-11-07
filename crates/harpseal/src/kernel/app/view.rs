@@ -45,6 +45,8 @@ const EXCHANGE_JS: &str = r#"(function () {
       var last = +sessionStorage.getItem('hs_app_x') || 0;
       if (Date.now() - last < 15000) { fail(); return; }
       sessionStorage.setItem('hs_app_x', String(Date.now()));
+      // The first session page in this tab takes it (TAB_JS).
+      sessionStorage.setItem('hs_app_s', 'pending');
     } catch (e) {}
     f.elements.channel.value = kind;
     f.elements.token.value = token;
@@ -80,11 +82,50 @@ const EXCHANGE_JS: &str = r#"(function () {
 })();"#;
 
 /// Answer pages clear the loop guard: their retry is a deliberate tap. So
-/// does every page of a live session (`ui::mini_app_session`): the stamp
-/// only stops a loop that never reaches one, and the next launch (#86)
-/// must exchange again at once.
+/// does every page of a live session ([`TAB_JS`]): the stamp only stops a
+/// loop that never reaches one, and the next launch (#86) must exchange
+/// again at once.
 pub(crate) const CLEAR_GUARD_JS: &str =
     "try { sessionStorage.removeItem('hs_app_x'); } catch (e) {}";
+
+/// Runs first on every page of a live session (`ui::mini_app_session`),
+/// with `@STAMP@` this session's [`tab_stamp`] (#86):
+/// - the tab is `pending` (its entry page just exchanged): it takes the
+///   stamp;
+/// - the tab holds another stamp, or none (the page came from another
+///   tab's session, or a tab that never ran the entry page): the page hides
+///   before it is painted and reloads with `?launch`, so this tab signs in
+///   for itself;
+/// - otherwise it ends the entry page's loop guard, and a later restore
+///   from the bfcache (no request: the idle lifetime cannot see it)
+///   reloads with `?launch`.
+///
+/// Without `sessionStorage` (blocked) nothing is checked.
+const TAB_JS: &str = r#"(function () {
+  var p = '@STAMP@', s;
+  try { s = sessionStorage.getItem('hs_app_s'); } catch (e) { return; }
+  var again = function () {
+    document.documentElement.style.visibility = 'hidden';
+    location.replace(location.pathname + '?launch');
+  };
+  if (s === 'pending') { sessionStorage.setItem('hs_app_s', p); }
+  else if (s !== p) { again(); return; }
+  try { sessionStorage.removeItem('hs_app_x'); } catch (e) {}
+  window.addEventListener('pageshow', function (e) { if (e.persisted) { again(); } });
+})();"#;
+
+/// The tab stamp of the session whose CSRF token is `csrf`: 16 hex of
+/// `SHA-256("app-tab:" + csrf)`, so it says nothing usable about either.
+pub(crate) fn tab_stamp(csrf: &str) -> String {
+    let mut h = crate::auth::sha256_hex(format!("app-tab:{csrf}").as_bytes());
+    h.truncate(16);
+    h
+}
+
+/// [`TAB_JS`] for the session whose CSRF token is `csrf`.
+pub(crate) fn tab_js(csrf: &str) -> String {
+    TAB_JS.replace("@STAMP@", &tab_stamp(csrf))
+}
 
 /// A whole Mini App response: never cached; the `Referer` only to this
 /// origin, where it marks a navigation inside the launch for a webview

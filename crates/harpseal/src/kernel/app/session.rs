@@ -2,8 +2,13 @@
 //!
 //! - Token: 32 bytes from `Services.random`, hex, only in the cookie;
 //!   `app_session.id` is its SHA-256 (as `staff_session`).
-//! - One hour from the exchange, no sliding: the platform token behind it
-//!   (LIFF ID token, Telegram `initData`) is itself short-lived.
+//! - At most one hour from the exchange: the platform token behind it
+//!   (LIFF ID token, Telegram `initData`) is itself short-lived. Within
+//!   that, it ends after `[mini_app] idle_minutes` (default 15) without a
+//!   request (#86): `expires_at` moves to `now + idle`, capped at
+//!   `created_at + 1 h`, at most once a minute (so the idle end is between
+//!   `idle - 1 min` and `idle`). The cookie's `Max-Age` stays one hour; the
+//!   row decides.
 //! - Bound to one Channel Account; the Link and Student are read on every
 //!   request, so a revoke or block shows at once.
 //! - Bound to one launch (#86): a request that does not come from one of
@@ -62,9 +67,16 @@ pub(crate) fn csrf_for(token: &str) -> String {
     sha256_hex(format!("app-csrf:{token}").as_bytes())
 }
 
-/// A new session for `account`: (cookie token, statements). The batch
-/// also deletes the account's expired sessions.
-pub(crate) fn create(services: &Services, account: &str) -> Result<(String, Vec<Statement>)> {
+/// How rarely a request moves `expires_at` forward.
+const SLIDE_STEP_MS: i64 = 60_000;
+
+/// A new session for `account`, idle after `idle_ms`: (cookie token,
+/// statements). The batch also deletes the account's expired sessions.
+pub(crate) fn create(
+    services: &Services,
+    account: &str,
+    idle_ms: i64,
+) -> Result<(String, Vec<Statement>)> {
     let token = services.random_hex(32)?;
     let now = services.now_ms();
     let stmts = vec![
@@ -78,16 +90,18 @@ pub(crate) fn create(services: &Services, account: &str) -> Result<(String, Vec<
         .bind(sha256_hex(token.as_bytes()))
         .bind(account)
         .bind(now)
-        .bind(now + TTL_MS),
+        .bind(now + idle_ms.min(TTL_MS)),
     ];
     Ok((token, stmts))
 }
 
 /// The visitor behind the request's cookie. A missing, unknown or expired
-/// session is `None`; an expired row is deleted on the way.
+/// session is `None`; an expired row is deleted on the way. A live one is
+/// kept alive for `idle_ms` more (see the module docs).
 pub(crate) async fn resolve(
     services: &Services,
     headers: &HeaderMap,
+    idle_ms: i64,
     has_locale: impl Fn(&str) -> bool,
     default_locale: &Locale,
 ) -> Result<Option<AppVisitor>> {
@@ -96,7 +110,7 @@ pub(crate) async fn resolve(
     };
     let id = sha256_hex(token.as_bytes());
     let stmt = Statement::new(
-        "SELECT s.channel_account_id, s.expires_at, ca.channel, ca.platform_locale, \
+        "SELECT s.channel_account_id, s.created_at, s.expires_at, ca.channel, ca.platform_locale, \
          st.id AS student_id, st.student_code, st.display_name, st.locale, \
          st.attributes AS student_attributes \
          FROM app_session s JOIN channel_account ca ON ca.id = s.channel_account_id \
@@ -110,10 +124,22 @@ pub(crate) async fn resolve(
         return Ok(None);
     }
     let expires = rows.get(0, "expires_at").and_then(Value::as_i64);
-    if expires.is_none_or(|e| services.now_ms() >= e) {
+    let now = services.now_ms();
+    let Some(expires) = expires.filter(|e| now < *e) else {
         let gone = Statement::new("DELETE FROM app_session WHERE id = ?").bind(id);
         services.db.execute(gone).await?;
         return Ok(None);
+    };
+    let created = rows
+        .get(0, "created_at")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let slid = (now + idle_ms).min(created + TTL_MS);
+    if slid >= expires + SLIDE_STEP_MS {
+        let stmt = Statement::new("UPDATE app_session SET expires_at = ? WHERE id = ?")
+            .bind(slid)
+            .bind(id);
+        services.db.execute(stmt).await?;
     }
     let student = text(&rows, "student_id").map(|sid| LinkedStudent {
         id: sid,

@@ -21,6 +21,15 @@ pub(crate) async fn hit(services: &Services, key: &str, window: i64) -> Result<i
     Ok(rows.get(0, "n").and_then(Value::as_i64).unwrap_or(1))
 }
 
+/// The count of `key` in `window` so far, without counting anything.
+pub(crate) async fn count(services: &Services, key: &str, window: i64) -> Result<i64> {
+    let stmt = Statement::new("SELECT n FROM rate_limit WHERE key = ? AND window = ?")
+        .bind(key)
+        .bind(window);
+    let rows = services.db.query(stmt).await?;
+    Ok(rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0))
+}
+
 /// Deletes at most `limit` rows of keys starting with `prefix` whose
 /// window is below `before` (windows are per key family, so each family
 /// prunes its own); returns how many.

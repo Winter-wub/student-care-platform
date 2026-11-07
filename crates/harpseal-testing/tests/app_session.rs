@@ -165,8 +165,11 @@ async fn a_session_ends_after_an_hour_and_the_entry_page_returns() {
     let w = boot().await;
     roster(&w).await;
     let b = open(&w, "fake", "s1").await;
-    w.h.clock().advance_minutes(59);
-    assert!(b.get("/app").await.body.contains("Name s1"));
+    // In use (idle under 15 minutes, #86) for 59 minutes: still open.
+    for step in [14, 14, 14, 14, 3] {
+        w.h.clock().advance_minutes(step);
+        assert!(b.get("/app").await.body.contains("Name s1"));
+    }
     w.h.clock().advance_minutes(2);
     let page = b.get("/app").await;
     assert_eq!(page.status, 200);

@@ -40,7 +40,7 @@ use axum::routing::{get, post};
 pub(crate) use exchange::safe_next;
 pub(crate) use links::{AppLink, check as check_links};
 pub use student::{AppForm, AppStudent};
-pub(crate) use view::CLEAR_GUARD_JS;
+pub(crate) use view::tab_js;
 
 use crate::manifest::{Job, JobSpec};
 use crate::message::Locale;

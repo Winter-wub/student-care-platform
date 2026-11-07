@@ -7,11 +7,11 @@ use serde::Deserialize;
 
 mod announcements;
 mod backup;
+mod mini_app;
 mod roster;
 
-pub use announcements::AnnouncementsConfig;
-pub use backup::BackupConfig;
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
+pub use {announcements::AnnouncementsConfig, backup::BackupConfig, mini_app::MiniAppConfig};
 
 use crate::manifest::Catalog;
 use crate::message::Locale;
@@ -74,6 +74,9 @@ pub struct DeploymentConfig {
     /// own config: a Module-config hook should replace it.
     #[serde(default)]
     pub announcements: AnnouncementsConfig,
+    /// The Mini App's App Session ([`MiniAppConfig`]).
+    #[serde(default)]
+    pub mini_app: MiniAppConfig,
 }
 
 fn default_offset() -> String {
@@ -303,6 +306,7 @@ impl DeploymentConfig {
         c.roster.check()?;
         c.backup.check()?;
         c.announcements.check()?;
+        c.mini_app.check()?;
         Ok(c)
     }
 

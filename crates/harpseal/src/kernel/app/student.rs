@@ -161,7 +161,7 @@ impl AppStudent {
         } else {
             super::safe_next(current_path(headers)).to_string()
         };
-        let (v, texts) = match super::pages::open(s, headers, &path).await {
+        let (v, texts) = match super::pages::open(s, headers, &path, parts.uri.query()).await {
             Ok(x) => x,
             Err(r) if htmx => return Err(Box::new(super::pages::hx_redirect_from(&reload, &r))),
             Err(r) => return Err(r),

@@ -27,9 +27,24 @@
 //!
 //! The cost: one more round trip per launch (entry page, exchange, 303 to
 //! the page: the same as a launch without a cookie), and on LINE one call
-//! to LINE's verify endpoint per launch (counted by the exchange's limit);
-//! navigating inside the Mini App costs nothing more. A reload counts as
-//! a new launch when the browser sends `none` for it.
+//! to LINE's verify endpoint per launch; navigating inside the Mini App
+//! costs nothing more.
+//!
+//! What these signals do not catch, and what covers it:
+//! - **Back/forward, reload, a reopened tab**: browsers resend the
+//!   original `Sec-Fetch-Site` (`same-origin` for a page reached by a
+//!   link), or restore the page from the bfcache with no request at all.
+//!   The idle lifetime (`[mini_app] idle_minutes`, default 15) ends the
+//!   session after that long without a request, and a page restored from
+//!   the bfcache reloads itself with `?launch` ([`forced`]).
+//! - **Two tabs** share one cookie: when tab 2 signs in as B, tab 1's next
+//!   page is B's session. Each session page carries a stamp of its
+//!   session; the entry page marks the tab before the exchange, the first
+//!   session page writes its stamp to the tab's `sessionStorage`, and a
+//!   page whose stamp differs hides itself and reloads with `?launch`
+//!   before it is painted (`ui::mini_app_session`).
+//! - Any site can drop a session: a cross-site GET (a link, an `<img>`)
+//!   is a new launch. Harmless: the visitor only signs in again.
 //!
 //! This is not a defence against someone at the keyboard who wants the
 //! previous Student's data on purpose: they hold the cookie and can send
@@ -43,6 +58,17 @@ pub(crate) fn continues(headers: &HeaderMap) -> bool {
         Some(site) => site == "same-origin",
         None => referer_is_own(headers),
     }
+}
+
+/// The query asks for a new launch: a `launch` parameter, which the page
+/// script of a session page adds when the page is not this tab's (see
+/// `ui::mini_app_session`). Anyone can add it: like any cross-site link,
+/// it only makes the visitor sign in again.
+pub(crate) fn forced(query: Option<&str>) -> bool {
+    query.is_some_and(|q| {
+        q.split('&')
+            .any(|p| p == "launch" || p.starts_with("launch="))
+    })
 }
 
 /// The `Referer`'s host and port are the request's `Host`.

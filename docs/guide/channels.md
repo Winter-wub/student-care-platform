@@ -44,19 +44,37 @@ LIFF's redirect, Telegram Web's iframe, a Card's deep link, a typed URL or
 a bookmark) drops the App Session, row and cookie, before anything is read
 and shows the entry page, which posts the current LIFF ID token or
 Telegram `initData` again. So the next person on a shared computer (a lab
-PC on Telegram Web, LIFF in an external browser) never sees the previous
-Student's pages: they get their own, or "not linked". Links, forms and
-HTMX inside the Mini App continue the launch at no extra cost. The browser
-says which is which with `Sec-Fetch-Site` (only `same-origin` continues);
-an older webview without it continues only when its `Referer` is the
-request's own host (Mini App pages send `Referrer-Policy: same-origin`).
+PC on Telegram Web, LIFF in an external browser) gets their own page, or
+"not linked", not the previous Student's. Links, forms and HTMX inside the
+Mini App continue the launch at no extra cost. The browser says which is
+which with `Sec-Fetch-Site` (only `same-origin` continues); an older
+webview without it continues only when its `Referer` is the request's own
+host (Mini App pages send `Referrer-Policy: same-origin`).
+
+What the launch check cannot see, and what covers it:
+
+- **Back/forward, reload, a reopened tab**: browsers resend the original
+  `same-origin`, or restore the page from the bfcache with no request. An
+  App Session ends after `[mini_app] idle_minutes` without a request
+  (default 15, allowed 1 to 60; each request extends it, never past one
+  hour from the exchange), and a page restored from the bfcache reloads
+  through the entry page. Within those minutes, Back can still show the
+  previous Student's page: lower `idle_minutes` for lab PCs, and the
+  Student can tap "sign out".
+- **Two tabs share one cookie**: each session page checks a stamp of its
+  session against the tab's `sessionStorage` before it is painted; a page
+  of another tab's session hides itself and signs the tab in again.
+- Any site can make the visitor sign in again (a cross-site link or image
+  is a new launch); it cannot sign them in as anyone.
+
 The cost: one more round trip per launch (entry page, exchange, redirect,
 as for a launch without a cookie), and on LINE one call to LINE's verify
-endpoint per launch, counted by the exchange's limit of 30 per IP group a
-minute. A reload may count as a launch. The home has a "sign out" button
-(`POST /app/sign-out`) that ends the App Session at once. This protects
-the next honest user, not against someone at the keyboard who wants the
-previous session on purpose.
+endpoint per launch. Only refused tokens count toward the exchange's limit
+(30 a minute per IP group), so a class behind one campus Wi-Fi address can
+all open a Card at once. The home has a "sign out" button
+(`POST /app/sign-out`) that ends the App Session at once and closes the
+Mini App inside LINE and Telegram. This protects the next honest user, not
+against someone at the keyboard who wants the previous session on purpose.
 The Mini App still needs a manual check inside real LIFF and Telegram
 webviews before a release (the e2e walk opens it with the Fake Channel's
 token only). A Deployment's own Module adds pages under `/app/` and links on
