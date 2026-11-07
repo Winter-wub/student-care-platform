@@ -11,6 +11,7 @@
 //! platform because the account blocked the bot.
 
 use super::Deployment;
+use super::day::civil_day;
 use crate::delivery::{
     BatchReceipt, Capability, ChannelAccountId, Delivery, ReplyToken, SendReceipt,
 };
@@ -68,8 +69,8 @@ impl Deployment {
     /// with `msgs[sent..]`, ideally through
     /// [`Deployment::send_batch_with_key`] with the same key. On that
     /// resume the first Message's requests already accepted (LINE answers
-    /// 409, [`SendReceipt::replayed_units`]) are not metered again; the
-    /// Message gets a second row, without `error`, for its completion. When nothing
+    /// 409, [`SendReceipt::replayed_units`]) are not metered again, and
+    /// its "partly sent" row is completed rather than a second one written. When nothing
     /// went out the Channel's error is returned as is. If the write fails,
     /// a database error is returned (the Messages did go out); it names the
     /// Channel's error too when there was one.
@@ -286,25 +287,62 @@ impl Deployment {
                 .bind(i64::from(units))
                 .bind(i64::from(units == 0)),
             );
-            stmts.push(
-                Statement::new(
+            let resumed = is_resumed_part(i, r);
+            // On the resume of the Message the last attempt stopped in, its
+            // row (error "partly sent") is completed instead of a second one
+            // inserted; the insert runs only when that row cannot be found.
+            let insert = if resumed {
+                format!(
+                    "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
+                     metering, platform_message_id, module, kind, sent_at, error) SELECT ?, ?, \
+                     {ACCOUNT}, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS ({PARTIAL_ROW})"
+                )
+            } else {
+                format!(
                     "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
                      metering, platform_message_id, module, kind, sent_at, error) VALUES (?, ?, \
-                     (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
-                     ?, ?, ?, ?, ?, ?, ?)",
+                     {ACCOUNT}, ?, ?, ?, ?, ?, ?, ?)"
                 )
+            };
+            let pushed = r.pushed || matches!(delivery, Delivery::Push);
+            let metering = if units > 0 { "metered" } else { "free" };
+            let message_id = r.message_id.as_ref().map(|m| m.0.clone());
+            let mut row = Statement::new(insert)
                 .bind(self.services.new_id()?)
                 .bind(channel)
                 .bind(channel)
                 .bind(to.external_id.clone())
-                .bind(r.pushed || matches!(delivery, Delivery::Push))
-                .bind(if units > 0 { "metered" } else { "free" })
-                .bind(r.message_id.as_ref().map(|m| m.0.clone()))
+                .bind(pushed)
+                .bind(metering)
+                .bind(message_id.clone())
                 .bind(module.map(str::to_string))
                 .bind(msg.kind())
                 .bind(now)
-                .bind(error),
-            );
+                .bind(error.clone());
+            if resumed {
+                row = row
+                    .bind(channel)
+                    .bind(channel)
+                    .bind(to.external_id.clone())
+                    .bind(msg.kind());
+            }
+            stmts.push(row);
+            if resumed {
+                stmts.push(
+                    Statement::new(format!(
+                        "UPDATE outbound_message SET push = ?, metering = 'metered', \
+                         platform_message_id = coalesce(?, platform_message_id), error = ? \
+                         WHERE id = ({PARTIAL_ROW})"
+                    ))
+                    .bind(pushed)
+                    .bind(message_id)
+                    .bind(error)
+                    .bind(channel)
+                    .bind(channel)
+                    .bind(to.external_id.clone())
+                    .bind(msg.kind()),
+                );
+            }
         }
         Ok(stmts)
     }
@@ -319,43 +357,25 @@ impl Deployment {
 /// A Message replayed whole is metered in full: an earlier attempt sent it
 /// but may have died before recording anything, and the Kernel cannot tell.
 fn units_to_meter(index: usize, r: &SendReceipt) -> u32 {
-    if index == 0 && r.replayed_units > 0 && r.replayed_units < r.metered_units {
+    if is_resumed_part(index, r) {
         r.metered_units - r.replayed_units
     } else {
         r.metered_units
     }
 }
 
-/// `YYYY-MM-DD` of the instant `ms` (UTC milliseconds) in a zone
-/// `offset_minutes` east of UTC (Howard Hinnant's civil-from-days).
-pub(crate) fn civil_day(ms: i64, offset_minutes: i32) -> String {
-    let local = ms + i64::from(offset_minutes) * 60_000;
-    let z = local.div_euclid(86_400_000) + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
+/// The first Message of the batch, part of it replayed (answered 409) and
+/// part of it sent now: the resume of the Message a `PartialSend` stopped
+/// in, already recorded with a "partly sent" row.
+fn is_resumed_part(index: usize, r: &SendReceipt) -> bool {
+    index == 0 && r.replayed_units > 0 && r.replayed_units < r.metered_units
 }
 
-#[cfg(test)]
-mod tests {
-    use super::civil_day;
+/// The account's `channel_account.id` (binds: channel, external id).
+const ACCOUNT: &str = "(SELECT id FROM channel_account WHERE channel = ? AND external_id = ?)";
 
-    #[test]
-    fn days_follow_the_offset() {
-        // 2026-11-05T00:00:00Z
-        let ms = 1_793_836_800_000;
-        assert_eq!(civil_day(ms, 0), "2026-11-05");
-        assert_eq!(civil_day(ms - 1, 0), "2026-11-04");
-        // 2026-11-04T17:00Z is already the 5th in Bangkok.
-        assert_eq!(civil_day(ms - 7 * 3_600_000, 420), "2026-11-05");
-        assert_eq!(civil_day(ms - 7 * 3_600_000 - 1, 420), "2026-11-04");
-        assert_eq!(civil_day(0, 0), "1970-01-01");
-        assert_eq!(civil_day(951_782_400_000, 0), "2000-02-29");
-    }
-}
+/// The newest "partly sent" row of a Message kind to an account (binds:
+/// channel, channel, external id, kind).
+const PARTIAL_ROW: &str = "SELECT id FROM outbound_message WHERE channel = ? AND \
+     channel_account_id = (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?) \
+     AND kind = ? AND error LIKE 'partly sent:%' ORDER BY sent_at DESC, id DESC LIMIT 1";

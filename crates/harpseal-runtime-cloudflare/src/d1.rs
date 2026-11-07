@@ -93,7 +93,8 @@ fn exec_result(r: &D1Result) -> Result<ExecResult> {
 /// "changed 0 rows" is skipped as a duplicate), so a silent 0 would drop
 /// every event.
 fn rows_affected(changes: Option<usize>) -> Result<ExecResult> {
-    let n = changes.ok_or_else(|| Error::Db("D1 returned no `meta.changes` for a write".into()))?;
+    let n = changes
+        .ok_or_else(|| Error::Db("D1 returned no changes metadata for an execute".into()))?;
     Ok(ExecResult {
         rows_affected: n as u64,
     })
@@ -171,7 +172,9 @@ mod tests {
 
     #[test]
     fn missing_changes_metadata_is_an_error_not_zero_rows() {
-        assert!(matches!(rows_affected(None), Err(Error::Db(m)) if m.contains("meta.changes")));
+        assert!(
+            matches!(rows_affected(None), Err(Error::Db(m)) if m.contains("no changes metadata"))
+        );
         assert_eq!(rows_affected(Some(0)).unwrap().rows_affected, 0);
         assert_eq!(rows_affected(Some(3)).unwrap().rows_affected, 3);
     }

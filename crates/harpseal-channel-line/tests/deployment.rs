@@ -225,7 +225,7 @@ fn cards61() -> Message {
 }
 
 #[tokio::test]
-async fn a_resume_after_a_partial_send_meters_the_409_push_once() {
+async fn a_resume_after_a_partial_send_meters_the_409_push_once_and_keeps_one_row() {
     // #44: push 1 of a Message went out and was recorded with 1 unit; the
     // resume rebuilds it, LINE answers 409, and it must not count again.
     let (h, app) = linked().await;
@@ -250,8 +250,18 @@ async fn a_resume_after_a_partial_send_meters_the_409_push_once() {
     let receipts = send().await.unwrap();
     assert_eq!(receipts[0].metered_units, 2);
     assert_eq!(app.count(METERED).await, 2, "two Push requests, each once");
-    let rows = app
-        .count("SELECT count(*) FROM outbound_message WHERE metering = 'metered'")
+    assert_eq!(
+        app.count("SELECT count(*) FROM outbound_message").await,
+        1,
+        "the partial row is completed, not doubled"
+    );
+    let row = app
+        .query("SELECT metering, error FROM outbound_message")
         .await;
-    assert_eq!(rows, 2, "the partial attempt and the completion");
+    assert_eq!(row.get(0, "metering").unwrap().as_text(), Some("metered"));
+    assert_eq!(
+        row.get(0, "error"),
+        Some(&harpseal::Value::Null),
+        "complete now"
+    );
 }

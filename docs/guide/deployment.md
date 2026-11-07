@@ -119,9 +119,9 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   skips an id it has seen (still 200; counted in `WebhookReport::duplicates`),
   so a redelivered LINE event can no longer fall back to a second, metered
   Push. `redelivery` is informational. A claim gets `done_at` once its event
-  was answered or logged; a redelivery that finds a claim unfinished after 2
-  minutes (the handler was killed) logs one `inbound.failed` Security Event
-  and still does not answer (ADR-0009). `Deployment::tick` deletes claims
+  was answered or logged; a redelivery that finds a claim unfinished after
+  60 s (the handler was killed) logs one `inbound.failed` Security Event
+  (with the event id) and still does not answer (ADR-0009). `Deployment::tick` deletes claims
   older than 7 days, at most 500 per tick.
 - **Resuming a partial send.** On a resume with the same key, LINE answers
   409 to the Push requests of the stopped Message that already went out; the

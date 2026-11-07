@@ -1,10 +1,11 @@
 //! A built Deployment: dispatches through the maps the builder validated.
 
 mod builder;
+mod day;
 mod inbound;
 mod routes;
 mod send;
-pub(crate) use send::civil_day;
+pub(crate) use day::civil_day;
 mod send_many;
 mod tick;
 mod web;

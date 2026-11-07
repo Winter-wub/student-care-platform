@@ -23,9 +23,10 @@ pub struct WorkerHttp;
 /// What replaces a URL (or a part of one) in an error message.
 const REDACTED: &str = "[url]";
 
-/// `msg` without `url`, its path and query, or anything that looks like a
-/// URL (`scheme://…` up to whitespace or a quote/bracket), so a token in
-/// the URL cannot leak through an error into logs or Security Events.
+/// `msg` without `url`, its path and query, anything that looks like a
+/// URL (`scheme://…` up to whitespace or a quote/bracket) or a Telegram
+/// bot token (`bot<digits>:<secret>`), so a token cannot leak through an
+/// error into logs or Security Events.
 pub(crate) fn scrub_url(msg: &str, uri: &http::Uri) -> String {
     let mut out = msg.to_string();
     let whole = uri.to_string();
@@ -35,7 +36,35 @@ pub(crate) fn scrub_url(msg: &str, uri: &http::Uri) -> String {
             out = out.replace(part, REDACTED);
         }
     }
-    scrub_schemes(&out)
+    scrub_bot_tokens(&scrub_schemes(&out))
+}
+
+/// Replaces every Telegram bot token (`bot<digits>:<secret>`) with
+/// [`REDACTED`], wherever it stands (a JS error may quote a bare path).
+fn scrub_bot_tokens(msg: &str) -> String {
+    let secret = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    let mut out = String::with_capacity(msg.len());
+    let mut rest = msg;
+    while let Some(at) = rest.find("bot") {
+        let tail = &rest[at + 3..];
+        let digits = tail.len() - tail.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let after = &tail[digits..];
+        if digits > 0 && after.starts_with(':') {
+            let len = after[1..]
+                .find(|c: char| !secret(c))
+                .unwrap_or(after.len() - 1);
+            if len > 0 {
+                out.push_str(&rest[..at]);
+                out.push_str(REDACTED);
+                rest = &after[1 + len..];
+                continue;
+            }
+        }
+        out.push_str(&rest[..at + 3]);
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Replaces every `scheme://rest` run with [`REDACTED`].
@@ -126,6 +155,22 @@ mod tests {
         assert_eq!(
             scrub_url(&format!("TypeError: Invalid URL: {u}"), &u),
             "TypeError: Invalid URL: [url]"
+        );
+    }
+
+    #[test]
+    fn a_fabricated_js_error_with_a_bot_token_keeps_neither_url_nor_token() {
+        // Another request's URL than the one sent, and a bare token: only
+        // the patterns can catch them.
+        let js = "TypeError: Failed to parse URL from https://evil.invalid/x?t=1 \
+                  (bot987654:ZZZ-fake_Token9 in /bot987654:ZZZ-fake_Token9/getMe)";
+        let out = scrub_url(js, &uri());
+        assert!(!out.contains("ZZZ-fake_Token9"), "{out}");
+        assert!(!out.contains("https://"), "{out}");
+        assert!(!out.contains("evil.invalid"), "{out}");
+        assert_eq!(
+            scrub_bot_tokens("robot:1 bot12: bot:x"),
+            "robot:1 bot12: bot:x"
         );
     }
 

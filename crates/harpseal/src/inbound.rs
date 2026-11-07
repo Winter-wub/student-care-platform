@@ -281,6 +281,12 @@ impl Inbound {
         self
     }
 
+    /// The same event with `redelivery` set, its event id kept.
+    pub fn with_redelivery(self, is_redelivery: bool) -> Self {
+        let id = self.event_id().map(str::to_string);
+        self.with_event_id(id, is_redelivery)
+    }
+
     /// A short name of the event kind (`follow`, `text`, `file`, `action`,
     /// `blocked`, `unblocked`), for logs.
     pub fn kind(&self) -> &'static str {
@@ -292,5 +298,28 @@ impl Inbound {
             Inbound::Blocked { .. } => "blocked",
             Inbound::Unblocked { .. } => "unblocked",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::delivery::ChannelKind;
+
+    #[test]
+    fn inbound_constructors_start_without_an_id_and_the_builders_stamp_it() {
+        let from = ChannelAccountId::new(ChannelKind("fake"), "u1");
+        let ev = Inbound::text(from.clone(), "สวัสดีครับ", None);
+        assert_eq!(
+            (ev.kind(), ev.event_id(), ev.redelivery()),
+            ("text", None, false)
+        );
+        let ev = ev
+            .with_event_id(Some("e1".into()), false)
+            .with_redelivery(true);
+        assert_eq!((ev.event_id(), ev.redelivery()), (Some("e1"), true));
+        assert!(Inbound::blocked(from.clone()).reply().is_none());
+        assert_eq!(Inbound::unblocked(from.clone(), None).kind(), "unblocked");
+        assert_eq!(Inbound::follow(from, None).kind(), "follow");
     }
 }

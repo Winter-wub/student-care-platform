@@ -13,9 +13,9 @@ pub(crate) const INBOUND_EVENT_DAYS: i64 = 7;
 /// Most `inbound_event` rows one tick deletes.
 pub(crate) const INBOUND_EVENT_PRUNE_LIMIT: i64 = 500;
 /// How long a claim may stay unfinished before a redelivery of its event
-/// takes it as abandoned (the process handling it died): 2 minutes, far
-/// beyond a Worker's CPU limit or a platform's webhook timeout.
-pub(crate) const INBOUND_CLAIM_LEASE_MS: i64 = 120_000;
+/// takes it as abandoned (the process handling it died): 60 s, beyond a
+/// platform's webhook timeout and a Worker's default CPU limit.
+pub(crate) const INBOUND_CLAIM_LEASE_MS: i64 = 60_000;
 /// The error logged for a claim whose handling never finished.
 pub(crate) const ABANDONED: &str =
     "an earlier delivery's handling never finished (killed?); the redelivery is not answered";
@@ -46,7 +46,7 @@ impl Deployment {
     /// handling fails: the event was logged, and answering it twice is
     /// worse than once. Once handled (or logged as failed) the claim is
     /// marked done. A redelivery that finds a claim still not done after
-    /// 2 minutes (the process handling it was killed)
+    /// 60 seconds (the process handling it was killed)
     /// marks it done, logs `inbound.failed` once, and is still not
     /// answered (ADR-0009). Claims older than 7 days are deleted by
     /// [`Deployment::tick`], never on the webhook path.
@@ -73,19 +73,20 @@ impl Deployment {
                     Ok(Claim::Abandoned) => {
                         report.duplicates += 1;
                         let e = Error::Conflict(ABANDONED.into());
-                        self.log_failed_event(&from, ev_kind, &e).await;
+                        self.log_failed_event(&from, ev_kind, Some(id), &e).await;
                         report.failed.push((ev_kind, e));
                         continue;
                     }
                     Err(e) => {
-                        self.log_failed_event(&from, ev_kind, &e).await;
+                        self.log_failed_event(&from, ev_kind, Some(id), &e).await;
                         report.failed.push((ev_kind, e));
                         continue;
                     }
                 }
             }
             if let Err(e) = self.handle_inbound(ev).await {
-                self.log_failed_event(&from, ev_kind, &e).await;
+                self.log_failed_event(&from, ev_kind, id.as_deref(), &e)
+                    .await;
                 report.failed.push((ev_kind, e));
             }
             if let Some(id) = &id {
@@ -164,8 +165,15 @@ impl Deployment {
 
     /// Best effort: if even this write fails there is nowhere left to log.
     /// The account is linked when its `channel_account` row exists; the
-    /// error text is cut to 200 chars.
-    async fn log_failed_event(&self, from: &ChannelAccountId, event: &str, e: &Error) {
+    /// error text is cut to 200 chars. The details carry the platform's
+    /// event id when there is one, never the event's payload.
+    async fn log_failed_event(
+        &self,
+        from: &ChannelAccountId,
+        event: &str,
+        event_id: Option<&str>,
+        e: &Error,
+    ) {
         let Ok(id) = self.services.new_id() else {
             return;
         };
@@ -174,7 +182,7 @@ impl Deployment {
             "INSERT INTO security_event (id, at, kind, channel_account_id, details) VALUES \
              (?, ?, 'inbound.failed', \
              (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
-             json_object('channel', ?, 'event', ?, 'error', ?))",
+             json_object('channel', ?, 'event', ?, 'event_id', ?, 'error', ?))",
         )
         .bind(id)
         .bind(self.services.now_ms())
@@ -182,6 +190,7 @@ impl Deployment {
         .bind(from.external_id.clone())
         .bind(from.channel.as_str())
         .bind(event)
+        .bind(event_id.map(str::to_string))
         .bind(error);
         let _ = self.services.db.execute(stmt).await;
     }

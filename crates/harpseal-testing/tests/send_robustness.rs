@@ -304,7 +304,7 @@ async fn a_tick_forgets_event_ids_older_than_a_week_and_keeps_younger_ones() {
 const INBOUND_FAILED: &str = "SELECT count(*) FROM security_event WHERE kind = 'inbound.failed'";
 
 #[tokio::test]
-async fn a_handled_event_marks_its_claim_done() {
+async fn inbound_a_handled_event_marks_its_claim_done() {
     let (_h, app) = linked(FakeProfile::Full).await;
     app.fake_webhook([ping(Some("evt-done"), false)]).await;
     let open = "SELECT count(*) FROM inbound_event WHERE done_at IS NULL";
@@ -313,7 +313,7 @@ async fn a_handled_event_marks_its_claim_done() {
 }
 
 #[tokio::test]
-async fn a_redelivery_of_a_claim_that_never_finished_is_logged_once_and_not_answered() {
+async fn inbound_a_redelivery_of_a_claim_unfinished_after_60_s_is_logged_once_and_not_answered() {
     // #44: the process died between the claim and the reply, as a Worker
     // past its CPU limit would; the claim is left with no `done_at`.
     let (h, app) = linked(FakeProfile::Full).await;
@@ -337,28 +337,34 @@ async fn a_redelivery_of_a_claim_that_never_finished_is_logged_once_and_not_answ
             .await
             .unwrap()
     };
-    // Within the lease the first delivery may still be running: a plain
-    // duplicate.
+    // Within the 60 s lease the first delivery may still be running: a
+    // plain duplicate, no Security Event.
+    h.clock().advance_ms(59_000);
     let report = redeliver().await;
     assert_eq!((report.duplicates, report.failed.len()), (1, 0));
     assert_eq!(app.count(INBOUND_FAILED).await, 0);
-    // Past the lease it is abandoned: logged once, still not answered.
-    h.clock().advance_ms(3 * 60_000);
+    // 61 s after the claim it is abandoned: logged once, not answered.
+    h.clock().advance_ms(2_000);
     let report = redeliver().await;
     assert_eq!((report.duplicates, report.failed.len()), (1, 1));
     assert!(matches!(report.failed[0], ("action", Error::Conflict(_))));
     assert_eq!(app.count(INBOUND_FAILED).await, 1);
-    let details = app
+    let row = app
         .query(
-            "SELECT channel_account_id, details FROM security_event WHERE kind = 'inbound.failed'",
+            "SELECT channel_account_id, json_extract(details, '$.event_id') AS event_id \
+             FROM security_event WHERE kind = 'inbound.failed'",
         )
         .await;
     assert_eq!(
-        details.get(0, "channel_account_id").unwrap().as_text(),
+        row.get(0, "channel_account_id").unwrap().as_text(),
         Some("a1")
     );
+    assert_eq!(
+        row.get(0, "event_id").unwrap().as_text(),
+        Some("evt-killed")
+    );
     // A later redelivery finds the claim done: a plain duplicate again.
-    h.clock().advance_ms(3 * 60_000);
+    h.clock().advance_ms(61_000);
     let report = redeliver().await;
     assert_eq!((report.duplicates, report.failed.len()), (1, 0));
     assert_eq!(app.count(INBOUND_FAILED).await, 1);
