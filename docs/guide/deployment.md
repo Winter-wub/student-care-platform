@@ -86,8 +86,12 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
 
 - **Metering.** Each `SendReceipt` carries `metered_units`: one per Push
   request to one recipient (a long text split over requests costs one per
-  request; Telegram 0). `usage_daily` adds them to `metered`, and Messages
-  a Channel fails on to `failed` (a blocked-account skip counts nowhere).
+  request; Telegram 0), charged to the Message that opens the request.
+  `usage_daily` adds them to `metered`, and Messages a Channel fails on to
+  `failed` (a blocked-account skip counts nowhere). Every `outbound_message`
+  row keeps its batch key, its Message's index in the batch (`msg_index`)
+  and the units counted for it (`units`, migration 0010), so a resend of
+  the same batch meters each Push request exactly once (below).
 - **Quotas (#26).** `/admin/usage` charts each Channel's month against
   `[quotas.<kind>]`; from 80 % every Staff page shows a banner (red at 100
   %) and the tick's `kernel.usage.watch` (every 10 minutes, only with
@@ -95,16 +99,39 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
 - **Partial sends.** When a Channel stops part-way, what went out is
   recorded (`outbound_message` rows and usage; a Message cut off after some
   of its parts gets a row with `error = 'partly sent: …'`) and
-  `Deployment::send_batch` returns `Error::PartialSend { sent, total, source
-  }`. A Job resumes with `msgs[sent..]`; `Error::root()` gives the cause
-  (`RateLimited`, `Unreachable`). Nothing before Message `sent` goes out
-  again, but the parts of Message `sent` that were already delivered may
-  be delivered twice, on any Channel: Telegram has no request
-  de-duplication, and on LINE the resumed batch packs its requests
-  differently, so their retry keys differ. That is the accepted trade-off:
-  a repeated Card beats a lost one.
+  `Deployment::send_batch` returns `Error::PartialSend { sent, total,
+  source, resume }`. `Error::root()` gives the cause (`RateLimited`,
+  `Unreachable`). A Job resumes with the whole batch, the same key and
+  `SendOptions::resume_after(&err)` (ADR-0010):
+
+  ```rust
+  let opts = SendOptions::new().key(format!("{job}/{account}"));
+  match d.send_batch_with(&to, None, &msgs, &locale, &opts).await {
+      Err(e @ Error::PartialSend { .. }) => {
+          // later, e.g. on the Job's next run:
+          d.send_batch_with(&to, None, &msgs, &locale, &opts.resume_after(&e)).await?;
+      }
+      other => { other?; }
+  }
+  ```
+
+  The Kernel sends Messages `sent..` and hands the Channel the adapter's
+  `resume` token (`Channel::send_batch_resumed`). Nothing before Message
+  `sent` goes out again. On LINE the token rebuilds the request that
+  failed, and those after it, with the same objects and `X-Line-Retry-Key`
+  even when the stopped Message shared its first request with earlier
+  Messages: LINE answers 409 to a request it already took and no part
+  reaches the Student twice. Telegram and the Fake Channel give no token
+  (they send one part per request and have no retry keys): the resume
+  starts at the first part of Message `sent`, whose parts already delivered
+  go again. That is the accepted trade-off there: a repeated Card beats a
+  lost one. A token is only useful in the same process (it is not
+  stored); a Job that resends the whole batch with the same key instead
+  is metered exactly too, and on LINE delivers nothing twice either (the
+  same requests, the same keys).
 - **Idempotency keys.** `Deployment::send_batch_with_key(to, reply, msgs,
-  locale, key)` passes a stable key (e.g. `<job id>/<account>`); LINE turns it
+  locale, key)` (or `send_batch_with` and `SendOptions::key`) passes a
+  stable key (e.g. `<job id>/<account>`); LINE turns it
   into one `X-Line-Retry-Key` per Push or multicast request (a UUID derived
   from the key, the recipients, the objects and how often that same request
   already occurred in the batch, so identical requests in one batch never
@@ -127,16 +154,20 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   answered 200 as a duplicate, so the platform stops retrying; the tick is
   what catches it then (ADR-0009). `Deployment::tick` deletes claims older
   than 7 days, at most 500 per tick.
-- **Resuming a partial send.** When the stopped Message opened its own Push
-  requests, a resume with the same key rebuilds them with the same retry
-  keys: LINE answers 409 to those that already went out, the receipt
-  reports them in `SendReceipt::replayed_units`, the Kernel does not meter
-  them again and completes the Message's "partly sent" row (matched by
-  `outbound_message.batch_key`) instead of writing a second one. This is an
-  approximation (#62): it over-counts a Message replayed whole whose first
-  answer was lost, under-counts when recording the partial send failed,
-  and a stopped Message that shared its first request with earlier ones
-  gets those parts delivered twice.
+- **Exact metering on a resend (#62).** Before a keyed send, the Kernel
+  reads the rows earlier attempts with that key wrote for the account. Per
+  Message: every unit the Channel sent now counts (the platform charged
+  it); a unit the platform answered as already accepted (LINE 409,
+  `SendReceipt::replayed_units`) counts only beyond the `units` its row
+  records, because it went out on an earlier attempt whose answer or
+  whose write was lost. So a recorded Message replayed whole adds 0, a
+  resume after a partial send adds only its new Pushes, and a resume after
+  a write that failed counts the replayed Pushes once. The Message's row
+  is updated (units, platform id; "partly sent" cleared once it is
+  complete), never written twice. A row of another kind at the same index
+  is left alone (the key was reused for other Messages). Rows from before
+  migration 0010 have no index and are never matched. Two sends with the
+  same key running at once are not supported: each reads before it writes.
 - **Building `Inbound` events.** Each variant is `#[non_exhaustive]`: build
   events with `Inbound::text`, `Inbound::action`, `Inbound::file`,
   `Inbound::follow`, `Inbound::blocked` and `Inbound::unblocked`, plus

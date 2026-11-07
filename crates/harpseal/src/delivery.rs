@@ -209,6 +209,10 @@ pub struct BatchReceipt {
     pub unfinished: Option<SendReceipt>,
     /// Why the batch stopped early, if it did.
     pub error: Option<crate::Error>,
+    /// Where the adapter can resume the batch when `error` is set
+    /// ([`crate::Channel::send_batch_resumed`]); `None`: from the first
+    /// part of Message `receipts.len()`.
+    pub resume: Option<crate::ResumeToken>,
 }
 
 impl BatchReceipt {
@@ -218,6 +222,7 @@ impl BatchReceipt {
             receipts,
             unfinished: None,
             error: None,
+            resume: None,
         }
     }
     /// The batch stopped at `error` after sending `receipts.len()` whole
@@ -227,6 +232,7 @@ impl BatchReceipt {
             receipts,
             unfinished: None,
             error: Some(error),
+            resume: None,
         }
     }
     /// The batch stopped at `error` after sending `receipts.len()` whole
@@ -240,7 +246,13 @@ impl BatchReceipt {
             receipts,
             unfinished: Some(unfinished),
             error: Some(error),
+            resume: None,
         }
+    }
+    /// The same receipt with the adapter's resume token.
+    pub fn with_resume(mut self, resume: Option<crate::ResumeToken>) -> Self {
+        self.resume = resume;
+        self
     }
     /// Whether anything at all went out.
     pub fn anything_sent(&self) -> bool {
@@ -335,6 +347,7 @@ mod tests {
             sent: 1,
             total: 3,
             source: Box::new(crate::Error::Unreachable),
+            resume: None,
         };
         assert!(matches!(partial.root(), crate::Error::Unreachable));
         assert_eq!(

@@ -31,6 +31,7 @@ mod api;
 pub mod liff;
 pub mod multicast;
 pub mod render;
+mod resume;
 pub mod retry_key;
 pub mod richmenu;
 pub mod send;
@@ -42,8 +43,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use harpseal::{
     BatchReceipt, Channel, ChannelAccountId, ChannelKind, Delivery, Error, HttpClient, Inbound,
-    IncomingFile, Locale, Menu, Message, MiniApp, Multicast, RenderCx, Result, SendReceipt,
-    WebhookRequest,
+    IncomingFile, Locale, Menu, Message, MiniApp, Multicast, RenderCx, Result, ResumeToken,
+    SendReceipt, WebhookRequest,
 };
 use http::Method;
 
@@ -237,7 +238,7 @@ impl Channel for LineChannel {
         locale: &Locale,
     ) -> Result<SendReceipt> {
         let mut receipts = self
-            .batch(to, d, std::slice::from_ref(m), locale, None)
+            .batch(to, d, std::slice::from_ref(m), locale, None, None)
             .await
             .into_result()?;
         receipts
@@ -251,7 +252,7 @@ impl Channel for LineChannel {
         msgs: &[Message],
         locale: &Locale,
     ) -> BatchReceipt {
-        self.batch(to, d, msgs, locale, None).await
+        self.batch(to, d, msgs, locale, None, None).await
     }
     async fn send_batch_keyed(
         &self,
@@ -261,7 +262,18 @@ impl Channel for LineChannel {
         locale: &Locale,
         key: &str,
     ) -> BatchReceipt {
-        self.batch(to, d, msgs, locale, Some(key)).await
+        self.batch(to, d, msgs, locale, Some(key), None).await
+    }
+    async fn send_batch_resumed(
+        &self,
+        to: &ChannelAccountId,
+        d: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+        resume: Option<&ResumeToken>,
+    ) -> BatchReceipt {
+        self.batch(to, d, msgs, locale, Some(key), resume).await
     }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         self.rich_menu_set(to, menu).await

@@ -98,6 +98,31 @@ pub trait Channel: Send + Sync {
         self.send_batch(to, delivery, msgs, locale).await
     }
 
+    /// [`Channel::send_batch_keyed`] resuming a batch that stopped part-way
+    /// with `resume`, the token this adapter put in that attempt's
+    /// [`BatchReceipt::resume`]. `msgs` are the Messages from the one the
+    /// last attempt stopped in on (`msgs[sent..]` of the batch). An adapter
+    /// that packs parts of several Messages into one request (LINE) uses
+    /// the token to rebuild the requests the failed attempt would have
+    /// made from the failing one on, with the same retry keys, so a part
+    /// already accepted is answered as a replay and never reaches the
+    /// Student twice. The default ignores the token: the resume starts at
+    /// the first part of `msgs[0]`, which is right for an adapter that
+    /// sends one part per request and has no retry keys (the parts of
+    /// `msgs[0]` already delivered go again).
+    async fn send_batch_resumed(
+        &self,
+        to: &ChannelAccountId,
+        delivery: &Delivery,
+        msgs: &[Message],
+        locale: &Locale,
+        key: &str,
+        resume: Option<&ResumeToken>,
+    ) -> BatchReceipt {
+        let _ = resume;
+        self.send_batch_keyed(to, delivery, msgs, locale, key).await
+    }
+
     /// Sets the Menu for one account; `None` resets it to the locked
     /// pre-Link Menu.
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()>;
@@ -227,4 +252,26 @@ pub trait Multicast: Send + Sync {
         locale: &Locale,
         key: &str,
     ) -> BatchReceipt;
+}
+
+/// Where an adapter can resume a batch that stopped part-way: opaque to
+/// the Core, which hands it back through
+/// [`Channel::send_batch_resumed`] (from [`Error::PartialSend`] via
+/// [`crate::SendOptions::resume_after`]). Its content is the adapter's own
+/// (LINE: the parts of the stopped Message already accepted and the retry
+/// keys already used); an adapter must ignore a token it cannot read or
+/// that does not match the Messages, and then resume as if it had none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ResumeToken(String);
+
+impl ResumeToken {
+    /// Wraps an adapter's encoding.
+    pub fn new(token: impl Into<String>) -> Self {
+        Self(token.into())
+    }
+    /// The adapter's encoding.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }

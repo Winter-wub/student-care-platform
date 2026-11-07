@@ -177,16 +177,16 @@ impl Deployment {
                 .bind(now)
                 .bind(now),
             );
-            for (msg, r) in msgs.iter().zip(receipts) {
+            for (j, (msg, r)) in msgs.iter().zip(receipts).enumerate() {
                 let units = i64::from(r.metered_units);
                 metered += units;
                 free += i64::from(units == 0);
                 stmts.push(
                     Statement::new(
                         "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
-                         metering, platform_message_id, module, kind, sent_at, error) VALUES \
-                         (?, ?, (SELECT id FROM channel_account WHERE channel = ? AND \
-                         external_id = ?), 1, ?, ?, ?, ?, ?, NULL)",
+                         metering, platform_message_id, module, kind, sent_at, error, \
+                         msg_index, units) VALUES (?, ?, (SELECT id FROM channel_account \
+                         WHERE channel = ? AND external_id = ?), 1, ?, ?, ?, ?, ?, NULL, ?, ?)",
                     )
                     .bind(self.services.new_id()?)
                     .bind(channel)
@@ -196,7 +196,9 @@ impl Deployment {
                     .bind(r.message_id.as_ref().map(|m| m.0.clone()))
                     .bind(module.map(str::to_string))
                     .bind(msg.kind())
-                    .bind(now),
+                    .bind(now)
+                    .bind(i64::try_from(j).unwrap_or(i64::MAX))
+                    .bind(units),
                 );
             }
         }
