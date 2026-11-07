@@ -36,7 +36,7 @@
 
 pub mod api;
 mod chunk;
-pub(crate) mod csv;
+pub(crate) use crate::sheet::csv;
 pub(crate) mod file;
 mod finish;
 mod job;

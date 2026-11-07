@@ -289,11 +289,7 @@ impl NewRow<'_> {
 
 /// A problem of the file as a whole.
 fn problem(reason: &str) -> Problem {
-    Problem {
-        row: 0,
-        column: String::new(),
-        reason: reason.into(),
-    }
+    Problem::new(0, "", reason)
 }
 
 fn json_err(e: serde_json::Error) -> Error {

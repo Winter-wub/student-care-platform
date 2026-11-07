@@ -218,21 +218,45 @@ impl AttributeSpec {
         }
         let v = match self.kind {
             AttributeType::Text => Json::String(raw.into()),
-            AttributeType::Integer => {
-                Json::from(raw.parse::<i64>().map_err(|_| AttrError::NotInteger)?)
-            }
-            AttributeType::Number => {
-                let n: f64 = raw.parse().map_err(|_| AttrError::NotNumber)?;
-                serde_json::Number::from_f64(n)
-                    .map(Json::Number)
-                    .ok_or(AttrError::NotNumber)?
-            }
+            AttributeType::Integer | AttributeType::Number => match self.number(raw)? {
+                Some(v) => v,
+                None if self.optional => return Ok(None),
+                None => return Err(AttrError::Required),
+            },
             AttributeType::Date if is_date(raw) => Json::String(raw.into()),
             AttributeType::Date => return Err(AttrError::NotDate),
             AttributeType::Enum if self.values.iter().any(|v| v == raw) => Json::String(raw.into()),
             AttributeType::Enum => return Err(AttrError::NotInList),
         };
         Ok(Some(v))
+    }
+
+    /// An `integer` or `number` value read with [`crate::sheet::number`]
+    /// (`12,500`, `12,500.00`); a lone `-` is no value. An integer must be
+    /// whole and fit 64 bits.
+    fn number(&self, raw: &str) -> Result<Option<Json>, AttrError> {
+        let integer = self.kind == AttributeType::Integer;
+        let err = if integer {
+            AttrError::NotInteger
+        } else {
+            AttrError::NotNumber
+        };
+        let Some(n) = crate::sheet::number(raw, crate::sheet::Blank::Missing).map_err(|_| err)?
+        else {
+            return Ok(None);
+        };
+        if !integer {
+            return Ok(Some(
+                serde_json::Number::from_f64(n)
+                    .map(Json::Number)
+                    .ok_or(err)?,
+            ));
+        }
+        // Whole and within ±2^53, where f64 holds every integer exactly.
+        if n.fract() != 0.0 || n.abs() > 9_007_199_254_740_992.0 {
+            return Err(err);
+        }
+        Ok(Some(Json::from(n as i64)))
     }
 
     /// A stored value as form / cell text (`""` for none).
@@ -337,6 +361,15 @@ mod tests {
         assert_eq!(num.parse("x"), Err(AttrError::NotNumber));
         assert_eq!(num.parse("NaN"), Err(AttrError::NotNumber));
         assert_eq!(num.parse(""), Ok(None));
+        // #70: numbers stored as text, the same reader as a Module's.
+        assert_eq!(int.parse("1,000"), Ok(Some(Json::from(1000))));
+        assert_eq!(int.parse("12,500.00"), Ok(Some(Json::from(12500))));
+        assert_eq!(int.parse("12.500"), Err(AttrError::NotInteger));
+        assert_eq!(int.parse("-"), Err(AttrError::Required));
+        assert_eq!(num.parse(" 12,500.50 "), Ok(Some(Json::from(12500.5))));
+        assert_eq!(num.parse("-"), Ok(None), "a lone dash is no value");
+        assert_eq!(num.parse("-2.5"), Ok(Some(Json::from(-2.5))));
+        assert_eq!(num.parse("12,5"), Err(AttrError::NotNumber));
         let en = spec(AttributeType::Enum, &["MSC", "MSC-Intl"], false);
         assert_eq!(en.parse("MSC-Intl"), Ok(Some(Json::from("MSC-Intl"))));
         assert_eq!(en.parse("msc"), Err(AttrError::NotInList));

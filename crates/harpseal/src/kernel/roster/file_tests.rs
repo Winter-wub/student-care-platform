@@ -57,19 +57,21 @@ fn headers_must_match_exactly() {
     let c = test_config();
     let text = "รหัสนักศึกษา,ชื่อ,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย,หมายเหตุ\n";
     match parse(text.as_bytes(), "a.csv", &c.roster) {
-        Err(FileError::Headers {
-            missing,
-            unexpected,
-        }) => {
-            assert_eq!(missing, vec!["ชื่อ-สกุล".to_string()]);
-            assert_eq!(unexpected, vec!["ชื่อ".to_string(), "หมายเหตุ".into()]);
+        Err(FileError::Headers(sheets)) => {
+            let HeaderMismatch {
+                missing,
+                unexpected,
+                ..
+            } = &sheets[0];
+            assert_eq!(*missing, vec!["ชื่อ-สกุล".to_string()]);
+            assert_eq!(*unexpected, vec!["ชื่อ".to_string(), "หมายเหตุ".into()]);
         }
         other => panic!("{other:?}"),
     }
     let twice = "รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย,อีเมล\n";
     assert!(matches!(
         parse(twice.as_bytes(), "a.csv", &c.roster),
-        Err(FileError::Headers { unexpected, .. }) if unexpected == vec!["อีเมล".to_string()]
+        Err(FileError::Headers(s)) if s[0].unexpected == vec!["อีเมล".to_string()]
     ));
 }
 
@@ -130,17 +132,29 @@ fn an_empty_first_sheet_is_an_empty_file() {
 }
 
 #[test]
-fn formula_cells_read_their_cached_value_and_error_cells_their_code() {
+fn formula_cells_read_their_cached_value_and_error_cells_are_unreadable() {
     let c = test_config();
     let book = include_bytes!("../../../tests/fixtures/roster/formula_error.xlsx");
     let rows = parse(book, "f.xlsx", &c.roster).unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get("รหัสนักศึกษา"), Some("68010001"));
     assert_eq!(rows[0].get("ชั้นปี"), Some("2"));
-    assert_eq!(rows[0].get("เกรดเฉลี่ย"), Some("#DIV/0!"));
-    // The error code then fails the number check like any bad cell.
+    // #70: an error cell is unreadable, never the text of its code.
+    assert_eq!(rows[0].get("เกรดเฉลี่ย"), None);
+    let unreadable: Vec<_> = rows[0].unreadable().collect();
+    assert_eq!(unreadable, vec![("เกรดเฉลี่ย", "#DIV/0!", "H2")]);
     let problems = crate::kernel::roster::validate::validate(&rows, &c).unwrap_err();
-    assert_eq!(problems[0].reason, "not_number");
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].reason, "unreadable");
+    assert_eq!(
+        (
+            problems[0].sheet.as_str(),
+            problems[0].row,
+            problems[0].cell.as_str()
+        ),
+        ("รายชื่อ", 2, "H2")
+    );
+    assert!(cell_text(&Data::Error(calamine::CellErrorType::Ref)).starts_with('#'));
 }
 
 #[test]

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
-use super::file::{FileError, Row};
+use super::file::{FileError, HeaderMismatch, Row};
 use crate::config::{AttrError, DeploymentConfig};
 use crate::message::Locale;
 use crate::students::StudentFields;
@@ -27,21 +27,36 @@ pub(crate) const MAX_TAGS: usize = 20;
 const TAG_SEPARATORS: [char; 3] = [',', ';', '|'];
 
 /// One problem of a refused file. `reason` is a code; the text is
-/// `kernel.roster.reason_<code>`. `row` 0 is the file as a whole.
+/// `kernel.roster.reason_<code>`. `row` 0 is the file (or the sheet) as a
+/// whole. `sheet` names the XLSX sheet (empty for a CSV) and `cell` the
+/// cell (`H2`) when one cell is at fault; both are left out of the stored
+/// JSON when empty, so reports stored before #70 read unchanged. New
+/// fields are added the same way (#71 adds the severity).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Problem {
     pub(crate) row: usize,
     pub(crate) column: String,
     pub(crate) reason: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) sheet: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) cell: String,
 }
 
 impl Problem {
-    fn new(row: usize, column: &str, reason: &str) -> Self {
+    pub(crate) fn new(row: usize, column: &str, reason: &str) -> Self {
         Self {
             row,
             column: column.into(),
             reason: reason.into(),
+            sheet: String::new(),
+            cell: String::new(),
         }
+    }
+
+    fn on(mut self, sheet: &str) -> Self {
+        self.sheet = sheet.into();
+        self
     }
 }
 
@@ -69,28 +84,25 @@ pub(crate) fn file_problems(e: &FileError) -> Vec<Problem> {
     match e {
         FileError::Unsupported => whole("unsupported"),
         FileError::NotUtf8 => whole("not_utf8"),
-        FileError::Csv(
-            super::csv::CsvError::Unterminated(r) | super::csv::CsvError::AfterQuote(r),
-        ) => {
-            vec![Problem::new(*r, "", "bad_csv")]
-        }
+        FileError::Csv(r) => vec![Problem::new(*r, "", "bad_csv")],
         FileError::Xlsx => whole("bad_xlsx"),
         FileError::Empty => whole("empty"),
         FileError::TooManyRows => whole("too_many_rows"),
         FileError::TooManyColumns => whole("too_many_columns"),
-        FileError::Headers {
-            missing,
-            unexpected,
-        } => missing
-            .iter()
-            .map(|h| Problem::new(1, h, "missing_header"))
-            .chain(
-                unexpected
-                    .iter()
-                    .map(|h| Problem::new(1, h, "unexpected_header")),
-            )
-            .collect(),
+        FileError::Headers(sheets) => sheets.iter().flat_map(header_problems).collect(),
     }
+}
+
+fn header_problems(m: &HeaderMismatch) -> Vec<Problem> {
+    if m.no_header {
+        return vec![Problem::new(0, "", "no_header_row").on(&m.sheet)];
+    }
+    let at = |h: &String, reason| Problem::new(m.row, h, reason).on(&m.sheet);
+    m.missing
+        .iter()
+        .map(|h| at(h, "missing_header"))
+        .chain(m.unexpected.iter().map(|h| at(h, "unexpected_header")))
+        .collect()
 }
 
 /// Checks every row; `Err` holds every problem found.
@@ -107,9 +119,11 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
     let mut records = Vec::with_capacity(rows.len());
     let mut empty_email = 0;
     for row in rows {
-        let n = row.number;
-        let mut bad = |column: &str, reason: &str| problems.push(Problem::new(n, column, reason));
-        for column in &row.unheaded {
+        let (n, sheet) = (row.number(), row.sheet());
+        let before = problems.len();
+        let mut bad =
+            |column: &str, reason: &str| problems.push(Problem::new(n, column, reason).on(sheet));
+        for column in row.unheaded() {
             bad(column, "no_header");
         }
         let code = row.get(&roster.student_code).unwrap_or_default();
@@ -175,6 +189,7 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
                 Err(e) => bad(&spec.column, attr_reason(e)),
             }
         }
+        unreadable(row, &mut problems, before);
         let mut fields =
             StudentFields::new(name, email.map(str::to_string), locale).with_status("active");
         fields.attributes = attributes;
@@ -192,6 +207,28 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
         })
     } else {
         Err(problems)
+    }
+}
+
+/// Reports each Excel error cell of `row` as `unreadable` (with its cell)
+/// in place of what the empty value it reads as would have caused.
+fn unreadable(row: &Row, problems: &mut Vec<Problem>, from: usize) {
+    let cells: Vec<(&str, &str)> = row.unreadable().map(|(h, _, c)| (h, c)).collect();
+    if cells.is_empty() {
+        return;
+    }
+    let mut i = from;
+    while i < problems.len() {
+        if cells.iter().any(|(h, _)| problems[i].column == *h) {
+            problems.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+    for (column, cell) in cells {
+        let mut p = Problem::new(row.number(), column, "unreadable").on(row.sheet());
+        p.cell = cell.into();
+        problems.push(p);
     }
 }
 

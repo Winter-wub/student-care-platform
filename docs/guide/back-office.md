@@ -41,6 +41,15 @@ on a Module's Mini App page only when `true`) and `order` (see
 lists them and offers `template.csv`), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert`. Any row error refuses the
 whole file with a CSV report, including data in a column without a header.
+An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; empty sheets
+are skipped, and a non-empty sheet without the header refuses the file by
+name). In each sheet the header row is found among its first 10 non-empty
+rows, so title rows above it are fine; totals and notes rows below the data
+(at most two cells and no student id) are skipped. Numbers may be stored as
+text (`12,500`, `12,500.00`; a lone `-` counts as empty), and an Excel error
+cell (`#REF!`, `#N/A`) is refused as unreadable. The report names the sheet,
+row and cell of each problem; a student id repeated in two sheets is a
+duplicate.
 Emails must be ASCII (letters, digits and symbols; an address with Thai
 characters is refused). Otherwise a preview shows new / updated / unchanged /
 returning / fields kept by manual edits and, for `full`, will become left /

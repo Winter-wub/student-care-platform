@@ -229,6 +229,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "The upload could not be read (files must be 4 MB or less)"
     ),
     // Report
+    ("kernel.roster.report_sheet", "ชีต", "Sheet"),
     ("kernel.roster.report_row", "แถว", "Row"),
     ("kernel.roster.report_column", "คอลัมน์", "Column"),
     ("kernel.roster.report_reason", "ปัญหา", "Problem"),
@@ -236,6 +237,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.roster.reason_missing_header",
         "ไม่มีคอลัมน์นี้",
         "Header missing"
+    ),
+    (
+        "kernel.roster.reason_no_header_row",
+        "ไม่พบแถวหัวคอลัมน์ตามแม่แบบใน 10 แถวแรกของชีตนี้",
+        "No template header row in the first 10 rows of this sheet"
+    ),
+    (
+        "kernel.roster.reason_unreadable",
+        "อ่านค่าไม่ได้: เซลล์นี้เป็นข้อผิดพลาดของ Excel (เช่น #REF!)",
+        "Unreadable: the cell holds an Excel error (such as #REF!)"
     ),
     (
         "kernel.roster.reason_unexpected_header",

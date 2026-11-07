@@ -1,0 +1,114 @@
+//! Workbooks with several sheets, title rows and footers (#70), through
+//! the roster's read and validation.
+
+use super::*;
+use crate::kernel::roster::test_config;
+use crate::kernel::roster::validate::{Problem, validate};
+
+const COHORTS: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts.xlsx");
+const NO_HEADER: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_no_header.xlsx");
+const DUPLICATE: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_duplicate.xlsx");
+
+fn at(p: &Problem) -> (&str, usize, &str, &str) {
+    (
+        p.sheet.as_str(),
+        p.row,
+        p.column.as_str(),
+        p.reason.as_str(),
+    )
+}
+
+#[test]
+fn every_sheet_is_read_past_its_titles_and_footer() {
+    let c = test_config();
+    let rows = parse(COHORTS, "cohorts.xlsx", &c.roster).unwrap();
+    let got: Vec<(&str, usize, Option<&str>)> = rows
+        .iter()
+        .map(|r| (r.sheet(), r.number, r.get("รหัสนักศึกษา")))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("ปี 1", 5, Some("68010001")),
+            ("ปี 1", 6, Some("68010002")),
+            ("ปี 1", 7, Some("68010003")),
+            ("ปี 2", 2, Some("67010001")),
+            ("ปี 2", 3, Some("67010002")),
+        ],
+        "titles, the totals row, the notes row and the empty sheet are skipped"
+    );
+    let valid = validate(&rows, &c).unwrap();
+    assert_eq!(valid.records.len(), 5);
+    // Numbers stored as text: " 2 " and "3.50".
+    let y2 = &valid.records[3].fields.attributes;
+    assert_eq!(y2["year"], serde_json::json!(2));
+    assert_eq!(y2["gpa"], serde_json::json!(3.5));
+    assert_eq!(valid.records[1].fields.attributes.get("gpa"), None);
+}
+
+#[test]
+fn a_sheet_without_the_header_is_refused_by_name() {
+    let c = test_config();
+    let e = parse(NO_HEADER, "c.xlsx", &c.roster).unwrap_err();
+    let problems = crate::kernel::roster::validate::file_problems(&e);
+    assert_eq!(problems.len(), 1, "one clear problem: {problems:?}");
+    assert_eq!(at(&problems[0]), ("สรุป", 0, "", "no_header_row"));
+}
+
+#[test]
+fn a_header_with_a_wrong_column_names_its_sheet_and_row() {
+    let c = test_config();
+    let text = "รายชื่อ\n\nรหัสนักศึกษา,ชื่อ,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\n";
+    let e = parse(text.as_bytes(), "a.csv", &c.roster).unwrap_err();
+    let problems = crate::kernel::roster::validate::file_problems(&e);
+    let got: Vec<_> = problems.iter().map(at).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("", 3, "ชื่อ-สกุล", "missing_header"),
+            ("", 3, "ชื่อ", "unexpected_header")
+        ]
+    );
+}
+
+#[test]
+fn a_duplicate_id_across_sheets_and_an_error_cell_carry_sheet_and_row() {
+    let c = test_config();
+    let rows = parse(DUPLICATE, "d.xlsx", &c.roster).unwrap();
+    let problems = validate(&rows, &c).unwrap_err();
+    let got: Vec<_> = problems.iter().map(at).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("ปี 2", 2, "รหัสนักศึกษา", "duplicate_code"),
+            ("ปี 2", 3, "เกรดเฉลี่ย", "unreadable"),
+        ]
+    );
+    assert_eq!(problems[1].cell, "H3");
+    assert_eq!(problems[0].cell, "", "only a cell at fault names one");
+}
+
+#[test]
+fn only_empty_sheets_make_an_empty_file() {
+    let c = test_config();
+    let empty = include_bytes!("../../../tests/fixtures/roster/empty_sheet.xlsx");
+    assert_eq!(parse(empty, "e.xlsx", &c.roster), Err(FileError::Empty));
+    let header = expected_headers(&c.roster).join(",");
+    let only_header = format!("{header}\n");
+    assert_eq!(
+        parse(only_header.as_bytes(), "a.csv", &c.roster),
+        Ok(vec![])
+    );
+}
+
+#[test]
+fn problems_stored_before_sheets_read_back() {
+    let old: Problem =
+        serde_json::from_str(r#"{"row":2,"column":"อีเมล","reason":"bad_email"}"#).unwrap();
+    assert_eq!(old, Problem::new(2, "อีเมล", "bad_email"));
+    assert_eq!(
+        serde_json::to_string(&old).unwrap(),
+        r#"{"row":2,"column":"อีเมล","reason":"bad_email"}"#,
+        "a CSV's problems store as before"
+    );
+}

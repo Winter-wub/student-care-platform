@@ -1,5 +1,6 @@
 # Builds seal_bay_50.csv and seal_bay_50.xlsx (50 fictional Seal Bay
-# University students) in the directory given as the first argument.
+# University students), the small XLSX edge cases and the #70 workbooks
+# (cohorts*.xlsx, fees.xlsx) in the directory given as the first argument.
 # Run once with `python3 make_fixtures.py .`; the outputs are committed.
 import sys, zipfile
 from xml.sax.saxutils import escape
@@ -74,3 +75,91 @@ data = (cell("A2", "68010001", True) + cell("B2", "นกน้อย ทะเ�
     + '<c r="H2" t="e"><v>#DIV/0!</v></c>')
 write_xlsx(f"{out}/formula_error.xlsx", sheet_of(
     f'<row r="1">{header}</row><row r="2">{data}</row>'))
+
+# --- #70: workbooks with several sheets -----------------------------------
+def write_book(path, sheets):
+    """sheets: [(name, rows_xml)]; every sheet a worksheet."""
+    n = len(sheets)
+    types = "".join(
+        f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        for i in range(1, n + 1))
+    book = "".join(
+        f'<sheet name="{escape(name)}" sheetId="{i}" r:id="rId{i}"/>'
+        for i, (name, _) in enumerate(sheets, start=1))
+    rels = "".join(
+        f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>'
+        for i in range(1, n + 1))
+    files = {
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + types + '</Types>',
+        "_rels/.rels": parts["_rels/.rels"],
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + book + '</sheets></workbook>',
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + rels + '</Relationships>',
+    }
+    for i, (_, rows_xml) in enumerate(sheets, start=1):
+        files[f"xl/worksheets/sheet{i}.xml"] = sheet_of(rows_xml)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            zi = zipfile.ZipInfo(name, date_time=(2026, 11, 1, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(zi, data)
+
+def xrow(r, values):
+    """One row: str values as inline text, int/float as numbers, ("e", code)
+    as an error cell, None as no cell."""
+    out = []
+    for ci, v in enumerate(values):
+        ref = f"{col(ci)}{r}"
+        if v is None or v == "":
+            continue
+        if isinstance(v, tuple):
+            out.append(f'<c r="{ref}" t="e"><v>{escape(v[1])}</v></c>')
+        elif isinstance(v, (int, float)):
+            out.append(f'<c r="{ref}"><v>{v}</v></c>')
+        else:
+            out.append(f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{escape(v)}</t></is></c>')
+    return f'<row r="{r}">{"".join(out)}</row>' if out else ""
+
+def student(code, name, year, gpa=None, prog="MSC"):
+    return [code, name, f"s{code}@student.sealbay.example", "th", f"ปี{year}", prog, year, gpa]
+
+# Three cohorts: "ปี 1" has two title rows and a totals row, "ปี 2" a notes
+# row and numbers stored as text, then an empty sheet.
+y1 = (xrow(1, ["รายชื่อนักศึกษา มหาวิทยาลัยซีลเบย์"]) + xrow(2, ["ปีการศึกษา 2569"])
+    + xrow(4, H)
+    + xrow(5, student(68010001, "นกน้อย ทะเลใส", 1, 3.25))
+    + xrow(6, student(68010002, "ปลาทอง อ่าวคราม", 1))
+    + xrow(7, student(68010003, "หอยมุก หาดทราย", 1, 2.5, "MSC-Intl"))
+    + xrow(8, ["รวม", "3 คน"]))
+y2 = (xrow(1, H)
+    + xrow(2, student(67010001, "กุ้งนาง คลื่นลม", " 2 ", "3.50"))
+    + xrow(3, student(67010002, "ปูม้า ฟองคลื่น", "2", " 2.75 "))
+    + xrow(5, ["หมายเหตุ: ข้อมูล ณ วันที่ 1 พฤศจิกายน 2569"]))
+write_book(f"{out}/cohorts.xlsx", [("ปี 1", y1), ("ปี 2", y2), ("ว่าง", "")])
+
+# A summary sheet without the header beside a good cohort sheet.
+summary = xrow(1, ["สรุปจำนวนนักศึกษา"]) + xrow(2, ["ปี 1", 3])
+write_book(f"{out}/cohorts_no_header.xlsx", [("ปี 1", y1), ("สรุป", summary)])
+
+# The same id in two sheets, and an error cell in the second.
+y2_bad = (xrow(1, H)
+    + xrow(2, student(68010002, "ปลาทอง อ่าวคราม", 2))
+    + xrow(3, student(67010003, "ม้าน้ำ ทะเลใส", 2, ("e", "#REF!"))))
+write_book(f"{out}/cohorts_duplicate.xlsx", [("ปี 1", y1), ("ปี 2", y2_bad)])
+
+# A Module's upload (fees, read with harpseal::sheet): title row, amounts
+# stored as text with separators, as numbers, "-" and blank, error cells,
+# a totals row and a notes row.
+FEES = ["รหัสนักศึกษา", "ชื่อ-สกุล", "ยอดค้างชำระ"]
+fees = (xrow(1, ["ค่าธรรมเนียมการศึกษา ภาคเรียนที่ 2/2569"])
+    + xrow(3, FEES)
+    + xrow(4, [68010001, "นกน้อย ทะเลใส", "12,500"])
+    + xrow(5, [68010002, "ปลาทอง อ่าวคราม", " 12500 "])
+    + xrow(6, [68010003, "หอยมุก หาดทราย", "12,500.00"])
+    + xrow(7, [68010004, "กุ้งนาง คลื่นลม", 12500])
+    + xrow(8, [68010005, "ปูม้า ฟองคลื่น", "-"])
+    + xrow(9, [68010006, "ม้าน้ำ ทะเลใส", None])
+    + xrow(10, [68010007, "ดาวทะเล อ่าวคราม", ("e", "#REF!")])
+    + xrow(11, [68010008, "สาหร่าย หาดทราย", ("e", "#N/A")])
+    + xrow(12, ["รวม", None, 50000])
+    + xrow(13, ["หมายเหตุ: ยอด ณ วันที่ 1 พฤศจิกายน 2569"]))
+write_book(f"{out}/fees.xlsx", [("ภาคเรียน 2", fees)])

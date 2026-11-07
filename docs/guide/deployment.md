@@ -288,3 +288,18 @@ add no logic of their own:
 audit row written with it, so demo data stays distinguishable
 (`harpseal seed-example` uses it). A confirmed roster import is applied by
 the Job `kernel.roster.import` on the next ticks.
+
+## Reading spreadsheet uploads in a Module
+
+`harpseal::sheet` is the reader the roster import uses, public so a
+Module parses its own uploads (fees, grades) with the same rules:
+`Workbook::open(bytes, file_name)` reads a `.csv` (one unnamed sheet) or
+every worksheet of an `.xlsx`; `sheet.table(&TableSpec::new([...]))`
+finds the header row among the first 10 non-empty rows (title rows above
+are skipped), skips totals and notes rows below the data (at most two
+cells and no key, by default the first column), and yields `Row`s with
+their sheet name and 1-based row number. An Excel error cell is
+`Cell::Unreadable` with its code and cell (`#REF!`, `C10`), never text.
+`harpseal::sheet::number(text, Blank::Zero | Blank::Missing)` reads
+`12,500`, ` 12500 ` and `12,500.00` as the same number; `.` is always the
+decimal point. The rustdoc of `harpseal::sheet` has a worked example.
