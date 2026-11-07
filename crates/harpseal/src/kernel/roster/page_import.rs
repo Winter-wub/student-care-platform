@@ -128,9 +128,13 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
         }
         @if v.staff.can(IMPORT) {
             div class="actions" {
-                form method="post" action=(format!("{BASE}/{}/confirm", imp.id)) {
-                    (v.staff.csrf_field())
-                    button type="submit" { (v.t("kernel.roster.confirm")) }
+                @if v.s.config.roster.allows_mode(&imp.mode) {
+                    form method="post" action=(format!("{BASE}/{}/confirm", imp.id)) {
+                        (v.staff.csrf_field())
+                        button type="submit" { (v.t("kernel.roster.confirm")) }
+                    }
+                } @else {
+                    div class="warn" role="alert" { (v.t("kernel.roster.mode_no_longer")) }
                 }
                 form method="post" action=(format!("{BASE}/{}/cancel", imp.id)) {
                     (v.staff.csrf_field())
@@ -223,10 +227,13 @@ pub(super) async fn confirm(
     let v = View::new(&s, &staff);
     let back = format!("{BASE}/{id}");
     let actor = Actor::staff(&staff);
-    match service::confirm(&s.services, &s.jobs, &id, &actor, &ctx).await {
+    match service::confirm(&s.services, &s.config.roster, &s.jobs, &id, &actor, &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.confirmed"),
         Ok(Outcome::NotPreviewed(_)) => v.redirect(&back, false, "kernel.roster.not_previewed"),
         Ok(Outcome::FileDeleted) => v.redirect(&back, false, "kernel.roster.file_pruned"),
+        Ok(Outcome::ModeNotAllowed) => {
+            super::page_list::refused(&v, "kernel.roster.mode_no_longer")
+        }
         Ok(Outcome::Missing) => v.not_found(),
         Err(e) => v.error(&e),
     }
@@ -242,7 +249,7 @@ pub(super) async fn cancel(
     let back = format!("{BASE}/{id}");
     match service::cancel(&s.services, &id, &Actor::staff(&staff), &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.cancelled"),
-        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted) => {
+        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted | Outcome::ModeNotAllowed) => {
             v.redirect(&back, false, "kernel.roster.not_previewed")
         }
         Ok(Outcome::Missing) => v.not_found(),
@@ -262,7 +269,7 @@ pub(super) async fn fail(
     let actor = Actor::staff(&staff);
     match super::stuck::mark_failed(&s.services, &id, &actor, &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.marked_failed"),
-        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted) => {
+        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted | Outcome::ModeNotAllowed) => {
             v.redirect(&back, false, "kernel.roster.not_stuck")
         }
         Ok(Outcome::Missing) => v.not_found(),

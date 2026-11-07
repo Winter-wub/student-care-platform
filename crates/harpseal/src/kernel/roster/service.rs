@@ -6,6 +6,7 @@ use serde_json::json;
 
 use super::store::{self, Import};
 use crate::audit::{self, Actor, RequestCtx, Target};
+use crate::config::RosterConfig;
 use crate::jobs::Jobs;
 use crate::port_types::Statement;
 use crate::{Result, Services};
@@ -26,6 +27,10 @@ pub(crate) enum Outcome {
     /// Its file was deleted a year after upload (`prune.rs`): nothing
     /// left to import.
     FileDeleted,
+    /// Confirm only: the preview's mode is no longer in `[roster] modes`
+    /// (the Deployment's config changed after the upload). Nothing is
+    /// queued; the preview stays until cancelled, replaced or pruned.
+    ModeNotAllowed,
 }
 
 /// The unique key of chunk Job `offset` of import `id`: the first chunk
@@ -49,9 +54,14 @@ fn previewed(id: &str) -> Statement {
 }
 
 /// `previewed` → `queued`, audit `roster.import` (after = counts, file
-/// hash, mode, file name) and the first chunk Job, in one batch.
+/// hash, mode, file name) and the first chunk Job, in one batch. Refused
+/// ([`Outcome::ModeNotAllowed`]) when `roster` no longer allows the
+/// preview's mode: a `full` preview made before a Deployment went
+/// `upsert`-only must not mark the other cohorts left (#79). An import
+/// already queued or running is not asked again.
 pub(crate) async fn confirm(
     s: &Services,
+    roster: &RosterConfig,
     jobs: &Jobs,
     id: &str,
     actor: &Actor,
@@ -65,6 +75,9 @@ pub(crate) async fn confirm(
     }
     if imp.file_key.is_empty() {
         return Ok(Outcome::FileDeleted);
+    }
+    if !roster.allows_mode(&imp.mode) {
+        return Ok(Outcome::ModeNotAllowed);
     }
     let after = json!({
         "file_name": imp.file_name,

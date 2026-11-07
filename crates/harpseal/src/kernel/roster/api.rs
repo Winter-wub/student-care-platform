@@ -35,12 +35,17 @@ pub enum Confirmed {
     Missing,
     /// Its stored file was deleted a year after upload: nothing to import.
     FileDeleted,
+    /// The preview's mode is no longer in `[roster] modes` (the config
+    /// changed since the upload): nothing was queued; upload again.
+    ModeNotAllowed,
 }
 
 /// Stores `bytes` as `file_name` (CSV or XLSX, told apart by content and
 /// name), reads it with `[roster]`, validates every row and previews the
 /// change. `mode` is `full` (Students missing from the file become
-/// `left`) or `upsert`. Audit `roster.import.upload`.
+/// `left`) or `upsert`, and must be one of `[roster] modes` (there is no
+/// default here: pass `RosterConfig::default_mode` to follow the
+/// Deployment). Audit `roster.import.upload`.
 pub async fn upload(
     d: &Deployment,
     file_name: &str,
@@ -59,8 +64,9 @@ pub async fn upload(
     )
 }
 
-/// Confirms previewed import `id`: queues the Job that applies it. Audit
-/// `roster.import`.
+/// Confirms previewed import `id`: queues the Job that applies it, unless
+/// `[roster] modes` no longer allows the mode it was previewed with
+/// ([`Confirmed::ModeNotAllowed`]). Audit `roster.import`.
 pub async fn confirm(
     d: &Deployment,
     id: &str,
@@ -69,11 +75,12 @@ pub async fn confirm(
 ) -> Result<Confirmed> {
     crate::auth::roles::require(d.services(), actor, IMPORT_PERMISSION).await?;
     Ok(
-        match service::confirm(d.services(), d.jobs(), id, actor, ctx).await? {
+        match service::confirm(d.services(), &d.config().roster, d.jobs(), id, actor, ctx).await? {
             service::Outcome::Done => Confirmed::Queued,
             service::Outcome::NotPreviewed(s) => Confirmed::NotPreviewed(s),
             service::Outcome::Missing => Confirmed::Missing,
             service::Outcome::FileDeleted => Confirmed::FileDeleted,
+            service::Outcome::ModeNotAllowed => Confirmed::ModeNotAllowed,
         },
     )
 }

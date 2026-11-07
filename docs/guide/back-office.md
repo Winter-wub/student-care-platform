@@ -39,7 +39,15 @@ on a Module's Mini App page only when `true`) and `order` (see
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
 lists them and offers `template.csv`), choose `full` (Students missing from the
-file become left and lose their Links) or `upsert`. Any row error refuses the
+file become left and lose their Links) or `upsert` (add and update only;
+nobody becomes left). The form preselects `[roster] default_mode` (default
+`full`), and a request that sends no mode uses it too. A Deployment whose files
+never list every Student (one file per cohort) sets `modes = ["upsert"]` and
+`default_mode = "upsert"`: the form then offers only `upsert`, and a request
+asking for `full` is refused with 400 and imports nothing (`modes` must not be
+empty, hold only `full` / `upsert` and include `default_mode`; a bad value stops
+the Deployment from building). The preview and the import page name the mode.
+Any row error refuses the
 whole file with a CSV report, including data in a column without a header.
 An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; at most 50
 sheets). **Every visible sheet with content must hold the header**: a

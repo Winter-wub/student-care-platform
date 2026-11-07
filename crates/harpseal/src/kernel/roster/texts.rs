@@ -33,6 +33,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "เพิ่มหรือแก้ไขเท่านั้น: ไม่มีใครพ้นสภาพ",
         "Add or update only: nobody becomes left"
     ),
+    (
+        "kernel.roster.mode_not_allowed",
+        "ระบบนี้ไม่เปิดให้นำเข้าแบบนี้ ไม่ได้นำเข้าอะไรเลย กรุณากลับไปเลือกใหม่",
+        "This Deployment does not allow that import mode. Nothing was imported; go back and choose again."
+    ),
+    (
+        "kernel.roster.mode_no_longer",
+        "ผลตรวจไฟล์นี้ใช้แบบการนำเข้าที่ระบบไม่เปิดให้ใช้แล้ว ไม่ได้นำเข้าอะไรเลย กรุณาอัปโหลดไฟล์ใหม่",
+        "This preview's import mode is no longer allowed by this Deployment. Nothing was imported; upload the file again."
+    ),
     ("kernel.roster.mode_full", "ทั้งทะเบียน", "Whole roster"),
     ("kernel.roster.mode_upsert", "เพิ่ม/แก้ไข", "Add/update"),
     ("kernel.roster.check", "ตรวจไฟล์", "Check the file"),
