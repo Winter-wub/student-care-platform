@@ -113,6 +113,8 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
 }
 
 fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
+    // Staff unlink and Manual Link are separate Permissions (#80).
+    let can_revoke = v.staff.can("kernel.link.revoke");
     let can_link = v.staff.can("kernel.link.manage");
     let kinds = v.s.deployment.channel_kinds();
     let base = format!("/admin/students/{}", row.id);
@@ -133,7 +135,7 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                                 @if let Some(by) = &l.verified_by { " · " (v.t("kernel.students.verified_by")) " " (by) }
                             }
                             span class="muted code" { (v.t("kernel.students.account")) " " (l.external_id) }
-                            @if can_link {
+                            @if can_revoke {
                                 form method="post" action=(format!("{base}/links/{}/revoke", l.id)) {
                                     (v.staff.csrf_field())
                                     button class="secondary" type="submit" { (v.t("kernel.students.revoke")) }

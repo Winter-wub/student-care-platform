@@ -36,7 +36,11 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
         "kernel.student.edit",
         "Edit Student fields and Tags by hand",
     ),
-    Permission::new("kernel.link.manage", "Create Manual Links and revoke Links"),
+    Permission::new("kernel.link.manage", "Create Manual Links"),
+    Permission::new(
+        "kernel.link.revoke",
+        "Revoke a Student's Link (Staff unlink)",
+    ),
     Permission::new("kernel.roster.view", "See roster imports"),
     Permission::new("kernel.roster.edit", "Edit roster data"),
     Permission::new("kernel.roster.import", "Upload and apply roster files"),
@@ -94,6 +98,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0011_menu_revision",
         include_str!("../../migrations/0011_menu_revision.sql"),
+    ),
+    (
+        "0012_link_revoke_permission",
+        include_str!("../../migrations/0012_link_revoke_permission.sql"),
     ),
 ];
 

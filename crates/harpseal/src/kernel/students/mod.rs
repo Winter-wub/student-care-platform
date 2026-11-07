@@ -4,8 +4,8 @@
 //! list and HTMX search (`kernel.student.view`), the detail page
 //! (`kernel.student.view`, logged as the read `student.view`), the edit
 //! form, "ใช้ค่าจากทะเบียน", manual Tags and the status change
-//! (`kernel.student.edit`), Manual Link and revoke (`kernel.link.manage`,
-//! through [`crate::links`]).
+//! (`kernel.student.edit`), Manual Link (`kernel.link.manage`) and revoke
+//! (`kernel.link.revoke`, Staff unlink), both through [`crate::links`].
 //!
 //! **Manual edits win over the roster** (#8): a field Staff edit by hand is
 //! listed in `student.manual_overrides` (`display_name`, `email`,
@@ -179,6 +179,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     const VIEW: &str = "kernel.student.view";
     const EDIT: &str = "kernel.student.edit";
     const LINK: &str = "kernel.link.manage";
+    const REVOKE: &str = "kernel.link.revoke";
     r.messages(texts::DEFAULTS)
         .back_office_page(
             VIEW,
@@ -203,7 +204,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .back_office(EDIT, "/students/{id}/status", post(actions::status))
         .back_office(LINK, "/students/{id}/links", post(actions::manual_link))
         .back_office(
-            LINK,
+            REVOKE,
             "/students/{id}/links/{link_id}/revoke",
             post(actions::revoke),
         );

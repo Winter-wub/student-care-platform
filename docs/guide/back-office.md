@@ -7,9 +7,18 @@ the [README](https://github.com/Winter-wub/student-care-platform#readme).
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
 recent Security Events. Staff with `kernel.student.edit` edit fields (each
 edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
-the status. Staff with `kernel.link.manage` create Manual Links and revoke
-Links. The attributes come from `[roster.attributes.<key>]` in
-`deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
+the status. Staff with `kernel.link.manage` create Manual Links; Staff with
+`kernel.link.revoke` unlink a Student's chat account. The two are separate, so
+a Role can hold either (Student Affairs may unlink without being able to link
+any account to any Student), and the detail page shows each action only to
+Staff who hold its Permission. Before the split `kernel.link.manage` covered
+both: `migrate` grants `kernel.link.revoke` once to every Role in the database
+that holds `kernel.link.manage`, and a `[roles]` entry that lists only
+`kernel.link.manage` is granted both on every `migrate`. An entry that lists
+`kernel.link.revoke` is taken as written, so list it alone for unlink without
+Manual Link. A Role cannot be given Manual Link without unlink through
+`[roles]`; make it on the Roles page. The attributes come from
+`[roster.attributes.<key>]` in `deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
 `enum` with `values`), `label = { th = "..", en = ".." }`, `optional`,
 `shown_in_list` and `order` (see `harpseal::RosterConfig`).
 

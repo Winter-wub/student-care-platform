@@ -9,13 +9,33 @@ use crate::{Error, Result, Services};
 /// Name of the Role the CLI gives the first Administrator.
 pub(crate) const ADMINISTRATOR: &str = "Administrator";
 
+/// The Permission that, before #80, also covered revoking a Link.
+const LINK_MANAGE: &str = "kernel.link.manage";
+/// The Permission split off from [`LINK_MANAGE`] for Staff unlink (#80).
+const LINK_REVOKE: &str = "kernel.link.revoke";
+
+/// What a TOML Role is granted for the Permissions it lists: a Role that
+/// lists `kernel.link.manage` and not `kernel.link.revoke` was written when
+/// the former covered both, so it gets both. A Role that lists the new one
+/// (alone or with the old) is taken as written.
+fn with_legacy_link_grant(perms: &[String]) -> Vec<String> {
+    let mut all = perms.to_vec();
+    let has = |id: &str| perms.iter().any(|p| p == id);
+    if has(LINK_MANAGE) && !has(LINK_REVOKE) {
+        all.push(LINK_REVOKE.to_string());
+    }
+    all
+}
+
 /// Merges `[roles]` into `role` / `role_permission`: missing Roles are
-/// created and every listed Permission is granted. Add-only and idempotent:
-/// Permissions granted in the database, and Roles created there, are kept.
+/// created and every listed Permission is granted (a Role listing only
+/// `kernel.link.manage` also gets `kernel.link.revoke`, see
+/// [`with_legacy_link_grant`]). Add-only and idempotent: Permissions
+/// granted in the database, and Roles created there, are kept.
 pub(crate) async fn seed(services: &Services, roles: &BTreeMap<String, Vec<String>>) -> Result<()> {
     let mut stmts = Vec::new();
     for (name, perms) in roles {
-        stmts.extend(ensure_role(services, name, perms)?);
+        stmts.extend(ensure_role(services, name, &with_legacy_link_grant(perms))?);
     }
     if stmts.is_empty() {
         return Ok(());
@@ -227,4 +247,29 @@ pub(crate) async fn require(
         return Err(forbidden());
     }
     Ok(id.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ids(p: &[&str]) -> Vec<String> {
+        p.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_role_listing_only_the_old_link_permission_gets_both() {
+        let got = with_legacy_link_grant(&ids(&["kernel.student.view", LINK_MANAGE]));
+        assert_eq!(got, ids(&["kernel.student.view", LINK_MANAGE, LINK_REVOKE]));
+    }
+
+    #[test]
+    fn a_role_listing_the_new_permission_is_taken_as_written() {
+        let only_revoke = ids(&[LINK_REVOKE]);
+        assert_eq!(with_legacy_link_grant(&only_revoke), only_revoke);
+        let both = ids(&[LINK_MANAGE, LINK_REVOKE]);
+        assert_eq!(with_legacy_link_grant(&both), both);
+        let neither = ids(&["kernel.student.view"]);
+        assert_eq!(with_legacy_link_grant(&neither), neither);
+    }
 }
