@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use super::StudentFields;
+use super::email::is_email;
 use crate::config::{AttributeSpec, RosterConfig};
 use crate::message::Locale;
 
@@ -99,21 +100,6 @@ pub(super) fn parse_edit(
     }
 }
 
-/// A plausible address: one `@`, a dot in the domain, no spaces, at most
-/// 254 bytes. The roster import (#24) applies its own syntax check.
-pub(super) fn is_email(s: &str) -> bool {
-    let Some((local, domain)) = s.split_once('@') else {
-        return false;
-    };
-    s.len() <= 254
-        && !local.is_empty()
-        && !domain.contains('@')
-        && domain.contains('.')
-        && !domain.starts_with('.')
-        && !domain.ends_with('.')
-        && !s.chars().any(|c| c.is_whitespace() || c.is_control())
-}
-
 /// A language tag: 2 to 10 ASCII letters, digits or `-`, starting with a
 /// letter.
 pub(super) fn is_locale(s: &str) -> bool {
@@ -141,10 +127,6 @@ mod tests {
 
     #[test]
     fn emails_and_locales() {
-        assert!(is_email("nok@student.sealbay.example"));
-        for bad in ["nok", "@x.y", "a@b", "a b@c.d", "a@b@c.d", "a@.b", "a@b."] {
-            assert!(!is_email(bad), "{bad}");
-        }
         assert!(is_locale("th") && is_locale("en-GB"));
         assert!(!is_locale("t") && !is_locale("1x") && !is_locale("th_TH"));
         assert_eq!(urlencode("นก a"), "%E0%B8%99%E0%B8%81%20a");

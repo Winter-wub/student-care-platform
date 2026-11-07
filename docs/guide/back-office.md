@@ -9,8 +9,14 @@ recent Security Events. A Student with **missing data** (no email, an email that
 is not a valid address, or a `[roster.attributes]` attribute with no value) has a
 "ข้อมูลไม่ครบ" badge naming what is missing, and the checkbox "only Students with
 missing data" (`?missing=1`, kept across pages and search) lists just them. The
-roster import warns about the same things (below); a Student without an email
-still cannot start onboarding. Staff with `kernel.student.edit` edit fields (each
+roster import warns about the same things (below). The filter reads the Student
+table about three times per page (D1 bills per row read), fine for an occasional
+Staff action; it does not store a flag. One email check serves the roster, the edit
+form (a Thai or `a@x..example` address is refused there too) and this badge.
+In the chat, a Student cannot start onboarding, and is told to contact Staff for a
+Manual Link, when their email is missing, not valid, or the same (any case) as
+another Student's who is not left; the last is recorded as a Security Event
+`link.shared_email`, since whoever reads that mailbox could link as either. Staff with `kernel.student.edit` edit fields (each
 edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
 the status. Staff with `kernel.link.manage` create Manual Links; Staff with
 `kernel.link.revoke` unlink a Student's chat account. The two are separate, so
@@ -61,8 +67,10 @@ and a count per class, with the same list in `report.csv`, which gains a level
 column). The warning classes, all on by default: `missing_email` (the Student
 cannot start onboarding until Staff add one), `invalid_email` (imported as typed,
 so Staff can fix it on the Student's page), `duplicate_email` (the address is used by
-another Student in the file, or by one already in the system that the file does
-not change) and `empty_attribute` (an optional attribute with no value). A
+another Student in the file, or by one who keeps it after the import: not left, not
+a `full` import's leavers, not given another address by the file; a row whose email
+Staff set by hand is not compared) and `empty_attribute` (an optional attribute with
+no value: one warning per column and sheet, with the count and the first rows). A
 Deployment makes classes blocking with `[roster] blocking = ["invalid_email",
 "duplicate_email"]` (only these four names are accepted; anything else stops the
 Deployment from building). A file with only warnings imports after Confirm, and

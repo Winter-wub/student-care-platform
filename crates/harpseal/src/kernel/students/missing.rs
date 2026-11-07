@@ -8,11 +8,18 @@
 //! (`validate::is_email`), which SQL cannot express, so the filter first
 //! reads the Students' addresses once (two short columns) and passes the
 //! ids of the invalid ones in as one JSON array. No query per Student.
+//!
+//! **Cost:** a filtered page reads the Student table about three times
+//! (the addresses, the count, the page), which D1 bills per row read. The
+//! filter is an occasional Staff action, so this is accepted rather than
+//! storing an "email invalid" flag that every writer of `student.email`
+//! (import, edit form, code) would have to keep in step, and a migration.
+//! Revisit if a Deployment's roster grows past some tens of thousands.
 
 use serde_json::{Map, Value as Json};
 
+use super::email::is_email;
 use crate::config::RosterConfig;
-use crate::kernel::roster::validate::is_email;
 use crate::port_types::{Statement, Value};
 use crate::{Result, Services};
 

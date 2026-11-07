@@ -70,6 +70,11 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "Claim of a linked student ID"
     ),
     (
+        "kernel.admin.kind.link_shared_email",
+        "พยายามเชื่อมรหัสที่อีเมลซ้ำกับคนอื่น",
+        "Claim of a student ID whose email is shared"
+    ),
+    (
         "kernel.admin.kind.inbound_failed",
         "รับข้อความไม่สำเร็จ",
         "Inbound failed"

@@ -3,12 +3,13 @@
 //! imports and the preview lists the warning); which warning classes block
 //! is `[roster] blocking`, see [`crate::config::WARNING_CLASSES`].
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use super::store::Existing;
 use super::validate::{MAX_PROBLEMS, Problem};
+use crate::kernel::students::email;
 
 /// Whether a problem stops the import.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,31 +40,81 @@ impl Severity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Owner {
     pub(crate) code: String,
-    /// Staff edited the email by hand, so the file will not change it.
-    pub(crate) held: bool,
+    /// Status `active` now (not `left`).
+    pub(crate) active: bool,
+    /// Staff set the status by hand: an import keeps it.
+    pub(crate) status_held: bool,
+    /// Staff set the email by hand: an import keeps it.
+    pub(crate) email_held: bool,
 }
 
-/// Existing Students' emails (trimmed, lowercase) and who has them.
-pub(crate) type Taken = HashMap<String, Vec<Owner>>;
-
-/// The key two emails are compared by.
-pub(crate) fn key(email: &str) -> String {
-    email.trim().to_lowercase()
-}
-
-/// The emails of `existing` (by student code).
-pub(crate) fn taken(existing: &HashMap<String, Existing>) -> Taken {
-    let mut out = Taken::new();
-    for (code, e) in existing {
-        let Some(email) = e.fields.email.as_deref().filter(|m| !m.trim().is_empty()) else {
-            continue;
+impl Owner {
+    /// Whether this Student still has the email after the import: not
+    /// left (a listed Student comes back unless their status is held; an
+    /// unlisted one goes in `full` mode unless held), and not given
+    /// another by the file.
+    fn keeps(&self, listed: bool, full: bool) -> bool {
+        let stays_active = match (listed, self.status_held) {
+            (true, false) => true,
+            (true, true) => self.active,
+            (false, held) => self.active && (!full || held),
         };
-        out.entry(key(email)).or_default().push(Owner {
-            code: code.clone(),
-            held: e.overrides.iter().any(|o| o == "email"),
-        });
+        stays_active && (self.email_held || !listed)
     }
-    out
+}
+
+/// What the file is compared with: the emails existing Students will have
+/// after the import (trimmed, lowercase, see [`email::key`]).
+#[derive(Debug, Default)]
+pub(crate) struct Taken {
+    by_email: HashMap<String, Vec<Owner>>,
+    /// Codes of Students whose email Staff set by hand: the file's value
+    /// for them is not stored, so it is not compared.
+    hand_set: HashSet<String>,
+    full: bool,
+}
+
+impl Taken {
+    /// The emails of `existing` (by student code) for an import in `full`
+    /// mode or not.
+    pub(crate) fn of(existing: &HashMap<String, Existing>, full: bool) -> Self {
+        let mut out = Self {
+            full,
+            ..Self::default()
+        };
+        for (code, e) in existing {
+            let email_held = e.overrides.iter().any(|o| o == "email");
+            if email_held {
+                out.hand_set.insert(code.clone());
+            }
+            let Some(email) = e.fields.email.as_deref().filter(|m| !m.trim().is_empty()) else {
+                continue;
+            };
+            let owner = Owner {
+                code: code.clone(),
+                active: e.fields.status == "active",
+                status_held: super::store::status_held(e),
+                email_held,
+            };
+            out.by_email
+                .entry(email::key(email))
+                .or_default()
+                .push(owner);
+        }
+        out
+    }
+
+    fn hand_set(&self, code: &str) -> bool {
+        self.hand_set.contains(code)
+    }
+
+    fn other_owner(&self, key: &str, code: &str, codes: &BTreeSet<&str>) -> bool {
+        self.by_email.get(key).is_some_and(|owners| {
+            owners
+                .iter()
+                .any(|o| o.code != code && o.keeps(codes.contains(o.code.as_str()), self.full))
+        })
+    }
 }
 
 /// The valid emails of a file, to find those two Students would share.
@@ -74,6 +125,8 @@ pub(crate) struct Emails {
 
 #[derive(Debug)]
 struct Seen {
+    /// Position of the row among the file's rows.
+    index: usize,
     row: usize,
     sheet: String,
     code: String,
@@ -81,34 +134,93 @@ struct Seen {
 }
 
 impl Emails {
-    pub(crate) fn add(&mut self, row: usize, sheet: &str, code: &str, email: &str) {
+    /// Notes the email of the row `(index, number, sheet)`, unless Staff
+    /// set that Student's email by hand (the file's value is not stored).
+    pub(crate) fn add(&mut self, at: (usize, usize, &str), code: &str, email: &str, taken: &Taken) {
+        let (index, row, sheet) = at;
+        if taken.hand_set(code) {
+            return;
+        }
         self.seen.push(Seen {
+            index,
             row,
             sheet: sheet.into(),
             code: code.into(),
-            key: key(email),
+            key: email::key(email),
         });
     }
 
-    /// `(row, sheet)` of every row whose email another Student in the file
-    /// has, or an existing Student outside the file does (or inside it,
-    /// when Staff set that email by hand: the file will not change it).
-    pub(crate) fn shared(&self, taken: &Taken, codes: &BTreeSet<&str>) -> Vec<(usize, &str)> {
+    /// `(index, row, sheet)` of every row whose email another Student in
+    /// the file has, or an existing Student who keeps theirs.
+    pub(crate) fn shared(
+        &self,
+        taken: &Taken,
+        codes: &BTreeSet<&str>,
+    ) -> Vec<(usize, usize, &str)> {
         let mut count: HashMap<&str, usize> = HashMap::new();
         for s in &self.seen {
             *count.entry(s.key.as_str()).or_default() += 1;
         }
-        let other_owner = |s: &Seen| {
-            taken.get(&s.key).is_some_and(|owners| {
-                owners
-                    .iter()
-                    .any(|o| o.code != s.code && (o.held || !codes.contains(o.code.as_str())))
-            })
-        };
         self.seen
             .iter()
-            .filter(|s| count[s.key.as_str()] > 1 || other_owner(s))
-            .map(|s| (s.row, s.sheet.as_str()))
+            .filter(|s| count[s.key.as_str()] > 1 || taken.other_owner(&s.key, &s.code, codes))
+            .map(|s| (s.index, s.row, s.sheet.as_str()))
+            .collect()
+    }
+}
+
+/// Rows of the empty optional cells of one column (#71): one warning per
+/// sheet and column, not one per cell.
+#[derive(Debug, Default)]
+pub(crate) struct Blanks {
+    columns: Vec<Blank>,
+}
+
+#[derive(Debug)]
+struct Blank {
+    sheet: String,
+    column: String,
+    rows: Vec<usize>,
+    count: u64,
+}
+
+/// Rows named in an aggregated warning.
+const SAMPLE_ROWS: usize = 5;
+
+impl Blanks {
+    pub(crate) fn add(&mut self, sheet: &str, column: &str, row: usize) {
+        let at = self
+            .columns
+            .iter()
+            .position(|b| b.sheet == sheet && b.column == column);
+        let b = match at {
+            Some(i) => &mut self.columns[i],
+            None => {
+                self.columns.push(Blank {
+                    sheet: sheet.into(),
+                    column: column.into(),
+                    rows: Vec::new(),
+                    count: 0,
+                });
+                self.columns.last_mut().expect("just pushed")
+            }
+        };
+        b.count += 1;
+        if b.rows.len() < SAMPLE_ROWS {
+            b.rows.push(row);
+        }
+    }
+
+    /// One `empty_attribute` problem per column, at its first row.
+    pub(crate) fn problems(self, blocks: bool) -> Vec<Problem> {
+        self.columns
+            .into_iter()
+            .map(|b| {
+                let mut p = Problem::new(b.rows[0], &b.column, "empty_attribute").on(&b.sheet);
+                p.count = b.count;
+                p.rows = b.rows;
+                p.with_severity(blocks)
+            })
             .collect()
     }
 }
@@ -117,21 +229,19 @@ impl Emails {
 pub(crate) fn classes(problems: &[Problem]) -> BTreeMap<String, u64> {
     let mut out = BTreeMap::new();
     for p in problems {
-        *out.entry(p.reason.clone()).or_default() += 1;
+        *out.entry(p.reason.clone()).or_default() += p.weight();
     }
     out
 }
 
-/// The problems a report keeps: blocking ones first, then warnings, at most
-/// [`MAX_PROBLEMS`], each group in file order.
+/// How many cells or rows the problems stand for (see [`Problem::weight`]).
+pub(crate) fn total(problems: &[Problem]) -> u64 {
+    problems.iter().map(Problem::weight).sum()
+}
+
+/// The problems a report keeps: at most [`MAX_PROBLEMS`], in file order.
 pub(crate) fn kept(problems: Vec<Problem>) -> Vec<Problem> {
-    let (blocking, warned): (Vec<_>, Vec<_>) =
-        problems.into_iter().partition(|p| p.severity.is_blocking());
-    blocking
-        .into_iter()
-        .chain(warned)
-        .take(MAX_PROBLEMS)
-        .collect()
+    problems.into_iter().take(MAX_PROBLEMS).collect()
 }
 
 #[cfg(test)]

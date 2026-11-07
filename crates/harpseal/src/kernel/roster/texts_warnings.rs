@@ -26,6 +26,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Download the warnings report (CSV)"
     ),
     (
+        "kernel.roster.rows_of",
+        "{count} แถว เช่นแถว {rows}",
+        "{count} rows, such as rows {rows}"
+    ),
+    (
         "kernel.roster.by_class",
         "จำนวนตามประเภท",
         "Count per class"

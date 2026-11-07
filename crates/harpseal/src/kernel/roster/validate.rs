@@ -16,6 +16,7 @@ use serde_json::Map;
 use super::file::{FileError, HeaderMismatch, Row};
 use super::warnings::{self, Severity, Taken};
 use crate::config::{AttrError, DeploymentConfig};
+use crate::kernel::students::email::is_email;
 use crate::message::Locale;
 use crate::students::StudentFields;
 
@@ -48,6 +49,17 @@ pub(crate) struct Problem {
     pub(crate) cell: String,
     #[serde(default, skip_serializing_if = "Severity::is_blocking")]
     pub(crate) severity: Severity,
+    /// Cells this problem stands for when it is one of several of a
+    /// column (`empty_attribute`, #71); 0 for a problem of one place.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) count: u64,
+    /// The first rows of such a problem.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) rows: Vec<usize>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl Problem {
@@ -59,7 +71,14 @@ impl Problem {
             sheet: String::new(),
             cell: String::new(),
             severity: Severity::Blocking,
+            count: 0,
+            rows: Vec::new(),
         }
+    }
+
+    /// How many cells it counts as in a total: [`Problem::count`], else 1.
+    pub(crate) fn weight(&self) -> u64 {
+        self.count.max(1)
     }
 
     /// The same problem as a warning unless `blocks`.
@@ -133,7 +152,7 @@ fn header_problems(m: &HeaderMismatch) -> Vec<Problem> {
 
 /// Checks every row; `Err` holds every problem found, warnings included.
 pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid, Vec<Problem>> {
-    validate_against(rows, config, &Taken::new())
+    validate_against(rows, config, &Taken::default())
 }
 
 /// [`validate`], also warning about an email an existing Student uses
@@ -154,6 +173,10 @@ pub(crate) fn validate_against(
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     let mut records = Vec::with_capacity(rows.len());
     let mut emails = warnings::Emails::default();
+    let mut blanks = warnings::Blanks::default();
+    // Where each row's problems end in `sink.list`, to place the
+    // duplicate-email warnings found after the loop in file order.
+    let mut ends = Vec::with_capacity(rows.len());
     let mut empty_email = 0;
     for row in rows {
         let (n, sheet) = (row.number(), row.sheet());
@@ -182,7 +205,7 @@ pub(crate) fn validate_against(
                 sink.class(row, &roster.email, "missing_email");
             }
             Some(e) if !is_email(e) => sink.class(row, &roster.email, "invalid_email"),
-            Some(e) => emails.add(n, sheet, code, e),
+            Some(e) => emails.add((records.len(), n, sheet), code, e, taken),
         }
         let locale = match &roster.locale {
             Some(l) => match row.get(&l.column) {
@@ -223,11 +246,13 @@ pub(crate) fn validate_against(
                 Ok(Some(v)) => {
                     attributes.insert(key.to_string(), v);
                 }
-                Ok(None) => sink.class(row, &spec.column, "empty_attribute"),
+                Ok(None) if row.unreadable().any(|(h, _, _)| h == spec.column) => {}
+                Ok(None) => blanks.add(sheet, &spec.column, n),
                 Err(e) => sink.bad(row, &spec.column, attr_reason(e)),
             }
         }
         unreadable(row, &mut sink.list, before);
+        ends.push(sink.list.len());
         let mut fields =
             StudentFields::new(name, email.map(str::to_string), locale).with_status("active");
         fields.attributes = attributes;
@@ -239,10 +264,14 @@ pub(crate) fn validate_against(
         });
     }
     let codes: BTreeSet<&str> = seen.keys().map(String::as_str).collect();
-    for (row, sheet) in emails.shared(taken, &codes) {
+    let blocks = |class: &str| roster.blocks(class);
+    // Latest row first, so an insert does not move the places still to come.
+    for (index, row, sheet) in emails.shared(taken, &codes).into_iter().rev() {
         let p = Problem::new(row, &roster.email, "duplicate_email").on(sheet);
-        sink.push(p.with_severity(roster.blocks("duplicate_email")));
+        sink.list
+            .insert(ends[index], p.with_severity(blocks("duplicate_email")));
     }
+    sink.list.extend(blanks.problems(blocks("empty_attribute")));
     sink.finish(records, empty_email)
 }
 
@@ -320,34 +349,6 @@ fn attr_reason(e: AttrError) -> &'static str {
         AttrError::NotDate => "not_date",
         _ => "not_in_list",
     }
-}
-
-/// A syntactically plausible address: one `@`, a non-empty local part of
-/// printable ASCII without spaces (ASCII only: an address with Thai or
-/// other non-ASCII characters, allowed by RFC 6531, is refused, because
-/// the Link's email OTP goes through providers that may not accept it), a domain of dot-separated labels
-/// (letters, digits, `-`, not at a label's ends) with a dot; at most 254
-/// bytes.
-pub(crate) fn is_email(s: &str) -> bool {
-    let Some((local, domain)) = s.split_once('@') else {
-        return false;
-    };
-    let local_ok = !local.is_empty()
-        && local.len() <= 64
-        && !local.starts_with('.')
-        && !local.ends_with('.')
-        && !local.contains("..")
-        && local
-            .bytes()
-            .all(|b| b.is_ascii_graphic() && !b"@\"(),:;<>[\\]".contains(&b));
-    let label_ok = |l: &str| {
-        !l.is_empty()
-            && l.len() <= 63
-            && !l.starts_with('-')
-            && !l.ends_with('-')
-            && l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-    };
-    s.len() <= 254 && local_ok && domain.contains('.') && domain.split('.').all(label_ok)
 }
 
 /// A language tag: 2 to 10 ASCII letters, digits or `-`, from a letter.

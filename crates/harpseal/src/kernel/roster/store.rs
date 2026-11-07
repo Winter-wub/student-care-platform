@@ -113,7 +113,7 @@ pub(crate) struct Warned {
 impl Warned {
     pub(crate) fn new(warnings: Vec<Problem>) -> Self {
         Self {
-            total: warnings.len() as u64,
+            total: super::warnings::total(&warnings),
             classes: super::warnings::classes(&warnings),
             problems: super::warnings::kept(warnings),
         }
@@ -128,11 +128,12 @@ impl Warned {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Failure {
-    /// The refused file's report, at most `MAX_PROBLEMS` rows.
+    /// The refused file's blocking problems, at most `MAX_PROBLEMS` rows.
+    /// Its warnings are in `Counts::warnings`, as for a file that imports.
     pub(crate) problems: Vec<Problem>,
-    /// Every problem found, also those not kept.
+    /// Every blocking problem found, also those not kept.
     pub(crate) total: u64,
-    /// Problems per class (reason code), warnings included (#71).
+    /// Blocking problems per class (reason code) (#71).
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) classes: BTreeMap<String, u64>,
     /// Why the Job failed (never file contents).

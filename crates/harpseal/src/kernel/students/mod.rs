@@ -21,6 +21,7 @@
 mod actions;
 mod detail;
 mod edit;
+pub(crate) mod email;
 mod form;
 mod list;
 mod missing;

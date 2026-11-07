@@ -178,7 +178,7 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
 fn failed(v: &View<'_>, imp: &Import) -> Markup {
     let f = imp.failure.clone().unwrap_or_default();
     if f.job.is_some() {
-        return progress(v, imp);
+        return html! { (progress(v, imp)) (problems::warnings_card(v, imp)) };
     }
     html! {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
@@ -191,6 +191,7 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
                 (v.t("kernel.roster.report"))
             } }
         }
+        (problems::warnings_card(v, imp))
     }
 }
 

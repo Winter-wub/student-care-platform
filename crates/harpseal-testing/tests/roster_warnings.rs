@@ -220,3 +220,86 @@ async fn blocking_problems_are_reported_with_the_warnings_and_refuse_the_file() 
     assert!(report.contains("2,อีเมล,ไม่มีอีเมล"), "{report}");
     assert_eq!(int(&h, "SELECT count(*) FROM student", &[]).await, 0);
 }
+
+#[tokio::test]
+async fn a_refused_file_shows_its_warnings_apart_from_the_blocking_problems() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let file = csv_lines(&[
+        "68000001,นก,,,,MSC,1,",
+        "6800000X,ปลา,x@student.sealbay.example,,,MSC,1,3.0",
+    ]);
+    let id = import_id(&upload(&b, "a.csv", &file, "full").await);
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(
+        page.contains("data-count=\"problems\">1<"),
+        "one blocking: {page}"
+    );
+    assert!(
+        page.contains("id=\"roster-warnings\" data-warnings=\"2\""),
+        "{page}"
+    );
+    let c = counts(&h, &id).await;
+    assert_eq!(c["warnings"]["total"], 2, "a missing email and a blank gpa");
+}
+
+#[tokio::test]
+async fn a_failed_job_still_shows_the_warnings_of_the_import() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "w.csv", &warned_file(), "full").await;
+    run(&h, &format!(
+        "UPDATE roster_import SET state = 'failed', error = '{{\"job\":\"x\"}}' WHERE id = '{id}'"
+    ))
+    .await;
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(page.contains("data-warnings=\"5\""), "{page}");
+}
+
+#[tokio::test]
+async fn blank_optional_cells_make_one_warning_per_column() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let lines: Vec<String> = (1..=8)
+        .map(|n| format!("6800000{n},นก{n},n{n}@student.sealbay.example,,,MSC,1,"))
+        .collect();
+    let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let id = previewed(&b, "b.csv", &csv_lines(&refs), "full").await;
+    let c = counts(&h, &id).await;
+    assert_eq!(c["warnings"]["total"], 8, "cells");
+    assert_eq!(c["warnings"]["problems"].as_array().unwrap().len(), 1);
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(
+        page.contains("data-class=\"empty_attribute\" data-count=\"8\""),
+        "{page}"
+    );
+    assert_eq!(page.matches("data-severity=\"warning\"").count(), 1);
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("2,เกรดเฉลี่ย,"), "{report}");
+    assert!(report.contains("8 แถว เช่นแถว 2, 3, 4, 5, 6, …"), "{report}");
+    assert_eq!(report.lines().count(), 2, "{report}");
+}
+
+#[tokio::test]
+async fn a_left_student_or_one_a_full_import_retires_does_not_make_a_duplicate() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    linked_student(&h, "gone", "68000098", "left").await;
+    linked_student(&h, "away", "68000099", "active").await;
+    run(
+        &h,
+        &format!("UPDATE student SET email = '{OK}' WHERE id IN ('gone', 'away')"),
+    )
+    .await;
+    let file = csv_lines(&[&format!("68000001,นก,{OK},,,MSC,1,3.0")]);
+    // upsert: 68000099 stays active with the address.
+    let id = previewed(&b, "u.csv", &file, "upsert").await;
+    assert_eq!(
+        counts(&h, &id).await["warnings"]["classes"]["duplicate_email"],
+        1
+    );
+    b.post(&format!("/admin/roster/{id}/cancel"), "").await;
+    // full: 68000099 is not in the file, so becomes left; 68000098 is left.
+    let id = previewed(&b, "f.csv", &file, "full").await;
+    assert_eq!(total(&counts(&h, &id).await), 0);
+}

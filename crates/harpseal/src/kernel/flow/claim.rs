@@ -4,6 +4,7 @@
 use super::{Turn, minutes_left, otp};
 use crate::Result;
 use crate::kernel::security;
+use crate::kernel::students::email;
 use crate::message::Locale;
 use crate::port_types::{Statement, Value};
 
@@ -87,8 +88,17 @@ pub(super) async fn student_id(t: &mut Turn<'_>, typed: &str) -> Result<()> {
         t.say("kernel.link.not_found");
         return Ok(());
     };
-    if student.email.is_none() {
+    let Some(address) = student.email.as_deref() else {
         t.say("kernel.link.no_email");
+        return Ok(());
+    };
+    // The roster only warns about a bad address (#71), so one can be on
+    // file: a code sent there either bounces for ever or goes to a stranger.
+    if !email::is_email(address.trim()) {
+        t.say("kernel.link.bad_email");
+        return Ok(());
+    }
+    if shared_email(t, &student, address).await? {
         return Ok(());
     }
     if duplicate(t, &student).await? {
@@ -103,6 +113,37 @@ pub(super) async fn student_id(t: &mut Turn<'_>, typed: &str) -> Result<()> {
         return Ok(());
     }
     otp::start(t, &student).await
+}
+
+/// Whether another Student who is not left has the same address (trimmed,
+/// any case): the code would reach whoever reads that mailbox, so either
+/// could link as the other. Refused to Staff (a Manual Link), with a
+/// Security Event `link.shared_email` every time.
+async fn shared_email(t: &mut Turn<'_>, student: &StudentRow, address: &str) -> Result<bool> {
+    let stmt = Statement::new(
+        "SELECT count(*) AS n FROM student \
+         WHERE id <> ? AND status <> 'left' AND lower(trim(email)) = ?",
+    )
+    .bind(student.id.clone())
+    .bind(email::key(address));
+    let rows = t.s().db.query(stmt).await?;
+    if rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0) == 0 {
+        return Ok(false);
+    }
+    t.say("kernel.link.shared_email");
+    let details = [
+        ("channel", t.from.channel.as_str().to_string()),
+        ("student_code", student.code.clone()),
+    ];
+    security::record(
+        t.s(),
+        "link.shared_email",
+        Some(&t.acct.id),
+        Some(&student.id),
+        &details,
+    )
+    .await?;
+    Ok(true)
 }
 
 /// A live Link of this Student on this Channel held by another account:

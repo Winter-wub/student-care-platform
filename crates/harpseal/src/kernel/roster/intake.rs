@@ -1,6 +1,6 @@
 //! Reads an uploaded file into rows and checks them (#8, #71): the part of
-//! an upload before anything is stored. Needs the Students for one check,
-//! the emails they already use, so it is the only async step of validation.
+//! an upload before anything is stored. Loads the Students only for a file
+//! that is valid, to compare the emails they already use.
 
 use std::collections::HashMap;
 
@@ -56,11 +56,22 @@ pub(super) async fn read(
     if full && let Err(p) = hidden_roster_sheets(&skipped) {
         return Ok(with(Err(p)));
     }
-    let existing = store::all_students(s).await?;
-    let taken = warnings::taken(&existing);
-    let valid = match validate::validate_against(&rows.rows, config, &taken) {
+    // A file refused for what is in it never needs the Students.
+    let valid = match validate::validate(&rows.rows, config) {
         Ok(v) => v,
         Err(p) => return Ok(with(Err(p))),
+    };
+    // Now the emails Students already have: the file may only warn, or be
+    // refused if the Deployment makes `duplicate_email` blocking.
+    let existing = store::all_students(s).await?;
+    let taken = warnings::Taken::of(&existing, full);
+    let valid = if existing.is_empty() {
+        valid
+    } else {
+        match validate::validate_against(&rows.rows, config, &taken) {
+            Ok(v) => v,
+            Err(p) => return Ok(with(Err(p))),
+        }
     };
     // A full file with no rows would mark everyone left.
     if full && valid.records.is_empty() {

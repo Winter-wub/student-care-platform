@@ -116,10 +116,13 @@ async fn record(
     let Checked { valid, existing } = match read {
         Ok(c) => c,
         Err(problems) => {
+            let (blocking, warned): (Vec<_>, Vec<_>) =
+                problems.into_iter().partition(|p| p.severity.is_blocking());
+            counts.warnings = Warned::new(warned);
             let failure = Failure {
-                total: problems.len() as u64,
-                classes: warnings::classes(&problems),
-                problems: warnings::kept(problems),
+                total: warnings::total(&blocking),
+                classes: warnings::classes(&blocking),
+                problems: warnings::kept(blocking),
                 job: None,
             };
             let stmts = row.statements(s, &counts, Some(&failure), 0, ctx, None)?;

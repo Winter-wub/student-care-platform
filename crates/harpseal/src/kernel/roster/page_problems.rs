@@ -22,6 +22,10 @@ pub(super) fn has_sheets(problems: &[Problem]) -> bool {
     problems.iter().any(|p| !p.sheet.is_empty())
 }
 
+fn has_sheets_in(problems: &[&Problem]) -> bool {
+    problems.iter().any(|p| !p.sheet.is_empty())
+}
+
 /// Whether any problem is a warning (reports stored before #71 have none).
 fn has_warnings(problems: &[Problem]) -> bool {
     problems.iter().any(|p| !p.severity.is_blocking())
@@ -36,14 +40,44 @@ fn column(p: &Problem) -> String {
     }
 }
 
-/// The problems of `imp` the report keeps and how many there were: a
-/// refused file's (warnings included), else the warnings of a file that
-/// imports.
-fn listed(imp: &Import) -> (&[Problem], u64) {
-    match &imp.failure {
-        Some(f) if !f.problems.is_empty() => (&f.problems, f.total),
-        _ => (&imp.counts.warnings.problems, imp.counts.warnings.total),
+/// The problems of `imp` the report keeps and how many there were: the
+/// blocking problems of a refused file, then its warnings (or those of a
+/// file that imports).
+fn listed(imp: &Import) -> (Vec<&Problem>, u64) {
+    let (blocking, total) = imp
+        .failure
+        .as_ref()
+        .map_or((&[][..], 0), |f| (f.problems.as_slice(), f.total));
+    let w = &imp.counts.warnings;
+    (
+        blocking.iter().chain(&w.problems).collect(),
+        total + w.total,
+    )
+}
+
+/// The reason in the Staff member's Locale; a problem standing for several
+/// cells says how many and which rows come first.
+fn reason(v: &View<'_>, p: &Problem) -> String {
+    let text = v.t(&format!("kernel.roster.reason_{}", p.reason));
+    if p.count < 2 {
+        return text;
     }
+    let rows = p
+        .rows
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = if (p.rows.len() as u64) < p.count {
+        ", …"
+    } else {
+        ""
+    };
+    let of = v
+        .t("kernel.roster.rows_of")
+        .replace("{count}", &p.count.to_string())
+        .replace("{rows}", &format!("{rows}{more}"));
+    format!("{text} ({of})")
 }
 
 /// How many problems each class has, as a list.
@@ -82,7 +116,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                         td data-label=(v.t("kernel.roster.report_row")) { (p.row) }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
-                            (v.t(&format!("kernel.roster.reason_{}", p.reason)))
+                            (reason(v, p))
                         }
                         @if levels {
                             td data-label=(v.t("kernel.roster.report_severity")) {
@@ -108,10 +142,11 @@ pub(super) fn warnings_card(v: &View<'_>, imp: &Import) -> Markup {
             p class="muted" { (v.t("kernel.roster.warnings_help")) }
             (classes(v, &w.classes))
             (table(v, &w.problems))
-            @if w.problems.len().min(SHOWN) < w.total as usize {
+            @let shown: u64 = w.problems.iter().take(SHOWN).map(Problem::weight).sum();
+            @if shown < w.total {
                 p class="muted" {
                     (v.t("kernel.roster.warnings_shown")
-                        .replace("{shown}", &w.problems.len().min(SHOWN).to_string())
+                        .replace("{shown}", &shown.to_string())
                         .replace("{total}", &w.total.to_string()))
                 }
             }
@@ -138,8 +173,8 @@ pub(super) async fn report(
     };
     let (problems, total) = listed(&imp);
     let skipped = &imp.counts.skipped;
-    let sheets = has_sheets(problems) || skipped.iter().any(|s| !s.sheet.is_empty());
-    let levels = has_warnings(problems);
+    let sheets = has_sheets_in(&problems) || skipped.iter().any(|s| !s.sheet.is_empty());
+    let levels = problems.iter().any(|p| !p.severity.is_blocking());
     let mut head = vec![
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
@@ -153,9 +188,9 @@ pub(super) async fn report(
     }
     let head: Vec<&str> = head.iter().map(String::as_str).collect();
     let mut lines = vec![super::csv::line(&head)];
-    for p in problems {
+    for p in &problems {
         let row = p.row.to_string();
-        let reason = v.t(&format!("kernel.roster.reason_{}", p.reason));
+        let reason = reason(&v, p);
         let column = column(p);
         let level = v.t(p.severity.key());
         let mut fields = vec![row.as_str(), column.as_str(), reason.as_str()];
@@ -172,10 +207,11 @@ pub(super) async fn report(
             &f.iter().map(String::as_str).collect::<Vec<_>>(),
         ));
     }
-    if (problems.len() as u64) < total {
+    let shown: u64 = problems.iter().map(|p| p.weight()).sum();
+    if shown < total {
         let note = v
             .t("kernel.roster.report_truncated")
-            .replace("{shown}", &problems.len().to_string())
+            .replace("{shown}", &shown.to_string())
             .replace("{total}", &total.to_string());
         lines.push(super::csv::line(&[&note]));
     }
