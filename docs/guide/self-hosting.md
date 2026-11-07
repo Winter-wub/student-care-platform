@@ -202,8 +202,9 @@ the restore too**, so no tick or request writes in between. It:
 5. refuses when any table has rows, unless `--force`;
 6. puts each file back under its key (as `application/octet-stream`);
 7. inserts the rows parents first; the last batch also writes the audit row
-   `backup.restore` (manifest SHA-256, counts, what `--force` deleted) and,
-   with `--drop-sessions`, empties `staff_session` and `app_session`;
+   `backup.restore` (manifest SHA-256, counts, what `--force` deleted),
+   with `--drop-sessions` empties `staff_session` and `app_session`, and
+   draws a new Menu revision salt (`menu_salt`, see below);
 8. applies this Deployment's newer migrations, so data migrations added
    since the backup run over the restored rows.
 
@@ -228,6 +229,15 @@ run it again with `--force`.
   backup: a session or password revoked since is valid again. After a
   security incident restore with `--drop-sessions` (everyone signs in
   again) and reset the passwords that were changed since the backup.
+
+- The Menu revision salt is new (#66). A copy restored from production
+  (into staging, say) may run on the same LINE token: with the original's
+  salt, its revisioned rich menus would carry the original's names and a
+  retire could move or delete the original's. The restored Deployment
+  therefore never retires rich menus named with the old salt; they stay
+  until the next `menu_generation` bump or are deleted by hand in the LINE
+  console. Its linked Students get rich menus under the new salt at their
+  next Menu change.
 
 **D1.** The CLI runs natively and has no D1 adapter yet, so a Worker
 Deployment is backed up with Cloudflare's own export

@@ -143,9 +143,10 @@ Limits to know:
   very same rich menu, so they are never moved or deleted by a retire;
   they go with the next generation bump, as before. The same-generation
   KEEP rule above holds for every other rich menu too: another salt,
-  another key, a revision not handed over. A Deployment restored from
-  another's backup shares its salt: give a copy that runs on the same token
-  a new generation.
+  another key, a revision not handed over. A restore draws a new salt, so a copy of
+  production restored into staging on the same token never names (or
+  retires) rich menus like production; the rich menus named with the old
+  salt are left to leak (safe) until a generation bump.
 - **Mid-run unlinks.** When a run is done (and its batch succeeded),
   accounts whose Menu was locked since it started (an unlink, a revoke, a
   new Consent) get the locked Menu again, in case the re-link or the batch

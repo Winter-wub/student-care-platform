@@ -46,6 +46,19 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
 /// Length of the revision salt, in bytes (8 hex digits).
 const SALT_BYTES: usize = 4;
 
+/// A new revision salt from the Random port.
+pub(crate) fn new_salt(s: &Services) -> Result<String> {
+    s.random_hex(SALT_BYTES)
+}
+
+/// Replaces the stored revision salt, if any, with a new one: a restored
+/// backup must not share its salt with the Deployment it came from (they
+/// may run on one platform account). Rich menus named with the old salt are
+/// then never retired by this Deployment: they leak, which is safe.
+pub(crate) fn redraw_salt(s: &Services) -> Result<Statement> {
+    Ok(Statement::new("UPDATE menu_salt SET salt = ?").bind(new_salt(s)?))
+}
+
 /// The newest Menu revision of the effective Locale `locale` (0 when no
 /// Menu label was ever saved there) and the Deployment's revision salt.
 pub(crate) async fn revision(s: &Services, locale: &Locale) -> Result<(u32, Option<String>)> {
@@ -134,7 +147,7 @@ pub(crate) fn on_save(
         let tag = l.as_str();
         if stmts.is_empty() {
             // The Deployment's revision salt, once.
-            let salt = d.services().random_hex(SALT_BYTES)?;
+            let salt = new_salt(d.services())?;
             stmts.push(
                 Statement::new(
                     "INSERT INTO menu_salt (salt) SELECT ? \
