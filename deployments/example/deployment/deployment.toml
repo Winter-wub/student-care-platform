@@ -19,17 +19,23 @@ primary_color = "#0b5cad"
 id_pattern = '########'
 
 # Initial Roles: Role -> Permission ids. Every id must be declared by the
-# Kernel or a Module; build() fails otherwise.
+# Kernel or a Module; build() fails otherwise. Unlinking a Student's chat
+# account is `kernel.link.revoke`; `kernel.link.manage` is Manual Link only.
+# A Role that lists only the old `kernel.link.manage` is granted both (it
+# covered both before); to give Student Affairs unlink without Manual Link,
+# list `kernel.link.revoke` alone.
 [roles]
 Administrator = [
-    "kernel.student.view", "kernel.student.edit", "kernel.link.manage",
+    "kernel.student.view", "kernel.student.edit",
+    "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
     "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
     "kernel.staff.manage", "kernel.setting.edit",
     "announcements.view", "announcements.send", "announcements.retract",
 ]
 Officer = [
-    "kernel.student.view", "kernel.student.edit", "kernel.link.manage",
+    "kernel.student.view", "kernel.student.edit",
+    "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.import", "kernel.usage.view",
     "announcements.view", "announcements.send", "announcements.retract",
 ]

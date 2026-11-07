@@ -76,7 +76,7 @@ The record that a Student accepted a given version of the Deployment's privacy n
 A record of a suspicious act around Verification or data access, such as an OTP lockout or a request to see another Student's data, shown to Staff. It also records an Inbound event the system failed to handle, so a lost message is never silent.
 
 **Manual Link** (ผูกบัญชีโดยเจ้าหน้าที่):
-A Link that Staff creates or removes directly, after checking the Student's identity themselves. Always available regardless of the Verification Method.
+A Link that Staff creates directly, after checking the Student's identity themselves. Always available regardless of the Verification Method. Removing a Link (Staff unlink) is a separate Permission, so a Role can unlink without being able to Manual Link.
 
 **Locale** (ภาษา):
 The language a Student or a piece of content is in. Every Deployment has a default Locale that content falls back to.

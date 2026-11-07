@@ -7,8 +7,28 @@ the [README](https://github.com/Winter-wub/student-care-platform#readme).
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
 recent Security Events. Staff with `kernel.student.edit` edit fields (each
 edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
-the status. Staff with `kernel.link.manage` create Manual Links and revoke
-Links. The attributes come from `[roster.attributes.<key>]` in
+the status. Staff with `kernel.link.manage` create Manual Links; Staff with
+`kernel.link.revoke` unlink a Student's chat account. The two are separate, so
+a Role can hold either (Student Affairs may unlink without being able to link
+any account to any Student), and the detail page shows each action only to
+Staff who hold its Permission. `kernel.student.edit` can still remove every
+Link of a Student, by marking them left.
+
+Before the split `kernel.link.manage` covered both. `migrate` grants
+`kernel.link.revoke` once to every Role in the database that holds
+`kernel.link.manage`. A `[roles]` entry that lists `kernel.link.manage` without
+`kernel.link.revoke` is granted both on **every** `migrate` (on Cloudflare, every
+cold start) and the migrate report prints a notice for it; update the entry to
+say what you mean. An entry that lists `kernel.link.revoke` is taken as
+written, so list it alone for unlink without Manual Link.
+
+`[roles]` only ever adds Permissions. Narrowing an existing Role, say from
+`kernel.link.manage` to `kernel.link.revoke`, means removing the Permission on
+the Roles page **and** in `[roles]`; changing the TOML alone leaves it granted.
+A Role that may Manual Link but not unlink must not be listed in `[roles]` (the
+legacy rule would give it unlink back): create it on the Roles page.
+
+The attributes come from `[roster.attributes.<key>]` in
 `deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
 `enum` with `values`), `label = { th = "..", en = ".." }`, `optional`,
 `shown_in_list` and `order` (see `harpseal::RosterConfig`).
@@ -69,7 +89,8 @@ each request to either is itself logged as a sensitive read. `/admin/staff` and
 shown once, disable them (their sessions end), assign Roles, reset passwords,
 clear lockouts and edit Roles; at least one active Staff member always keeps
 `kernel.staff.manage`. A Role from `[roles]` can be edited there too, but the next
-`migrate` grants its TOML Permissions again. `/admin/texts` (`kernel.setting.edit`)
+`migrate` grants its TOML Permissions again (see the link Permissions above for the
+one that is implied). `/admin/texts` (`kernel.setting.edit`)
 edits any catalog text per Locale (it must keep the default's `{name}`
 placeholders) and bumps the privacy notice version, which asks every linked
 Student to accept again on their next message. Edits take effect on the next
