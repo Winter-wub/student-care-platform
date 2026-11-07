@@ -326,6 +326,12 @@ impl Channel for FakeChannel {
         if s.blocked.contains(to) {
             return Err(Error::Unreachable);
         }
+        if s.menus_limited > 0 {
+            s.menus_limited -= 1;
+            return Err(Error::RateLimited {
+                retry_after_secs: FAILURE_RETRY_AFTER_SECS,
+            });
+        }
         s.menus.insert(to.clone(), menu.cloned());
         Ok(())
     }

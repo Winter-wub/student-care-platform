@@ -246,3 +246,43 @@ async fn the_relock_pages_through_unlinks_and_leaves_onboarding_alone() {
     .await;
     assert_eq!(pages, 2, "5 accounts, pages of 2: two continuations");
 }
+
+#[tokio::test]
+async fn a_relock_page_stays_within_its_budget_and_retries_a_failed_account() {
+    let (h, app) = boot().await;
+    let accounts = linked(&h, 25, "th").await;
+    let fake = h.fake_channel();
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    // All 25 unlink as the run starts (a new Consent notice would do the
+    // same), and the first lock call is rate limited.
+    let now = h.clock().now_ms();
+    for i in 0..25 {
+        for q in [
+            format!(
+                "UPDATE channel_account SET flow_state = 'awaiting_student_id', \
+                 updated_at = {now} WHERE id = 'ca-th{i:02}'"
+            ),
+            format!(
+                "UPDATE link SET status = 'revoked', revoked_at = {now} WHERE id = 'ln-th{i:02}'"
+            ),
+        ] {
+            h.db().execute(Statement::new(q)).await.unwrap();
+        }
+    }
+    fake.rate_limit_menus(1);
+    drain(&h, &app).await;
+
+    for (i, a) in accounts.iter().enumerate() {
+        assert!(matches!(fake.menu(a), Some(None)), "account {i}: locked");
+    }
+    let pages = count(
+        &h,
+        "SELECT count(*) AS n FROM job WHERE kind = 'kernel.menu.relink' \
+         AND json_extract(payload, '$.phase') = 'relock'",
+    )
+    .await;
+    // The failed first account waits and is tried again (1), then pages of
+    // 20 (the Fake's chunk is 100): 20 + 5 (1).
+    assert_eq!(pages, 2);
+}

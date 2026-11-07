@@ -11,6 +11,15 @@ use crate::message::{Menu, MenuKey};
 use crate::port_types::{Rows, Statement, Value};
 use crate::{Channel, Error, MenuRetire, Result};
 
+/// Most accounts one run re-locks on a Channel: one `set_menu` each, so a
+/// run stays under the 50 subrequests of a Workers free-plan invocation
+/// even on a Channel whose re-link chunk is large (LINE: 2,500 per bulk
+/// call).
+pub(super) const RELOCK_PAGE: usize = 20;
+/// Seconds before a re-lock page that hit a failure tries that account
+/// again.
+const RELOCK_RETRY_SECS: u32 = 60;
+
 impl Step<'_> {
     /// Retires the revisions older than this one on every Channel from
     /// `start` (first finishing any retire still pending there), then
@@ -67,10 +76,12 @@ impl Step<'_> {
     /// unlink or a Staff revoke) or that were asked to consent again since
     /// the run started, on every Channel from `start` after `after`: the
     /// re-link or the platform's batch may have moved them to the unlocked
-    /// Menu. Onboarding accounts never had it and are left alone. A page of
-    /// [`crate::Channel::relink_chunk`] accounts per run, then a
-    /// continuation. A failed `set_menu` is left alone: the account gets
-    /// its Menu set again on its next Inbound.
+    /// Menu. Onboarding accounts never had it and are left alone. Each
+    /// account costs one `set_menu`, so a page holds at most
+    /// [`RELOCK_PAGE`] (or the Channel's smaller [`Channel::relink_chunk`])
+    /// per run, then a continuation. An account the platform will never
+    /// reach is passed over; any other failure ends the page before that
+    /// account, which the continuation tries again after a wait.
     pub(super) async fn relock(
         &self,
         channels: &[Arc<dyn Channel>],
@@ -79,18 +90,36 @@ impl Step<'_> {
     ) -> Result<()> {
         let mut after = after.to_string();
         for ch in &channels[start..] {
-            let chunk = ch.relink_chunk().max(1);
-            let rows = self.locked_since(ch.as_ref(), &after, chunk).await?;
+            let page = ch.relink_chunk().clamp(1, RELOCK_PAGE);
+            let rows = self.locked_since(ch.as_ref(), &after, page).await?;
             for i in 0..rows.len() {
-                if let Some(id) = rows.get(i, "external_id").and_then(Value::as_text) {
-                    let account = ChannelAccountId::new(ch.kind(), id);
-                    let _ = ch.set_menu(&account, None).await;
+                let text = |c: &str| rows.get(i, c).and_then(Value::as_text).map(str::to_string);
+                let (Some(id), Some(external)) = (text("id"), text("external_id")) else {
+                    continue;
+                };
+                let account = ChannelAccountId::new(ch.kind(), external);
+                match ch.set_menu(&account, None).await {
+                    Ok(()) => {}
+                    Err(e) if matches!(e.root(), Error::Unreachable | Error::Invalid(_)) => {}
+                    Err(e) => {
+                        // Not done: the next hop starts at this account.
+                        let secs = match e.root() {
+                            Error::RateLimited { retry_after_secs } => *retry_after_secs,
+                            _ => RELOCK_RETRY_SECS,
+                        };
+                        let next = Next {
+                            after,
+                            secs: i64::from(secs).max(1),
+                            wait: true,
+                        };
+                        return self.continue_at(ch.as_ref(), "relock", next).await;
+                    }
                 }
+                after = id;
             }
-            if rows.len() == chunk {
-                let last = rows.get(chunk - 1, "id").and_then(Value::as_text);
+            if rows.len() == page {
                 let next = Next {
-                    after: last.unwrap_or_default().to_string(),
+                    after,
                     secs: 0,
                     wait: false,
                 };

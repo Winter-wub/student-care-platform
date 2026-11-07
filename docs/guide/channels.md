@@ -150,8 +150,11 @@ Limits to know:
 - **Mid-run unlinks.** When a run is done (and its batch succeeded),
   accounts whose Menu was locked since it started (an unlink, a revoke, a
   new Consent) get the locked Menu again, in case the re-link or the batch
-  moved them. Their Actions were never at risk: the Kernel dispatches an
-  Action to a Module only for an account with a live Link.
+  moved them: one `set_menu` each, at most 20 per Job run (under the 50
+  Workers subrequests), and an account whose call failed for a passing
+  reason (a 429, a 5xx) is tried again in the next run, never skipped.
+  Their Actions were never at risk: the Kernel dispatches an Action to a
+  Module only for an account with a live Link.
 - **Accounts on a deleted rich menu.** LINE cannot list the accounts linked to
   a rich menu. An account still on a deleted older generation sees the default
   rich menu set in the LINE Official Account Manager (or none) until its next

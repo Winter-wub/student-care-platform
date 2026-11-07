@@ -46,6 +46,13 @@ impl FakeChannel {
         self.lock().relinks_limited = times;
     }
 
+    /// Makes the next `times` `set_menu` calls fail with
+    /// `Error::RateLimited` (retry after
+    /// [`crate::FAILURE_RETRY_AFTER_SECS`]); the Menu is not changed.
+    pub fn rate_limit_menus(&self, times: usize) {
+        self.lock().menus_limited = times;
+    }
+
     /// Most accounts per `relink_menu` call ([`harpseal::Channel::relink_chunk`],
     /// default 100); shared by clones, so a test can shrink it after boot.
     pub fn set_relink_chunk(&self, n: usize) {

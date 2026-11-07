@@ -92,6 +92,8 @@ pub(crate) struct State {
     pub(crate) relink_chunk: Option<usize>,
     /// [`crate::FakeChannel::rate_limit_relinks`].
     pub(crate) relinks_limited: usize,
+    /// [`crate::FakeChannel::rate_limit_menus`].
+    pub(crate) menus_limited: usize,
 }
 
 impl State {
