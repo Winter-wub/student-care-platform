@@ -13,6 +13,7 @@
 //! modules [`render`] (helpers for Channel adapters), [`ui`] (the shared page
 //! layout), [`password`] (Staff password hashing) and [`audit`] (the audit
 //! writer every Staff write goes through) group free functions;
+//! [`sheet`] reads CSV and XLSX uploads (the roster import's reader);
 //! [`backup`] dumps and restores a whole Deployment through its ports. Back-office
 //! handlers extract [`CurrentStaff`] and [`RequestCtx`].
 //! The Kernel's schema is not public API.
@@ -51,6 +52,7 @@ pub mod backup;
 pub mod modules;
 pub mod password;
 pub mod render;
+pub mod sheet;
 pub mod ui;
 
 #[cfg(feature = "fixtures")]

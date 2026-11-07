@@ -1,40 +1,29 @@
-//! Reading a roster file into [`Row`]s (#8): CSV (UTF-8, BOM tolerated,
-//! `,` or `;`, named `.csv`) or the first sheet of an XLSX (named
-//! `.xlsx`); any other name (`.txt`, none) is refused, whatever it holds. The first row holds the
-//! headers, which must match the `[roster]` columns exactly (trimmed).
-//! Empty rows are skipped, cells are trimmed and an empty cell is absent.
-//! Pure: no I/O.
+//! Reading a roster file into [`Row`]s (#8, #70) through the public
+//! [`crate::sheet`] reader: CSV (UTF-8, BOM tolerated, `,` or `;`, named
+//! `.csv`) or every worksheet of an XLSX (named `.xlsx`); any other name
+//! (`.txt`, none) is refused, whatever it holds. In each non-empty sheet
+//! the header row is found among the first rows (title rows above it are
+//! skipped) and must match the `[roster]` columns exactly (trimmed); a
+//! sheet without it is refused by name. Totals and notes rows below the
+//! data (the reader's footer rule, with the `integer` and `number`
+//! attribute columns as numeric) and hidden sheets are skipped and listed
+//! ([`Skipped`]) for the preview and the report; empty sheets and rows are
+//! skipped silently. Cells are trimmed and an empty cell is absent. Pure:
+//! no I/O.
 
-use std::collections::BTreeMap;
-use std::io::Cursor;
+use serde::{Deserialize, Serialize};
 
-use calamine::{Data, Reader, Xlsx};
+use crate::config::{AttributeType, RosterConfig};
+use crate::sheet::{HeaderError, Limits, SheetError, TableError, TableSpec, Workbook};
 
-use super::csv::{self, CsvError};
-use crate::config::RosterConfig;
+pub(crate) use crate::sheet::{Row, is_xlsx};
+#[cfg(test)]
+use {crate::sheet::column_name, crate::sheet::read::cell_text, calamine::Data};
 
-/// Most data rows a file may hold.
+/// Most data rows a file may hold, all sheets together.
 pub(crate) const MAX_ROWS: usize = 20_000;
 /// Most columns an XLSX sheet may use (cells further right are refused).
 pub(crate) const MAX_COLUMNS: usize = 64;
-
-/// One data row: its row number in the file (the header row is 1), its
-/// non-empty cells by header, and the columns (`A`, `B`, …) of non-empty
-/// cells under an empty header or right of the last one, which
-/// validation reports instead of dropping them.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Row {
-    pub(crate) number: usize,
-    cells: BTreeMap<String, String>,
-    pub(crate) unheaded: Vec<String>,
-}
-
-impl Row {
-    /// The trimmed, non-empty cell under `column`.
-    pub(crate) fn get(&self, column: &str) -> Option<&str> {
-        self.cells.get(column).map(String::as_str)
-    }
-}
 
 /// Why a file cannot be read. Never carries cell contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,22 +32,58 @@ pub(crate) enum FileError {
     Unsupported,
     /// A CSV that is not UTF-8.
     NotUtf8,
-    /// Broken CSV quoting.
-    Csv(CsvError),
-    /// An XLSX calamine cannot open, or one without sheets.
+    /// Broken CSV quoting, on this row.
+    Csv(usize),
+    /// An XLSX calamine cannot open, or one without worksheets.
     Xlsx,
-    /// No header row.
+    /// No sheet with a non-empty cell.
     Empty,
-    /// More than [`MAX_ROWS`] data rows (or an XLSX cell below row
-    /// `MAX_ROWS + 1`).
+    /// Content only in hidden sheets (named).
+    OnlyHidden(Vec<String>),
+    /// More than [`MAX_ROWS`] data rows (or an XLSX cell far below them).
     TooManyRows,
     /// An XLSX cell right of column [`MAX_COLUMNS`].
     TooManyColumns,
-    /// Headers that differ from the `[roster]` columns.
-    Headers {
-        missing: Vec<String>,
-        unexpected: Vec<String>,
-    },
+    /// More than 50 worksheets.
+    TooManySheets,
+    /// Sheets whose headers differ from the `[roster]` columns.
+    Headers(Vec<HeaderMismatch>),
+}
+
+/// One sheet whose header row is missing or differs from `[roster]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeaderMismatch {
+    /// The sheet; empty for a CSV.
+    pub(crate) sheet: String,
+    /// The header row, or the closest row to one.
+    pub(crate) row: usize,
+    pub(crate) missing: Vec<String>,
+    pub(crate) unexpected: Vec<String>,
+    /// A problem of the sheet as a whole, reported once instead of per
+    /// column: `no_header_row` (no row holds any of the columns) or
+    /// `only_footer` (the footer rule would skip every row under the
+    /// header).
+    pub(crate) whole: Option<&'static str>,
+}
+
+/// A row or sheet the import left out, shown on the preview and in the
+/// report. `reason`: `footer` (a totals or notes row below the data) or
+/// `hidden_sheet` (`row` 0, no text).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Skipped {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) sheet: String,
+    pub(crate) row: usize,
+    pub(crate) reason: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) text: String,
+}
+
+/// A read file: its data rows and what was left out.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct Read {
+    pub(crate) rows: Vec<Row>,
+    pub(crate) skipped: Vec<Skipped>,
 }
 
 /// The headers a file must have, in template order: student id, name,
@@ -81,168 +106,146 @@ pub(crate) fn expected_headers(roster: &RosterConfig) -> Vec<String> {
     v
 }
 
-/// Whether `file_name` names an XLSX: by its extension only (#46). A zip
-/// under any other name, `.txt` or none at all is refused.
-pub(crate) fn is_xlsx(file_name: &str) -> bool {
-    file_name.to_ascii_lowercase().ends_with(".xlsx")
-}
-
-/// Reads the file into data rows, checking the headers against `roster`.
+/// Reads every sheet into data rows, checking the headers against
+/// `roster`; see [`read`].
 pub(crate) fn parse(
     bytes: &[u8],
     file_name: &str,
     roster: &RosterConfig,
 ) -> Result<Vec<Row>, FileError> {
-    let lower = file_name.to_ascii_lowercase();
-    let grid = if is_xlsx(file_name) {
-        xlsx_grid(bytes)?
-    } else if lower.ends_with(".csv") {
-        let text = std::str::from_utf8(bytes).map_err(|_| FileError::NotUtf8)?;
-        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-        csv::records(text, csv::delimiter(text))
-            .map_err(FileError::Csv)?
-            .into_iter()
-            .enumerate()
-            .map(|(i, r)| (i + 1, r))
-            .collect()
-    } else {
-        return Err(FileError::Unsupported);
-    };
-    rows(grid, roster)
+    read(bytes, file_name, roster).map(|r| r.rows)
 }
 
-/// `(row number, cells)` per row, header row first.
-type Grid = Vec<(usize, Vec<String>)>;
-
-fn rows(grid: Grid, roster: &RosterConfig) -> Result<Vec<Row>, FileError> {
-    let mut grid = grid
-        .into_iter()
-        .filter(|(_, cells)| cells.iter().any(|c| !c.trim().is_empty()));
-    let (_, header) = grid.next().ok_or(FileError::Empty)?;
-    let header: Vec<String> = header.iter().map(|h| h.trim().to_string()).collect();
-    check_headers(&header, roster)?;
-    let mut out = Vec::new();
-    for (number, cells) in grid {
-        if out.len() == MAX_ROWS {
-            return Err(FileError::TooManyRows);
-        }
-        let mut row = Row {
-            number,
-            cells: BTreeMap::new(),
-            unheaded: Vec::new(),
-        };
-        for (i, c) in cells.into_iter().enumerate() {
-            let c = c.trim();
-            match header.get(i).filter(|h| !h.is_empty()) {
-                _ if c.is_empty() => {}
-                Some(h) => {
-                    row.cells.insert(h.clone(), c.to_string());
+/// The data rows of every visible sheet, and the skipped footer rows and
+/// hidden sheets. Student ids are keys when they look like one
+/// ([`crate::sheet::looks_like_key`]); a mistyped id is still data (and
+/// reported).
+pub(crate) fn read(
+    bytes: &[u8],
+    file_name: &str,
+    roster: &RosterConfig,
+) -> Result<Read, FileError> {
+    let book = Workbook::open_with(bytes, file_name, Limits::new(MAX_ROWS, MAX_COLUMNS))
+        .map_err(sheet_error)?;
+    let expected = expected_headers(roster);
+    let numeric = roster
+        .attributes
+        .values()
+        .filter(|a| matches!(a.kind, AttributeType::Integer | AttributeType::Number));
+    let spec = TableSpec::new(expected.clone())
+        .key(roster.student_code.clone())
+        .skip_footer(numeric.map(|a| a.column.clone()));
+    let mut out = Read::default();
+    let mut mismatches = Vec::new();
+    let mut any = false;
+    let id_only = TableSpec::new([roster.student_code.clone()]);
+    let mut hidden = Vec::new();
+    for s in book.sheets().iter().filter(|s| !s.is_empty()) {
+        if s.is_hidden() {
+            // A hidden sheet whose header holds the student id column (an
+            // old cohort tab, even one missing another column) is listed
+            // apart: a `full` import must not make its Students left unseen.
+            let roster_sheet = s.table(&id_only).is_ok();
+            hidden.push(s.name().to_string());
+            out.skipped.push(Skipped {
+                sheet: s.name().to_string(),
+                row: 0,
+                reason: if roster_sheet {
+                    "hidden_roster_sheet"
+                } else {
+                    "hidden_sheet"
                 }
-                None => row.unheaded.push(column_name(i)),
-            }
+                .into(),
+                text: String::new(),
+            });
+            continue;
         }
-        out.push(row);
+        any = true;
+        match s.table(&spec) {
+            Ok(table) => {
+                let unexpected = unexpected(table.headers(), &expected);
+                if !unexpected.is_empty() {
+                    mismatches.push(HeaderMismatch {
+                        sheet: s.name().to_string(),
+                        row: table.header_row(),
+                        missing: Vec::new(),
+                        unexpected,
+                        whole: None,
+                    });
+                    continue;
+                }
+                let (rows, footer) = table.into_parts();
+                out.rows.extend(rows);
+                out.skipped.extend(footer.into_iter().map(|f| Skipped {
+                    sheet: f.sheet,
+                    row: f.row,
+                    reason: "footer".into(),
+                    text: f.text,
+                }));
+                if out.rows.len() > MAX_ROWS {
+                    return Err(FileError::TooManyRows);
+                }
+            }
+            Err(TableError::Header(e)) => mismatches.push(not_found(e, &expected)),
+            Err(_) => mismatches.push(HeaderMismatch {
+                sheet: s.name().to_string(),
+                row: 0,
+                missing: Vec::new(),
+                unexpected: Vec::new(),
+                whole: Some("only_footer"),
+            }),
+        }
+    }
+    if !any && !hidden.is_empty() {
+        return Err(FileError::OnlyHidden(hidden));
+    }
+    if !any {
+        return Err(FileError::Empty);
+    }
+    if !mismatches.is_empty() {
+        return Err(FileError::Headers(mismatches));
     }
     Ok(out)
 }
 
-/// The spreadsheet name of 0-based column `i`: `A`, …, `Z`, `AA`, ….
-pub(crate) fn column_name(i: usize) -> String {
-    let mut n = i + 1;
-    let mut out = Vec::new();
-    while n > 0 {
-        let d = (n - 1) % 26;
-        out.push(b'A' + d as u8);
-        n = (n - 1) / 26;
+fn sheet_error(e: SheetError) -> FileError {
+    match e {
+        SheetError::Unsupported => FileError::Unsupported,
+        SheetError::NotUtf8 => FileError::NotUtf8,
+        SheetError::Csv { row } => FileError::Csv(row),
+        SheetError::TooManyRows => FileError::TooManyRows,
+        SheetError::TooManyColumns => FileError::TooManyColumns,
+        SheetError::TooManySheets => FileError::TooManySheets,
+        _ => FileError::Xlsx,
     }
-    out.reverse();
-    String::from_utf8(out).unwrap_or_default()
 }
 
-fn check_headers(header: &[String], roster: &RosterConfig) -> Result<(), FileError> {
-    let expected = expected_headers(roster);
+/// The closest row's mismatch (a repeated column is unexpected); when it
+/// holds none of the columns, one "no header row" problem for the sheet.
+fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
+    let no_header = e.missing.len() == expected.len() && e.repeated.is_empty();
+    HeaderMismatch {
+        unexpected: if no_header {
+            Vec::new()
+        } else {
+            unexpected(&e.headers, expected)
+        },
+        missing: if no_header { Vec::new() } else { e.missing },
+        sheet: e.sheet,
+        row: e.row,
+        whole: no_header.then_some("no_header_row"),
+    }
+}
+
+/// Headers outside `expected`, or repeated.
+fn unexpected(header: &[String], expected: &[String]) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
-    let mut unexpected = Vec::new();
-    for h in header.iter().filter(|h| !h.is_empty()) {
-        if !expected.contains(h) || !seen.insert(h.as_str()) {
-            unexpected.push(h.clone());
-        }
-    }
-    let missing: Vec<String> = expected
-        .into_iter()
-        .filter(|e| !header.contains(e))
-        .collect();
-    if missing.is_empty() && unexpected.is_empty() {
-        Ok(())
-    } else {
-        Err(FileError::Headers {
-            missing,
-            unexpected,
-        })
-    }
-}
-
-/// Reads the first sheet cell by cell, never as calamine's dense range: a
-/// sheet with one cell in A1 and one in XFD1048576 would ask for ~17e9
-/// cells. A cell beyond row `MAX_ROWS + 1` or column [`MAX_COLUMNS`] refuses
-/// the file before anything is allocated for it.
-fn xlsx_grid(bytes: &[u8]) -> Result<Grid, FileError> {
-    let mut book: Xlsx<_> =
-        calamine::open_workbook_from_rs(Cursor::new(bytes)).map_err(|_| FileError::Xlsx)?;
-    let first = book.sheet_names().first().cloned().ok_or(FileError::Xlsx)?;
-    let mut cells = book
-        .worksheet_cells_reader(&first)
-        .map_err(|_| FileError::Xlsx)?;
-    let mut rows: BTreeMap<u32, Vec<String>> = BTreeMap::new();
-    while let Some(cell) = cells.next_cell().map_err(|_| FileError::Xlsx)? {
-        let (r, c) = cell.get_position();
-        if r as usize > MAX_ROWS {
-            return Err(FileError::TooManyRows);
-        }
-        if c as usize >= MAX_COLUMNS {
-            return Err(FileError::TooManyColumns);
-        }
-        let text = cell_text(&Data::from(cell.get_value().clone()));
-        if text.is_empty() {
-            continue;
-        }
-        let row = rows.entry(r).or_default();
-        if row.len() <= c as usize {
-            row.resize(c as usize + 1, String::new());
-        }
-        row[c as usize] = text;
-    }
-    Ok(rows.into_iter().map(|(r, v)| (r as usize + 1, v)).collect())
-}
-
-/// A cell as text: integers without `.0`, dates as `YYYY-MM-DD` (with
-/// ` HH:MM:SS` when the cell has a time of day).
-pub(crate) fn cell_text(d: &Data) -> String {
-    match d {
-        Data::Int(i) => i.to_string(),
-        Data::Float(f) => number_text(*f),
-        Data::String(s) | Data::DateTimeIso(s) | Data::DurationIso(s) => s.clone(),
-        Data::Bool(b) => if *b { "TRUE" } else { "FALSE" }.into(),
-        Data::DateTime(dt) if dt.is_datetime() => {
-            let (y, m, d, h, mi, s, _) = dt.to_ymd_hms_milli();
-            if (h, mi, s) == (0, 0, 0) {
-                format!("{y:04}-{m:02}-{d:02}")
-            } else {
-                format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02}")
-            }
-        }
-        Data::DateTime(dt) => number_text(dt.as_f64()),
-        Data::Error(e) => e.to_string(),
-        Data::Empty => String::new(),
-    }
-}
-
-fn number_text(f: f64) -> String {
-    if f.fract() == 0.0 && f.abs() < 1e15 {
-        format!("{}", f as i64)
-    } else {
-        f.to_string()
-    }
+    header
+        .iter()
+        .filter(|h| !h.is_empty())
+        .filter(|h| !expected.contains(h) || !seen.insert(h.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// The base name of an uploaded file, safe as a FileStore key segment:
@@ -272,3 +275,7 @@ pub(crate) fn safe_name(name: &str) -> String {
 #[cfg(test)]
 #[path = "file_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sheets_tests.rs"]
+mod sheets_tests;

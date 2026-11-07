@@ -1,7 +1,8 @@
 //! A small RFC 4180 reader: quoted fields, `""` inside quotes, CRLF or LF
 //! line ends, line breaks inside quotes, and `,` or `;` as the delimiter
-//! (whichever appears more often outside quotes on the header line; `,`
-//! on a tie). No crate: the workspace list has no CSV parser.
+//! (whichever appears more often outside quotes on the first line that
+//! holds either, so title lines above the header do not count; `,` on a
+//! tie). No crate: the workspace list has no CSV parser.
 
 /// Why the text is not CSV.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,7 +14,8 @@ pub(crate) enum CsvError {
     AfterQuote(usize),
 }
 
-/// The delimiter the header line uses.
+/// The delimiter of the first line that has one (the header, under any
+/// title lines).
 pub(crate) fn delimiter(text: &str) -> char {
     let (mut commas, mut semis, mut quoted) = (0usize, 0usize, false);
     for c in text.chars() {
@@ -21,7 +23,7 @@ pub(crate) fn delimiter(text: &str) -> char {
             '"' => quoted = !quoted,
             ',' if !quoted => commas += 1,
             ';' if !quoted => semis += 1,
-            '\n' | '\r' if !quoted => break,
+            '\n' | '\r' if !quoted && commas + semis > 0 => break,
             _ => {}
         }
     }
@@ -148,6 +150,8 @@ mod tests {
         assert_eq!(rows(text)[1], vec!["1", "นก", "x,y"]);
         assert_eq!(delimiter("a,b;c\n"), ',');
         assert_eq!(delimiter("\"a;b;c\",d\n"), ',');
+        assert_eq!(delimiter("Seal Bay\r\n\r\nid;name;x,y\n1;2;3\n"), ';');
+        assert_eq!(delimiter("no delimiter at all\n"), ',');
     }
 
     #[test]

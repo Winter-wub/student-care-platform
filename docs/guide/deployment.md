@@ -288,3 +288,43 @@ add no logic of their own:
 audit row written with it, so demo data stays distinguishable
 (`harpseal seed-example` uses it). A confirmed roster import is applied by
 the Job `kernel.roster.import` on the next ticks.
+
+## Reading spreadsheet uploads in a Module
+
+`harpseal::sheet` is the reader the roster import uses, public so a
+Module parses its own uploads (fees, grades) with the same rules:
+`Workbook::open(bytes, file_name)` reads a `.csv` (one unnamed sheet) or
+every worksheet of an `.xlsx` (at most 50; `Sheet::is_hidden` marks hidden
+ones, skip and list them). `sheet.table(&TableSpec::new([...]))` finds the
+header row among the first 10 non-empty rows (title rows above are
+skipped; a required column repeated in the header is an error) and yields
+`Row`s with their sheet name and 1-based row number. By default every row
+under the header is data. `.skip_footer(["Amount"])` skips totals and notes
+rows at the bottom whose key cell holds a label (text with letters that is
+not a key) and that hold nothing else except under the numeric columns you
+name; a row with only numbers and no label is data (an id was lost). Show
+`Table::footer()` (sheet, row, text) to Staff, never drop it silently; if
+the rule would skip every row under the header, `table()` returns
+`TableError::OnlyFooter`. The rule cannot tell `Pla Thong,,500` (a name in
+the id column) from `Total,,500`: keyed by names or letter codes, pass
+`.is_key(|s| ...)` (a closure, e.g. over the codes you know) before turning
+the footer on. For money, check the footer against the data:
+`table.check_footer_total("Amount", 2)` fails (`TotalError::Mismatch`)
+when a totals row is not the exact sum of the rows above it, which is how
+a data row read as a footer shows itself. `footer()` and `into_parts()`
+are `#[must_use]`. An Excel error cell is `Cell::Unreadable` with its code
+and cell (`#REF!`, `C10`), never text.
+
+Numbers: `sheet::number_scaled(text, 2, Blank::Zero)` reads money exactly
+in satang (`12,500.50` is `1_250_050`; more decimals than the scale, a
+value beyond `±i64::MAX` or a scale above 18 is refused, never rounded).
+Numeric XLSX cells, calculated ones included, arrive as text: a
+fractional part rounded to 15 significant digits, as Excel shows it
+(`12500.000000000002` is `12500`), a whole number exact below 2^53 (a
+16-digit reference stays itself); 2^53 or more is `Cell::Unreadable` with
+code `sheet::TOO_LONG`. `sheet::number` gives an `f64` of at most 15
+significant digits. Both accept `12,500`, ` 12500 `,
+`12,500.00`, `+5`, `.5`; `.` is always the decimal point. They refuse
+`(500)`, `฿`, Thai digits, spaces or no-break spaces inside the number, the
+minus sign U+2212 and exponents: normalise those first. The rustdoc of
+`harpseal::sheet` has a worked example.

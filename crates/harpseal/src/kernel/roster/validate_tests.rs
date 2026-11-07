@@ -119,10 +119,13 @@ fn tags_locale_and_every_problem_is_listed() {
 
 #[test]
 fn file_errors_become_reports() {
-    let p = file_problems(&FileError::Headers {
+    let p = file_problems(&FileError::Headers(vec![HeaderMismatch {
+        sheet: String::new(),
+        row: 1,
         missing: vec!["อีเมล".into()],
         unexpected: vec!["หมายเหตุ".into()],
-    });
+        whole: None,
+    }]));
     assert_eq!(p[0], Problem::new(1, "อีเมล", "missing_header"));
     assert_eq!(p[1], Problem::new(1, "หมายเหตุ", "unexpected_header"));
     assert_eq!(
