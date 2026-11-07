@@ -649,6 +649,7 @@ dependencies = [
 name = "harpseal-cli"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "harpseal",
  "harpseal-testing",
  "tokio",

@@ -12,7 +12,8 @@
 //! Every type a Deployment or Module author needs is re-exported here. The
 //! modules [`render`] (helpers for Channel adapters), [`ui`] (the shared page
 //! layout), [`password`] (Staff password hashing) and [`audit`] (the audit
-//! writer every Staff write goes through) group free functions. Back-office
+//! writer every Staff write goes through) group free functions;
+//! [`backup`] dumps and restores a whole Deployment through its ports. Back-office
 //! handlers extract [`CurrentStaff`] and [`RequestCtx`].
 //! The Kernel's schema is not public API.
 //!
@@ -45,6 +46,7 @@ mod sql_split;
 mod verification;
 
 pub mod audit;
+pub mod backup;
 pub mod modules;
 pub mod password;
 pub mod render;
