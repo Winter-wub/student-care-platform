@@ -38,6 +38,16 @@
 //! links once more. A second 404 is `Error::Platform`: one recreate per
 //! call at most.
 //!
+//! # Missing image (#98)
+//!
+//! A new rich menu gets its image right away, and if that upload fails it
+//! is deleted, so no named rich menu is left without one. A failed delete or
+//! a stopped process can still leave one, which every later call would
+//! reuse. A link answered 400 that is not about the user id (one of LINE's
+//! reasons is "no image set to the rich menu") is checked with
+//! `GET api-data.line.me/v2/bot/richmenu/{id}/content` (404: none): the
+//! image is uploaded and the link repeated, once. A failed upload deletes it.
+//!
 //! # Cleanup
 //!
 //! A channel holds at most 1000 rich menus
@@ -108,6 +118,7 @@
 //! Images: PNG, 2500 x 1686 or 2500 x 843 px, at most 1 MB
 //! (<https://developers.line.biz/en/reference/messaging-api/#upload-rich-menu-image-requirements>).
 
+mod image;
 mod name;
 mod relink;
 mod retire;
@@ -125,7 +136,7 @@ pub use name::{HASH_LEN, SALT_LEN, name_key};
 pub use relink::{BULK_LINK_MAX, ONE_BY_ONE_MAX, RELINK_CHUNK};
 pub use retire::{BATCH_RETRY_SECS, PROGRESS_FIRST_POLL_SECS, PROGRESS_MAX_POLL_SECS, poll_delay};
 
-use crate::api::{API, API_DATA, Failure, parse, path_id};
+use crate::api::{API, Failure, parse, path_id};
 use crate::{LineChannel, render};
 
 /// Largest rich menu image.
@@ -264,13 +275,21 @@ impl LineChannel {
         let (name, obj) = rich_menu(tag, menu, image)?;
         let mut found = self.rich_menu_id(&name, &obj, image, true).await?;
         if let Err(f) = self.link(user, &found.id).await? {
-            if f.status != 404 {
+            // A 400 not about the user id may be a rich menu without its
+            // image: upload it and link again, once.
+            if f.status == 400
+                && !relink::about_user(&f)
+                && self.restore_image(&name, &found.id, image).await?
+            {
+                self.link(user, &found.id).await?.map_err(fail)?;
+            } else if f.status != 404 {
                 return Err(fail(f));
+            } else {
+                // Deleted behind our back: find or create it again, once.
+                self.menus.forget(&name);
+                found = self.rich_menu_id(&name, &obj, image, false).await?;
+                self.link(user, &found.id).await?.map_err(fail)?;
             }
-            // Deleted behind our back: find or create it again, once.
-            self.menus.forget(&name);
-            found = self.rich_menu_id(&name, &obj, image, false).await?;
-            self.link(user, &found.id).await?.map_err(fail)?;
         }
         let tag = tag.map(|(k, g)| (k.as_str(), g));
         self.tidy(user, tag, &name, found).await;
@@ -318,11 +337,7 @@ impl LineChannel {
             .filter(|s| !s.is_empty())
             .ok_or_else(|| Error::Platform("LINE created a rich menu without an id".into()))?
             .to_string();
-        let url = format!("{API_DATA}/v2/bot/richmenu/{}/content", path_id(&id)?);
-        let uploaded = self
-            .call(Method::POST, &url, Some("image/png"), image.to_vec())
-            .await;
-        if let Err(e) = uploaded.and_then(|r| r.map_err(fail)) {
+        if let Err(e) = self.upload_image(&id, image).await {
             // A rich menu without an image cannot be linked: remove it so
             // the list lookup never finds it.
             self.delete_rich_menu(&id).await;

@@ -45,11 +45,16 @@ struct ApiState {
     /// Bulk links answer 400 with this message (naming no user); per-user
     /// links too when the flag is set.
     refuse_links: Option<(String, bool)>,
+    /// Rich menus that have their image; linking any other answers 400.
+    images: Vec<String>,
 }
 
 impl ApiState {
     fn live(&self, id: &str) -> bool {
         self.menus.iter().any(|(i, _)| i == id) && !self.deleted.iter().any(|d| d == id)
+    }
+    fn imaged(&self, id: &str) -> bool {
+        self.images.iter().any(|i| i == id)
     }
 }
 
@@ -127,10 +132,33 @@ impl LineApi {
     pub fn delete_in_console(&self, id: &str) {
         self.state.lock().unwrap().deleted.push(id.into());
     }
-    /// Pretends `obj` already exists on the account under `id`.
+    /// Pretends `obj` already exists on the account under `id`, with its image.
     pub fn preexisting(&self, id: &str, obj: Value) {
+        let mut s = self.state.lock().unwrap();
+        s.menus.push((id.into(), obj));
+        s.images.push(id.into());
+    }
+    /// [`LineApi::preexisting`], but created without an image (an upload
+    /// that never happened): linking it answers 400, downloading its image
+    /// 404, until the image is uploaded.
+    pub fn preexisting_imageless(&self, id: &str, obj: Value) {
         self.state.lock().unwrap().menus.push((id.into(), obj));
     }
+    /// Whether rich menu `id` has an image.
+    pub fn has_image(&self, id: &str) -> bool {
+        self.state.lock().unwrap().imaged(id)
+    }
+}
+
+/// LINE's 400 for linking a rich menu that has no image (the message the
+/// docs show for the same condition when setting the default rich menu).
+fn no_image() -> http::Response<Vec<u8>> {
+    let body =
+        r#"{"message":"must upload richmenu image before applying it to user","details":[]}"#;
+    http::Response::builder()
+        .status(400)
+        .body(body.as_bytes().to_vec())
+        .unwrap()
 }
 
 pub fn json(body: &[u8]) -> Value {
@@ -177,6 +205,9 @@ impl HttpClient for LineApi {
                     .status(404)
                     .body(br#"{"message":"richmenu not found","details":[]}"#.to_vec())
                     .unwrap());
+            }
+            if !s.imaged(&id) {
+                return Ok(no_image());
             }
             let users = body["userIds"].as_array().cloned().unwrap_or_default();
             if let Some(n) = users
@@ -230,6 +261,26 @@ impl HttpClient for LineApi {
                 .body(answer.to_string().into_bytes())
                 .unwrap());
         }
+        if let Some(id) = uri
+            .strip_prefix("https://api-data.line.me/v2/bot/richmenu/")
+            .and_then(|r| r.strip_suffix("/content"))
+        {
+            let id = id.to_string();
+            let found = |status: u16, body: Vec<u8>| {
+                Ok(http::Response::builder().status(status).body(body).unwrap())
+            };
+            if !s.live(&id) {
+                return found(404, br#"{"message":"Not found"}"#.to_vec());
+            }
+            if method == http::Method::POST {
+                s.images.push(id);
+                return found(200, b"{}".to_vec());
+            }
+            return match s.imaged(&id) {
+                true => found(200, png(2500, 843)),
+                false => found(404, br#"{"message":"Not found"}"#.to_vec()),
+            };
+        }
         let answer = if uri.ends_with("/v2/bot/message/reply") || uri.ends_with("/message/push") {
             let n = body["messages"].as_array().map_or(0, Vec::len);
             let ids: Vec<Value> = (0..n)
@@ -269,6 +320,9 @@ impl HttpClient for LineApi {
                     .status(404)
                     .body(br#"{"message":"Not found"}"#.to_vec())
                     .unwrap());
+            }
+            if user.is_some() && !s.imaged(&id) {
+                return Ok(no_image());
             }
             match user {
                 Some(u) => s.links.push((u, id)),

@@ -271,6 +271,18 @@ Limits to know:
   isolate linked to its twin loses its menu when that twin is deleted.
 - A rich menu deleted in the console is recreated on the next `set_menu` that
   links it (once per call; a second 404 is a platform error).
+- **A rich menu without its image** (#98) is repaired in the same `set_menu`.
+  The adapter uploads the image right after creating a rich menu and deletes
+  the new one if that upload fails, so no named rich menu is left imageless. If
+  one is left anyway (the delete failed, or the process stopped between the two
+  calls), the next `set_menu` finds it by name and LINE refuses the link with a
+  400 that is not about the user id (the docs list "no image set to the rich
+  menu" as one reason). The adapter then asks `GET /v2/bot/richmenu/{id}/content`
+  on `api-data.line.me` (404: no image), uploads the configured image and links
+  again, once. If that upload fails too, the rich menu is deleted and the call
+  returns the error; the next call creates it cleanly. No generation bump or
+  manual delete is needed. The re-link after a label save does not repair
+  yet.
 
 Blocks arrive as `unfollow` events, which make the Link `unreachable`. LINE
 documents a push to a user who blocked or never added the account as a 200, an

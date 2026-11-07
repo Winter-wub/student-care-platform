@@ -171,7 +171,7 @@ impl LineChannel {
 }
 
 /// Whether a 400 on a per-user link is about the user id, not the menu.
-fn about_user(f: &Failure) -> bool {
+pub(super) fn about_user(f: &Failure) -> bool {
     f.message.contains("'userId'")
 }
 
