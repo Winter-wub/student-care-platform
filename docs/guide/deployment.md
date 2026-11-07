@@ -76,7 +76,11 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   longer configured is never shown.
 - Without a session (missing, forged or expired) the handler is never
   called: the Student gets the Kernel's entry page, which signs in through
-  the platform and comes back to the same path. An account whose Link was
+  the platform and comes back to the same path. The same happens on every
+  new launch (a request that does not come from one of the Deployment's
+  own pages, see "Mini App" in [channels.md](channels.md)): the old
+  session is dropped first, so a link from the chat to your page always
+  shows the Student who opened it. An account whose Link was
   revoked gets the "go back to the chat" page. For an HTMX request both
   answer `HX-Redirect`, so the whole page reloads: to the same path for a
   `GET`, else to the page the request came from (`HX-Current-URL`, kept on
@@ -100,7 +104,11 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   it, for example through `any(..)` routing.
 - `me.t(key)` and `me.tf(key, args)` read texts in the Student's Locale
   with the back office's overrides. `me.page(&s, title, body)` renders the
-  Mini App shell (branding, CSRF header for HTMX). Every `/app` response,
+  Mini App shell (branding, CSRF header for HTMX,
+  `Referrer-Policy: same-origin`). Links inside your page are plain
+  same-origin links: do not strip the `Referer` (`rel="noreferrer"`),
+  or an older webview without Fetch Metadata counts each one as a new
+  launch. Every `/app` response,
   whatever a handler returns (a fragment, JSON, a file), gets
   `Cache-Control: no-store` and the Mini App's `frame-ancestors` CSP.
 - **Put the page under `/app/`.** Only there does it get the App Session

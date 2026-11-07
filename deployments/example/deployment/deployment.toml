@@ -63,6 +63,12 @@ retention_days = 30
 [announcements]
 latest = 5
 
+# A Mini App session ends after this long without use (2-60, default 15);
+# LINE token checks per IP group a minute (30-100000, default 300).
+[mini_app]
+idle_minutes = 15
+verify_per_minute = 300
+
 [otp]
 digits = 6
 ttl_minutes = 5

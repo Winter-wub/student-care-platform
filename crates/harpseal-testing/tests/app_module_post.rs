@@ -100,12 +100,15 @@ async fn cross_site_posts_are_refused_even_with_the_token() {
         ("sec-fetch-site", "same-origin"),
     ];
     assert_eq!(b.send(post(NOTE, &same, "")).await.body, "saved:s2");
-    // A cross-site GET is a navigation: allowed (a link from the chat).
+    // A cross-site GET (a link from the chat) is a new launch (#86): the
+    // entry page, never the page of the session the browser held.
     let get = http::Request::get(PAGE)
         .header("sec-fetch-site", "cross-site")
         .body(Body::empty())
         .unwrap();
-    assert_eq!(b.send(get).await.status, 200);
+    let r = b.send(get).await;
+    assert!(is_entry(&r), "{}", r.body);
+    assert!(!r.body.contains("id=\"who\""));
 }
 
 #[tokio::test]

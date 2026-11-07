@@ -147,7 +147,7 @@ impl World {
             .await?
             .redirect("App Session")?;
         ensure(to == next, format!("App Session went to {to}"))?;
-        let page = self.c.get(&next).await?.expect(200, "Mini App page")?;
+        let page = self.c.navigate(&next).await?.expect(200, "Mini App page")?;
         ensure(
             page.body.contains("class=\"app-acked\""),
             "no acknowledged line",

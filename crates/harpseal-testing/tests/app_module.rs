@@ -23,13 +23,14 @@ async fn line_and_telegram_sessions_reach_their_own_student() {
     // `legacy` key.
     assert_eq!(who(&r), "s1|6801001|Karn Seal|th|line|{&quot;year&quot;:1}");
     assert!(r.body.contains("หน้าทดสอบ"), "Thai texts for Karn");
-    // The Mini App's headers: CSP, never cached, no referrer.
+    // The Mini App's headers: CSP, never cached, the Referer only to
+    // this origin (#86).
     assert_eq!(
         r.header("content-security-policy"),
         Some("frame-ancestors 'self' https://web.telegram.org")
     );
     assert_eq!(r.header("cache-control"), Some("no-store"));
-    assert_eq!(r.header("referrer-policy"), Some("no-referrer"));
+    assert_eq!(r.header("referrer-policy"), Some("same-origin"));
 
     let tg = signed_in(&h, &app, "telegram").await;
     let r = tg.get(PAGE).await;
@@ -54,8 +55,10 @@ async fn telegram_web_s_partitioned_cookie_reaches_the_module_page() {
     let cookie = r.header("set-cookie").unwrap().to_string();
     assert!(cookie.contains("Path=/app;") && cookie.contains("Partitioned"));
     let token = cookie.split(';').next().unwrap();
+    // The exchange's redirect: a same-origin navigation (#86).
     let req = http::Request::get(PAGE)
         .header("cookie", token)
+        .header("sec-fetch-site", "same-origin")
         .body(axum::body::Body::empty())
         .unwrap();
     assert!(who(&app.request(req).await).starts_with("s2|"));
@@ -121,6 +124,7 @@ async fn no_url_or_query_picks_another_student_only_the_cookie_does() {
     let cookie = mali.cookie("app_session").unwrap();
     let req = http::Request::get("/app/probe?student=s1")
         .header("cookie", format!("app_session={cookie}"))
+        .header("sec-fetch-site", "same-origin")
         .body(axum::body::Body::empty())
         .unwrap();
     let r = app.request(req).await;

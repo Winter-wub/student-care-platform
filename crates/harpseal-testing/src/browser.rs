@@ -63,8 +63,23 @@ impl Browser<'_> {
         pairs.join("; ")
     }
 
-    /// Sends `req` with the cookies, then stores what comes back.
+    /// Sends `req` with the cookies, then stores what comes back. Unless
+    /// `req` sets its own, it carries `Sec-Fetch-Site: same-origin`, as a
+    /// browser does for a link, form or fetch on one of the app's own pages
+    /// (a Mini App page then continues its launch, #86). For a fresh open
+    /// from the chat see [`Browser::launch`]; for a request without Fetch
+    /// Metadata, [`Browser::send_as_is`].
     pub async fn send(&self, mut req: Request<Body>) -> TestResponse {
+        let site = http::HeaderName::from_static("sec-fetch-site");
+        if !req.headers().contains_key(&site) {
+            let same = http::HeaderValue::from_static("same-origin");
+            req.headers_mut().insert(site, same);
+        }
+        self.send_as_is(req).await
+    }
+
+    /// [`Browser::send`] without adding `Sec-Fetch-Site`: an older webview.
+    pub async fn send_as_is(&self, mut req: Request<Body>) -> TestResponse {
         let cookies = self.cookie_header();
         if !cookies.is_empty() {
             let v = cookies.parse().expect("cookie header is ASCII");
@@ -96,6 +111,18 @@ impl Browser<'_> {
     /// `GET path`.
     pub async fn get(&self, path: &str) -> TestResponse {
         let req = Request::get(path)
+            .body(Body::empty())
+            .expect("valid request");
+        self.send(req).await
+    }
+
+    /// `GET path` as a fresh open of the Mini App from the chat (LIFF's
+    /// redirect, Telegram Web's iframe, a Card's link):
+    /// `Sec-Fetch-Site: cross-site`, with the cookies the browser holds.
+    pub async fn launch(&self, path: &str) -> TestResponse {
+        let req = Request::get(path)
+            .header("sec-fetch-site", "cross-site")
+            .header("sec-fetch-mode", "navigate")
             .body(Body::empty())
             .expect("valid request");
         self.send(req).await

@@ -300,3 +300,26 @@ async fn line_verify_calls_are_limited_per_ip_group_per_minute() {
     h.clock().advance_ms(60_000);
     assert_eq!(app.request(from("2001:db8:aa:bb::1")).await.status, 403);
 }
+
+#[tokio::test]
+async fn accepted_tokens_never_count_toward_the_limit() {
+    // A class of 50 behind one campus NAT opens a Card at once (#86).
+    let (h, app) = boot().await;
+    for i in 0..50 {
+        h.http().respond_with(
+            200,
+            format!(
+                r#"{{"iss":"https://access.line.me","sub":"{LINE_USER}","aud":"2000000000","exp":1793840400,"iat":1793836800}}"#
+            ),
+        );
+        let req = http::Request::post("/app/session")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .header("cf-connecting-ip", "203.0.113.20")
+            .body(axum::body::Body::from(format!(
+                "channel=line&token={ID_TOKEN}&next=%2Fapp"
+            )))
+            .unwrap();
+        assert_eq!(app.request(req).await.status, 303, "launch {i}");
+    }
+    assert_eq!(h.http_requests().len(), 50);
+}
