@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use axum::body::Body;
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
@@ -12,19 +11,12 @@ use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 
-use super::{CSRF_FIELD, CSRF_HEADER, FLASH_COOKIE, LOGIN_PATH, PASSWORD_PATH, SESSION_COOKIE};
+use super::csrf_body::{Csrf, check_csrf};
+use super::{CSRF_FIELD, FLASH_COOKIE, LOGIN_PATH, PASSWORD_PATH, SESSION_COOKIE};
 use super::{cookies, csrf_for, roles, session};
 use crate::audit::{REQUEST_ID_HEADER, RequestCtx, peer};
 use crate::message::Locale;
 use crate::{AppState, Result};
-
-/// Largest form body the guard reads to find the CSRF field.
-const FORM_LIMIT: usize = 1024 * 1024;
-/// Largest `multipart/form-data` body read for its `_csrf` part on a route
-/// that does not take uploads. An upload route (`back_office_upload`, the
-/// roster import) sets its own limit in [`Gate::body_limit`], and its body
-/// is only read once the Staff member is known to hold its Permission.
-pub(crate) const MULTIPART_LIMIT: usize = 64 * 1024;
 
 /// One back-office page in the navigation.
 #[derive(Debug, Clone)]
@@ -52,6 +44,10 @@ pub(crate) struct Gate {
     pub(crate) during_forced_change: bool,
     /// Largest `multipart/form-data` body the guard reads for `_csrf`.
     pub(crate) body_limit: usize,
+    /// Where a body over the limit is sent back to, with an error flash
+    /// `(path, catalog key)`: an upload route's own form. Elsewhere the
+    /// answer is a 413 page.
+    pub(crate) too_large: Option<(&'static str, &'static str)>,
 }
 
 /// The signed-in Staff member, for back-office handlers:
@@ -232,11 +228,14 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     if let Some(p) = forbidden_permission {
         return Ok(Err(forbidden(state, &staff, p)));
     }
-    let (req, csrf_ok) = check_csrf(req, &staff.csrf, gate.body_limit).await;
-    if !csrf_ok {
-        let text = state.t("kernel.auth.csrf_failed");
-        return Ok(Err(bare_page(state, StatusCode::FORBIDDEN, &text)));
-    }
+    let req = match check_csrf(req, &staff.csrf, gate.body_limit).await {
+        (req, Csrf::Ok) => req,
+        (_, Csrf::Bad) => {
+            let text = state.t("kernel.auth.csrf_failed");
+            return Ok(Err(bare_page(state, StatusCode::FORBIDDEN, &text)));
+        }
+        (req, Csrf::TooLarge) => return Ok(Err(too_large(state, &req, gate))),
+    };
     let mut req = req;
     req.extensions_mut().insert(staff);
     Ok(Ok((req, had_flash)))
@@ -252,47 +251,20 @@ fn renders_a_page(req: &Request) -> bool {
         && !path.ends_with(".csv")
 }
 
-/// Safe methods pass. Otherwise the `X-CSRF-Token` header or the `_csrf`
-/// field of a urlencoded body must equal `expected`; the body is read and
-/// put back for the handler. A multipart body is read up to
-/// `multipart_limit` for its `_csrf` part; a larger one is refused.
-pub(crate) async fn check_csrf(
-    req: Request,
-    expected: &str,
-    multipart_limit: usize,
-) -> (Request, bool) {
-    if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
-        return (req, true);
+/// A body over the route's limit: back to the upload form with an error
+/// flash, or a 413 page.
+fn too_large(state: &AppState, req: &Request, gate: Gate) -> Response {
+    match gate.too_large {
+        Some((to, key)) => {
+            let secure = state.config.staff.cookie_secure;
+            let cookie = super::flash_cookie(false, key, secure);
+            redirect(req.headers(), to, Some(cookie))
+        }
+        None => {
+            let text = state.t("kernel.auth.too_large");
+            bare_page(state, StatusCode::PAYLOAD_TOO_LARGE, &text)
+        }
     }
-    if let Some(v) = req.headers().get(CSRF_HEADER).and_then(|v| v.to_str().ok()) {
-        let ok = cookies::ct_eq(v.as_bytes(), expected.as_bytes());
-        return (req, ok);
-    }
-    let content_type = req
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
-    // A file upload (the roster import, #24) carries `_csrf` as a part.
-    let boundary = cookies::multipart_boundary(&content_type);
-    let is_form = content_type.starts_with("application/x-www-form-urlencoded");
-    if !is_form && boundary.is_none() {
-        return (req, false);
-    }
-    let limit = if is_form { FORM_LIMIT } else { multipart_limit };
-    let (parts, body) = req.into_parts();
-    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
-        return (Request::from_parts(parts, Body::empty()), false);
-    };
-    let found = match &boundary {
-        Some(b) => cookies::multipart_field(&bytes, b, CSRF_FIELD),
-        None => std::str::from_utf8(&bytes)
-            .ok()
-            .and_then(|b| cookies::form_field(b, CSRF_FIELD)),
-    };
-    let ok = found.is_some_and(|v| cookies::ct_eq(v.as_bytes(), expected.as_bytes()));
-    (Request::from_parts(parts, Body::from(bytes)), ok)
 }
 
 /// 303 to `to` (HTMX gets `HX-Redirect` instead, so it swaps the page).

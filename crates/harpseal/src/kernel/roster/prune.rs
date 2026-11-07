@@ -18,8 +18,17 @@ use crate::{Result, Services};
 /// Imports whose files one tick deletes, at most.
 const PER_TICK: i64 = 20;
 
-/// Deletes the files due at `now`; returns how many imports lost theirs.
-pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<u64> {
+/// What one prune did: imports that lost their files, and the imports it
+/// could not prune (each is retried on the next tick; one failing object
+/// never holds the others back).
+#[derive(Debug, Default)]
+pub(crate) struct Pruned {
+    pub(crate) count: u64,
+    pub(crate) errors: Vec<String>,
+}
+
+/// Deletes the files due at `now`.
+pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<Pruned> {
     let due = Statement::new(
         "SELECT id, file_key, file_name FROM roster_import \
          WHERE file_key <> '' AND state NOT IN ('queued', 'running') \
@@ -29,35 +38,44 @@ pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<u64> {
     .bind(now)
     .bind(PER_TICK);
     let rows = s.db.query(due).await?;
-    let mut pruned = 0;
+    let mut out = Pruned::default();
     for i in 0..rows.len() {
         let text = |c: &str| rows.get(i, c).and_then(Value::as_text).unwrap_or_default();
-        let (id, key) = (text("id"), text("file_key"));
-        s.files.delete(key).await?;
-        s.files.delete(&super::rows::key(id)).await?;
-        let cond =
-            Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND file_key = ?)")
-                .bind(id)
-                .bind(key);
-        let (audit, gate) = audit::entry_if(
-            s,
-            &Actor::System,
-            "roster.file.prune",
-            Some(&Target::new("roster_import", id)),
-            Some(json!({ "file_name": text("file_name"), "stored": true })),
-            Some(json!({ "stored": false, "reason": "kept for one year" })),
-            &RequestCtx::default(),
-            cond,
-        )?;
-        let clear = Statement::new(
-            "UPDATE roster_import SET file_key = '' WHERE id = ? AND file_key = ? \
-             AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
-        )
-        .bind(id)
-        .bind(key)
-        .bind(gate);
-        let done = s.db.batch(vec![audit, clear]).await?;
-        pruned += done.get(1).map_or(0, |r| r.rows_affected);
+        let (id, key, name) = (text("id"), text("file_key"), text("file_name"));
+        match prune_one(s, id, key, name).await {
+            Ok(n) => out.count += n,
+            Err(e) => out.errors.push(format!("roster import {id}: {e}")),
+        }
     }
-    Ok(pruned)
+    Ok(out)
+}
+
+/// Deletes one import's objects, then audits and clears `file_key`.
+async fn prune_one(s: &Services, id: &str, key: &str, name: &str) -> Result<u64> {
+    let rows_key = super::rows::key(id);
+    s.files.delete(key).await?;
+    s.files.delete(&rows_key).await?;
+    let cond = Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND file_key = ?)")
+        .bind(id)
+        .bind(key);
+    // After `file_key = ''` this row is the only record of what was stored.
+    let (audit, gate) = audit::entry_if(
+        s,
+        &Actor::System,
+        "roster.file.prune",
+        Some(&Target::new("roster_import", id)),
+        Some(json!({ "file_name": name, "stored": true })),
+        Some(json!({ "stored": false, "keys": [key, rows_key], "reason": "kept for one year" })),
+        &RequestCtx::default(),
+        cond,
+    )?;
+    let clear = Statement::new(
+        "UPDATE roster_import SET file_key = '' WHERE id = ? AND file_key = ? \
+         AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+    )
+    .bind(id)
+    .bind(key)
+    .bind(gate);
+    let done = s.db.batch(vec![audit, clear]).await?;
+    Ok(done.get(1).map_or(0, |r| r.rows_affected))
 }

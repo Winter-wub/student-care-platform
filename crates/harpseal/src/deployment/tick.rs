@@ -65,14 +65,17 @@ impl core::fmt::Display for TickReport {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "scheduled {}, claimed {}, done {}, retried {}, failed {}, pruned {} jobs and {} sessions",
+            "scheduled {}, claimed {}, done {}, retried {}, failed {}, pruned {} jobs, {} sessions, \
+             {} webhook events and {} roster files",
             self.scheduled,
             self.claimed,
             self.done,
             self.retried,
             self.failed,
             self.jobs_pruned,
-            self.sessions_pruned
+            self.sessions_pruned,
+            self.events_pruned,
+            self.roster_files_pruned
         )
     }
 }
@@ -263,7 +266,13 @@ impl Deployment {
             Err(e) => report.errors.push(format!("webhook event prune: {e}")),
         }
         match crate::kernel::roster::prune_files(&self.services, now.ms()).await {
-            Ok(n) => report.roster_files_pruned = n,
+            Ok(p) => {
+                report.roster_files_pruned = p.count;
+                let failed = p.errors.into_iter();
+                report
+                    .errors
+                    .extend(failed.map(|e| format!("roster file prune: {e}")));
+            }
             Err(e) => report.errors.push(format!("roster file prune: {e}")),
         }
         Ok(report)

@@ -142,7 +142,7 @@ struct Collected {
     schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
     migrations: Vec<crate::Migration>,
     back_office: BackOffice,
-    uploads: Vec<(&'static str, usize)>,
+    uploads: Vec<crate::module::UploadSpec>,
     public: Vec<(&'static str, &'static str, Route)>,
     routes: Routes,
     mini_app_users: Vec<&'static str>,

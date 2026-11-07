@@ -36,6 +36,16 @@ pub(crate) const TEXTS: &[E] = &[
         "en",
         "This form has expired. Please reload the page and try again.",
     ),
+    E::new(
+        "kernel.auth.too_large",
+        "th",
+        "ข้อมูลที่ส่งมีขนาดใหญ่เกินกว่าที่หน้านี้รับได้",
+    ),
+    E::new(
+        "kernel.auth.too_large",
+        "en",
+        "What you sent is larger than this page accepts.",
+    ),
     E::new("kernel.auth.forbidden_title", "th", "ไม่มีสิทธิ์เข้าหน้านี้"),
     E::new("kernel.auth.forbidden_title", "en", "No access"),
     E::new(

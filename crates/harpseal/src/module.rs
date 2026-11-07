@@ -161,14 +161,25 @@ pub struct ModuleRegistrar {
     pub(crate) actions: Vec<(ActionId, Arc<dyn ActionHandler>)>,
     pub(crate) action_prefixes: Vec<(&'static str, Arc<dyn ActionHandler>)>,
     pub(crate) back_office: Vec<(&'static str, &'static str, MethodRouter<AppState>)>,
-    /// (path, body limit) of the back-office upload routes.
-    pub(crate) uploads: Vec<(&'static str, usize)>,
+    /// The back-office upload routes.
+    pub(crate) uploads: Vec<UploadSpec>,
     pub(crate) public: Vec<(&'static str, MethodRouter<AppState>)>,
     pub(crate) catalog: Vec<CatalogEntry>,
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
     pub(crate) migrations: Vec<Migration>,
     pub(crate) mini_app_paths: Vec<&'static str>,
     pub(crate) nav: Vec<NavSpec>,
+}
+
+/// A back-office upload route (paths under `/admin`, as registered).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct UploadSpec {
+    pub(crate) path: &'static str,
+    pub(crate) max_body: usize,
+    /// The page a body over `max_body` is sent back to.
+    pub(crate) back: &'static str,
+    /// The catalog key of that error flash.
+    pub(crate) too_large: &'static str,
 }
 
 /// A back-office page listed in the navigation and on `/admin`.
@@ -265,20 +276,21 @@ impl ModuleRegistrar {
     }
 
     /// Like [`ModuleRegistrar::back_office`] for a route that takes a
-    /// `multipart/form-data` upload: the guard reads its body (for the
-    /// `_csrf` part) up to `max_body` bytes, after the Permission check.
-    /// Every other back-office route gets the small
-    /// `auth::MULTIPART_LIMIT`. The route still needs its own
-    /// `DefaultBodyLimit` for axum's `Multipart`.
+    /// `multipart/form-data` upload of up to `spec.max_body` bytes: the
+    /// route gets that `DefaultBodyLimit` (for axum's `Multipart`), and the
+    /// guard reads its body (for the `_csrf` part) up to that size, after
+    /// the Permission check. A larger body is sent back to `spec.back`
+    /// with the error flash `spec.too_large`. Every other back-office
+    /// route gets the small `auth::MULTIPART_LIMIT` and a 413 page.
     pub(crate) fn back_office_upload(
         &mut self,
         permission: &'static str,
-        path: &'static str,
+        spec: UploadSpec,
         route: MethodRouter<AppState>,
-        max_body: usize,
     ) -> &mut Self {
-        self.uploads.push((path, max_body));
-        self.back_office(permission, path, route)
+        let route = route.layer(axum::extract::DefaultBodyLimit::max(spec.max_body));
+        self.uploads.push(spec);
+        self.back_office(permission, spec.path, route)
     }
 
     /// Like [`ModuleRegistrar::back_office`], and also lists the page in

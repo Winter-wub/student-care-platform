@@ -218,6 +218,7 @@ pub(super) async fn confirm(
     match service::confirm(&s.services, &s.jobs, &id, &actor, &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.confirmed"),
         Ok(Outcome::NotPreviewed(_)) => v.redirect(&back, false, "kernel.roster.not_previewed"),
+        Ok(Outcome::FileDeleted) => v.redirect(&back, false, "kernel.roster.file_pruned"),
         Ok(Outcome::Missing) => v.not_found(),
         Err(e) => v.error(&e),
     }
@@ -233,7 +234,9 @@ pub(super) async fn cancel(
     let back = format!("{BASE}/{id}");
     match service::cancel(&s.services, &id, &Actor::staff(&staff), &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.cancelled"),
-        Ok(Outcome::NotPreviewed(_)) => v.redirect(&back, false, "kernel.roster.not_previewed"),
+        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted) => {
+            v.redirect(&back, false, "kernel.roster.not_previewed")
+        }
         Ok(Outcome::Missing) => v.not_found(),
         Err(e) => v.error(&e),
     }
@@ -251,7 +254,9 @@ pub(super) async fn fail(
     let actor = Actor::staff(&staff);
     match super::stuck::mark_failed(&s.services, &id, &actor, &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.marked_failed"),
-        Ok(Outcome::NotPreviewed(_)) => v.redirect(&back, false, "kernel.roster.not_stuck"),
+        Ok(Outcome::NotPreviewed(_) | Outcome::FileDeleted) => {
+            v.redirect(&back, false, "kernel.roster.not_stuck")
+        }
         Ok(Outcome::Missing) => v.not_found(),
         Err(e) => v.error(&e),
     }
@@ -331,7 +336,7 @@ pub(super) async fn file(
     if let Err(e) = logged {
         return v.error(&e);
     }
-    let xlsx = super::file::is_xlsx(&bytes, &imp.file_name);
+    let xlsx = super::file::is_xlsx(&imp.file_name);
     let (kind, fallback) = if xlsx {
         (
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

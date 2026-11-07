@@ -90,7 +90,8 @@ pub(crate) fn slice(bytes: &[u8], from: usize, to: usize) -> Result<Vec<Record>>
 
 /// The records of the chunk starting at `imp.applied_rows`: from the
 /// parsed rows when they are stored, else from the original file
-/// (re-read, hash-checked, re-parsed and re-validated as a whole).
+/// (re-read, hash-checked, re-parsed and re-validated as a whole, and
+/// refused unless it gives the very rows the preview stored).
 pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<Vec<Record>> {
     let s = &cx.services;
     let from = usize::try_from(imp.applied_rows).unwrap_or(usize::MAX);
@@ -116,9 +117,15 @@ pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<
         .map_err(|_| Error::Invalid("the stored roster file no longer reads".into()))?;
     let valid = super::validate::validate(&rows, &cx.config)
         .map_err(|_| Error::Invalid("the stored roster file no longer validates".into()))?;
-    if valid.records.len() != total {
+    // The rows the preview counted, or the import would apply something
+    // else (a `[roster]` mapping changed since the upload).
+    let same = match imp.counts.rows_sha256.as_str() {
+        "" => valid.records.len() == total,
+        h => crate::auth::sha256_hex(&encode(&valid.records)?) == h,
+    };
+    if !same {
         return Err(Error::Invalid(
-            "the stored roster file no longer matches".into(),
+            "the stored roster file no longer matches the preview".into(),
         ));
     }
     Ok(valid.records.get(from..to).unwrap_or_default().to_vec())

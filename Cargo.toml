@@ -38,6 +38,8 @@ example-deployment = { path = "deployments/example/deployment" }
 async-trait = "0.1"
 axum = { version = "0.8", default-features = false }
 http = "1"
+http-body = "1"
+http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 toml = "1"

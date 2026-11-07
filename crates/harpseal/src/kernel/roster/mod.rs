@@ -52,12 +52,11 @@ mod texts;
 pub(crate) mod validate;
 mod view;
 
-use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 
 use crate::config::RosterConfig;
 use crate::manifest::JobSpec;
-use crate::module::ModuleRegistrar;
+use crate::module::{ModuleRegistrar, UploadSpec};
 use view::{IMPORT, VIEW};
 
 /// Largest body `POST /admin/roster/upload` reads: a file of
@@ -75,7 +74,12 @@ fn has_mapping(roster: &RosterConfig) -> bool {
 
 /// Registers the pages and the Job on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
-    let upload = post(page_list::upload).layer(DefaultBodyLimit::max(UPLOAD_LIMIT));
+    let upload = UploadSpec {
+        path: "/roster/upload",
+        max_body: UPLOAD_LIMIT,
+        back: view::BASE,
+        too_large: "kernel.roster.reason_too_large",
+    };
     r.messages(texts::DEFAULTS)
         .back_office_page(
             VIEW,
@@ -85,7 +89,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(page_list::page),
         )
         .back_office(VIEW, "/roster/template.csv", get(page_list::template))
-        .back_office_upload(IMPORT, "/roster/upload", upload, UPLOAD_LIMIT)
+        .back_office_upload(IMPORT, upload, post(page_list::upload))
         .back_office(VIEW, "/roster/{id}", get(page_import::page))
         .back_office(IMPORT, "/roster/{id}/confirm", post(page_import::confirm))
         .back_office(IMPORT, "/roster/{id}/cancel", post(page_import::cancel))

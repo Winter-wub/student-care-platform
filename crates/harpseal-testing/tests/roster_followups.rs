@@ -1,14 +1,10 @@
 //! Roster import follow-ups (#46) at the Deployment seam: chunks read the
-//! parsed rows, stored files are pruned after a year, only the upload
-//! route reads a large multipart body, and no object outlives a failed
-//! upload.
+//! parsed rows, stored files are pruned after a year, and no object
+//! outlives a failed upload. Body limits are in `roster_limits.rs`.
 
 mod roster_support;
 
-use axum::body::Body;
-use harpseal::{FileStore, Timestamp};
-use harpseal_testing::{Browser, TestResponse};
-use http::{Request, header};
+use harpseal::{DeploymentConfig, FileStore, Timestamp};
 use roster_support::*;
 
 const DAY_MS: i64 = 86_400_000;
@@ -132,67 +128,6 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     assert_eq!(v.get(&format!("/admin/roster/{id}/file")).await.status, 404);
 }
 
-/// A multipart POST to `path` with these `(name, value)` parts.
-async fn multipart(b: &Browser<'_>, path: &str, parts: &[(&str, &[u8])]) -> TestResponse {
-    let boundary = "----sealbay-boundary";
-    let mut body = Vec::new();
-    for (name, value) in parts {
-        let head = format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"");
-        body.extend_from_slice(format!("{head}\r\n\r\n").as_bytes());
-        body.extend_from_slice(value);
-        body.extend_from_slice(b"\r\n");
-    }
-    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-    let req = Request::post(path)
-        .header(
-            header::CONTENT_TYPE,
-            format!("multipart/form-data; boundary={boundary}"),
-        )
-        .body(Body::from(body))
-        .unwrap();
-    b.send(req).await
-}
-
-#[tokio::test]
-async fn only_the_upload_route_reads_a_large_multipart_body() {
-    let (h, app) = boot().await;
-    let b = signed_in(&h, &app, "Officer").await;
-    let token = b.csrf().unwrap();
-    let padding = vec![b'x'; 200 * 1024];
-    // Another back-office POST: 200 KiB is past the small generic limit,
-    // so its `_csrf` part is never reached.
-    let other = multipart(
-        &b,
-        "/admin/roster/none/cancel",
-        &[("_csrf", token.as_bytes()), ("pad", &padding)],
-    )
-    .await;
-    assert_eq!(other.status, 403, "{}", other.body);
-    // The same size is fine on the upload route.
-    let big = csv(0..3000);
-    assert!(big.len() > 200 * 1024);
-    let r = upload(&b, "big.csv", &big, "upsert").await;
-    assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(flash(&b), "ok:kernel.roster.previewed");
-}
-
-#[tokio::test]
-async fn staff_without_the_permission_are_refused_before_the_body_is_read() {
-    let (h, app) = boot().await;
-    let viewer = signed_in(&h, &app, "Viewer").await;
-    // No `_csrf` part: a guard that read the body first would answer with
-    // the CSRF refusal; the Permission check answers before that.
-    let r = multipart(
-        &viewer,
-        "/admin/roster/upload",
-        &[("mode", b"full"), ("file", &vec![b'x'; 1024 * 1024])],
-    )
-    .await;
-    assert_eq!(r.status, 403);
-    assert!(r.body.contains("kernel.roster.import"), "{}", r.body);
-    assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
-}
-
 #[tokio::test]
 async fn a_failed_upload_leaves_no_stored_object() {
     let (h, app) = boot().await;
@@ -208,4 +143,120 @@ async fn a_failed_upload_leaves_no_stored_object() {
         assert_eq!(r.status, 500, "{name}: {}", r.body);
     }
     assert_eq!(h.files().keys(), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn an_upload_that_loses_the_slot_leaves_no_stored_object() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    // Between the slot check and the insert, another import takes the
+    // slot: the insert writes nothing and `Busy` names the other one.
+    run(
+        &h,
+        "CREATE TRIGGER race BEFORE INSERT ON roster_import WHEN NEW.id <> 'other' \
+         BEGIN INSERT INTO roster_import (id, staff_id, mode, state, file_key, file_name, \
+         created_at) VALUES ('other', NEW.staff_id, 'upsert', 'queued', 'roster/other/x.csv', \
+         'x.csv', NEW.created_at); SELECT RAISE(IGNORE); END",
+    )
+    .await;
+    let r = upload(&b, "a.csv", &csv(0..3), "upsert").await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(flash(&b), "err:kernel.roster.busy");
+    assert_eq!(r.header("location"), Some("/admin/roster/other"));
+    assert_eq!(h.files().keys(), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn the_fallback_refuses_a_file_that_now_reads_differently() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "upsert").await;
+    confirm(&b, &id).await;
+    // Restored without the parsed rows, under a `[roster]` that still
+    // accepts the file but reads `ชั้นปี` as a number (1.0, not 1).
+    h.files()
+        .delete(&format!("roster-rows/{id}.jsonl"))
+        .await
+        .unwrap();
+    let changed = CONFIG.replace(
+        "column = \"ชั้นปี\"\ntype = \"integer\"",
+        "column = \"ชั้นปี\"\ntype = \"number\"",
+    );
+    assert_ne!(changed, CONFIG);
+    let config = DeploymentConfig::from_toml(&changed).unwrap();
+    let later = h.boot(h.builder().config(config).build().unwrap()).await;
+    for _ in 0..5 {
+        later
+            .deployment()
+            .tick(Timestamp(h.clock().now_ms()))
+            .await
+            .unwrap();
+        h.clock().advance_minutes(31);
+    }
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let error = import_text(&h, &id, "error").await;
+    assert!(error.contains("no longer matches the preview"), "{error}");
+    assert_eq!(int(&h, "SELECT count(*) FROM student", &[]).await, 0);
+}
+
+#[tokio::test]
+async fn one_failing_object_does_not_hold_back_the_other_prunes() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let start = h.clock().now_ms();
+    let mut ids = Vec::new();
+    for (name, rows) in [("a.csv", 0..3), ("b.csv", 0..4)] {
+        let id = previewed(&b, name, &csv(rows), "upsert").await;
+        confirm(&b, &id).await;
+        run_jobs(&h, &app).await;
+        ids.push(id);
+    }
+    // The oldest import's file cannot be deleted (ordered first).
+    let stuck = import_text(&h, &ids[0], "file_key").await;
+    h.files().fail_on(&stuck);
+    h.clock().set_ms(start + 366 * DAY_MS);
+    let r = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(r.roster_files_pruned, 1);
+    assert_eq!(import_text(&h, &ids[1], "file_key").await, "");
+    assert_eq!(import_text(&h, &ids[0], "file_key").await, stuck);
+    assert!(
+        r.errors.iter().any(|e| e.contains(&ids[0])),
+        "{:?}",
+        r.errors
+    );
+    let keys = "SELECT count(*) FROM audit_log WHERE action = 'roster.file.prune' \
+                AND json_extract(after, '$.keys[0]') = ? AND json_extract(after, '$.keys[1]') = ?";
+    let pruned_key = format!("roster/{}/b.csv", ids[1]);
+    let rows_key = format!("roster-rows/{}.jsonl", ids[1]);
+    assert_eq!(int(&h, keys, &[&pruned_key, &rows_key]).await, 1);
+    assert!(r.to_string().ends_with("and 1 roster files"), "{r}");
+}
+
+#[tokio::test]
+async fn a_preview_whose_file_was_pruned_cannot_be_confirmed() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "upsert").await;
+    h.clock().advance_ms(366 * DAY_MS);
+    let r = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(r.roster_files_pruned, 1, "an abandoned preview too");
+    h.create_staff("late@sealbay.example", PASSWORD, &["Officer"])
+        .await;
+    let late = app.browser();
+    assert_eq!(
+        late.login("late@sealbay.example", PASSWORD).await.status,
+        303
+    );
+    confirm(&late, &id).await;
+    assert_eq!(flash(&late), "err:kernel.roster.file_pruned");
+    assert_eq!(import_text(&h, &id, "state").await, "previewed");
+    assert_eq!(int(&h, "SELECT count(*) FROM job", &[]).await, 0);
 }

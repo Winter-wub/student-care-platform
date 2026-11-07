@@ -81,7 +81,7 @@ pub(crate) async fn upload(
                 }
             })
     };
-    let content_type = if file::is_xlsx(&bytes, &name) {
+    let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
         "text/csv"
@@ -100,13 +100,22 @@ pub(crate) async fn upload(
         name: &name,
     };
     let out = record(s, &row, counts, read, mode == "full", ctx).await;
-    if !matches!(out, Ok(Uploaded::Previewed(_) | Uploaded::Refused(_))) {
+    if !matches!(out, Ok(Uploaded::Previewed(_) | Uploaded::Refused(_))) && row_absent(s, &id).await
+    {
         // No row points at the objects (a failed batch, or another upload
-        // took the slot): they would never be pruned.
+        // took the slot): they would never be pruned. A batch can fail
+        // after it committed (D1), so the row is looked up first, and the
+        // objects stay unless it is surely absent.
         let _ = s.files.delete(&key).await;
         let _ = s.files.delete(&super::rows::key(&id)).await;
     }
     out
+}
+
+/// Whether import `id` surely has no row (a failed lookup says no).
+async fn row_absent(s: &Services, id: &str) -> bool {
+    let q = Statement::new("SELECT 1 AS x FROM roster_import WHERE id = ?").bind(id);
+    s.db.query(q).await.is_ok_and(|r| r.is_empty())
 }
 
 /// Writes the import row (and, for a valid file, its parsed rows first):

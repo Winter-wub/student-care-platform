@@ -32,8 +32,11 @@ fn the_xlsx_fixture_reads_the_same_cells() {
         assert_eq!(a.get("ชั้นปี"), b.get("ชั้นปี"));
         assert_eq!(a.get("กลุ่ม"), b.get("กลุ่ม"));
     }
-    // Detected by its bytes when the name says nothing.
-    assert_eq!(parse(XLSX, "roster", &c.roster).unwrap().len(), 50);
+    // Told by its name only (#46): no extension is refused.
+    assert_eq!(
+        parse(XLSX, "roster", &c.roster),
+        Err(FileError::Unsupported)
+    );
 }
 
 #[test]
@@ -174,4 +177,21 @@ fn cells_without_a_header_are_kept_by_column_and_txt_is_refused() {
     assert_eq!(column_name(25), "Z");
     assert_eq!(column_name(26), "AA");
     assert_eq!(column_name(63), "BL");
+}
+
+#[test]
+fn an_xlsx_is_told_by_its_name_only() {
+    let c = test_config();
+    assert_eq!(
+        parse(XLSX, "roster.xlsx", &c.roster).map(|r| r.len()),
+        Ok(50)
+    );
+    for name in ["roster.zip", "roster", "roster.XLSX.bak"] {
+        assert_eq!(
+            parse(XLSX, name, &c.roster),
+            Err(FileError::Unsupported),
+            "{name}"
+        );
+    }
+    assert!(is_xlsx("A.XLSX") && !is_xlsx("a.csv"));
 }

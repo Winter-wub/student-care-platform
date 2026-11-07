@@ -1,6 +1,6 @@
 //! Reading a roster file into [`Row`]s (#8): CSV (UTF-8, BOM tolerated,
-//! `,` or `;`, named `.csv`) or the first sheet of an XLSX; a `.txt` is
-//! refused even when it holds CSV. The first row holds the
+//! `,` or `;`, named `.csv`) or the first sheet of an XLSX (named
+//! `.xlsx`); any other name (`.txt`, none) is refused, whatever it holds. The first row holds the
 //! headers, which must match the `[roster]` columns exactly (trimmed).
 //! Empty rows are skipped, cells are trimmed and an empty cell is absent.
 //! Pure: no I/O.
@@ -39,7 +39,7 @@ impl Row {
 /// Why a file cannot be read. Never carries cell contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FileError {
-    /// Neither `.csv` nor `.xlsx` (nor an XLSX by its bytes).
+    /// Named neither `.csv` nor `.xlsx`.
     Unsupported,
     /// A CSV that is not UTF-8.
     NotUtf8,
@@ -81,11 +81,10 @@ pub(crate) fn expected_headers(roster: &RosterConfig) -> Vec<String> {
     v
 }
 
-/// Whether `bytes` named `file_name` is an XLSX (by extension, else by
-/// its zip signature).
-pub(crate) fn is_xlsx(bytes: &[u8], file_name: &str) -> bool {
-    let lower = file_name.to_ascii_lowercase();
-    lower.ends_with(".xlsx") || (!lower.ends_with(".csv") && bytes.starts_with(b"PK\x03\x04"))
+/// Whether `file_name` names an XLSX: by its extension only (#46). A zip
+/// under any other name, `.txt` or none at all is refused.
+pub(crate) fn is_xlsx(file_name: &str) -> bool {
+    file_name.to_ascii_lowercase().ends_with(".xlsx")
 }
 
 /// Reads the file into data rows, checking the headers against `roster`.
@@ -95,9 +94,7 @@ pub(crate) fn parse(
     roster: &RosterConfig,
 ) -> Result<Vec<Row>, FileError> {
     let lower = file_name.to_ascii_lowercase();
-    let grid = if lower.ends_with(".txt") {
-        return Err(FileError::Unsupported);
-    } else if is_xlsx(bytes, file_name) {
+    let grid = if is_xlsx(file_name) {
         xlsx_grid(bytes)?
     } else if lower.ends_with(".csv") {
         let text = std::str::from_utf8(bytes).map_err(|_| FileError::NotUtf8)?;
