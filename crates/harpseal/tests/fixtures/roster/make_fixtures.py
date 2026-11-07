@@ -1,5 +1,6 @@
 # Builds seal_bay_50.csv and seal_bay_50.xlsx (50 fictional Seal Bay
-# University students) in the directory given as the first argument.
+# University students), the small XLSX edge cases and the #70 workbooks
+# (cohorts*.xlsx, fees.xlsx) in the directory given as the first argument.
 # Run once with `python3 make_fixtures.py .`; the outputs are committed.
 import sys, zipfile
 from xml.sax.saxutils import escape
@@ -74,3 +75,145 @@ data = (cell("A2", "68010001", True) + cell("B2", "นกน้อย ทะเ�
     + '<c r="H2" t="e"><v>#DIV/0!</v></c>')
 write_xlsx(f"{out}/formula_error.xlsx", sheet_of(
     f'<row r="1">{header}</row><row r="2">{data}</row>'))
+
+# --- #70: workbooks with several sheets -----------------------------------
+def write_book(path, sheets):
+    """sheets: [(name, rows_xml[, hidden])]; every sheet a worksheet."""
+    n = len(sheets)
+    types = "".join(
+        f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        for i in range(1, n + 1))
+    book = "".join(
+        f'<sheet name="{escape(sh[0])}" sheetId="{i}"'
+        + (' state="hidden"' if len(sh) > 2 and sh[2] else "") + f' r:id="rId{i}"/>'
+        for i, sh in enumerate(sheets, start=1))
+    rels = "".join(
+        f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>'
+        for i in range(1, n + 1))
+    files = {
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + types + '</Types>',
+        "_rels/.rels": parts["_rels/.rels"],
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + book + '</sheets></workbook>',
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + rels + '</Relationships>',
+    }
+    for i, sh in enumerate(sheets, start=1):
+        files[f"xl/worksheets/sheet{i}.xml"] = sheet_of(sh[1])
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            zi = zipfile.ZipInfo(name, date_time=(2026, 11, 1, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(zi, data)
+
+def xrow(r, values):
+    """One row: str values as inline text, int/float as numbers, ("e", code)
+    as an error cell, ("f", formula, cached float) as a formula cell, None
+    as no cell."""
+    out = []
+    for ci, v in enumerate(values):
+        ref = f"{col(ci)}{r}"
+        if v is None or v == "":
+            continue
+        if isinstance(v, tuple) and v[0] == "f":
+            # A formula and its cached value, as Excel stores it.
+            out.append(f'<c r="{ref}"><f>{escape(v[1])}</f><v>{v[2]!r}</v></c>')
+        elif isinstance(v, tuple):
+            out.append(f'<c r="{ref}" t="e"><v>{escape(v[1])}</v></c>')
+        elif isinstance(v, (int, float)):
+            out.append(f'<c r="{ref}"><v>{v}</v></c>')
+        else:
+            out.append(f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{escape(v)}</t></is></c>')
+    return f'<row r="{r}">{"".join(out)}</row>' if out else ""
+
+def student(code, name, year, gpa=None, prog="MSC"):
+    return [code, name, f"s{code}@student.sealbay.example", "th", f"ปี{year}", prog, year, gpa]
+
+# Three cohorts: "ปี 1" has two title rows and a totals row (a count
+# under the integer column ชั้นปี), "ปี 2" a notes
+# row and numbers stored as text, then an empty sheet.
+y1 = (xrow(1, ["รายชื่อนักศึกษา มหาวิทยาลัยซีลเบย์"]) + xrow(2, ["ปีการศึกษา 2569"])
+    + xrow(4, H)
+    + xrow(5, student(68010001, "นกน้อย ทะเลใส", 1, 3.25))
+    + xrow(6, student(68010002, "ปลาทอง อ่าวคราม", 1))
+    + xrow(7, student(68010003, "หอยมุก หาดทราย", 1, 2.5, "MSC-Intl"))
+    + xrow(8, ["รวม", None, None, None, None, None, 3]))
+y2 = (xrow(1, H)
+    + xrow(2, student(67010001, "กุ้งนาง คลื่นลม", " 2 ", "3.50"))
+    + xrow(3, student(67010002, "ปูม้า ฟองคลื่น", "2", " 2.75 "))
+    + xrow(5, ["หมายเหตุ: ข้อมูล ณ วันที่ 1 พฤศจิกายน 2569"]))
+write_book(f"{out}/cohorts.xlsx", [("ปี 1", y1), ("ปี 2", y2), ("ว่าง", "")])
+
+# A summary sheet without the header beside a good cohort sheet.
+summary = xrow(1, ["สรุปจำนวนนักศึกษา"]) + xrow(2, ["ปี 1", 3])
+write_book(f"{out}/cohorts_no_header.xlsx", [("ปี 1", y1), ("สรุป", summary)])
+
+# The same id in two sheets, and an error cell in the second.
+y2_bad = (xrow(1, H)
+    + xrow(2, student(68010002, "ปลาทอง อ่าวคราม", 2))
+    + xrow(3, student(67010003, "ม้าน้ำ ทะเลใส", 2, ("e", "#REF!"))))
+write_book(f"{out}/cohorts_duplicate.xlsx", [("ปี 1", y1), ("ปี 2", y2_bad)])
+
+# A Module's upload (fees, read with harpseal::sheet): title row, amounts
+# stored as text with separators, as numbers, "-" and blank, error cells,
+# a totals row and a notes row.
+FEES = ["รหัสนักศึกษา", "ชื่อ-สกุล", "ยอดค้างชำระ"]
+fees = (xrow(1, ["ค่าธรรมเนียมการศึกษา ภาคเรียนที่ 2/2569"])
+    + xrow(3, FEES)
+    + xrow(4, [68010001, "นกน้อย ทะเลใส", "12,500"])
+    + xrow(5, [68010002, "ปลาทอง อ่าวคราม", " 12500 "])
+    + xrow(6, [68010003, "หอยมุก หาดทราย", "12,500.00"])
+    + xrow(7, [68010004, "กุ้งนาง คลื่นลม", 12500])
+    + xrow(8, [68010005, "ปูม้า ฟองคลื่น", "-"])
+    + xrow(9, [68010006, "ม้าน้ำ ทะเลใส", None])
+    + xrow(10, [68010007, "ดาวทะเล อ่าวคราม", ("e", "#REF!")])
+    + xrow(11, [68010008, "สาหร่าย หาดทราย", ("e", "#N/A")])
+    + xrow(12, ["รวม", None, 50000])
+    + xrow(13, ["หมายเหตุ: ยอด ณ วันที่ 1 พฤศจิกายน 2569"]))
+write_book(f"{out}/fees.xlsx", [("ภาคเรียน 2", fees)])
+
+# Below the data of "ปี 1": a student without an id and a row whose id is
+# an error cell (both data, reported), then the totals row (skipped).
+trailing = (xrow(4, H)
+    + xrow(5, student(68010001, "นกน้อย ทะเลใส", 1, 3.25))
+    + xrow(6, [None, "ม้าน้ำ ทะเลใส", "s@student.sealbay.example", "th", "ปี1", "MSC", 1])
+    + xrow(7, [("e", "#REF!"), None, None, None, None, None, 2])
+    + xrow(8, ["รวม", None, None, None, None, None, 3]))
+write_book(f"{out}/cohorts_trailing.xlsx", [("ปี 1", trailing)])
+
+# A hidden lookup sheet beside a cohort sheet.
+lookup = xrow(1, ["หลักสูตร"]) + xrow(2, ["MSC"]) + xrow(3, ["MSC-Intl"])
+write_book(f"{out}/cohorts_hidden.xlsx", [("ปี 2", y2), ("lists", lookup, True)])
+
+# Calculated cells (#70 review): an =AVERAGE GPA and calculated amounts
+# whose cached values carry float noise beyond 15 significant digits.
+calc = (xrow(1, H)
+    + xrow(2, student(68010001, "นกน้อย ทะเลใส", 1, ("f", "AVERAGE(3,3,4)", 3.3333333333333335)))
+    + xrow(3, student(68010002, "ปลาทอง อ่าวคราม", 1, ("f", "AVERAGE(2,3,3)", 2.6666666666666665)))
+    + xrow(4, [68010003, "หอยมุก หาดทราย", "s68010003@student.sealbay.example", "th",
+               "ปี1", "MSC", ("f", "0.1*10", 1.0000000000000002), 3.0]))
+write_book(f"{out}/calculated.xlsx", [("ปี 1", calc)])
+calc_fees = (xrow(1, FEES)
+    + xrow(2, [68010001, "นกน้อย ทะเลใส", ("f", "12500.1-0.1", 12500.000000000002)])
+    + xrow(3, [68010002, "ปลาทอง อ่าวคราม", ("f", "0.1+0.2", 0.30000000000000004)])
+    + xrow(4, [68010003, "หอยมุก หาดทราย", ("f", "10/3", 3.3333333333333335)])
+    + xrow(5, ["รวม", None, ("f", "SUM(C2:C4)", 12503.633333333333)]))
+write_book(f"{out}/calculated_fees.xlsx", [("ภาคเรียน 2", calc_fees)])
+
+# A hidden sheet that holds the roster header beside a visible cohort, and
+# a workbook whose only content is in a hidden sheet.
+write_book(f"{out}/cohorts_hidden_roster.xlsx", [("ปี 1", y1), ("ปี 2", y2, True)])
+write_book(f"{out}/only_hidden.xlsx", [("ว่าง", ""), ("ปี 2", y2, True)])
+
+# Long whole numbers in number cells (#70 review): 16-digit references stay
+# exact below 2^53; 2^53 and the value after it cannot be told apart.
+long_ids = (xrow(1, ["รหัสอ้างอิง", "ยอด"])
+    + xrow(2, [1234567890123456, 100])
+    + xrow(3, [9007199254740991, 200])
+    + '<row r="4"><c r="A4"><v>9007199254740992</v></c><c r="B4"><v>300</v></c></row>'
+    + '<row r="5"><c r="A5"><v>9007199254740993</v></c><c r="B5"><v>400</v></c></row>')
+write_book(f"{out}/long_numbers.xlsx", [("อ้างอิง", long_ids)])
+
+# A hidden old cohort tab whose header has the student id but lacks a
+# column (เกรดเฉลี่ย): still a roster sheet for the `full` rule.
+old_tab = (xrow(1, H[:-1])
+    + xrow(2, student(66010001, "ดาวทะเล ฟองคลื่น", 3)[:-1]))
+write_book(f"{out}/cohorts_hidden_partial.xlsx", [("ปี 1", y1), ("ปี 0", old_tab, True)])

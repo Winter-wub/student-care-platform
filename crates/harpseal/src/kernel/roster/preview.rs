@@ -65,13 +65,21 @@ pub(crate) async fn upload(
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
+    let mut skipped = Vec::new();
     let read = if bytes.len() > MAX_FILE_BYTES {
         Err(vec![problem("too_large")])
     } else {
         let config = d.config();
-        file::parse(&bytes, &name, &config.roster)
+        file::read(&bytes, &name, &config.roster)
             .map_err(|e: FileError| validate::file_problems(&e))
-            .and_then(|rows| validate::validate(&rows, config))
+            .and_then(|r| {
+                skipped = r.skipped;
+                // Students in a hidden roster sheet would become left.
+                if mode == "full" {
+                    hidden_roster_sheets(&skipped)?;
+                }
+                validate::validate(&r.rows, config)
+            })
             .and_then(|v| {
                 // A full file with no rows would mark everyone left.
                 if mode == "full" && v.records.is_empty() {
@@ -89,6 +97,7 @@ pub(crate) async fn upload(
     s.files.put(&key, bytes, content_type).await?;
     let counts = Counts {
         sha256,
+        skipped,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
     };
@@ -287,13 +296,24 @@ impl NewRow<'_> {
     }
 }
 
+/// Refuses a `full` file with a hidden sheet holding the roster header:
+/// one problem per such sheet.
+fn hidden_roster_sheets(skipped: &[file::Skipped]) -> core::result::Result<(), Vec<Problem>> {
+    let problems: Vec<Problem> = skipped
+        .iter()
+        .filter(|s| s.reason == "hidden_roster_sheet")
+        .map(|s| problem("hidden_roster_sheet").on(&s.sheet))
+        .collect();
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems)
+    }
+}
+
 /// A problem of the file as a whole.
 fn problem(reason: &str) -> Problem {
-    Problem {
-        row: 0,
-        column: String::new(),
-        reason: reason.into(),
-    }
+    Problem::new(0, "", reason)
 }
 
 fn json_err(e: serde_json::Error) -> Error {

@@ -13,6 +13,7 @@ use maud::{Markup, html};
 
 use super::service::{self, Outcome};
 use super::store::{self, Counts, Import, Tally};
+use super::validate::Problem;
 use super::view::{BASE, IMPORT, View, csv_body, download, is_fragment};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::{AppState, CurrentStaff};
@@ -105,6 +106,7 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
     let full = imp.mode == "full";
     html! {
         @if p.warning { div class="warn" role="alert" { (v.t("kernel.roster.warning")) } }
+        (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             dl class="facts counts" {
                 dt { (v.t("kernel.roster.total")) } dd { (imp.total_rows) }
@@ -177,12 +179,15 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
     if f.job.is_some() {
         return progress(v, imp);
     }
+    let sheets = has_sheets(&f.problems);
     html! {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
+        (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             p { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (f.total) } }
             table class="rows" {
                 thead { tr {
+                    @if sheets { th { (v.t("kernel.roster.report_sheet")) } }
                     th { (v.t("kernel.roster.report_row")) }
                     th { (v.t("kernel.roster.report_column")) }
                     th { (v.t("kernel.roster.report_reason")) }
@@ -190,8 +195,11 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
                 tbody {
                     @for p in f.problems.iter().take(SHOWN_PROBLEMS) {
                         tr {
+                            @if sheets {
+                                td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
+                            }
                             td data-label=(v.t("kernel.roster.report_row")) { (p.row) }
-                            td data-label=(v.t("kernel.roster.report_column")) { (p.column) }
+                            td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                             td data-label=(v.t("kernel.roster.report_reason")) {
                                 (v.t(&format!("kernel.roster.reason_{}", p.reason)))
                             }
@@ -262,6 +270,21 @@ pub(super) async fn fail(
     }
 }
 
+/// Whether the report names sheets (an XLSX's problems do; a CSV's,
+/// and reports stored before #70, do not, and keep their three columns).
+fn has_sheets(problems: &[Problem]) -> bool {
+    problems.iter().any(|p| !p.sheet.is_empty())
+}
+
+/// The column, with the cell when one is at fault: `เกรดเฉลี่ย (H2)`.
+fn column(p: &Problem) -> String {
+    if p.cell.is_empty() {
+        p.column.clone()
+    } else {
+        format!("{} ({})", p.column, p.cell)
+    }
+}
+
 /// The validation report as CSV (row, column, problem in the Staff
 /// member's Locale), read from `roster_import.error`.
 pub(super) async fn report(
@@ -277,16 +300,32 @@ pub(super) async fn report(
     };
     let failure = imp.failure.unwrap_or_default();
     let problems = &failure.problems;
-    let head = [
+    let skipped = &imp.counts.skipped;
+    let sheets = has_sheets(problems) || skipped.iter().any(|s| !s.sheet.is_empty());
+    let mut head = vec![
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
         v.t("kernel.roster.report_reason"),
     ];
-    let mut lines = vec![super::csv::line(&head.each_ref().map(String::as_str))];
+    if sheets {
+        head.insert(0, v.t("kernel.roster.report_sheet"));
+    }
+    let head: Vec<&str> = head.iter().map(String::as_str).collect();
+    let mut lines = vec![super::csv::line(&head)];
     for p in problems {
         let row = p.row.to_string();
         let reason = v.t(&format!("kernel.roster.reason_{}", p.reason));
-        lines.push(super::csv::line(&[&row, &p.column, &reason]));
+        let column = column(p);
+        let mut fields = vec![row.as_str(), column.as_str(), reason.as_str()];
+        if sheets {
+            fields.insert(0, &p.sheet);
+        }
+        lines.push(super::csv::line(&fields));
+    }
+    for f in super::skipped::report_fields(&v, skipped, sheets) {
+        lines.push(super::csv::line(
+            &f.iter().map(String::as_str).collect::<Vec<_>>(),
+        ));
     }
     if (problems.len() as u64) < failure.total {
         let note = v
