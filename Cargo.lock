@@ -406,13 +406,16 @@ checksum = "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826"
 name = "example-deployment"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "harpseal",
  "harpseal-channel-fake",
  "harpseal-channel-line",
  "harpseal-channel-telegram",
  "harpseal-testing",
+ "http",
  "maud",
+ "serde_json",
  "tokio",
 ]
 

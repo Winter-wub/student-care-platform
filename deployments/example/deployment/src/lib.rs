@@ -4,12 +4,15 @@
 //! a Menu entry, [`my_info::MyInfo`] a Mini App page linked from the Mini
 //! App home. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
 //! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
+//! LINE's rich menus come with bundled images ([`menu_images`]); with real
+//! LINE credentials the images are checked before the Deployment starts.
 //! Both runtime binaries (`../native`, `../worker`) call [`deployment`]
 //! with their own Services.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod menu_images;
 pub mod my_info;
 pub mod seed;
 
@@ -63,6 +66,11 @@ impl Secrets {
                 v("LINE_CHANNEL_SECRET"),
                 v("LINE_ACCESS_TOKEN"),
                 v("LINE_LIFF_ID"),
+            )
+            .with_locked_menu(menu_images::locked_menu())
+            .with_menu_images(
+                menu_images::LOCKED_PNG.to_vec(),
+                menu_images::UNLOCKED_PNG.to_vec(),
             ),
             telegram: TelegramConfig::new(
                 v("TELEGRAM_BOT_TOKEN"),
@@ -71,6 +79,22 @@ impl Secrets {
             ),
             fake_secret: v("FAKE_SECRET"),
         }
+    }
+}
+
+impl Secrets {
+    /// Replaces the bundled rich menu images by the files named in
+    /// `LINE_MENU_IMAGE_LOCKED` / `LINE_MENU_IMAGE_UNLOCKED` (a path; unset
+    /// or empty keeps the bundled image), read with `read`: the native
+    /// binary passes `std::fs::read`. Workers have no files and skip this.
+    pub fn with_menu_image_files(
+        mut self,
+        get: impl Fn(&str) -> Option<String>,
+        read: impl Fn(&str) -> std::io::Result<Vec<u8>>,
+    ) -> Result<Self, StartError> {
+        let (locked, unlocked) = menu_images::load(get, read).map_err(StartError::MenuImages)?;
+        self.line = self.line.with_menu_images(locked, unlocked);
+        Ok(self)
     }
 }
 
@@ -128,6 +152,9 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
 pub enum StartError {
     /// `FAKE_SECRET` is empty: the Fake Channel would accept unsigned calls.
     FakeSecret(harpseal::Error),
+    /// A LINE Channel with real credentials has no usable rich menu image,
+    /// or a `LINE_MENU_IMAGE_*` file could not be read.
+    MenuImages(String),
     /// The builder refused the configuration.
     Build(BuildError),
 }
@@ -136,6 +163,7 @@ impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
+            StartError::MenuImages(m) => write!(f, "LINE rich menu images: {m}"),
             StartError::Build(e) => write!(f, "{e}"),
         }
     }
@@ -156,6 +184,19 @@ pub fn deployment_with_fake(
     secrets: Secrets,
 ) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
+    // With real credentials, refuse now rather than at the first Inbound.
+    secrets.line.check_menu_images().map_err(|e| {
+        let why = match e {
+            harpseal::Error::Invalid(m) => m,
+            other => other.to_string(),
+        };
+        StartError::MenuImages(format!(
+            "{why}; set {} and {} to PNG files of 2500 x 843 or 2500 x 1686 px (at most 1 MB), \
+             or unset them to use the bundled images",
+            menu_images::LOCKED_VAR,
+            menu_images::UNLOCKED_VAR
+        ))
+    })?;
     let d = builder(services, secrets)
         .channel(fake.clone())
         .build()
