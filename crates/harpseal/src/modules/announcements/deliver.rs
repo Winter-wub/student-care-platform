@@ -206,6 +206,20 @@ pub(crate) async fn finish_if_done(s: &Services, id: &str, round: i64) -> Result
     Ok(())
 }
 
+/// Round `round` of `id` is still the one being sent.
+async fn still_sending(s: &Services, id: &str, round: i64) -> Result<bool> {
+    let rows =
+        s.db.query(
+            Statement::new(
+                "SELECT 1 AS x FROM announcement WHERE id = ? AND round = ? AND status = 'sending'",
+            )
+            .bind(id)
+            .bind(round),
+        )
+        .await?;
+    Ok(!rows.is_empty())
+}
+
 /// One pending delivery of a chunk.
 pub(super) struct Pending {
     pub(super) id: String,
@@ -274,6 +288,11 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
     let last = job.attempt > max_retries(s, &job.id).await?;
     let mut again: Option<Error> = None;
     for ((locale, acked), group) in groups {
+        // Re-read right before the send: a retract (or a resend) since
+        // this run started leaves the rest unsent (#49).
+        if !still_sending(s, &id, round).await? {
+            break;
+        }
         let ack = row.require_ack && !acked;
         let card = super::chat::card(d.catalog(), &locale, &id, &texts, ack)?;
         let to: Vec<ChannelAccountId> = group.iter().map(|g| g.account.clone()).collect();
