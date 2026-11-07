@@ -37,7 +37,82 @@ two Channels of one kind; two handlers for one Action id or Job kind; a Job
 `schedule` outside the supported cron subset; a Permission declared twice; a
 Role naming an undeclared Permission; a back-office route guarded by an
 undeclared Permission; a Module that sends Mini App buttons when a Channel has
-no Mini App URL; a Menu label key with no text in the default Locale.
+no Mini App URL; a Menu label key with no text in the default Locale; a
+Mini App home link that is not a plain `/app/...` path the same Module
+registered with `public`, or whose label key has no text.
+
+#### A Module's Mini App page
+
+A Deployment's own Module can serve a page inside the Mini App (LIFF on
+LINE, Web App on Telegram) that shows the Student who opened it their own
+data, and list it on the Mini App home:
+
+```rust
+impl Module for MyInfo {
+    fn name(&self) -> &'static str { "my_info" }
+    fn register(&self, r: &mut ModuleRegistrar) {
+        r.messages(TEXTS)
+            .public("/app/my-info", get(page))
+            .mini_app_link("my_info.title", "/app/my-info", 50);
+    }
+}
+
+async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
+    let body = html! { h1 { (me.display_name) } p { (me.student_code) } };
+    me.page(&s, &me.t("my_info.title"), body)
+}
+```
+
+- **`AppStudent`** is an axum extractor: the linked Student behind the App
+  Session cookie (`id`, `student_code`, `display_name`, `locale`, the
+  Channel kind, and `attributes`). It reads the cookie and the account's
+  active Link on every request, for LIFF and Telegram Web App sessions
+  alike (the partitioned cookie of Telegram Web included). Read data by
+  `me.id` only: nothing in the path, query or body chooses the Student, so
+  a changed URL can never show another Student's record.
+- `attributes` holds only the `[roster.attributes.<key>]` marked
+  `student_visible = true`. The default is `false`, so an attribute stays
+  staff-only until the Deployment opts in, and a stored key that is no
+  longer configured is never shown.
+- Without a session (missing, forged or expired) the handler is never
+  called: the Student gets the Kernel's entry page, which signs in through
+  the platform and comes back to the same path. An account whose Link was
+  revoked gets the "go back to the chat" page. For an HTMX request both
+  answer `HX-Redirect`, so the whole page reloads: to the same path for a
+  `GET`, else to the page the request came from (`HX-Current-URL`, kept on
+  `/app`), because HTMX follows the redirect with a `GET`. None of these
+  is a 500.
+- **Changing data is CSRF-checked by the extractors.** For any method but
+  `GET`, `HEAD` and `OPTIONS`, both extractors refuse with 403 a request
+  whose `Sec-Fetch-Site` is `cross-site` (another bot's Mini App inside
+  Telegram Web shares the partitioned cookie). `AppStudent` then requires
+  the session's token in the `X-CSRF-Token` header, which HTMX sends from
+  a page rendered with `me.page`. A plain `<form method="post">` takes
+  `AppForm<T>` instead: it also accepts the `_csrf` field
+  (`input type="hidden" name="_csrf" value=(me.csrf_token())`), then
+  decodes the body as `T` and gives `f.student` and `f.form`
+  (urlencoded only, at most 64 KiB). A handler cannot skip the check.
+- `AppForm` does not read `multipart/form-data`: a plain multipart
+  `<form>` always gets 403 (it fails closed). Send a file with HTMX
+  (`hx-encoding="multipart/form-data"`) or `fetch`, which carry the
+  `X-CSRF-Token` header that `AppStudent` checks.
+- `OPTIONS` counts as safe, like `GET` and `HEAD`: never change data on
+  it, for example through `any(..)` routing.
+- `me.t(key)` and `me.tf(key, args)` read texts in the Student's Locale
+  with the back office's overrides. `me.page(&s, title, body)` renders the
+  Mini App shell (branding, CSRF header for HTMX). Every `/app` response,
+  whatever a handler returns (a fragment, JSON, a file), gets
+  `Cache-Control: no-store` and the Mini App's `frame-ancestors` CSP.
+- **Put the page under `/app/`.** Only there does it get the App Session
+  cookie (`Path=/app`), those headers and the deep link back through the
+  sign-in. `mini_app_link` refuses any other path, and `/app/` itself, at
+  `build()`. A page registered elsewhere would always show the entry page.
+- `mini_app_link(label_key, path, order)` adds a link to the home below
+  the Student's card: every Module's links (the Kernel's too, should it
+  add one) sorted by `order`, equal orders in registration order.
+- Test it at the seam: `Browser::open_mini_app(&fake, external_id, path)`
+  signs in on the Fake Channel. See `deployments/example` (`my_info.rs`)
+  and `crates/harpseal-testing/tests/app_module*.rs` for LINE and Telegram.
 
 #### Jobs
 

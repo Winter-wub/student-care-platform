@@ -200,6 +200,8 @@ pub(crate) struct Home<'a> {
     /// The Student accepted an older notice than the current one: the chat
     /// asks again before the next answer (re-consent, #9 step 10).
     pub(crate) reconsent: bool,
+    /// (label, path) of every Module's home link, sorted (#72).
+    pub(crate) links: &'a [(String, &'static str)],
     /// `None` when the Deployment has no Announcements Module.
     pub(crate) news: Option<&'a [StudentAnnouncement]>,
 }
@@ -233,6 +235,13 @@ pub(crate) fn home(s: &PageState, t: &Texts, v: &AppVisitor, h: &Home<'_>) -> Re
             }
             @if h.reconsent {
                 p class="app-consent app-wait" role="status" { (t.t("kernel.app.consent_pending")) }
+            }
+        }
+        @if !h.links.is_empty() {
+            nav class="card" aria-label=(t.t("kernel.app.links")) {
+                ul class="list app-links" {
+                    @for (label, href) in h.links { li { a href=(href) { (label) } } }
+                }
             }
         }
         @if let Some(news) = h.news {

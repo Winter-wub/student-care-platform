@@ -116,7 +116,7 @@ fn has_news(s: &AppState) -> bool {
 }
 
 /// A visitor and their texts, or the response to send instead.
-async fn open(
+pub(super) async fn open(
     s: &AppState,
     headers: &HeaderMap,
     path: &str,
@@ -154,9 +154,16 @@ pub(crate) async fn home(State(s): State<AppState>, headers: HeaderMap, uri: Uri
     } else {
         None
     };
+    let links: Vec<_> = s
+        .deployment
+        .app_links()
+        .iter()
+        .map(|l| (t.t(l.label_key), l.path))
+        .collect();
     let h = Home {
         consent,
         reconsent,
+        links: &links,
         news: list.as_deref(),
     };
     view::home(&s, &t, &v, &h)
@@ -239,13 +246,7 @@ pub(crate) async fn ack(
         Ok(x) => x,
         // HTMX does not swap an error status: a full reload of the detail
         // page shows the entry page or the error, and the report travels.
-        Err(r) if htmx => {
-            let mut to = hx_redirect(&here);
-            if let Some(report) = ErrorReport::of(&r).copied() {
-                to.extensions_mut().insert(report);
-            }
-            return to;
-        }
+        Err(r) if htmx => return hx_redirect_from(&here, &r),
         Err(r) => return *r,
     };
     let sent = headers
@@ -294,8 +295,17 @@ pub(crate) async fn ack(
     }
 }
 
+/// [`hx_redirect`] carrying `r`'s [`ErrorReport`], if any.
+pub(super) fn hx_redirect_from(to: &str, r: &Response) -> Response {
+    let mut out = hx_redirect(to);
+    if let Some(report) = ErrorReport::of(r).copied() {
+        out.extensions_mut().insert(report);
+    }
+    out
+}
+
 /// HTMX follows `HX-Redirect` with a full page load (the entry page runs).
-fn hx_redirect(to: &str) -> Response {
+pub(super) fn hx_redirect(to: &str) -> Response {
     let mut r = StatusCode::OK.into_response();
     if let Ok(v) = HeaderValue::from_str(to) {
         r.headers_mut().insert("hx-redirect", v);

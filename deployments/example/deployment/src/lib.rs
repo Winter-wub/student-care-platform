@@ -1,7 +1,8 @@
 //! The fictional "Seal Bay University" Deployment: Thai default Locale,
 //! LINE + Telegram + Fake Channels, email-OTP Verification, the built-in
-//! Announcements Module and one small customer Module ([`Contact`]) adding
-//! a Menu entry. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
+//! Announcements Module and two small customer Modules: [`Contact`] adds
+//! a Menu entry, [`my_info::MyInfo`] a Mini App page linked from the Mini
+//! App home. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
 //! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
 //! Both runtime binaries (`../native`, `../worker`) call [`deployment`]
 //! with their own Services.
@@ -9,6 +10,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod my_info;
 pub mod seed;
 
 use harpseal::modules::announcements::Announcements;
@@ -117,6 +119,7 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
         .verification(otp)
         .module(Announcements)
         .module(Contact)
+        .module(my_info::MyInfo)
 }
 
 /// Why [`deployment`] refused to start.

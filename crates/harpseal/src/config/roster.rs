@@ -1,8 +1,8 @@
 //! `[roster]`: how a roster file maps onto Students, and the schema of
 //! `student.attributes` (issue #8). One source of truth: the roster import
 //! (#24) reads the column names, the Students pages (#22) read the types,
-//! labels and list flags, and both validate values with
-//! [`AttributeSpec::parse`].
+//! labels and list flags, a Module's Mini App page the `student_visible`
+//! ones, and both validate values with [`AttributeSpec::parse`].
 //!
 //! ```toml
 //! [roster]
@@ -17,6 +17,7 @@
 //! type = "integer"
 //! label = { th = "ชั้นปี", en = "Year" }
 //! shown_in_list = true
+//! student_visible = true
 //! order = 2
 //!
 //! [roster.attributes.programme]
@@ -34,6 +35,9 @@ use serde::Deserialize;
 use serde_json::Value as Json;
 
 use crate::message::Locale;
+
+mod date;
+pub(crate) use date::is_date;
 
 /// `[roster]`. Every field has a default, so a Deployment without a roster
 /// file still parses (no attributes, columns named like the fields).
@@ -135,6 +139,11 @@ pub struct AttributeSpec {
     /// Shown on the Students list (cards and table). Default `false`.
     #[serde(default)]
     pub shown_in_list: bool,
+    /// Given to a Module's Mini App page (`AppStudent::attributes`), so the
+    /// Student may see it. Default `false`: an attribute is staff-only
+    /// until the Deployment opts in.
+    #[serde(default)]
+    pub student_visible: bool,
     /// Display order, lower first (default 0; ties by key).
     #[serde(default)]
     pub order: u16,
@@ -236,31 +245,6 @@ impl AttributeSpec {
     }
 }
 
-/// `YYYY-MM-DD` naming a day that exists (proleptic Gregorian).
-pub(crate) fn is_date(s: &str) -> bool {
-    let b = s.as_bytes();
-    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
-        return false;
-    }
-    let num = |r: std::ops::Range<usize>| s[r].parse::<u32>().ok();
-    let digits = b
-        .iter()
-        .enumerate()
-        .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit());
-    let (Some(y), Some(m), Some(d)) = (num(0..4), num(5..7), num(8..10)) else {
-        return false;
-    };
-    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
-    let days = match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return false,
-    };
-    digits && (1..=days).contains(&d)
-}
-
 impl RosterConfig {
     /// Whether roster files can be imported (#24): a `[roster]` section,
     /// or a mapping changed in code from the defaults.
@@ -337,6 +321,7 @@ mod tests {
             label: BTreeMap::new(),
             optional,
             shown_in_list: false,
+            student_visible: false,
             order: 0,
         }
     }

@@ -33,6 +33,8 @@ pub(crate) struct LinkedStudent {
     pub(crate) id: String,
     pub(crate) code: String,
     pub(crate) name: String,
+    /// `student.attributes` (an unreadable value is empty).
+    pub(crate) attributes: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Who is looking at a Mini App page.
@@ -90,7 +92,8 @@ pub(crate) async fn resolve(
     let id = sha256_hex(token.as_bytes());
     let stmt = Statement::new(
         "SELECT s.channel_account_id, s.expires_at, ca.channel, ca.platform_locale, \
-         st.id AS student_id, st.student_code, st.display_name, st.locale \
+         st.id AS student_id, st.student_code, st.display_name, st.locale, \
+         st.attributes AS student_attributes \
          FROM app_session s JOIN channel_account ca ON ca.id = s.channel_account_id \
          LEFT JOIN link l ON l.channel_account_id = ca.id AND l.status = 'active' \
          LEFT JOIN student st ON st.id = l.student_id AND st.status = 'active' \
@@ -111,6 +114,9 @@ pub(crate) async fn resolve(
         id: sid,
         code: text(&rows, "student_code").unwrap_or_default(),
         name: text(&rows, "display_name").unwrap_or_default(),
+        attributes: text(&rows, "student_attributes")
+            .and_then(|a| serde_json::from_str(&a).ok())
+            .unwrap_or_default(),
     });
     let locale = [text(&rows, "locale"), text(&rows, "platform_locale")]
         .into_iter()
