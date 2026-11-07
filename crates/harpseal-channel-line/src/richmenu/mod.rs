@@ -8,12 +8,16 @@
 //! # Names
 //!
 //! The object and the image are hashed (`<hash>`, 32 hex). A Menu with a
-//! *Menu key* is named `harpseal-<key>-<hash>`: the locked Menu has key
-//! [`LOCKED_KEY`], an unlocked Menu the key it was registered under with
-//! [`crate::LineChannel::with_menus`] (e.g. its Locale, `th`). A Menu that
-//! was not registered (a label changed by a setting override, say) is
-//! named `harpseal-<hash>` and is never cleaned up. The same Menu and
-//! image reuse one rich menu:
+//! *Menu key* is named `harpseal-<key>-<generation>-<hash>`: the locked
+//! Menu has key [`LOCKED_KEY`], an unlocked Menu the key it was registered
+//! under with [`crate::LineChannel::with_menus`] (e.g. its Locale, `th`);
+//! `<generation>` is [`crate::LineConfig::menu_generation`] (default 1).
+//! A Menu that was not registered is named `harpseal-<hash>` and is never
+//! cleaned up. That includes every unlocked Menu whose labels a setting
+//! override changed: the Kernel sets the Menu with the overridden labels,
+//! which hash differently from the registered one. Two keys registered
+//! with identical content collapse to one key (the last registered). The
+//! same Menu and image reuse one rich menu:
 //!
 //! 1. the in-memory cache (name -> rich menu id), else
 //! 2. `GET /v2/bot/richmenu/list`, looking for that name (with several,
@@ -41,25 +45,36 @@
 //! Versions pile up when a Menu changes, so after a successful link that
 //! went through the list (cold cache), the adapter lists the rich menus
 //! (once more only when it has just created one) and deletes, at most
-//! [`MAX_DELETES`] per call:
+//! [`MAX_DELETES`] per call (LINE allows 100 deletes an hour; the rest go
+//! on later cold calls):
 //!
 //! - duplicates: the other rich menus with the same name (two cold
 //!   `set_menu` calls in two isolates can both create one). Every caller
 //!   keeps the smallest id, re-linking its account to it first;
-//! - superseded versions: `harpseal-<key>-<other hash>` with the same Menu
-//!   key as the Menu just linked.
+//! - superseded versions: `harpseal-<key>-<lower generation>-<any hash>`
+//!   with the same Menu key as the Menu just linked.
 //!
-//! Rich menus without a key, with a key this adapter does not know, or not
-//! named `harpseal-*` are left alone (another Deployment or a person may
-//! own them). A failed delete never fails `set_menu`.
+//! The same key and generation with another hash is left alone: another
+//! live version (a gradual deploy, or a staging Deployment on the same
+//! channel token) may be linking it, and deleting each other's menus would
+//! cycle. Higher generations, other keys, rich menus without a key and
+//! names not made by this adapter are left alone too. So cleanup is clean
+//! only while one generation runs on a channel at a time: bump
+//! `menu_generation` when a Menu change must win; changes within one
+//! generation only leak (stay until deleted by hand). A failed delete
+//! never fails `set_menu`.
 //!
-//! Residual risk: LINE cannot list the accounts linked to a rich menu, so
+//! Residual risks: LINE cannot list the accounts linked to a rich menu, so
 //! an account still linked to a superseded version when it is deleted sees
-//! the default rich menu (or none) until its next `set_menu`.
+//! the default rich menu (or none) until its next `set_menu`. The same
+//! holds for the loser of a cold race: an account another isolate linked
+//! to the twin that is deleted (the one with the larger id) loses its menu
+//! until its next `set_menu`.
 //!
 //! Images: PNG, 2500 x 1686 or 2500 x 843 px, at most 1 MB
 //! (<https://developers.line.biz/en/reference/messaging-api/#upload-rich-menu-image-requirements>).
 
+mod name;
 mod tidy;
 
 use std::collections::HashMap;
@@ -69,6 +84,9 @@ use harpseal::{ChannelAccountId, Error, Menu, Result};
 use http::Method;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+use name::valid_key;
+pub use name::{HASH_LEN, name_key};
 
 use crate::api::{API, API_DATA, Failure, parse, path_id};
 use crate::{LineChannel, render};
@@ -81,8 +99,9 @@ pub const IMAGE_SIZES: [(usize, usize); 2] = [(2500, 1686), (2500, 843)];
 pub const NAME_PREFIX: &str = "harpseal-";
 /// The Menu key of the locked Menu.
 pub const LOCKED_KEY: &str = "locked";
-/// Most rich menus deleted by one `set_menu`.
-pub const MAX_DELETES: usize = 20;
+/// Most rich menus deleted by one `set_menu`: LINE allows 100 deletes an
+/// hour, and each one adds latency (and a Workers subrequest) to the call.
+pub const MAX_DELETES: usize = 5;
 /// Longest Menu key.
 pub const KEY_MAX_LEN: usize = 16;
 const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
@@ -154,43 +173,14 @@ fn hashed(menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
     Ok((hash, obj))
 }
 
-/// The rich menu object for `menu` on `image` under Menu key `key`, and
-/// its name: `harpseal-<key>-<hash>`, or `harpseal-<hash>` without a key.
-pub fn rich_menu(key: Option<&str>, menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
+/// The rich menu object for `menu` on `image` under Menu key and
+/// generation `tag`, and its name: `harpseal-<key>-<generation>-<hash>`,
+/// or `harpseal-<hash>` without a key.
+pub fn rich_menu(tag: Option<(&str, u32)>, menu: &Menu, image: &[u8]) -> Result<(String, Value)> {
     let (hash, mut obj) = hashed(menu, image)?;
-    let name = match key {
-        Some(k) => format!("{NAME_PREFIX}{}-{hash}", valid_key(k)?),
-        None => format!("{NAME_PREFIX}{hash}"),
-    };
+    let name = name::make(tag, &hash)?;
     obj["name"] = Value::String(name.clone());
     Ok((name, obj))
-}
-
-/// The Menu key of a rich menu name: `Some(Some(key))` for
-/// `harpseal-<key>-<hash>`, `Some(None)` for `harpseal-<hash>`, `None` for
-/// a name this adapter did not make.
-pub fn name_key(name: &str) -> Option<Option<&str>> {
-    let rest = name.strip_prefix(NAME_PREFIX)?;
-    match rest.rsplit_once('-') {
-        Some((key, _)) => valid_key(key).ok().map(Some),
-        None => Some(None),
-    }
-}
-
-/// A Menu key: 1 to [`KEY_MAX_LEN`] lowercase ASCII letters and digits.
-fn valid_key(key: &str) -> Result<&str> {
-    let ok = !key.is_empty()
-        && key.len() <= KEY_MAX_LEN
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
-    if ok {
-        Ok(key)
-    } else {
-        Err(Error::Invalid(format!(
-            "LINE Menu key {key:?}: 1 to {KEY_MAX_LEN} of a-z and 0-9"
-        )))
-    }
 }
 
 pub(crate) fn fail(f: Failure) -> Error {
@@ -263,7 +253,9 @@ impl LineChannel {
                 .map(drop)
                 .map_err(fail);
         }
-        let (name, obj) = rich_menu(key.as_deref(), menu, image)?;
+        let generation = self.cfg.menu_generation();
+        let tag = key.as_deref().map(|k| (k, generation));
+        let (name, obj) = rich_menu(tag, menu, image)?;
         let mut found = self.rich_menu_id(&name, &obj, image, true).await?;
         if let Err(f) = self.link(user, &found.id).await? {
             if f.status != 404 {
@@ -274,7 +266,7 @@ impl LineChannel {
             found = self.rich_menu_id(&name, &obj, image, false).await?;
             self.link(user, &found.id).await?.map_err(fail)?;
         }
-        self.tidy(user, key.as_deref(), &name, found).await;
+        self.tidy(user, tag, &name, found).await;
         Ok(())
     }
 

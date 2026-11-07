@@ -31,10 +31,10 @@ pub(crate) struct Failure {
 }
 
 impl Failure {
-    /// The Core error. `to_user`: the call sent messages to one account,
-    /// so a 403 whose message is about that account ([`Failure::blocked`])
-    /// becomes `Error::Unreachable`. Any other 403 (channel-wide: plan,
-    /// permission) is `Error::Platform`, so the Kernel keeps the Link.
+    /// The Core error. `to_user`: the call sent messages to one account.
+    /// A 403 is `Error::Platform` (channel-wide, so the Kernel keeps the
+    /// Link) unless [`Failure::blocked`] matches, which is
+    /// `Error::Unreachable`.
     pub(crate) fn into_error(self, to_user: bool) -> Error {
         match self.status {
             429 if self.monthly_limit() => Error::Platform(format!(
@@ -58,13 +58,15 @@ impl Failure {
         self.message.to_ascii_lowercase().contains("monthly limit")
     }
 
-    /// A 403 that says the message could not reach this user (blocked the
-    /// account, never added it, unknown id). LINE documents no 403 body for
-    /// that case, so these are the messages seen on a per-user push:
-    /// `Failed to send messages` (documented for a failed send) and
-    /// `Not found` (#16). Anything else, e.g. `Access to this API is not
-    /// available for your account`, is channel-wide
-    /// (<https://developers.line.biz/en/reference/messaging-api/#error-messages>).
+    /// A defensive fallback for a 403 on a send to one account whose body
+    /// is about that account. LINE documents none: pushes to a user who
+    /// blocked or never added the account answer 200, unknown user ids
+    /// 400, and the documented 403 is `Access to this API is not available
+    /// for your account` (a missing permission); blocks arrive as
+    /// `unfollow` events. `Failed to send messages` (documented for a
+    /// failed send, without a status) and `Not found` (the #16 fixture)
+    /// are kept as `Unreachable` until verified on a live account
+    /// (<https://developers.line.biz/en/reference/messaging-api/#status-codes>).
     fn blocked(&self) -> bool {
         let m = self.message.trim().to_ascii_lowercase();
         BLOCKED_MESSAGES.contains(&m.as_str())
@@ -76,7 +78,8 @@ impl Failure {
     }
 }
 
-/// 403 messages (lowercase) that mean one user cannot be reached.
+/// 403 messages (lowercase) treated as one user unreachable; undocumented
+/// with a 403, see [`Failure::blocked`].
 const BLOCKED_MESSAGES: [&str; 2] = ["failed to send messages", "not found"];
 
 /// What a call returned.

@@ -338,7 +338,8 @@ async fn push_403(fixture: &str) -> (harpseal::Error, String) {
 
 #[tokio::test]
 async fn a_channel_wide_403_is_a_platform_error_and_keeps_the_link() {
-    let (err, status) = push_403("push_403_channel").await;
+    // The 403 LINE documents: a permission the channel lacks.
+    let (err, status) = push_403("push_403_no_permission").await;
     assert!(
         matches!(err.root(), harpseal::Error::Platform(_)),
         "{err:?}"
@@ -347,8 +348,11 @@ async fn a_channel_wide_403_is_a_platform_error_and_keeps_the_link() {
 }
 
 #[tokio::test]
-async fn a_per_user_403_is_unreachable_and_marks_the_link() {
-    let (err, status) = push_403("push_403_user").await;
+async fn the_defensive_per_user_403_is_unreachable_and_marks_the_link() {
+    // Undocumented with a 403 (blocks arrive as `unfollow`, and pushes to
+    // a blocked user answer 200): kept conservative, for the owner to
+    // verify on a live account.
+    let (err, status) = push_403("push_403_per_user_undocumented").await;
     assert!(
         matches!(err.root(), harpseal::Error::Unreachable),
         "{err:?}"

@@ -1,6 +1,6 @@
 //! The rich menu set stays bounded and fresh on the recorded Messaging API:
-//! superseded versions of a registered Menu are deleted, a cached id LINE
-//! no longer knows is recreated once, and two cold isolates racing on the
+//! lower generations of a registered Menu are deleted, a cached id LINE no
+//! longer knows is recreated once, and two cold isolates racing on the
 //! same Menu end with one rich menu (#36).
 
 mod common;
@@ -41,6 +41,14 @@ fn channel(http: Arc<dyn HttpClient>) -> LineChannel {
     LineChannel::new(config(), http)
 }
 
+/// One Deployment of generation `generation` on the shared channel.
+fn deploy(api: &LineApi, generation: u32) -> LineChannel {
+    LineChannel::new(
+        config().with_menu_generation(generation),
+        Arc::new(api.clone()),
+    )
+}
+
 fn to(n: u8) -> ChannelAccountId {
     ChannelAccountId::new(KIND, format!("{}{n}", &USER[..USER.len() - 1]))
 }
@@ -52,33 +60,48 @@ fn calls(api: &LineApi) -> Vec<String> {
         .collect()
 }
 
+fn deletes(api: &LineApi) -> Vec<String> {
+    calls(api)
+        .into_iter()
+        .filter(|c| c.starts_with("DELETE https://api.line.me/v2/bot/richmenu/"))
+        .collect()
+}
+
 /// The Menu keys of the live `harpseal-*` rich menus, sorted.
 fn keys(api: &LineApi) -> Vec<String> {
     let mut k: Vec<String> = api
         .live_names()
         .iter()
-        .filter_map(|n| name_key(n).flatten().map(str::to_string))
+        .filter_map(|n| name_key(n).flatten().map(|(k, _)| k.to_string()))
         .collect();
     k.sort();
     k
+}
+
+/// The id of the `i`th rich menu made elsewhere (LineApi numbers its own
+/// from 1 in decimal).
+fn other_id(i: usize) -> String {
+    format!("richmenu-{i:0>31}f")
+}
+
+/// A content hash made of `c`.
+fn h(c: char) -> String {
+    c.to_string().repeat(32)
 }
 
 #[tokio::test]
 async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
     let api = LineApi::default();
     // Not ours to delete: made by hand, unkeyed, another Deployment's key.
-    api.preexisting(
-        "richmenu-0000000000000000000000000000aaaa",
-        json!({ "name": "spring-fair" }),
-    );
-    api.preexisting(
-        "richmenu-0000000000000000000000000000bbbb",
-        json!({ "name": "harpseal-0a1b" }),
-    );
-    api.preexisting(
-        "richmenu-0000000000000000000000000000cccc",
-        json!({ "name": "harpseal-fr-0a1b" }),
-    );
+    let others = [
+        "spring-fair".to_string(),
+        "harpseal-th-backup".into(),
+        format!("harpseal-{}", h('a')),
+        format!("harpseal-fr-1-{}", h('b')),
+    ];
+    for (i, name) in others.iter().enumerate() {
+        api.preexisting(&other_id(i), json!({ "name": name }));
+    }
     let en = menu(&["News"]);
     let versions = [
         menu(&["ข่าว"]),
@@ -86,11 +109,12 @@ async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
         menu(&["ข่าวล่าสุด", "ติดต่อ"]),
     ];
 
-    let ch = channel(Arc::new(api.clone()));
-    ch.set_menu(&to(1), None).await.unwrap();
-    for th in &versions {
+    for (generation, th) in (1..).zip(&versions) {
+        // A redeploy with the changed Menu and a bumped generation.
+        let ch = deploy(&api, generation);
         ch.with_menus([("th", th.clone()), ("en", en.clone())])
             .unwrap();
+        ch.set_menu(&to(1), None).await.unwrap();
         ch.set_menu(&to(2), Some(th)).await.unwrap();
         ch.set_menu(&to(3), Some(&en)).await.unwrap();
     }
@@ -101,19 +125,44 @@ async fn a_menu_changed_twice_leaves_one_rich_menu_per_menu_key() {
         "{:#?}",
         api.live_names()
     );
-    let (th_now, _) = rich_menu(Some("th"), &versions[2], &png(2500, 1686)).unwrap();
+    let (th_now, _) = rich_menu(Some(("th", 3)), &versions[2], &png(2500, 1686)).unwrap();
     assert!(
         api.live_names().contains(&th_now),
         "the current version stays"
     );
-    for kept in ["spring-fair", "harpseal-0a1b"] {
-        assert!(api.live_names().iter().any(|n| n == kept), "{kept} kept");
+    for kept in &others {
+        assert!(api.live_names().contains(kept), "{kept} kept");
     }
-    let deletes = calls(&api)
-        .into_iter()
-        .filter(|c| c.starts_with("DELETE https://api.line.me/v2/bot/richmenu/"))
-        .count();
-    assert_eq!(deletes, 2, "the two superseded th versions");
+    assert_eq!(deletes(&api).len(), 6, "generations 1 and 2 of three keys");
+}
+
+#[tokio::test]
+async fn only_lower_generations_of_the_same_key_are_deleted() {
+    let api = LineApi::default();
+    let th = menu(&["ข่าว"]);
+    let older = format!("harpseal-th-1-{}", h('b'));
+    let sibling = format!("harpseal-th-2-{}", h('c')); // another live version
+    let newer = format!("harpseal-th-3-{}", h('d')); // a newer Deployment
+    let other_key = format!("harpseal-en-1-{}", h('e'));
+    for (i, name) in [&older, &sibling, &newer, &other_key].iter().enumerate() {
+        api.preexisting(&other_id(i), json!({ "name": name }));
+    }
+    let ch = deploy(&api, 2);
+    ch.with_menus([("th", th.clone())]).unwrap();
+    ch.set_menu(&to(1), Some(&th)).await.unwrap();
+
+    assert_eq!(
+        deletes(&api),
+        [format!(
+            "DELETE https://api.line.me/v2/bot/richmenu/{}",
+            other_id(0)
+        )]
+    );
+    let live = api.live_names();
+    assert!(!live.contains(&older), "lower generation deleted");
+    for kept in [&sibling, &newer, &other_key] {
+        assert!(live.contains(kept), "{kept} kept: {live:#?}");
+    }
 }
 
 #[tokio::test]

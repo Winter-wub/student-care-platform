@@ -8,13 +8,15 @@
 //!   Flex bubbles/carousels and quick replies, with the degrade rules of
 //!   `docs/prototypes/message-render.md`. One batch spends the reply token
 //!   on its first 5 objects (free); the rest go as Pushes of 5, each one
-//!   metered unit. HTTP 403 on a send is `Error::Unreachable` only when
-//!   LINE's message is about the user (`Failed to send messages`,
-//!   `Not found`); any other 403 (plan, permission) is `Error::Platform`.
-//!   429 is `Error::RateLimited`.
+//!   metered unit. Blocks arrive as `unfollow` events (`Inbound::blocked`).
+//!   A 403 on a send is `Error::Platform` (LINE documents it for a missing
+//!   permission), except two undocumented per-user bodies kept as a
+//!   defensive `Error::Unreachable` (see `docs/guide/channels.md`). 429 is
+//!   `Error::RateLimited`.
 //! - Menu ([`richmenu`]): one rich menu per Menu and image, reused by hash
-//!   and linked per account; superseded versions of a registered Menu
-//!   ([`LineChannel::with_menus`]) are deleted. `set_menu(None)` links
+//!   and linked per account; lower generations of a registered Menu
+//!   ([`LineChannel::with_menus`], [`LineConfig::menu_generation`]) are
+//!   deleted. `set_menu(None)` links
 //!   [`LineConfig::locked_menu`]; the Kernel is expected to pass its
 //!   locked Menu (e.g. a "เริ่มใช้งาน" entry) through this config (#19).
 //! - Capabilities: Mini App (LIFF, [`liff`]) when a LIFF id is configured;
@@ -80,6 +82,10 @@ pub struct LineConfig {
     pub locked_menu_image: Vec<u8>,
     /// PNG for the unlocked Menu's rich menu.
     pub unlocked_menu_image: Vec<u8>,
+    /// Generation of the rich menus this Deployment creates (0 counts as
+    /// 1). Bump it when a Menu change must win: superseded rich menus are
+    /// only those with a lower generation ([`richmenu`]).
+    pub menu_generation: u32,
 }
 
 impl LineConfig {
@@ -93,6 +99,7 @@ impl LineConfig {
             channel_secret: channel_secret.into(),
             access_token: access_token.into(),
             liff_id: liff_id.into(),
+            menu_generation: 1,
             ..Self::default()
         }
     }
@@ -120,6 +127,19 @@ impl LineConfig {
         self
     }
 
+    /// The rich menu generation (default 1; 0 counts as 1). Bump it when a
+    /// Menu change must replace the rich menus of the previous one; keep it
+    /// when two versions may run on the channel at once.
+    pub fn with_menu_generation(mut self, generation: u32) -> Self {
+        self.menu_generation = generation;
+        self
+    }
+
+    /// [`LineConfig::menu_generation`], at least 1.
+    pub fn menu_generation(&self) -> u32 {
+        self.menu_generation.max(1)
+    }
+
     /// The locked Menu.
     pub fn with_locked_menu(mut self, menu: Menu) -> Self {
         self.locked_menu = menu;
@@ -138,6 +158,7 @@ impl core::fmt::Debug for LineConfig {
             .field("locked_menu", &self.locked_menu)
             .field("locked_menu_image", &self.locked_menu_image.len())
             .field("unlocked_menu_image", &self.unlocked_menu_image.len())
+            .field("menu_generation", &self.menu_generation)
             .finish()
     }
 }
