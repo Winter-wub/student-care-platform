@@ -25,6 +25,9 @@ pub struct TestResponse {
     pub headers: HeaderMap,
     /// Body, decoded as UTF-8 (lossy).
     pub body: String,
+    /// The [`harpseal::ErrorReport`] a handler attached, as the runtime
+    /// would log it.
+    pub error_report: Option<harpseal::ErrorReport>,
 }
 
 impl TestResponse {
@@ -65,6 +68,7 @@ impl TestApp {
             .unwrap_or_else(|e| match e {});
         let status = resp.status();
         let headers = resp.headers().clone();
+        let error_report = harpseal::ErrorReport::of(&resp).copied();
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .expect("body reads");
@@ -72,6 +76,7 @@ impl TestApp {
             status,
             headers,
             body: String::from_utf8_lossy(&bytes).into_owned(),
+            error_report,
         }
     }
 

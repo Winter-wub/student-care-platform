@@ -343,6 +343,7 @@ async fn mini_app_only_with_a_web_app_url_and_a_clock() {
     assert!(tg.capabilities().mini_app);
     let app = tg.mini_app().unwrap();
     assert_eq!(app.launch_url("/news/1042"), format!("{WEB_APP}/news/1042"));
+    assert_eq!(app.web_client(), Some(harpseal::WebClient::Telegram));
 }
 
 #[tokio::test]

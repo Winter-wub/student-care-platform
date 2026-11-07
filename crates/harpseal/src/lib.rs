@@ -41,6 +41,7 @@ mod migrate;
 mod module;
 mod port_types;
 mod ports;
+mod report;
 mod resend;
 mod sql_split;
 mod verification;
@@ -60,7 +61,9 @@ pub use auth::{
     ADMINISTRATOR_ROLE, CurrentStaff, MIN_PASSWORD_CHARS, NewStaff, check_password_rules,
     create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
-pub use channel::{Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment};
+pub use channel::{
+    Channel, DeleteMessage, EditMessage, MiniApp, Multicast, SendAttachment, WebClient,
+};
 pub use config::{
     AttrError, AttributeSpec, AttributeType, BrandingConfig, ConsentConfig, DeploymentConfig,
     InboundConfig, LocaleColumn, OtpConfig, QuotaConfig, RetentionConfig, RosterConfig,
@@ -93,6 +96,7 @@ pub use module::{
 pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};
 pub use render::RenderCx;
+pub use report::ErrorReport;
 pub use resend::{RESEND_ENDPOINT, ResendEmail};
 pub use verification::{
     Challenge, EmailOtp, StudentClaim, Verdict, VerificationMethod, VerifyContext,

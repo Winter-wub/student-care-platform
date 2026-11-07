@@ -380,4 +380,7 @@ impl MiniApp for TelegramChannel {
         })?;
         web_app::verify_init_data(init_data, &self.cfg.bot_token, clock.now())
     }
+    fn web_client(&self) -> Option<harpseal::WebClient> {
+        Some(harpseal::WebClient::Telegram)
+    }
 }

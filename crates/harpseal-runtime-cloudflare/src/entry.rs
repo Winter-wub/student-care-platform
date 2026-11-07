@@ -58,7 +58,9 @@ async fn app(env: &Env, settings: &CloudflareSettings, build: BuildFn) -> worker
 }
 
 /// The body of `#[event(fetch)]`: hands the request to the Deployment's
-/// axum Router.
+/// axum Router. A response carrying a [`harpseal::ErrorReport`] logs its
+/// line with `console.error` (`wrangler tail`; the area and the error
+/// kind, never the message).
 pub async fn fetch(
     req: HttpRequest,
     env: &Env,
@@ -66,8 +68,16 @@ pub async fn fetch(
     build: BuildFn,
 ) -> worker::Result<Response> {
     let mut router = app(env, settings, build).await?.router;
-    let resp = router.call(req).await;
-    Ok(resp.unwrap_or_else(|e| match e {}))
+    let resp = router.call(req).await.unwrap_or_else(|e| match e {});
+    if let Some(report) = harpseal::ErrorReport::of(&resp) {
+        let id = resp
+            .headers()
+            .get(harpseal::audit::REQUEST_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("-");
+        worker::console_error!("error: {report} (request {id})");
+    }
+    Ok(resp)
 }
 
 /// The body of `#[event(scheduled)]`: runs `Deployment::tick` at the
