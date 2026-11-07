@@ -10,7 +10,8 @@
 //!   same-origin form post);
 //! - no such Channel, or no Mini App on it: 404;
 //! - on a Channel whose verification is a network call (LIFF: LINE's
-//!   verify endpoint), more than 30 exchanges per IP group per minute:
+//!   verify endpoint), once an IP group has had 30 refused tokens or
+//!   `[mini_app] verify_per_minute` attempts (default 300) in the minute:
 //!   429 before verifying ([`super::limit`]);
 //! - a token the platform refuses (`BadSignature`): 403 with a retry
 //!   button and at most one Security Event `app.session_refused` per IP
@@ -28,13 +29,22 @@
 //!   same batch), its cookie, and 303 to `next` when it is a safe `/app`
 //!   path, else to `/app`.
 //!
+//! Once the token is verified, the session of the cookie the form came
+//! with (if any) is deleted, whichever account it was for (#86): the new
+//! session replaces it, and the "not linked" page clears its cookie.
+//!
 //! Trade-offs of the limits: Telegram's `initData` is checked locally (one
 //! HMAC), so it gets no limit at all; a limit keyed by IP would only lock
 //! out Students sharing campus Wi-Fi or carrier NAT. LINE's check costs a
-//! request to LINE, so it is capped per IP group (IPv6 /64) at a level a
-//! shared NAT should not reach: 30 a minute. Every exchange counts
-//! (successful ones too), and one counter row per group per minute keeps
-//! the table small; the hourly Job deletes old windows. There is no
+//! request to LINE, so it is capped per IP group (IPv6 /64) twice: 30
+//! refused tokens a minute, and `[mini_app] verify_per_minute` attempts of
+//! any outcome (default 300, counted atomically before the call, so a
+//! burst sent at once or a replayed valid token is bounded too). Every
+//! launch exchanges (#86): the high ceiling lets a class behind one campus
+//! NAT open a Card at once. Each account keeps at most
+//! [`session::MAX_LIVE`] sessions, so replaying a valid token cannot grow
+//! the table either. Counter rows are one per group per minute; the hourly
+//! Job deletes old windows. There is no
 //! per-account limit: the account is known only after the verification
 //! the limit is meant to spare, and a valid token is never refused for
 //! being used again.
@@ -121,8 +131,10 @@ pub(crate) async fn exchange(
         ErrorReport::attach(page, AREA, e)
     };
     let group = ctx.ip.as_deref().map(limit::ip_group);
-    if let Some(g) = group.as_deref().filter(|_| networked(&s, &f.channel)) {
-        match limit::verify_allowed(&s.services, g).await {
+    // The group whose refused tokens count (networked Channels only).
+    let limited = group.as_deref().filter(|_| networked(&s, &f.channel));
+    if let Some(g) = limited {
+        match limit::verify_allowed(&s.services, g, s.config.mini_app.verify_per_minute).await {
             Ok(true) => {}
             Ok(false) => {
                 return answer(
@@ -136,7 +148,13 @@ pub(crate) async fn exchange(
             Err(e) => return fail(&e),
         }
     }
-    let who = match app.verify_session(&f.token).await {
+    let verified = app.verify_session(&f.token).await;
+    if let (Err(Error::BadSignature | Error::Invalid(_)), Some(g)) = (&verified, limited)
+        && let Err(e) = limit::count_refusal(&s.services, g).await
+    {
+        return fail(&e);
+    }
+    let who = match verified {
         Ok(who) => who,
         Err(Error::BadSignature) => {
             if let Err(e) = limit::log_refusal(&s.services, &f.channel, group.as_deref()).await {
@@ -154,13 +172,19 @@ pub(crate) async fn exchange(
         Err(e) => return fail(&e),
     };
     // The adapter vouches for the external id on its own Channel.
+    // The session this browser held, whoever it was for, ends here (#86):
+    // the platform has just said who is in front of it.
+    let old = crate::auth::cookie(&headers, session::COOKIE);
     let account = match account_of(&s, &f.channel, &who.external_id).await {
         Ok(Some(a)) => a,
-        Ok(None) => return not_linked(&s, &t, None),
+        Ok(None) => return unlinked(&s, &t, old.as_deref()).await,
         Err(e) => return fail(&e),
     };
-    let started = match session::create(&s.services, &account) {
-        Ok((token, stmts)) => s.services.db.batch(stmts).await.map(|_| token),
+    let started = match session::create(&s.services, &account, s.config.mini_app.idle_ms()) {
+        Ok((token, mut stmts)) => {
+            stmts.extend(old.as_deref().map(session::drop_stmt));
+            s.services.db.batch(stmts).await.map(|_| token)
+        }
         Err(e) => Err(e),
     };
     let token = match started {
@@ -178,6 +202,29 @@ pub(crate) async fn exchange(
         session::cookie(Some(&token), s.config.staff.cookie_secure, site(&s, &f)),
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
+}
+
+/// The "not linked" page; the browser's old session, if any, is deleted
+/// and its cookie cleared.
+async fn unlinked(s: &AppState, t: &crate::kernel::text::Texts, old: Option<&str>) -> Response {
+    let Some(old) = old else {
+        return not_linked(s, t, None);
+    };
+    if let Err(e) = session::drop_token(&s.services, old).await {
+        let page = answer(
+            s,
+            t,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "kernel.app.error",
+            None,
+        );
+        return ErrorReport::attach(page, AREA, &e);
+    }
+    let mut r = not_linked(s, t, None);
+    for clear in session::clear(s.config.staff.cookie_secure) {
+        r.headers_mut().append(header::SET_COOKIE, clear);
+    }
     r
 }
 

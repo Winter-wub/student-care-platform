@@ -2,9 +2,18 @@
 //!
 //! - Clients are grouped by IP: an IPv4 address as is, an IPv6 address by
 //!   its /64 (one subscriber's prefix, so address rotation does not help).
-//! - [`verify_allowed`]: at most [`VERIFY_PER_MINUTE`] exchanges per group
-//!   per epoch minute, counted in `rate_limit` (key `app.verify:<group>`).
-//!   Only for Channels whose verification is a network call.
+//! - [`verify_allowed`], before every verification on a Channel whose
+//!   verification is a network call (#86), per IP group and epoch minute:
+//!   - no verification once the group has had [`VERIFY_PER_MINUTE`]
+//!     **refused** tokens (key `app.verify:<group>`, counted after the
+//!     call by [`count_refusal`]), so a class behind one campus NAT is
+//!     never slowed down by its own valid launches;
+//!   - and every attempt, accepted, refused or failed, is counted first,
+//!     atomically (`UPSERT ... RETURNING`, key `app.attempt:<group>`),
+//!     against `[mini_app] verify_per_minute` (default 300). That ceiling
+//!     is what bounds a burst sent all at once (the refusal count is only
+//!     known after the calls) and a replayed valid token, so nobody can
+//!     make LINE throttle the Deployment.
 //! - [`log_refusal`]: at most one `app.session_refused` Security Event per
 //!   group per minute (check, then insert: it is only a log, so a race
 //!   writing two is harmless).
@@ -15,10 +24,12 @@ use crate::kernel::rate_limit;
 use crate::port_types::Statement;
 use crate::{Result, Services};
 
-/// Exchanges per IP group per minute on a networked Channel.
+/// Refused tokens per IP group per minute on a networked Channel.
 pub(crate) const VERIFY_PER_MINUTE: i64 = 30;
-/// Key prefix in `rate_limit`.
+/// Key prefix in `rate_limit` of refused tokens.
 const VERIFY_KEY: &str = "app.verify:";
+/// Key prefix in `rate_limit` of every attempt.
+const ATTEMPT_KEY: &str = "app.attempt:";
 /// Security Event kind of a refused token.
 pub(crate) const REFUSED: &str = "app.session_refused";
 const MINUTE_MS: i64 = 60_000;
@@ -38,12 +49,24 @@ pub(crate) fn ip_group(ip: &str) -> String {
     }
 }
 
-/// Counts one exchange of `group` now; `false` once the minute's limit is
-/// passed.
-pub(crate) async fn verify_allowed(services: &Services, group: &str) -> Result<bool> {
+/// `false` once `group` has had the minute's refused tokens, or (counting
+/// this attempt) more than `ceiling` attempts this minute.
+pub(crate) async fn verify_allowed(services: &Services, group: &str, ceiling: u32) -> Result<bool> {
     let window = services.now_ms().div_euclid(MINUTE_MS);
-    let n = rate_limit::hit(services, &format!("{VERIFY_KEY}{group}"), window).await?;
-    Ok(n <= VERIFY_PER_MINUTE)
+    let refused = rate_limit::count(services, &format!("{VERIFY_KEY}{group}"), window).await?;
+    if refused >= VERIFY_PER_MINUTE {
+        return Ok(false);
+    }
+    let n = rate_limit::hit(services, &format!("{ATTEMPT_KEY}{group}"), window).await?;
+    Ok(n <= i64::from(ceiling))
+}
+
+/// Counts one refused token of `group` now.
+pub(crate) async fn count_refusal(services: &Services, group: &str) -> Result<()> {
+    let window = services.now_ms().div_euclid(MINUTE_MS);
+    rate_limit::hit(services, &format!("{VERIFY_KEY}{group}"), window)
+        .await
+        .map(|_| ())
 }
 
 /// Writes `app.session_refused` (Channel kind and IP group, never the
@@ -75,7 +98,8 @@ pub(crate) async fn log_refusal(
 /// Deletes counter windows older than an hour (at most 500 rows).
 pub(crate) async fn prune(services: &Services, now: i64) -> Result<u64> {
     let before = now.div_euclid(MINUTE_MS) - 60;
-    rate_limit::prune(services, VERIFY_KEY, before, 500).await
+    let refused = rate_limit::prune(services, VERIFY_KEY, before, 500).await?;
+    Ok(refused + rate_limit::prune(services, ATTEMPT_KEY, before, 500).await?)
 }
 
 #[cfg(test)]

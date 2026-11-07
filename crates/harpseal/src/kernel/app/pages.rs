@@ -1,6 +1,7 @@
 //! The Mini App's GET pages and the acknowledge endpoint. Every handler
-//! resolves the App Session first; without one it answers the entry page
-//! for its own path (`next`), so a deep link survives the exchange.
+//! resolves the App Session first ([`open`]); without one, or on a new
+//! launch ([`super::launch`]), it answers the entry page for its own path
+//! (`next`), so a deep link survives the exchange.
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
@@ -63,7 +64,8 @@ fn percent_decode(v: &str) -> Option<String> {
 
 async fn visitor(s: &AppState, headers: &HeaderMap) -> Result<Option<AppVisitor>> {
     let has = |l: &str| s.catalog.has(&Locale(l.to_string()), "kernel.app.title");
-    session::resolve(&s.services, headers, has, &s.config.default_locale).await
+    let idle = s.config.mini_app.idle_ms();
+    session::resolve(&s.services, headers, idle, has, &s.config.default_locale).await
 }
 
 /// The entry page for `next`, with the cookie cleared when one was sent.
@@ -120,7 +122,19 @@ pub(super) async fn open(
     s: &AppState,
     headers: &HeaderMap,
     path: &str,
+    query: Option<&str>,
 ) -> Result<(AppVisitor, Texts), Box<Response>> {
+    // A new launch (#86): whoever opened the page proves it again before
+    // the session's Student shows. `?launch` is the page script asking for
+    // one (another tab's session, a page restored from the bfcache).
+    if let Some(token) = crate::auth::cookie(headers, session::COOKIE)
+        && (!super::launch::continues(headers) || super::launch::forced(query))
+    {
+        if let Err(e) = session::drop_token(&s.services, &token).await {
+            return Err(Box::new(unavailable(&e)));
+        }
+        return Err(Box::new(entry(s, headers, path).await));
+    }
     let v = match visitor(s, headers).await {
         Ok(Some(v)) => v,
         Ok(None) => return Err(Box::new(entry(s, headers, path).await)),
@@ -134,7 +148,7 @@ pub(super) async fn open(
 
 /// `GET /app` and `GET /app/announcements`: Link status and the list.
 pub(crate) async fn home(State(s): State<AppState>, headers: HeaderMap, uri: Uri) -> Response {
-    let (v, t) = match open(&s, &headers, uri.path()).await {
+    let (v, t) = match open(&s, &headers, uri.path(), uri.query()).await {
         Ok(x) => x,
         Err(r) => return *r,
     };
@@ -200,8 +214,9 @@ pub(crate) async fn detail(
     State(s): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    uri: Uri,
 ) -> Response {
-    let (v, t) = match open(&s, &headers, &format!("{NEWS_PATH}/{id}")).await {
+    let (v, t) = match open(&s, &headers, &format!("{NEWS_PATH}/{id}"), uri.query()).await {
         Ok(x) => x,
         Err(r) => return *r,
     };
@@ -242,7 +257,7 @@ pub(crate) async fn ack(
             Err(e) => unavailable(&e),
         };
     }
-    let (v, t) = match open(&s, &headers, &here).await {
+    let (v, t) = match open(&s, &headers, &here, None).await {
         Ok(x) => x,
         // HTMX does not swap an error status: a full reload of the detail
         // page shows the entry page or the error, and the report travels.

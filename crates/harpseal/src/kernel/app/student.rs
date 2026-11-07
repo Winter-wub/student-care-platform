@@ -27,11 +27,16 @@ const FORM_LIMIT: usize = 64 * 1024;
 /// It reads the App Session cookie exactly as the Kernel's pages do (a
 /// LIFF or Telegram Web App session, the partitioned cookie of Telegram
 /// Web included) and the Channel Account's active Link on every request.
+/// A request that does not come from one of the Deployment's own pages
+/// (a new launch from the chat, a deep link, a bookmark) never reaches
+/// the handler with the old session: it is dropped and the entry page
+/// asks the platform again who opened the Mini App (#86).
 /// Nothing in the path, query or body picks the Student: a handler that
 /// only reads data by [`AppStudent::id`] can never show another Student's.
 ///
 /// The rejection is the Kernel's own answer, never a 500 page:
-/// - no session, or an unknown, forged or expired one: the entry page,
+/// - no session, an unknown, forged or expired one, or a new launch: the
+///   entry page,
 ///   which signs in through the platform and comes back to this path
 ///   (the cookie is cleared when one was sent);
 /// - a session whose account has no active Link (revoked, `left`): the
@@ -108,7 +113,7 @@ impl AppStudent {
 
     /// A whole Mini App page (`200`) in the Deployment's branding, as the
     /// Kernel's pages: CSRF header for HTMX, privacy-notice footer and
-    /// `Referrer-Policy: no-referrer`. Every `/app` response also gets
+    /// `Referrer-Policy: same-origin` (#86). Every `/app` response also gets
     /// `Cache-Control: no-store` and the `frame-ancestors` CSP.
     pub fn page(&self, s: &PageState, title: &str, body: Markup) -> Response {
         let notice = self.texts.t("kernel.app.notice_link");
@@ -156,7 +161,7 @@ impl AppStudent {
         } else {
             super::safe_next(current_path(headers)).to_string()
         };
-        let (v, texts) = match super::pages::open(s, headers, &path).await {
+        let (v, texts) = match super::pages::open(s, headers, &path, parts.uri.query()).await {
             Ok(x) => x,
             Err(r) if htmx => return Err(Box::new(super::pages::hx_redirect_from(&reload, &r))),
             Err(r) => return Err(r),

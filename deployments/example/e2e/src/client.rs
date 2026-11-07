@@ -155,6 +155,18 @@ impl Client {
         self.send(self.http.get(self.url(path))).await
     }
 
+    /// `GET path` as a browser follows a link or redirect from one of the
+    /// app's own pages (`Sec-Fetch-Site: same-origin`): a Mini App page
+    /// then continues its launch instead of asking the platform again
+    /// (#86).
+    pub async fn navigate(&self, path: &str) -> R<Resp> {
+        let req = self
+            .http
+            .get(self.url(path))
+            .header("sec-fetch-site", "same-origin");
+        self.send(req).await
+    }
+
     /// `POST path` with `form` as given.
     pub async fn post_raw(&self, path: &str, form: &str) -> R<Resp> {
         let req = self
