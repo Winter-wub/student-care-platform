@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 readme.workspace = true
 homepage.workspace = true
-description = "The harpseal command line as a library each Deployment's binary calls: migrate, create Staff."
+description = "The harpseal command line as a library each Deployment's binary calls: migrate, create Staff, backup and restore."
 keywords = ["cli", "admin", "migrate", "student", "harpseal"]
 categories = ["development-tools"]
 

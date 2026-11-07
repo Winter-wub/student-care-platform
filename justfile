@@ -62,6 +62,14 @@ seed *args:
     echo "+ $cli seed-example {{args}}"
     $cli seed-example {{args}}
 
+# Back up the database and its files into a new directory (stop `just run` first).
+backup dir:
+    cargo run -q -p harpseal-example-native --bin harpseal -- backup {{dir}}
+
+# Restore a backup into an empty database (`--force` deletes the rows of the backed-up tables first).
+restore dir *args:
+    cargo run -q -p harpseal-example-native --bin harpseal -- restore {{dir}} {{args}}
+
 # Boot the example on a free port and walk the first slice over HTTP (not in CI).
 e2e:
     cargo build -p harpseal-example-native --bins

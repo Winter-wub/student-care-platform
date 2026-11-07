@@ -7,6 +7,8 @@
 //! harpseal staff create --admin --email admin@sealbay.example [--name "Ada"]
 //!                       [--password PW | --password-stdin] [--force]
 //! harpseal staff create --email officer@sealbay.example --role Officer [--role ..]
+//! harpseal backup ./backups/2026-11-07
+//! harpseal restore ./backups/2026-11-07 [--force]
 //! ```
 //!
 //! `staff create` migrates first. Without `--password` or
@@ -17,19 +19,37 @@
 //! from `[roles]` in `deployment.toml`), the TOML wins: the Role is left as
 //! it is and a warning lists the declared Permissions it lacks. `--admin`
 //! is refused once any Staff exists unless `--force` is given. Passwords on the command line end up in shell
-//! history: prefer `--password-stdin` or the generated one. Backup and
-//! restore are planned in a follow-up ticket.
+//! history: prefer `--password-stdin` or the generated one.
+//!
+//! `backup DIR` writes every table and every FileStore object a row
+//! points at to a new (or empty) directory, through the Deployment's ports
+//! ([`harpseal::backup`] has the format). Stop the server first: the dump
+//! is not one transaction. The directory holds password hashes and session
+//! ids, so keep it as safe as the database. `restore DIR` loads it into an
+//! empty database (fresh, not even `migrate`d: `migrate` seeds `[roles]`),
+//! applying the migrations first; `--force` deletes the rows of every table
+//! in the backup first and keeps the schema and any table not in the
+//! backup. Both print one line per table. D1 Deployments: this binary runs
+//! natively with no D1 adapter, so use `wrangler d1 export` for now.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod backup;
+
+use std::path::PathBuf;
+
 use harpseal::{ADMINISTRATOR_ROLE, Actor, Deployment, NewStaff, RequestCtx};
+
+pub use backup::{DirBackup, backup, restore};
 
 /// How to run it.
 pub const USAGE: &str = "usage:
   harpseal migrate
   harpseal staff create --email EMAIL [--admin] [--role ROLE]... [--name NAME]
-                        [--password PW | --password-stdin] [--force]";
+                        [--password PW | --password-stdin] [--force]
+  harpseal backup DIR
+  harpseal restore DIR [--force]";
 
 /// A parsed command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +59,15 @@ pub enum Command {
     Migrate,
     /// `staff create ..`.
     CreateStaff(StaffArgs),
+    /// `backup DIR`.
+    Backup(PathBuf),
+    /// `restore DIR [--force]`.
+    Restore {
+        /// The backup directory.
+        dir: PathBuf,
+        /// Delete the rows of every table in the backup first.
+        force: bool,
+    },
     /// `help`, `-h`, `--help`.
     Help,
 }
@@ -134,6 +163,15 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         [] | ["help" | "-h" | "--help", ..] => Ok(Command::Help),
         ["migrate"] => Ok(Command::Migrate),
         ["staff", "create", rest @ ..] => parse_staff(rest).map(Command::CreateStaff),
+        ["backup", dir] if !dir.starts_with('-') => Ok(Command::Backup(dir.into())),
+        ["restore", dir] | ["restore", dir, "--force"] | ["restore", "--force", dir]
+            if !dir.starts_with('-') =>
+        {
+            Ok(Command::Restore {
+                dir: dir.into(),
+                force: words.contains(&"--force"),
+            })
+        }
         _ => Err(CliError::Usage(format!(
             "unknown command `{}`",
             args.join(" ")
@@ -278,6 +316,8 @@ pub async fn run(
     match parse(args)? {
         Command::Help => writeln!(out, "{USAGE}").map_err(io),
         Command::Migrate => writeln!(out, "{}", migrate(d).await?).map_err(io),
+        Command::Backup(dir) => backup(d, &dir, out).await,
+        Command::Restore { dir, force } => restore(d, &dir, force, out).await,
         Command::CreateStaff(a) => {
             let password = match &a.password {
                 PasswordSource::Given(p) => Some(p.clone()),

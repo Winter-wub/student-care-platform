@@ -30,7 +30,7 @@ Vocabulary is in [`GLOSSARY.md`](https://github.com/Winter-wub/student-care-plat
 | [`harpseal-channel-fake`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-channel-fake) | Fake Channel: in-memory, records what the Student saw; for tests, demos and `just e2e`. | native + wasm32 |
 | [`harpseal-runtime-native`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-native) | Native runtime: SQLite, local or S3-compatible files, SMTP or Resend, `axum::serve`, a per-minute ticker. | native |
 | [`harpseal-runtime-cloudflare`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-cloudflare) | Workers runtime: D1, R2, Resend over `fetch`, Cron, the `fetch` / `scheduled` entry points. | wasm32 |
-| [`harpseal-cli`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`. | native |
+| [`harpseal-cli`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`, `backup`, `restore`. | native |
 | [`harpseal-testing`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-testing) | Test harness (dev-dependency): fake Services, the Fake Channel and the Router in-process, a cookie-keeping `Browser`, the Channel contract suite. | native |
 
 The example, never published:
@@ -105,6 +105,7 @@ Creating the D1 database, secrets and the deploy are in
 | `just fmt` | `cargo fmt --all` | no |
 | `just run` | The example on `127.0.0.1:8080` in dev mode (needs `FAKE_SECRET`) | no |
 | `just seed [--force]` | `migrate`, `staff create --admin`, `seed-example` against `HARPSEAL_DB` | no |
+| `just backup DIR` / `just restore DIR [--force]` | `harpseal backup` / `restore` against `HARPSEAL_DB` and `HARPSEAL_FILES` (stop the server first) | no |
 | `just e2e` | Builds the example, boots it on a free port with a temporary database and walks the first slice over HTTP; prints a pass/fail table | no |
 | `just release-dry` | `release-plz update` in a throwaway worktree (the versions and changelogs the next Release PR would carry), then `cargo publish --workspace --dry-run`; publishes nothing | yes |
 
@@ -140,7 +141,7 @@ only in the environment or Worker secrets, never in TOML.
 - [Building a Deployment](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/deployment.md): the builder, what
   `build()` refuses, Jobs, sends, retries, webhook duplicates, writing from code
 - [Self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md): settings, the CLI, the demo
-  seed, dev mode, reverse proxies
+  seed, dev mode, reverse proxies, backup and restore
 - [The back office](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/back-office.md): every page and its Permission
 - [Channels](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/channels.md): LINE, Telegram, the Mini App
 - [Deploying to Workers](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/workers.md)

@@ -135,6 +135,78 @@ handing over. Put Students' data mapping in `[roster]`, Roles in `[roles]`,
 texts in `[texts.<locale>]`; secrets only in the environment.
 
 Behind a reverse proxy, terminate TLS there, forward to `HARPSEAL_ADDR` and
-set `[staff] trust_forwarded_for = true`. Back up the SQLite file (and the
-files directory) with the server stopped or with SQLite's online backup;
-backup and restore commands in the CLI are planned in a follow-up ticket.
+set `[staff] trust_forwarded_for = true`. Back up with `harpseal backup`
+(below).
+
+## Backup and restore
+
+```sh
+cargo run -p harpseal-example-native --bin harpseal -- backup ./backups/2026-11-07
+## table audit_log: 1240 rows
+## ...
+## backup written to ./backups/2026-11-07: 27 tables, 5310 rows, 3 files, 8 migrations (manifest sha256 9f1c…)
+cargo run -p harpseal-example-native --bin harpseal -- restore ./backups/2026-11-07 [--force]
+```
+
+`just backup DIR` and `just restore DIR [--force]` run the same against
+`HARPSEAL_DB` and `HARPSEAL_FILES`.
+
+`backup DIR` reads the database and the FileStore through the Deployment's
+own ports and writes:
+
+- `manifest.json`: format `1`, the Deployment name, `taken_at` and
+  `finished_at` (ms UTC), the applied migrations in order, each table's
+  columns, row count and `CREATE` SQL, and each FileStore object's key,
+  size and SHA-256;
+- `tables/<table>.ndjson`: every row of every table (except `migration`),
+  one JSON object per line, values typed (`42`, `3.0`, strings, `null`,
+  blobs as `{"$blob": "<base64>"}`);
+- `files/<sha256 of the key>`: every object a `file_key` column points at
+  (today the roster files of `roster_import`). An object already gone from
+  the FileStore is listed as `missing` with a warning; the backup still
+  succeeds.
+
+It writes to `DIR.partial` and renames it to `DIR` at the end, so `DIR` only
+ever holds a finished backup. `DIR` must be new or empty.
+
+**Stop the server first** (or at least make sure no tick runs): the `Db`
+port has no read transaction, so the backup reads table by table and a write
+in between would make it inconsistent. The manifest records when the dump
+started and finished.
+
+**The backup directory is as sensitive as the database.** It holds Staff
+password hashes, session ids, Students' personal data and the roster files,
+so restored logins keep working. Keep it encrypted and access-controlled,
+and delete old ones under the same retention as the data.
+
+`restore DIR` loads a backup into a fresh, empty database: point
+`HARPSEAL_DB` at a new file and do not run `migrate` first (it seeds
+`[roles]`, and then the database is no longer empty). It:
+
+1. refuses a backup whose migrations are not the first ones of this
+   Deployment, in order and with the same checksums (another Deployment, or
+   a newer build than the one restoring);
+2. applies this Deployment's migrations, so the schema is current;
+3. refuses when a table or column of the backup no longer exists, or a
+   column added since is `NOT NULL` without a default;
+4. checks every table's row count and every file's SHA-256 against the
+   manifest;
+5. refuses when any table has rows, unless `--force`;
+6. inserts the rows parents first, then puts each file back under its key
+   (as `application/octet-stream`), and writes the audit row
+   `backup.restore` with the manifest's SHA-256.
+
+`--force` first deletes the rows of every table in the backup, in one batch
+that briefly lifts the append-only triggers of `audit_log`,
+`security_event` and `consent` and puts them back unchanged. It keeps the
+schema, and tables that are not in the backup (a Module added since, say)
+are left untouched; the command lists them. A restore that fails while
+inserting leaves part of the backup behind: fix the cause and run it again
+with `--force`.
+
+**D1.** The CLI runs natively and has no D1 adapter yet, so a Worker
+Deployment is backed up with Cloudflare's own export
+(`npx wrangler@4 d1 export <database> --remote --output backup.sql`) and R2's
+tools for the files. The format above is the one `restore` reads; a D1 HTTP
+adapter for the CLI would let `backup`/`restore` run against D1 through the
+same `Db` port.
