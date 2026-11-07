@@ -22,8 +22,7 @@ pub(crate) const INBOUND_CLAIM_LEASE_MS: i64 = 60_000;
 /// Most abandoned claims one tick logs.
 pub(crate) const INBOUND_LOST_SWEEP_LIMIT: i64 = 100;
 /// The error logged for a claim whose handling never finished.
-pub(crate) const ABANDONED: &str =
-    "the handling of this event never finished (process killed?); it was not answered";
+pub(crate) const ABANDONED: &str = "this event was not handled within the lease (it waited in the queue too long, or the process handling it was killed); it was not answered";
 
 /// An event whose id this call claimed (or that has no id), still to be
 /// handled.

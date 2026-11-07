@@ -90,7 +90,8 @@ impl Deployment {
     /// lease (60 s: a hung handler, or a task the runtime stopped without
     /// dropping it), its next call takes the account over instead of
     /// waiting; the tasks queued before stop at their next event, whose
-    /// claims the tick logs as lost.
+    /// claims the tick logs as lost. Waiting for a runtime slot is not a
+    /// hang: such an account is never taken over.
     pub async fn accept_webhook(
         self: &Arc<Self>,
         kind: &str,
@@ -118,22 +119,29 @@ impl Deployment {
         let now = self.services.now_ms();
         let turn = Turn::default();
         let (generation, seq, previous) = {
-            let mut lanes = self.inbound_queues.lock();
-            let lane = lanes.entry(key.clone()).or_insert_with(|| Lane {
-                generation: 0,
-                seq: 0,
+            let mut q = self.inbound_queues.lock();
+            // One counter for every lane, never reset: a task of a lane
+            // that was removed can never match a newer lane of the account.
+            q.next_id += 1;
+            let id = q.next_id;
+            let lane = q.lanes.entry(key.clone()).or_insert_with(|| Lane {
+                generation: id,
+                seq: id,
                 tail: None,
                 progress_at: now,
+                waiting_for_slot: false,
             });
             let mut previous = lane.tail.take();
-            if previous.is_some() && now - lane.progress_at > INBOUND_CLAIM_LEASE_MS {
-                lane.generation += 1;
+            let stalled = !lane.waiting_for_slot && now - lane.progress_at > INBOUND_CLAIM_LEASE_MS;
+            if previous.is_some() && stalled {
+                lane.generation = id;
                 previous = None;
             }
             if previous.is_none() {
                 lane.progress_at = now;
+                lane.waiting_for_slot = false;
             }
-            lane.seq += 1;
+            lane.seq = id;
             lane.tail = Some(turn.clone());
             (lane.generation, lane.seq, previous)
         };
@@ -151,9 +159,10 @@ impl Deployment {
     }
 }
 
-/// One account's chain of tasks.
+/// One account's chain of tasks. `generation` and `seq` come from
+/// [`Queues::next_id`], so they are unique for the life of the process.
 struct Lane {
-    /// Bumped by a takeover; tasks of an older generation stop.
+    /// Replaced by a takeover; tasks of an older generation stop.
     generation: u64,
     /// The newest task's number, so only it removes the lane.
     seq: u64,
@@ -162,15 +171,36 @@ struct Lane {
     /// When an event of this account last started (or the lane was idle
     /// and got new work).
     progress_at: i64,
+    /// The current task waits for a runtime slot: throttled, not hung, so
+    /// it is not taken over however long that takes.
+    waiting_for_slot: bool,
 }
 
 /// Lanes per account key; a key is present while a task for it exists.
+#[derive(Default)]
+struct Queues {
+    lanes: HashMap<String, Lane>,
+    next_id: u64,
+}
+
 #[derive(Clone, Default)]
-pub(super) struct AccountQueues(Arc<Mutex<HashMap<String, Lane>>>);
+pub(super) struct AccountQueues(Arc<Mutex<Queues>>);
 
 impl AccountQueues {
-    fn lock(&self) -> MutexGuard<'_, HashMap<String, Lane>> {
+    fn lock(&self) -> MutexGuard<'_, Queues> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Runs `f` on `key`'s lane when `generation` still owns it; `false`
+    /// when it was taken over or removed.
+    fn if_current(&self, key: &str, generation: u64, f: impl FnOnce(&mut Lane)) -> bool {
+        match self.lock().lanes.get_mut(key) {
+            Some(lane) if lane.generation == generation => {
+                f(lane);
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -184,19 +214,18 @@ async fn run_turn(
         previous.ended().await;
     }
     let d = guard.d.clone();
+    let queues = &d.inbound_queues;
+    let (key, generation) = (guard.key.as_str(), guard.generation);
     for c in batch {
+        if !queues.if_current(key, generation, |l| l.waiting_for_slot = true) {
+            break;
+        }
         let _slot = spawner.slot().await;
-        let current = {
-            let now = d.services.now_ms();
-            let mut lanes = d.inbound_queues.lock();
-            match lanes.get_mut(&guard.key) {
-                Some(lane) if lane.generation == guard.generation => {
-                    lane.progress_at = now;
-                    true
-                }
-                _ => false,
-            }
-        };
+        let now = d.services.now_ms();
+        let current = queues.if_current(key, generation, |l| {
+            l.waiting_for_slot = false;
+            l.progress_at = now;
+        });
         if !current {
             // Taken over: the rest stay claimed, for the tick to log.
             break;
@@ -221,12 +250,15 @@ struct TurnGuard {
 impl Drop for TurnGuard {
     fn drop(&mut self) {
         self.turn.end();
-        let mut lanes = self.d.inbound_queues.lock();
-        if lanes
-            .get(&self.key)
-            .is_some_and(|l| l.generation == self.generation && l.seq == self.seq)
-        {
-            lanes.remove(&self.key);
+        let mut q = self.d.inbound_queues.lock();
+        match q.lanes.get_mut(&self.key) {
+            Some(l) if l.generation == self.generation && l.seq == self.seq => {
+                q.lanes.remove(&self.key);
+            }
+            // Dropped while waiting for a slot (a panic elsewhere, a
+            // runtime shutting down): the lane is no longer throttled.
+            Some(l) if l.generation == self.generation => l.waiting_for_slot = false,
+            _ => {}
         }
     }
 }

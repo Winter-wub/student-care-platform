@@ -20,7 +20,8 @@ use tokio::sync::{Notify, Semaphore};
 
 /// `gate.a` .. `gate.d` log their start, wait for a permit, log their end
 /// and reply (or log `dropped` when their future is dropped first);
-/// `gate.fail` fails; `gate.panic` panics.
+/// `gate.quick` logs `quick` and replies at once; `gate.fail` fails;
+/// `gate.panic` panics.
 pub struct Gate {
     log: Mutex<Vec<String>>,
     pub started: Notify,
@@ -70,6 +71,17 @@ impl Module for GateModule {
                 },
             );
         }
+        let gate = self.0.clone();
+        r.action(
+            ActionId::new("gate.quick").unwrap(),
+            move |_: ActionContext| {
+                let gate = gate.clone();
+                async move {
+                    gate.log.lock().unwrap().push("quick".into());
+                    Ok(vec![Message::text("ตารางเรียนอ่าวแมวน้ำ")])
+                }
+            },
+        );
         r.action(
             ActionId::new("gate.fail").unwrap(),
             |_: ActionContext| async move { Err(Error::Conflict("the fictional desk is shut".into())) },
@@ -212,3 +224,16 @@ pub async fn tick_lost(s: &Setup) -> u64 {
 
 pub const OK: &str = "HTTP/1.1 200 OK";
 pub const LOST: &str = "SELECT count(*) FROM security_event WHERE kind = 'inbound.lost'";
+
+/// Waits until exactly `n` background tasks are left (at most 5 s).
+pub async fn wait_pending(bg: &NativeBackground, n: usize) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while bg.pending() != n {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{} tasks pending",
+            bg.pending()
+        );
+        tokio::task::yield_now().await;
+    }
+}
