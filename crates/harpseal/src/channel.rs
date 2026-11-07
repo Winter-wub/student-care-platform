@@ -128,25 +128,37 @@ pub trait Channel: Send + Sync {
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()>;
 
     /// Most accounts the Kernel hands [`Channel::relink_menu`] in one Job
-    /// run. The default (100) suits an adapter with one or two platform
-    /// calls per account; one with a bulk call (LINE) raises it.
+    /// run. The default (20) keeps an adapter with two platform calls per
+    /// account under 50 subrequests per Job run (the Cloudflare Workers
+    /// free plan's per-invocation limit); one with a bulk call (LINE)
+    /// raises it.
     fn relink_chunk(&self) -> usize {
-        100
+        20
     }
 
     /// Shows `menu`, a newer revision of its key ([`Menu::revision`]), to
     /// every account in `to`: the Kernel's Menu-label re-link after a
-    /// back-office save. Accounts are processed in order; the receipt says
-    /// how many from the start are done and why it stopped early, so the
-    /// Kernel resumes at `to[done..]`. The default calls
-    /// [`Channel::set_menu`] per account and stops at the first error.
+    /// back-office save. Accounts are processed in order. An account the
+    /// platform will never reach ([`Error::Unreachable`]: blocked, deleted)
+    /// or whose id it refuses is listed in [`MenuRelinked::skipped`] and
+    /// passed over; any other error stops the call, and
+    /// [`MenuRelinked::done`] says how many from the start are done (the
+    /// Kernel resumes at `to[done..]`). The default calls
+    /// [`Channel::set_menu`] per account.
     async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
-        for (done, account) in to.iter().enumerate() {
-            if let Err(error) = self.set_menu(account, Some(menu)).await {
-                return MenuRelinked::stopped(done, error);
+        let mut got = MenuRelinked::all(to.len());
+        for (i, account) in to.iter().enumerate() {
+            match self.set_menu(account, Some(menu)).await {
+                Ok(()) => {}
+                Err(e) if matches!(e.root(), Error::Unreachable) => got.skip(i, e),
+                Err(e) => {
+                    got.done = i;
+                    got.error = Some(e);
+                    return got;
+                }
             }
         }
-        MenuRelinked::all(to.len())
+        got
     }
 
     /// Retires the platform objects of the `previous` revisions of
@@ -301,23 +313,38 @@ pub trait Multicast: Send + Sync {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct MenuRelinked {
-    /// Accounts done, counted from the start of `to`.
+    /// Accounts done, counted from the start of `to` (skipped ones
+    /// included).
     pub done: usize,
     /// Why it stopped before the end, if it did.
     pub error: Option<Error>,
+    /// Accounts among the first `done` that cannot show the Menu for good
+    /// (index in `to`, and why): [`Error::Unreachable`] (the Kernel marks
+    /// the Link unreachable) or an id the platform refuses
+    /// ([`Error::Invalid`]). They do not stop the re-link.
+    pub skipped: Vec<(usize, Error)>,
 }
 
 impl MenuRelinked {
     /// Every one of `done` accounts.
     pub fn all(done: usize) -> Self {
-        Self { done, error: None }
+        Self {
+            done,
+            error: None,
+            skipped: Vec::new(),
+        }
     }
     /// Stopped by `error` after `done` accounts.
     pub fn stopped(done: usize, error: Error) -> Self {
         Self {
             done,
             error: Some(error),
+            skipped: Vec::new(),
         }
+    }
+    /// Records account `index` as skipped for good, because of `error`.
+    pub fn skip(&mut self, index: usize, error: Error) {
+        self.skipped.push((index, error));
     }
 }
 

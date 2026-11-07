@@ -262,3 +262,216 @@ async fn a_second_save_mid_run_ends_with_only_the_newest_revision_live() {
     .await;
     assert_eq!(live, 1);
 }
+
+#[tokio::test]
+async fn one_unreachable_account_is_passed_over_and_the_relink_completes() {
+    let (h, app) = boot().await;
+    let accounts = linked(&h, 5, "th").await;
+    let fake = h.fake_channel();
+    fake.set_relink_chunk(2);
+    fake.set_unreachable(&accounts[1], true);
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    drain(&h, &app).await;
+
+    for (i, a) in accounts.iter().enumerate().filter(|(i, _)| *i != 1) {
+        assert_eq!(revision_of(&h, a), 1, "account {i}");
+    }
+    assert!(
+        fake.menu_events()
+            .iter()
+            .any(|e| matches!(e, MenuEvent::Retired { live: 1, .. })),
+        "retired after the others were re-linked"
+    );
+    let unreachable = count(
+        &h,
+        "SELECT count(*) AS n FROM link WHERE id = 'ln-th01' AND status = 'unreachable'",
+    )
+    .await;
+    assert_eq!(unreachable, 1, "the Link is marked unreachable");
+    let live = count(
+        &h,
+        "SELECT count(*) AS n FROM menu_revision WHERE revision = 1 AND state = 'live'",
+    )
+    .await;
+    assert_eq!(live, 1);
+    let failed = count(
+        &h,
+        "SELECT count(*) AS n FROM job WHERE kind = 'kernel.menu.relink' AND state = 'failed'",
+    )
+    .await;
+    assert_eq!(failed, 0);
+}
+
+#[tokio::test]
+async fn an_account_unlinked_mid_run_gets_the_locked_menu_back() {
+    let (h, app) = boot().await;
+    let accounts = linked(&h, 5, "th").await;
+    let fake = h.fake_channel();
+    fake.set_relink_chunk(2);
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    app.deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(
+        revision_of(&h, &accounts[0]),
+        1,
+        "re-linked in the first chunk"
+    );
+    // The Student unlinks mid-run; the platform still shows them the
+    // unlocked Menu (as a batch moving them would).
+    h.clock().advance_minutes(1);
+    let now = h.clock().now_ms();
+    for sql in [
+        format!(
+            "UPDATE channel_account SET flow_state = 'awaiting_student_id', updated_at = {now} \
+             WHERE id = 'ca-th00'"
+        ),
+        format!("UPDATE link SET status = 'revoked', revoked_at = {now} WHERE id = 'ln-th00'"),
+    ] {
+        h.db().execute(Statement::new(sql)).await.unwrap();
+    }
+    drain(&h, &app).await;
+    assert!(
+        matches!(fake.menu(&accounts[0]), Some(None)),
+        "locked again: {:?}",
+        fake.menu(&accounts[0])
+    );
+    assert_eq!(revision_of(&h, &accounts[4]), 1);
+}
+
+/// A Channel that keeps the default `relink_menu` (set_menu per account),
+/// on the Fake's state.
+struct Plain(FakeChannel);
+
+#[async_trait::async_trait]
+impl harpseal::Channel for Plain {
+    fn kind(&self) -> harpseal::ChannelKind {
+        self.0.kind()
+    }
+    async fn parse_webhook(
+        &self,
+        req: harpseal::WebhookRequest,
+    ) -> harpseal::Result<Vec<harpseal::Inbound>> {
+        self.0.parse_webhook(req).await
+    }
+    async fn download(&self, file: &harpseal::IncomingFile) -> harpseal::Result<Vec<u8>> {
+        self.0.download(file).await
+    }
+    async fn send(
+        &self,
+        to: &ChannelAccountId,
+        d: &harpseal::Delivery,
+        m: &harpseal::Message,
+        l: &harpseal::Locale,
+    ) -> harpseal::Result<harpseal::SendReceipt> {
+        self.0.send(to, d, m, l).await
+    }
+    async fn set_menu(
+        &self,
+        to: &ChannelAccountId,
+        menu: Option<&harpseal::Menu>,
+    ) -> harpseal::Result<()> {
+        self.0.set_menu(to, menu).await
+    }
+}
+
+#[tokio::test]
+async fn the_default_relink_passes_over_an_unreachable_account() {
+    use harpseal::Channel as _;
+    let h = Harness::new();
+    let config = harpseal::DeploymentConfig::from_toml(admin_support::CONFIG).unwrap();
+    let plain = h.fake_channel().with_kind("plain");
+    let d = h
+        .builder()
+        .config(config)
+        .channel(Plain(plain.clone()))
+        .build()
+        .unwrap();
+    let app = h.boot(d).await;
+    let mut to = Vec::new();
+    for i in 0..5 {
+        for sql in [
+            format!(
+                "INSERT INTO student (id, student_code, display_name, locale, status, created_at, \
+                 updated_at) VALUES ('p{i}', '680500{i}', 'Seal {i}', 'th', 'active', 1, 1)"
+            ),
+            format!(
+                "INSERT INTO channel_account (id, channel, external_id, first_seen_at, flow_state, \
+                 updated_at) VALUES ('pa{i}', 'plain', 'chat-{i}', 1, 'linked', 1)"
+            ),
+            format!(
+                "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+                 linked_at, updated_at) VALUES ('pl{i}', 'p{i}', 'pa{i}', 'plain', 'active', \
+                 'manual', 1, 1)"
+            ),
+        ] {
+            h.db().execute(Statement::new(sql)).await.unwrap();
+        }
+        to.push(ChannelAccountId::new(plain.kind(), format!("chat-{i}")));
+    }
+    plain.set_unreachable(&to[1], true);
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    drain(&h, &app).await;
+
+    for i in [0, 2, 3, 4] {
+        assert_eq!(revision_of(&h, &to[i]), 1, "chat {i}");
+    }
+    let n = count(
+        &h,
+        "SELECT count(*) AS n FROM link WHERE id = 'pl1' AND status = 'unreachable'",
+    )
+    .await;
+    assert_eq!(n, 1);
+    let live = count(
+        &h,
+        "SELECT count(*) AS n FROM menu_revision WHERE revision = 1 AND state = 'live'",
+    )
+    .await;
+    assert_eq!(
+        live, 1,
+        "the revision went live; nothing is stuck in linking"
+    );
+}
+
+#[tokio::test]
+async fn a_run_past_the_wait_limit_fails_visibly() {
+    let (h, app) = boot().await;
+    linked(&h, 2, "th").await;
+    let fake = h.fake_channel();
+    fake.rate_limit_relinks(1000);
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin.post(UNLINK, &save("th", "เลิกเชื่อมบัญชี")).await;
+    app.deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    // The continuation has waited once; pretend it is the 200th time.
+    let sql = "UPDATE job SET payload = json_set(payload, '$.waits', 200) \
+               WHERE kind = 'kernel.menu.relink' AND state = 'queued'";
+    h.db().execute(Statement::new(sql)).await.unwrap();
+    h.clock().advance_minutes(1);
+    let r = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(r.retried, 1, "{r:?}");
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT last_error FROM job WHERE kind = 'kernel.menu.relink' \
+             AND last_error IS NOT NULL",
+        ))
+        .await
+        .unwrap();
+    let err = rows
+        .get(0, "last_error")
+        .and_then(|v| v.as_text())
+        .unwrap_or_default()
+        .to_string();
+    assert!(err.contains("after 200 waits"), "{err}");
+}

@@ -38,6 +38,8 @@ struct ApiState {
     phases: std::collections::VecDeque<String>,
     /// (request id, [(from, to)]) of each batch control request.
     batches: Vec<(String, Vec<(String, String)>)>,
+    /// User ids a bulk link refuses with a 400 naming their position.
+    refused: Vec<String>,
 }
 
 impl ApiState {
@@ -81,6 +83,11 @@ impl LineApi {
             .rev()
             .find(|(u, _)| u == user)
             .map(|(_, id)| id.clone())
+    }
+    /// A bulk link with `user` in it answers 400 naming its position, as
+    /// LINE does for an invalid user id.
+    pub fn refuse_user(&self, user: &str) {
+        self.state.lock().unwrap().refused.push(user.into());
     }
     /// The progress endpoint answers `phase` once before `succeeded`.
     pub fn queue_phase(&self, phase: &str) {
@@ -144,6 +151,19 @@ impl HttpClient for LineApi {
                 return Ok(http::Response::builder()
                     .status(404)
                     .body(br#"{"message":"richmenu not found","details":[]}"#.to_vec())
+                    .unwrap());
+            }
+            let users = body["userIds"].as_array().cloned().unwrap_or_default();
+            if let Some(n) = users
+                .iter()
+                .position(|u| s.refused.iter().any(|r| u == r.as_str()))
+            {
+                let msg = format!(
+                    r#"{{"message":"The property, 'userIds[{n}]', in the request body is invalid (line: -, column: -)"}}"#
+                );
+                return Ok(http::Response::builder()
+                    .status(400)
+                    .body(msg.into_bytes())
                     .unwrap());
             }
             for u in body["userIds"].as_array().into_iter().flatten() {

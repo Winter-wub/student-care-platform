@@ -216,6 +216,8 @@ pub struct Menu {
     key: Option<MenuKey>,
     /// Which edit of its key's labels this is (0: none recorded).
     revision: u32,
+    /// The Deployment's revision salt, if any.
+    salt: Option<String>,
 }
 
 impl Menu {
@@ -225,6 +227,7 @@ impl Menu {
             entries,
             key: None,
             revision: 0,
+            salt: None,
         }
     }
     /// A Menu under `key`.
@@ -252,6 +255,19 @@ impl Menu {
     /// or a Menu built outside the Kernel).
     pub fn revision(&self) -> u32 {
         self.revision
+    }
+    /// The same Menu with the Deployment's revision salt: a random tag the
+    /// Kernel stores once per Deployment, so that two Deployments on one
+    /// platform account never give one revision the same name. An adapter
+    /// folds it into the name of a revisioned version and retires only
+    /// versions that carry it.
+    pub fn with_salt(mut self, salt: impl Into<String>) -> Self {
+        self.salt = Some(salt.into());
+        self
+    }
+    /// The revision salt, if any.
+    pub fn salt(&self) -> Option<&str> {
+        self.salt.as_deref()
     }
 }
 
@@ -360,6 +376,8 @@ mod tests {
         assert_eq!(m.key(), None);
         let m = m.with_key(MenuKey::locked());
         assert_eq!(m.key().map(MenuKey::as_str), Some("locked"));
-        assert_eq!((m.revision(), m.with_revision(3).revision()), (0, 3));
+        assert_eq!((m.revision(), m.salt()), (0, None));
+        let m = m.with_revision(3).with_salt("0a1b2c3d");
+        assert_eq!((m.revision(), m.salt()), (3, Some("0a1b2c3d")));
     }
 }

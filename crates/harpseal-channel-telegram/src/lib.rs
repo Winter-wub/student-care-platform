@@ -54,7 +54,7 @@ use serde_json::{Value, json};
 pub use api::{API_BASE, DOWNLOAD_MAX};
 use commands::Commands;
 pub use commands::command_map;
-pub use config::TelegramConfig;
+pub use config::{DEFAULT_MENU_RELINK_CHUNK, TelegramConfig};
 pub use update::{CommandMap, SECRET_HEADER};
 
 /// Telegram's Channel kind.
@@ -292,6 +292,10 @@ impl Channel for TelegramChannel {
         BatchReceipt::complete(receipts)
     }
 
+    /// [`TelegramConfig::menu_relink_chunk`]: each chat costs two calls.
+    fn relink_chunk(&self) -> usize {
+        self.cfg.menu_relink_chunk.max(1)
+    }
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()> {
         let chat = &to.external_id;
         let scope = json!({ "type": "chat", "chat_id": chat });

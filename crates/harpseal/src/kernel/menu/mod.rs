@@ -4,19 +4,23 @@
 //! of every effective Locale whose labels it changes. In the same batch as
 //! the `setting` write and its audit row, [`on_save`] records the next
 //! **Menu revision** of each such Locale in `menu_revision` (and, the
-//! first time, revision 0 for the Menu shown until then) and enqueues one
-//! Job [`RELINK`] per Locale. Every Menu the Kernel sets carries the
-//! newest revision ([`unlocked`]), so an adapter can name each version
-//! apart ([`crate::Menu::revision`]).
+//! first time, revision 0 for the Menu shown until then, and the
+//! Deployment's revision salt in `menu_salt`), and enqueues one Job
+//! [`RELINK`] per Locale. Every Menu the Kernel sets carries the newest
+//! revision and the salt ([`unlocked`]), so an adapter can name each
+//! version apart, and apart from another Deployment's on the same
+//! platform account ([`crate::Menu::revision`], [`crate::Menu::salt`]).
 //!
 //! The Job ([`job`]) re-links every linked account of that Locale to the
 //! newest revision through [`crate::Channel::relink_menu`], a chunk per
-//! run, and only once every Channel is done retires the older revisions
-//! through [`crate::Channel::retire_menus`]. A failed chunk is retried by
-//! the Job's retry from the same cursor; nothing is retired before the
-//! last chunk. A save during a run makes a newer revision: the older run
-//! stops at its next step and the newer Job re-links everyone and retires
-//! both older revisions.
+//! run, passing over accounts the platform will never reach (their Link
+//! marked unreachable), and only once every Channel is done retires the
+//! older revisions through [`crate::Channel::retire_menus`], finishing
+//! first any retire still pending from an earlier run (`menu_retire`). A
+//! failed chunk is retried by the Job's retry from the same cursor;
+//! nothing is retired before the last chunk. A save during a run makes a
+//! newer revision: the older run stops at its next step and the newer Job
+//! re-links everyone and retires every older revision.
 
 mod job;
 
@@ -39,30 +43,51 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.job(JobSpec::new(RELINK), job::run);
 }
 
+/// Length of the revision salt, in bytes (8 hex digits).
+const SALT_BYTES: usize = 4;
+
 /// The newest Menu revision of the effective Locale `locale` (0 when no
-/// Menu label was ever saved there).
-pub(crate) async fn revision(s: &Services, locale: &Locale) -> Result<u32> {
+/// Menu label was ever saved there) and the Deployment's revision salt.
+pub(crate) async fn revision(s: &Services, locale: &Locale) -> Result<(u32, Option<String>)> {
     let rows =
         s.db.query(
-            Statement::new("SELECT MAX(revision) AS r FROM menu_revision WHERE locale = ?")
-                .bind(locale.as_str()),
+            Statement::new(
+                "SELECT (SELECT MAX(revision) FROM menu_revision WHERE locale = ?) AS r, \
+                 (SELECT salt FROM menu_salt LIMIT 1) AS salt",
+            )
+            .bind(locale.as_str()),
         )
         .await?;
-    Ok(rows
+    let revision = rows
         .get(0, "r")
         .and_then(Value::as_i64)
         .and_then(|r| u32::try_from(r).ok())
-        .unwrap_or(0))
+        .unwrap_or(0);
+    let salt = rows
+        .get(0, "salt")
+        .and_then(Value::as_text)
+        .map(str::to_string);
+    Ok((revision, salt))
+}
+
+/// `menu` at `revision`, with `salt` when there is one.
+pub(crate) fn revised(menu: Menu, revision: u32, salt: Option<&str>) -> Menu {
+    let menu = menu.with_revision(revision);
+    match salt {
+        Some(salt) => menu.with_salt(salt),
+        None => menu,
+    }
 }
 
 /// The unlocked Menu a linked Student in `locale` gets now: the effective
 /// Locale's entries with `texts` (and their `setting` overrides), at its
-/// newest revision.
+/// newest revision, with the Deployment's salt.
 pub(crate) async fn unlocked(d: &Deployment, texts: &Texts, locale: &Locale) -> Result<Menu> {
     let locale = d.catalog().effective(locale);
     let texts = texts.in_locale(&locale);
-    let revision = revision(d.services(), &locale).await?;
-    Ok(d.menu_with(&locale, |k| texts.t(k)).with_revision(revision))
+    let (revision, salt) = revision(d.services(), &locale).await?;
+    let menu = d.menu_with(&locale, |k| texts.t(k));
+    Ok(revised(menu, revision, salt.as_deref()))
 }
 
 /// The statements a Texts save of `key` in `locale` adds to its batch,
@@ -107,6 +132,19 @@ pub(crate) fn on_save(
             continue;
         }
         let tag = l.as_str();
+        if stmts.is_empty() {
+            // The Deployment's revision salt, once.
+            let salt = d.services().random_hex(SALT_BYTES)?;
+            stmts.push(
+                Statement::new(
+                    "INSERT INTO menu_salt (salt) SELECT ? \
+                     WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?) \
+                     AND NOT EXISTS (SELECT 1 FROM menu_salt)",
+                )
+                .bind(salt)
+                .bind(gate),
+            );
+        }
         stmts.push(
             Statement::new(
                 "INSERT INTO menu_revision (locale, revision, entries, state, created_at, \

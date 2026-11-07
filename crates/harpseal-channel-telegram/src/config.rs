@@ -4,6 +4,13 @@
 /// <https://core.telegram.org/bots/api#menubuttonwebapp>).
 pub const DEFAULT_MENU_BUTTON_TEXT: &str = "เปิดแอป";
 
+/// Chats whose commands one Job run re-sets after a Menu label save, by
+/// default: two calls each (`setMyCommands`, `setChatMenuButton`), so 40
+/// subrequests, under the 50 a Cloudflare Workers invocation gets on the
+/// free plan (1,000 on paid plans; raise it there with
+/// [`TelegramConfig::with_menu_relink_chunk`]).
+pub const DEFAULT_MENU_RELINK_CHUNK: usize = 20;
+
 /// Secrets of one Telegram bot. Read from the environment or Worker
 /// secrets, never from TOML. `Debug` hides the token and the secret.
 #[derive(Clone, PartialEq, Eq)]
@@ -18,6 +25,9 @@ pub struct TelegramConfig {
     pub web_app_url: String,
     /// Text of the chat's menu button when it opens the Web App.
     pub menu_button_text: String,
+    /// Chats re-set per Job run after a Menu label save
+    /// ([`DEFAULT_MENU_RELINK_CHUNK`]; 0 counts as 1).
+    pub menu_relink_chunk: usize,
 }
 
 impl TelegramConfig {
@@ -32,6 +42,7 @@ impl TelegramConfig {
             webhook_secret: webhook_secret.into(),
             web_app_url: web_app_url.into(),
             menu_button_text: DEFAULT_MENU_BUTTON_TEXT.into(),
+            menu_relink_chunk: DEFAULT_MENU_RELINK_CHUNK,
         }
     }
 
@@ -42,6 +53,15 @@ impl TelegramConfig {
         if !text.is_empty() {
             self.menu_button_text = text;
         }
+        self
+    }
+}
+
+impl TelegramConfig {
+    /// Chats re-set per Job run after a Menu label save (two calls each):
+    /// keep `2 * n` plus a few under the runtime's subrequest limit.
+    pub fn with_menu_relink_chunk(mut self, n: usize) -> Self {
+        self.menu_relink_chunk = n.max(1);
         self
     }
 }
@@ -66,6 +86,7 @@ impl core::fmt::Debug for TelegramConfig {
             .field("webhook_secret", &hidden(&self.webhook_secret))
             .field("web_app_url", &self.web_app_url)
             .field("menu_button_text", &self.menu_button_text)
+            .field("menu_relink_chunk", &self.menu_relink_chunk)
             .finish()
     }
 }

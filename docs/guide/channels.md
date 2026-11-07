@@ -13,6 +13,15 @@ and a field added later breaks no adapter. A Channel that honours retry
 keys reports a request the platform answered as already accepted (LINE 409)
 in `SendReceipt::replayed_units` (`add_replayed_unit`).
 
+After a Menu label save the Kernel calls `Channel::relink_menu` with a
+chunk of `Channel::relink_chunk` accounts (default 20) and, once every
+account is done, `Channel::retire_menus` with the older revisions. The
+defaults call `set_menu` per account, passing over an account that answers
+`Error::Unreachable` (`MenuRelinked::skipped`), and retire nothing. An
+adapter whose Menu is a shared platform object retires only versions that
+carry the Deployment's salt (`Menu::salt`), and answers
+`MenuRetire::Pending` until the platform confirms nobody is left on them.
+
 ## Mini App (LIFF and Telegram Web App)
 
 The Announcements Module sends Mini App buttons, so a Deployment with it
@@ -89,37 +98,59 @@ Limits to know:
 - **A label edit re-links every linked account** (#66). Saving (or
   resetting) a Menu label on the Texts page records the next **Menu
   revision** of each effective Locale whose labels change, and enqueues the
-  Kernel Job `kernel.menu.relink` for it. A Menu with a revision is named
-  `harpseal-<key>-<generation>-r<revision>-<hash>` (revision 0, the Menu
-  shown before the first edit, keeps the old name). The Job bulk-links
+  Kernel Job `kernel.menu.relink` for it. The first save also draws the
+  Deployment's **revision salt** (8 random hex digits, stored in the
+  database and backed up with it). A revisioned Menu is named
+  `harpseal-<key>-<generation>-r<revision>-<salt>-<hash>`; revision 0, the
+  Menu shown before the first edit, keeps the old name. The Job bulk-links
   every account with an active Link and an unlocked Menu in that Locale
   (`POST /v2/bot/richmenu/bulk/link`, at most 500 user ids per call, 2,000
   requests a second:
   <https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-users>),
-  2,500 accounts per Job run. A failed call fails the run, and the Job's
-  retry re-links that chunk again; nothing is retired yet.
+  2,500 accounts per Job run (about 8 Workers subrequests). An id that is
+  not a LINE user id (`U` + 32 hex) is never sent, and one LINE refuses
+  (a 400 naming `userIds[n]`) is dropped and the call sent again, so one
+  bad account never stops the others; an account a Channel reports
+  unreachable is passed over and its Link marked `unreachable`. Any other
+  failure fails the run, and the Job's retry re-links that chunk again;
+  nothing is retired yet.
 - **The previous revision is retired only after confirmed completion.**
   The bulk link answers 202 and works in the background, so a 2xx proves
   nothing. Once every account was bulk-linked, the adapter sends one
   `POST /v2/bot/richmenu/batch` that moves anyone still on a previous
   revision (`link` from its rich menu to the new one, with a
-  `resumeRequestKey`), polls `GET /v2/bot/richmenu/progress/batch` once a
-  minute, and deletes the previous revisions' rich menus only when it says
-  `succeeded`
+  `resumeRequestKey`), polls `GET /v2/bot/richmenu/progress/batch` after 5
+  minutes, then 10, 20, 40 and every hour, and deletes the previous
+  revisions' rich menus only when it says `succeeded`
   (<https://developers.line.biz/en/reference/messaging-api/#batch-control-rich-menus-of-users>).
-  Batch control allows **3 requests an hour** (a 429 waits 20 minutes,
-  so the cleanup may lag; the new labels do not); progress and deletes
-  allow 100 an hour
+  Batch control allows **3 requests an hour** (a 429 waits 20 minutes, so
+  the cleanup may lag; the new labels do not); progress polls and deletes
+  allow **100 an hour** per channel, so one batch costs at most 5 polls in
+  its first hour and 1 an hour after
   (<https://developers.line.biz/en/reference/messaging-api/#rate-limits>).
-  A save during a run makes a newer revision: the older run stops, and
-  the newer one re-links everyone and retires both older revisions.
-- **Only the previous revisions of this Deployment are retired.** They are
-  found by exact name (this key and generation, each revision's own
-  labels). The same-generation KEEP rule above still holds for every other
-  rich menu: another Deployment's version (other labels, so another hash),
-  a revision not handed over, another key. Two Deployments on one token
-  with the same labels at the same revision share one rich menu, as they
-  always did.
+  Each batch is polled by one Job only (the Locale that sent it).
+- **Batches never overlap.** A batch still pending is stored per Locale
+  and Channel. A save during a run makes a newer revision: the older run
+  stops, and the newer one re-links everyone, then takes the pending batch
+  over and sends nothing new until LINE reports it `succeeded` (its rich
+  menus deleted) or `failed` (nothing deleted); only then does it move
+  everyone still on an older revision, so no rich menu is deleted while an
+  earlier batch may still move users onto it.
+- **Only this Deployment's salted revisions are retired.** They are found
+  by exact name (this key, generation and salt, each revision's own
+  labels). Revision 0 and Menus without a key carry no salt: a staging
+  Deployment on the production token with the default labels shows the
+  very same rich menu, so they are never moved or deleted by a retire;
+  they go with the next generation bump, as before. The same-generation
+  KEEP rule above holds for every other rich menu too: another salt,
+  another key, a revision not handed over. A Deployment restored from
+  another's backup shares its salt: give a copy that runs on the same token
+  a new generation.
+- **Mid-run unlinks.** When a run is done (and its batch succeeded),
+  accounts whose Menu was locked since it started (an unlink, a revoke, a
+  new Consent) get the locked Menu again, in case the re-link or the batch
+  moved them. Their Actions were never at risk: the Kernel dispatches an
+  Action to a Module only for an account with a live Link.
 - **Accounts on a deleted rich menu.** LINE cannot list the accounts linked to
   a rich menu. An account still on a deleted older generation sees the default
   rich menu set in the LINE Official Account Manager (or none) until its next
@@ -160,9 +191,13 @@ paced by the Job runner.
 A Menu label save re-sets the commands of every linked chat (their
 descriptions are the labels): the Kernel Job `kernel.menu.relink` calls
 `set_menu` per account (`setMyCommands` and `setChatMenuButton`, two calls
-each), 100 accounts per Job run, and a 429 continues after Telegram's
-`retry_after`. Commands are per chat, not a shared object, so there is
-nothing to retire.
+each), 20 chats per Job run by default: 40 subrequests, under the 50 a
+Cloudflare Workers invocation gets on the free plan (1,000 on paid plans;
+raise it there with `TelegramConfig::with_menu_relink_chunk`). A 429
+continues after Telegram's `retry_after`; a chat that blocked the bot or
+was deleted (403) is passed over and its Link marked `unreachable`.
+Commands are per chat, not a shared object, so there is nothing to
+retire.
 
 Before a real webhook works: create the bot with BotFather (token), then call
 `setWebhook` with `url = https://<host>/webhook/telegram`, `secret_token =

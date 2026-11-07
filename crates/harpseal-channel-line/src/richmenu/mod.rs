@@ -69,28 +69,34 @@
 //! # Re-link after a label save (#66)
 //!
 //! A Menu with a revision ([`Menu::revision`], bumped by the Kernel on each
-//! back-office save of a Menu label) is named
-//! `harpseal-<key>-<generation>-r<revision>-<hash>`. The Kernel's Job then
-//! calls `relink_menu`: `POST /v2/bot/richmenu/bulk/link`, at most
-//! [`BULK_LINK_MAX`] user ids per call
-//! (<https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-users>).
-//! Once every account is done it calls `retire_menus` with the previous
-//! revisions: their exact names (this key, this generation, each
-//! revision's own labels) are looked up and one
-//! `POST /v2/bot/richmenu/batch` moves whoever is still on them (`link`
-//! from each to the new one, with a `resumeRequestKey`), since the bulk
-//! link is asynchronous and confirms nothing. `GET
-//! /v2/bot/richmenu/progress/batch` is polled every
-//! [`PROGRESS_POLL_SECS`]; only `succeeded` leads to the deletes
+//! back-office save of a Menu label) and the Deployment's revision salt
+//! ([`Menu::salt`], [`SALT_LEN`] hex, random per Deployment) is named
+//! `harpseal-<key>-<generation>-r<revision>-<salt>-<hash>`. The Kernel's
+//! Job then calls `relink_menu`: `POST /v2/bot/richmenu/bulk/link`, at
+//! most [`BULK_LINK_MAX`] user ids per call
+//! (<https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-users>);
+//! an id that is no LINE user id, or that LINE names in a 400, is skipped
+//! so one bad account never stops the others. Once every account is done
+//! it calls `retire_menus` with the previous revisions. A batch still
+//! pending from an earlier run is finished first (nothing new is sent
+//! while it is `ongoing`). Then the previous revisions' exact names (this
+//! key, this generation, this salt, each revision's own labels) are
+//! looked up and one `POST /v2/bot/richmenu/batch` moves whoever is still
+//! on them (`link` from each to the new one, with a `resumeRequestKey`),
+//! since the bulk link is asynchronous and confirms nothing. `GET
+//! /v2/bot/richmenu/progress/batch` is polled after
+//! [`PROGRESS_FIRST_POLL_SECS`], then twice as long each time up to
+//! [`PROGRESS_MAX_POLL_SECS`]; only `succeeded` leads to the deletes
 //! (<https://developers.line.biz/en/reference/messaging-api/#batch-control-rich-menus-of-users>).
 //! Rate limits: bulk link 2,000 requests a second, batch control 3 an
 //! hour (a 429 waits [`BATCH_RETRY_SECS`]), progress and delete 100 an
 //! hour (<https://developers.line.biz/en/reference/messaging-api/#rate-limits>).
-//! The KEEP rule above holds for every other name: a rich menu of a
-//! revision not handed over, of another key, or of another Deployment
-//! (other labels, so another hash) is never moved or deleted. Two
-//! Deployments with the same labels at the same revision share one name
-//! and one rich menu, as they always did.
+//! Names without the salt (revision 0, the Menu shown before the first
+//! label save, and Menus without a key) are never moved or deleted by a
+//! retire: another Deployment on the same token may show the same one.
+//! They go with the next generation bump, as before. The KEEP rule above
+//! holds for every other name too: another key, another salt, a revision
+//! not handed over.
 //!
 //! Residual risks: LINE cannot list the accounts linked to a rich menu, so
 //! an account still linked to a superseded version when it is deleted sees
@@ -104,6 +110,7 @@
 
 mod name;
 mod relink;
+mod retire;
 mod tidy;
 
 use std::collections::HashMap;
@@ -114,8 +121,9 @@ use http::Method;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-pub use name::{HASH_LEN, name_key};
-pub use relink::{BATCH_RETRY_SECS, BULK_LINK_MAX, PROGRESS_POLL_SECS, RELINK_CHUNK};
+pub use name::{HASH_LEN, SALT_LEN, name_key};
+pub use relink::{BULK_LINK_MAX, RELINK_CHUNK};
+pub use retire::{BATCH_RETRY_SECS, PROGRESS_FIRST_POLL_SECS, PROGRESS_MAX_POLL_SECS, poll_delay};
 
 use crate::api::{API, API_DATA, Failure, parse, path_id};
 use crate::{LineChannel, render};
@@ -202,7 +210,7 @@ pub fn rich_menu(
     image: &[u8],
 ) -> Result<(String, Value)> {
     let (hash, mut obj) = hashed(menu, image)?;
-    let name = name::make(tag, menu.revision(), &hash);
+    let name = name::make(tag, menu.revision(), menu.salt(), &hash);
     obj["name"] = Value::String(name.clone());
     Ok((name, obj))
 }

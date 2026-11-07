@@ -90,6 +90,8 @@ pub(crate) struct State {
     pub(crate) relink_fail_at: Option<usize>,
     /// [`crate::FakeChannel::set_relink_chunk`].
     pub(crate) relink_chunk: Option<usize>,
+    /// [`crate::FakeChannel::rate_limit_relinks`].
+    pub(crate) relinks_limited: usize,
 }
 
 impl State {

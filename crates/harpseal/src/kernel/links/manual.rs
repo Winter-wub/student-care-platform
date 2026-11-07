@@ -113,14 +113,7 @@ pub async fn manual_link(
         texts.tf("kernel.link.manual_notice", &[("name", &student.name)]),
     )];
     let menu = if student.consented {
-        // The Link is written: a failed revision read must not fail it,
-        // so the Menu then goes without a revision (right labels).
-        let menu = crate::kernel::menu::unlocked(d, &texts, &student.locale).await;
-        Some(menu.unwrap_or_else(|_| {
-            let locale = d.catalog().effective(&student.locale);
-            let texts = texts.in_locale(&locale);
-            d.menu_with(&locale, |k| texts.t(k))
-        }))
+        Some(crate::kernel::menu::unlocked(d, &texts, &student.locale).await?)
     } else {
         // Same titles as the chat flow's re-consent Card.
         let title = if student.any_consent {

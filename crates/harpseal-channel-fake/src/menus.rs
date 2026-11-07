@@ -39,6 +39,13 @@ impl FakeChannel {
         self.lock().relink_fail_at = Some(ok);
     }
 
+    /// Makes the next `times` `relink_menu` calls stop at once with
+    /// `Error::RateLimited` (retry after
+    /// [`crate::FAILURE_RETRY_AFTER_SECS`]).
+    pub fn rate_limit_relinks(&self, times: usize) {
+        self.lock().relinks_limited = times;
+    }
+
     /// Most accounts per `relink_menu` call ([`harpseal::Channel::relink_chunk`],
     /// default 100); shared by clones, so a test can shrink it after boot.
     pub fn set_relink_chunk(&self, n: usize) {
@@ -47,24 +54,34 @@ impl FakeChannel {
 
     pub(crate) fn relink(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
         let mut s = self.lock();
+        if s.relinks_limited > 0 {
+            s.relinks_limited -= 1;
+            let e = Error::RateLimited {
+                retry_after_secs: crate::FAILURE_RETRY_AFTER_SECS,
+            };
+            return MenuRelinked::stopped(0, e);
+        }
         let stop = s.relink_fail_at.take().filter(|n| *n < to.len());
         let done = stop.unwrap_or(to.len());
-        let accounts: Vec<ChannelAccountId> = to[..done]
-            .iter()
-            .filter(|a| !s.blocked.contains(a))
-            .cloned()
-            .collect();
-        for a in &accounts {
-            s.menus.insert(a.clone(), Some(menu.clone()));
+        let mut got = match stop {
+            Some(n) => MenuRelinked::stopped(n, Error::Platform("fake: re-link failed".into())),
+            None => MenuRelinked::all(done),
+        };
+        let mut accounts = Vec::new();
+        for (i, a) in to[..done].iter().enumerate() {
+            // A blocked account is skipped, as `set_menu` would refuse it.
+            if s.blocked.contains(a) {
+                got.skip(i, Error::Unreachable);
+            } else {
+                s.menus.insert(a.clone(), Some(menu.clone()));
+                accounts.push(a.clone());
+            }
         }
         s.menu_events.push(MenuEvent::Relinked {
             accounts,
             revision: menu.revision(),
         });
-        match stop {
-            Some(n) => MenuRelinked::stopped(n, Error::Platform("fake: re-link failed".into())),
-            None => MenuRelinked::all(done),
-        }
+        got
     }
 
     pub(crate) fn retire(&self, menu: &Menu, previous: &[Menu]) -> MenuRetire {

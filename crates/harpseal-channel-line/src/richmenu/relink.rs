@@ -1,48 +1,71 @@
-//! The Menu re-link after a label save (#66): bulk link to the new
-//! revision, then retire the previous revisions through LINE's batch
-//! control, deleting them only once LINE reports the batch succeeded (the
-//! rules are in [`crate::richmenu`]).
+//! The Menu re-link after a label save (#66): every account to the new
+//! revision with `POST /v2/bot/richmenu/bulk/link` (the rules are in
+//! [`crate::richmenu`]; the retire is in [`super::retire`]).
 
-use harpseal::{ChannelAccountId, Error, Menu, MenuKey, MenuRelinked, MenuRetire, Result};
-use http::Method;
+use harpseal::{ChannelAccountId, Error, Menu, MenuRelinked, Result};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
-use super::{fail, keeper, rich_menu};
+use super::{fail, rich_menu};
 use crate::LineChannel;
-use crate::api::{API, answer, parse, path_id};
+use crate::api::{API, Failure};
 
 /// Most user ids in one `POST /v2/bot/richmenu/bulk/link`
 /// (<https://developers.line.biz/en/reference/messaging-api/#link-rich-menu-to-users>).
 pub const BULK_LINK_MAX: usize = 500;
-/// Accounts the Kernel hands one re-link call (5 bulk calls).
+/// Accounts the Kernel hands one re-link call: 5 bulk calls, about 8
+/// subrequests with the lookup, well under any Workers limit.
 pub const RELINK_CHUNK: usize = 2500;
-/// Seconds between polls of a batch's progress (LINE allows 100 polls
-/// an hour).
-pub const PROGRESS_POLL_SECS: u32 = 60;
-/// Seconds to wait after a 429 on the batch endpoint: LINE allows 3
-/// batch requests an hour, one every 20 minutes.
-pub const BATCH_RETRY_SECS: u32 = 1200;
-/// Prefix of the token of a pending retire.
-const TOKEN_PREFIX: &str = "line-retire/1";
+
+/// What one bulk call said.
+enum Bulk {
+    Linked,
+    /// The rich menu is gone (404).
+    Gone,
+    /// LINE refused the user id at this position (400 `userIds[n]`).
+    BadUser(usize),
+    /// Another 400, not about one user id.
+    Refused,
+}
+
+/// A LINE user id: `U` and 32 lowercase hex digits. Anything else would
+/// make LINE refuse the whole bulk call (400), so it is skipped first.
+pub(crate) fn is_user_id(id: &str) -> bool {
+    id.len() == 33
+        && id.starts_with('U')
+        && id[1..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
 
 impl LineChannel {
     /// Links every account in `to` to `menu`'s rich menu,
-    /// [`BULK_LINK_MAX`] per call. A Menu without a key or entries goes
+    /// [`BULK_LINK_MAX`] per call. An id that is no LINE user id, or that
+    /// LINE refuses, is skipped ([`Error::Invalid`]); a 400 that names no
+    /// user goes account by account. A Menu without a key or entries goes
     /// account by account through `set_menu`.
     pub(crate) async fn relink(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
+        let mut got = MenuRelinked::all(to.len());
+        let mut valid = Vec::new();
+        for (i, a) in to.iter().enumerate() {
+            if is_user_id(&a.external_id) {
+                valid.push(i);
+            } else {
+                got.skip(i, not_a_user(&a.external_id));
+            }
+        }
         let generation = self.cfg.menu_generation();
         let (Some(key), false) = (menu.key(), menu.entries.is_empty()) else {
-            for (done, account) in to.iter().enumerate() {
-                if let Err(e) = self.rich_menu_set(account, Some(menu)).await {
-                    return MenuRelinked::stopped(done, e);
+            for i in valid {
+                match self.rich_menu_set(&to[i], Some(menu)).await {
+                    Ok(()) => {}
+                    Err(e) if matches!(e, Error::Unreachable) => got.skip(i, e),
+                    Err(e) => return stop(got, i, e),
                 }
             }
-            return MenuRelinked::all(to.len());
+            return got;
         };
         let image = &self.cfg.unlocked_menu_image;
-        let named = rich_menu(Some((key, generation)), menu, image);
-        let (name, obj) = match named {
+        let (name, obj) = match rich_menu(Some((key, generation)), menu, image) {
             Ok(n) => n,
             Err(e) => return MenuRelinked::stopped(0, e),
         };
@@ -50,189 +73,96 @@ impl LineChannel {
             Ok(f) => f,
             Err(e) => return MenuRelinked::stopped(0, e),
         };
-        for (i, group) in to.chunks(BULK_LINK_MAX).enumerate() {
-            let done = i * BULK_LINK_MAX;
-            let mut linked = self.bulk_link(group, &found.id).await;
-            if matches!(&linked, Ok(Err(404))) {
-                // Deleted behind our back: find or create it again, once.
-                self.menus.forget(&name);
-                found = match self.rich_menu_id(&name, &obj, image, false).await {
-                    Ok(f) => f,
-                    Err(e) => return MenuRelinked::stopped(done, e),
-                };
-                linked = self.bulk_link(group, &found.id).await;
-            }
-            if let Err(e) = linked.and_then(|r| {
-                r.map_err(|s| Error::Platform(format!("LINE bulk link answered {s}")))
-            }) {
-                return MenuRelinked::stopped(done, e);
+        let mut recreated = false;
+        for group in valid.chunks(BULK_LINK_MAX) {
+            let first = group[0];
+            let mut group = group.to_vec();
+            while !group.is_empty() {
+                let users: Vec<&str> = group.iter().map(|i| to[*i].external_id.as_str()).collect();
+                match self.bulk_link(&users, &found.id).await {
+                    Ok(Bulk::Linked) => break,
+                    Ok(Bulk::Gone) if !recreated => {
+                        // Deleted behind our back: find or create it again,
+                        // once per call.
+                        recreated = true;
+                        self.menus.forget(&name);
+                        found = match self.rich_menu_id(&name, &obj, image, false).await {
+                            Ok(f) => f,
+                            Err(e) => return stop(got, first, e),
+                        };
+                    }
+                    Ok(Bulk::BadUser(n)) if n < group.len() => {
+                        let i = group.remove(n);
+                        got.skip(i, not_a_user(&to[i].external_id));
+                    }
+                    Ok(Bulk::Refused) => {
+                        if let Err(e) = self.one_by_one(to, &group, &found.id, &mut got).await {
+                            return stop(got, first, e);
+                        }
+                        break;
+                    }
+                    Ok(_) => {
+                        let e = Error::Platform("LINE bulk link refused the rich menu".into());
+                        return stop(got, first, e);
+                    }
+                    Err(e) => return stop(got, first, e),
+                }
             }
         }
-        MenuRelinked::all(to.len())
+        got
     }
 
-    /// One bulk link: `Ok(Err(404))` when the rich menu is gone.
-    async fn bulk_link(
-        &self,
-        group: &[ChannelAccountId],
-        id: &str,
-    ) -> Result<std::result::Result<(), u16>> {
-        let users = group
-            .iter()
-            .map(|a| path_id(&a.external_id).map(str::to_string))
-            .collect::<Result<Vec<_>>>()?;
+    /// One bulk link of `users` to rich menu `id`.
+    async fn bulk_link(&self, users: &[&str], id: &str) -> Result<Bulk> {
         let body = json!({ "richMenuId": id, "userIds": users });
         match self
             .post_json(&format!("{API}/v2/bot/richmenu/bulk/link"), &body)
             .await?
         {
-            Ok(_) => Ok(Ok(())),
-            Err(f) if f.status == 404 => Ok(Err(404)),
+            Ok(_) => Ok(Bulk::Linked),
+            Err(f) if f.status == 404 => Ok(Bulk::Gone),
+            Err(f) if f.status == 400 => Ok(bad_user(&f).map_or(Bulk::Refused, Bulk::BadUser)),
             Err(f) => Err(fail(f)),
         }
     }
 
-    /// Moves every account still on a rich menu of `previous` (same Menu
-    /// key, this generation, exactly the name each revision had) to
-    /// `menu`'s, waits for LINE's progress to say `succeeded`, then
-    /// deletes them.
-    pub(crate) async fn retire(
+    /// `group` (indices in `to`) linked one by one; a 400 skips that
+    /// account, anything else stops.
+    async fn one_by_one(
         &self,
-        menu: &Menu,
-        previous: &[Menu],
-        pending: Option<&str>,
-    ) -> Result<MenuRetire> {
-        let Some(key) = menu.key().filter(|k| k.as_str() != MenuKey::LOCKED) else {
-            return Ok(MenuRetire::Done);
-        };
-        if let Some((request, from)) = pending.and_then(read_token) {
-            match self.progress(&request).await? {
-                Some(phase) if phase == "succeeded" => {
-                    for id in &from {
-                        self.delete_or_gone(id).await?;
-                    }
-                    return Ok(MenuRetire::Done);
-                }
-                Some(phase) if phase == "ongoing" => {
-                    return Ok(MenuRetire::Pending {
-                        token: pending.unwrap_or_default().to_string(),
-                        retry_after_secs: PROGRESS_POLL_SECS,
-                    });
-                }
-                // `failed`, or unknown/expired: send the batch again (its
-                // resume key only redoes the users not done).
-                _ => {}
+        to: &[ChannelAccountId],
+        group: &[usize],
+        id: &str,
+        got: &mut MenuRelinked,
+    ) -> Result<()> {
+        for i in group {
+            match self.link(&to[*i].external_id, id).await? {
+                Ok(()) => {}
+                Err(f) if f.status == 400 => got.skip(*i, Error::Invalid(f.message)),
+                Err(f) => return Err(fail(f)),
             }
         }
-        let generation = self.cfg.menu_generation();
-        let image = &self.cfg.unlocked_menu_image;
-        let (name, obj) = rich_menu(Some((key, generation)), menu, image)?;
-        let mut names = Vec::new();
-        for p in previous.iter().filter(|p| p.key() == Some(key)) {
-            let (n, _) = rich_menu(Some((key, generation)), p, image)?;
-            if n != name {
-                names.push(n);
-            }
-        }
-        let list = self.rich_menu_list().await?;
-        let mut from: Vec<String> = list
-            .iter()
-            .filter(|m| names.contains(&m.name))
-            .map(|m| m.id.clone())
-            .collect();
-        if from.is_empty() {
-            return Ok(MenuRetire::Done);
-        }
-        from.sort();
-        let to = match keeper(&list, &name) {
-            Some(id) => id,
-            None => self.rich_menu_id(&name, &obj, image, false).await?.id,
-        };
-        let request = self.batch_link(&from, &to).await?;
-        Ok(MenuRetire::Pending {
-            token: format!("{TOKEN_PREFIX} {request} {}", from.join(",")),
-            retry_after_secs: PROGRESS_POLL_SECS,
-        })
-    }
-
-    /// `POST /v2/bot/richmenu/batch`: link `from` -> `to` for every user;
-    /// the request id LINE gave it.
-    async fn batch_link(&self, from: &[String], to: &str) -> Result<String> {
-        let operations: Vec<_> = from
-            .iter()
-            .map(|f| json!({ "type": "link", "from": f, "to": to }))
-            .collect();
-        let mut h = Sha256::new();
-        h.update(to.as_bytes());
-        for f in from {
-            h.update(b",");
-            h.update(f.as_bytes());
-        }
-        let digest: String = h.finalize()[..16]
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        let body = json!({
-            "operations": operations,
-            "resumeRequestKey": format!("harpseal-{digest}"),
-        });
-        let bytes = serde_json::to_vec(&body).map_err(|e| Error::Platform(e.to_string()))?;
-        let url = format!("{API}/v2/bot/richmenu/batch");
-        let resp = self
-            .send_raw(Method::POST, &url, Some("application/json"), bytes, true)
-            .await?;
-        let request = resp
-            .headers()
-            .get("x-line-request-id")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-        answer(resp).map_err(|f| match fail(f) {
-            Error::RateLimited { retry_after_secs } => Error::RateLimited {
-                retry_after_secs: retry_after_secs.max(BATCH_RETRY_SECS),
-            },
-            e => e,
-        })?;
-        request
-            .filter(|r| path_id(r).is_ok())
-            .ok_or_else(|| Error::Platform("LINE accepted a batch without a request id".into()))
-    }
-
-    /// The batch's `phase`, or `None` when LINE no longer knows it (404).
-    async fn progress(&self, request: &str) -> Result<Option<String>> {
-        let url = format!(
-            "{API}/v2/bot/richmenu/progress/batch?requestId={}",
-            path_id(request)?
-        );
-        match self.call(Method::GET, &url, None, Vec::new()).await? {
-            Ok(body) => Ok(parse(&body)["phase"].as_str().map(str::to_string)),
-            Err(f) if f.status == 404 => Ok(None),
-            Err(f) => Err(fail(f)),
-        }
-    }
-
-    /// `DELETE /v2/bot/richmenu/{id}`; a 404 (already gone) is fine.
-    async fn delete_or_gone(&self, id: &str) -> Result<()> {
-        let url = format!("{API}/v2/bot/richmenu/{}", path_id(id)?);
-        match self.call(Method::DELETE, &url, None, Vec::new()).await? {
-            Ok(_) => Ok(()),
-            Err(f) if f.status == 404 => Ok(()),
-            Err(f) => Err(fail(f)),
-        }
+        Ok(())
     }
 }
 
-/// `(request id, rich menu ids)` of a token this adapter wrote.
-fn read_token(token: &str) -> Option<(String, Vec<String>)> {
-    let mut parts = token.split(' ');
-    if parts.next()? != TOKEN_PREFIX {
-        return None;
-    }
-    let request = parts.next()?.to_string();
-    let from: Vec<String> = parts.next()?.split(',').map(str::to_string).collect();
-    let ok = parts.next().is_none()
-        && path_id(&request).is_ok()
-        && from.iter().all(|id| path_id(id).is_ok());
-    ok.then_some((request, from))
+/// The position in `userIds` a 400 names (`'userIds[3]'`), if any.
+fn bad_user(f: &Failure) -> Option<usize> {
+    let rest = f.message.split("userIds[").nth(1)?;
+    rest.split(']').next()?.parse().ok()
+}
+
+fn not_a_user(id: &str) -> Error {
+    Error::Invalid(format!("not a LINE user id: {id:?}"))
+}
+
+/// `got` stopped at account `at` by `e`; skips past `at` are dropped
+/// (they are done again on the retry).
+fn stop(mut got: MenuRelinked, at: usize, e: Error) -> MenuRelinked {
+    got.done = at;
+    got.error = Some(e);
+    got.skipped.retain(|(i, _)| *i < at);
+    got
 }
 
 #[cfg(test)]
@@ -240,20 +170,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokens_round_trip_and_strangers_are_refused() {
-        let t = format!("{TOKEN_PREFIX} req-1 richmenu-a,richmenu-b");
-        assert_eq!(
-            read_token(&t),
-            Some((
-                "req-1".into(),
-                vec!["richmenu-a".into(), "richmenu-b".into()]
-            ))
-        );
-        assert_eq!(read_token("line-resume/2 x y"), None);
-        assert_eq!(
-            read_token(&format!("{TOKEN_PREFIX} req/1 richmenu-a")),
-            None
-        );
-        assert_eq!(read_token(&format!("{TOKEN_PREFIX} req-1")), None);
+    fn user_ids_and_refused_positions() {
+        assert!(is_user_id("U5ea1ba7000000000000000000000c0de"));
+        assert!(!is_user_id("U5EA1BA7000000000000000000000C0DE"));
+        assert!(!is_user_id("C5ea1ba7000000000000000000000c0de"));
+        assert!(!is_user_id("U5ea1ba7"));
+        let f = |m: &str| Failure::for_test(400, m);
+        let named =
+            "The property, 'userIds[3]', in the request body is invalid (line: -, column: -)";
+        assert_eq!(bad_user(&f(named)), Some(3));
+        assert_eq!(bad_user(&f("invalid richMenuId")), None);
     }
 }

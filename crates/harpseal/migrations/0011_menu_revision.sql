@@ -21,3 +21,24 @@ CREATE TABLE menu_revision (
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (locale, revision)
 );
+
+-- `menu_salt`: one random tag per Deployment, created by the first Menu
+-- label save and folded into the name of every revisioned version on the
+-- platform (LINE: `harpseal-<key>-<gen>-r<revision>-<salt>-<hash>`), so two
+-- Deployments on one platform account never share a revisioned version.
+-- Versions without it (revision 0, Menus without a key) are never retired.
+CREATE TABLE menu_salt (
+    salt TEXT PRIMARY KEY
+);
+
+-- `menu_retire`: the retire a Channel is still working on for a Locale
+-- (the adapter's token, e.g. LINE's batch request id). A later run of the
+-- same Locale takes it over instead of starting a second one, and sends
+-- nothing new until it is finished.
+CREATE TABLE menu_retire (
+    locale TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    token TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (locale, channel)
+);
