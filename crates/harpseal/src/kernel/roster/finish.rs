@@ -32,6 +32,12 @@ const NOT_LISTED: &str = "status = 'active' \
     AND (roster_imported_at IS NULL OR roster_imported_at < ?) \
     AND NOT EXISTS (SELECT 1 FROM json_each(manual_overrides) WHERE value = 'status')";
 
+/// Students the import keeps active because Staff set their status by
+/// hand (one parameter: `started_at`); the preview's `kept_by_status`.
+const KEPT: &str = "status = 'active' \
+    AND (roster_imported_at IS NULL OR roster_imported_at < ?) \
+    AND EXISTS (SELECT 1 FROM json_each(manual_overrides) WHERE value = 'status')";
+
 /// The gate: this run's compare-and-set went through.
 const GATE: &str = "EXISTS (SELECT 1 FROM roster_import WHERE id = ? \
     AND json_extract(counts, '$.left_batches') = ? AND json_extract(counts, '$.run') = ?)";
@@ -149,10 +155,13 @@ pub(super) async fn left_batch(cx: &JobContext, job: &Job, imp: &Import, n: i64)
     } else {
         stmts.push(gate(
             Statement::new(format!(
-                "UPDATE roster_import SET state = 'done', finished_at = ? \
+                "UPDATE roster_import SET state = 'done', finished_at = ?, \
+                 counts = json_set(counts, '$.kept_by_status', \
+                 (SELECT count(*) FROM student WHERE {KEPT})) \
                  WHERE id = ? AND state = 'running' AND {GATE}"
             ))
             .bind(s.now_ms())
+            .bind(started)
             .bind(imp.id.as_str()),
         ));
     }

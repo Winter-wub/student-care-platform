@@ -23,6 +23,8 @@ tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [dev-dependencies]
 tokio.workspace = true
+# A request body that fails when polled (#46: the guard must not read it).
+http-body.workspace = true
 # Real adapters' Mini App verification at the HTTP seam (#28).
 harpseal-channel-line.workspace = true
 harpseal-channel-telegram.workspace = true

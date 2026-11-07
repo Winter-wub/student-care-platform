@@ -27,7 +27,8 @@
 //!
 //! Audit: `roster.import.upload` (each upload), `roster.import` (confirm:
 //! counts, file hash, mode, file name), `roster.import.cancel`,
-//! `roster.import.fail`, `roster.file.download`; the Job writes `student.status` per Student it
+//! `roster.import.fail`, `roster.file.download`, `roster.file.prune`
+//! (actor `system`, a year after upload, see [`prune`]); the Job writes `student.status` per Student it
 //! marks left and `link.revoke` per Link.
 //!
 //! From code: `harpseal::roster::{upload, confirm}` ([`api`]) take the same
@@ -42,6 +43,8 @@ mod job;
 mod page_import;
 mod page_list;
 pub(crate) mod preview;
+mod prune;
+mod rows;
 mod service;
 mod store;
 mod stuck;
@@ -49,13 +52,20 @@ mod texts;
 pub(crate) mod validate;
 mod view;
 
-use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 
 use crate::config::RosterConfig;
 use crate::manifest::JobSpec;
-use crate::module::ModuleRegistrar;
+use crate::module::{ModuleRegistrar, UploadSpec};
 use view::{IMPORT, VIEW};
+
+/// Largest body `POST /admin/roster/upload` reads: a file of
+/// [`preview::MAX_FILE_BYTES`] plus the form's other fields. Only that
+/// route gets it (#46); the guard reads other multipart bodies up to
+/// `auth::MULTIPART_LIMIT`.
+const UPLOAD_LIMIT: usize = preview::MAX_FILE_BYTES + 64 * 1024;
+
+pub(crate) use prune::prune_files;
 
 /// Whether uploads are possible: the Deployment maps roster files.
 fn has_mapping(roster: &RosterConfig) -> bool {
@@ -64,7 +74,12 @@ fn has_mapping(roster: &RosterConfig) -> bool {
 
 /// Registers the pages and the Job on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
-    let upload = post(page_list::upload).layer(DefaultBodyLimit::max(crate::auth::UPLOAD_LIMIT));
+    let upload = UploadSpec {
+        path: "/roster/upload",
+        max_body: UPLOAD_LIMIT,
+        back: view::BASE,
+        too_large: "kernel.roster.reason_too_large",
+    };
     r.messages(texts::DEFAULTS)
         .back_office_page(
             VIEW,
@@ -74,7 +89,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(page_list::page),
         )
         .back_office(VIEW, "/roster/template.csv", get(page_list::template))
-        .back_office(IMPORT, "/roster/upload", upload)
+        .back_office_upload(IMPORT, upload, post(page_list::upload))
         .back_office(VIEW, "/roster/{id}", get(page_import::page))
         .back_office(IMPORT, "/roster/{id}/confirm", post(page_import::confirm))
         .back_office(IMPORT, "/roster/{id}/cancel", post(page_import::cancel))

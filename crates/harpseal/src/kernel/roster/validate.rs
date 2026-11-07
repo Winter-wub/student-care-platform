@@ -109,6 +109,9 @@ pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid,
     for row in rows {
         let n = row.number;
         let mut bad = |column: &str, reason: &str| problems.push(Problem::new(n, column, reason));
+        for column in &row.unheaded {
+            bad(column, "no_header");
+        }
         let code = row.get(&roster.student_code).unwrap_or_default();
         if code.is_empty() {
             bad(&roster.student_code, "required");
@@ -203,7 +206,9 @@ fn attr_reason(e: AttrError) -> &'static str {
 }
 
 /// A syntactically plausible address: one `@`, a non-empty local part of
-/// printable ASCII without spaces, a domain of dot-separated labels
+/// printable ASCII without spaces (ASCII only: an address with Thai or
+/// other non-ASCII characters, allowed by RFC 6531, is refused, because
+/// the Link's email OTP goes through providers that may not accept it), a domain of dot-separated labels
 /// (letters, digits, `-`, not at a label's ends) with a dot; at most 254
 /// bytes.
 pub(crate) fn is_email(s: &str) -> bool {

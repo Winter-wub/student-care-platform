@@ -33,6 +33,8 @@ pub enum Confirmed {
     NotPreviewed(String),
     /// No such import.
     Missing,
+    /// Its stored file was deleted a year after upload: nothing to import.
+    FileDeleted,
 }
 
 /// Stores `bytes` as `file_name` (CSV or XLSX, told apart by content and
@@ -71,6 +73,7 @@ pub async fn confirm(
             service::Outcome::Done => Confirmed::Queued,
             service::Outcome::NotPreviewed(s) => Confirmed::NotPreviewed(s),
             service::Outcome::Missing => Confirmed::Missing,
+            service::Outcome::FileDeleted => Confirmed::FileDeleted,
         },
     )
 }

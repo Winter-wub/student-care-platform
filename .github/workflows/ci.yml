@@ -54,7 +54,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2.9.3
+      # ~60 debug test binaries filled the runner's disk (the linker died
+      # with a bus error, then "No space left on device"); line tables keep
+      # backtraces readable at a fraction of the size.
       - run: cargo test --workspace
+        env:
+          CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
   wasm:
     name: wasm32 check
