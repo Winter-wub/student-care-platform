@@ -26,10 +26,18 @@ async fn later(w: &World, minutes: i64) {
     drain(w).await;
 }
 
+/// The detail page shows "in progress" (edit or retract Jobs left).
+async fn busy(b: &harpseal_testing::Browser<'_>, id: &str) -> bool {
+    let page = b.get(&format!("/admin/announcements/{id}")).await;
+    assert_eq!(page.status, 200);
+    page.body.contains("กำลังดำเนินการ")
+}
+
 #[tokio::test]
 async fn a_rate_limit_in_the_middle_of_an_edit_resumes_on_the_next_tick() {
     let w = boot().await;
-    telegram_students(&w, 30).await;
+    // One chunk (at most 25 rows): nothing depends on the order chunks run.
+    telegram_students(&w, 20).await;
     let b = signed_in(&w, "Officer").await;
     let id = create(&b, &form("เดิม", "ข้อความเดิม", "&do=confirm")).await;
     drain(&w).await;
@@ -39,7 +47,7 @@ async fn a_rate_limit_in_the_middle_of_an_edit_resumes_on_the_next_tick() {
             "SELECT count(*) FROM announcement_delivery WHERE status = 'sent'"
         )
         .await,
-        30
+        20
     );
     // The 11th edit is refused with a 429.
     w.tg.fail_next_maintenance_at(10);
@@ -54,46 +62,49 @@ async fn a_rate_limit_in_the_middle_of_an_edit_resumes_on_the_next_tick() {
         .await;
     assert_eq!(r.status, 303, "{}", r.body);
     drain(&w).await;
-    // Two chunks (25 + 5): the first stopped after 10, the second ran.
-    assert_eq!(w.tg.edited().len(), 15);
-    assert_eq!(
-        texts(&w, "SELECT edit_report ->> 'edited' FROM announcement").await,
-        ["15"]
-    );
+    assert_eq!(w.tg.edited().len(), 10);
+    assert_eq!(report(&w).await, ["10/20/0"]);
     assert_eq!(
         count(
             &w,
             "SELECT count(*) FROM job WHERE kind = 'announcements.edit.chunk' \
-             AND state = 'queued' AND unique_key LIKE '%:tg:0:1'"
+             AND state = 'queued' AND unique_key LIKE '%:tg:%:1'"
         )
         .await,
         1,
         "the continuation waits for retry_after"
     );
+    assert!(
+        busy(&b, &id).await,
+        "in progress while the continuation waits"
+    );
     later(&w, 1).await;
     let edited = w.tg.edited();
     let ids: BTreeSet<_> = edited.iter().map(|(pid, _)| pid.0.clone()).collect();
-    assert_eq!((edited.len(), ids.len()), (30, 30), "each Card edited once");
+    assert_eq!((edited.len(), ids.len()), (20, 20), "each Card edited once");
     assert!(
         edited
             .iter()
             .all(|(_, m)| matches!(m, Message::Card(c) if c.title == "ใหม่"))
     );
-    assert_eq!(
-        texts(
-            &w,
-            "SELECT (edit_report ->> 'edited') || '/' || (edit_report ->> 'failed') \
-             FROM announcement"
-        )
-        .await,
-        ["30/0"]
-    );
+    assert_eq!(report(&w).await, ["20/20/0"]);
+    assert!(!busy(&b, &id).await);
+}
+
+/// `edit_report` as `edited/total/failed`.
+async fn report(w: &World) -> Vec<String> {
+    texts(
+        w,
+        "SELECT (edit_report ->> 'edited') || '/' || (edit_report ->> 'total') || '/' \
+         || (edit_report ->> 'failed') FROM announcement",
+    )
+    .await
 }
 
 #[tokio::test]
 async fn a_rate_limit_in_the_middle_of_a_retract_resumes_where_it_stopped() {
     let w = boot().await;
-    telegram_students(&w, 30).await;
+    telegram_students(&w, 20).await;
     let b = signed_in(&w, "Officer").await;
     let id = create(&b, &form("ข่าว", "ผิด", "&do=confirm")).await;
     drain(&w).await;
@@ -104,23 +115,40 @@ async fn a_rate_limit_in_the_middle_of_a_retract_resumes_where_it_stopped() {
     let r = b.post(&path, &format!("version={v}&confirm=yes")).await;
     assert_eq!(r.status, 303);
     drain(&w).await;
-    assert_eq!(
-        w.tg.deleted().len(),
-        8,
-        "3 of the first chunk, all 5 of the second"
-    );
+    assert_eq!(w.tg.deleted().len(), 3);
     later(&w, 1).await;
     let deleted = w.tg.deleted();
     let ids: BTreeSet<_> = deleted.iter().map(|p| p.0.clone()).collect();
-    assert_eq!((deleted.len(), ids.len()), (30, 30));
+    assert_eq!((deleted.len(), ids.len()), (20, 20));
     assert_eq!(
         count(
             &w,
             "SELECT count(*) FROM announcement_delivery WHERE removal = 'deleted'"
         )
         .await,
-        30
+        20
     );
+    assert!(busy(&b, &id).await, "the late pass is still queued");
+    // The late pass finds nothing left: no chunk Job, nothing deleted.
+    later(&w, 16).await;
+    assert_eq!(w.tg.deleted().len(), 20);
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM job WHERE unique_key LIKE '%:retract:%:late:%'"
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            &w,
+            "SELECT count(*) FROM job WHERE unique_key LIKE '%:retract:%:late' AND state = 'done'"
+        )
+        .await,
+        1
+    );
+    assert!(!busy(&b, &id).await);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -200,6 +228,16 @@ async fn a_send_racing_a_retract_stops_and_the_late_pass_deletes_what_went_out()
     );
     later(&w, 1).await;
     assert_eq!(w.tg.deleted().len(), 1, "the late pass deleted s4's Card");
+    assert_eq!(
+        texts(
+            &w,
+            "SELECT status || ':' || coalesce(error, '') FROM announcement_delivery \
+             WHERE channel = 'tg' ORDER BY student_id"
+        )
+        .await,
+        ["skipped:retracted", "sent:"],
+        "s1's row will never be sent"
+    );
     assert_eq!(
         texts(
             &w,

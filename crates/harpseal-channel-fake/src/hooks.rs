@@ -20,7 +20,10 @@ impl State {
     pub(crate) fn maintenance(&mut self) -> Result<()> {
         match self.maint_fail_at {
             Some(0) => {
-                self.maint_fail_at = None;
+                self.maint_fails = self.maint_fails.saturating_sub(1);
+                if self.maint_fails == 0 {
+                    self.maint_fail_at = None;
+                }
                 Err(Error::RateLimited {
                     retry_after_secs: FAILURE_RETRY_AFTER_SECS,
                 })
@@ -55,6 +58,14 @@ impl FakeChannel {
     /// `Error::RateLimited` (retry after [`FAILURE_RETRY_AFTER_SECS`]),
     /// once; the failed call changes nothing.
     pub fn fail_next_maintenance_at(&self, ok: usize) {
-        self.lock().maint_fail_at = Some(ok);
+        self.fail_maintenance(ok, 1);
+    }
+
+    /// Like [`FakeChannel::fail_next_maintenance_at`], but the `times`
+    /// edits or deletes after the next `ok` all fail.
+    pub fn fail_maintenance(&self, ok: usize, times: usize) {
+        let mut s = self.lock();
+        s.maint_fail_at = (times > 0).then_some(ok);
+        s.maint_fails = times;
     }
 }

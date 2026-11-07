@@ -77,6 +77,8 @@ pub(crate) struct State {
     /// The next edit or delete fails with `Error::RateLimited` after this
     /// many more succeed ([`FakeChannel::fail_next_maintenance_at`]).
     pub(crate) maint_fail_at: Option<usize>,
+    /// How many edits or deletes in a row fail once it fires.
+    pub(crate) maint_fails: usize,
     /// Runs once before the next batch or multicast is recorded.
     pub(crate) before_send: Option<Hook>,
     /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).

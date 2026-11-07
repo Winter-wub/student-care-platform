@@ -90,6 +90,11 @@ pub(crate) const PAGES: &[E] = th_en![
         "Sent messages edited"
     ),
     ("announcements.page.edit_failed", "ไม่สำเร็จ", "failed"),
+    (
+        "announcements.page.in_progress",
+        "กำลังดำเนินการ",
+        "in progress"
+    ),
     ("announcements.page.yes", "ใช่", "Yes"),
     ("announcements.page.no", "ไม่", "No"),
     ("announcements.page.channel", "ช่องทาง", "Channel"),

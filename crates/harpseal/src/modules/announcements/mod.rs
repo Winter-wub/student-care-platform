@@ -34,6 +34,7 @@ mod deliver;
 mod form;
 mod gate;
 mod maint;
+mod maint_chunk;
 mod outcome;
 mod page_actions;
 mod page_detail;
@@ -125,8 +126,8 @@ impl Module for Announcements {
         .job(JobSpec::new(DELIVER_CHANNEL), deliver::child)
         .job(JobSpec::new(EDIT), maint::edit)
         .job(JobSpec::new(RETRACT), maint::retract)
-        .job(JobSpec::new(EDIT_CHUNK), maint::edit_chunk)
-        .job(JobSpec::new(RETRACT_CHUNK), maint::retract_chunk)
+        .job(JobSpec::new(EDIT_CHUNK), maint_chunk::edit_chunk)
+        .job(JobSpec::new(RETRACT_CHUNK), maint_chunk::retract_chunk)
         .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job);
         pages(r);
     }
