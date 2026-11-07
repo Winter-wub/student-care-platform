@@ -75,13 +75,20 @@ data, the Audience filter and a Module's Mini App page keep the **value**. A
 roster cell may hold the value or the label in the Deployment's default Locale
 (exact after trimming; ASCII letters in either case, so `studying` matches
 `Studying`); the Student is stored with the value. A cell that is a value is
-never read as a label. A label in another Locale is not read. The Deployment
+never read as a label. A label in another Locale is not read, which is why the
+import page and report list the default Locale's labels, whatever Locale the
+Staff member reads. The match is exact after trimming: there is no Thai
+normalisation, so a zero-width character or a decomposed sara am in the cell
+will not match and is reported as not in the list. The Deployment
 does not build if `min` is above `max`, `min` / `max` sit on a type that is not
 a number (or are not whole numbers on an `integer`), `value_labels` sit on a
 type that is not an `enum`, name a value that is not in `values`, are empty,
-are shared by two values in one Locale, or (in the default Locale) equal
-another value. Configs without these keys behave as before, and any other key
-is refused.
+name a Locale that is not configured (`th`, `en`, the default Locale or a
+`[texts.<locale>]` table; `TH` is a typo), or make two values show the same
+text in a Locale (a value shows its label, else the default Locale's, else the
+value itself, so a label equal to an unlabelled value's text clashes), or, in
+the default Locale, equal another value. Configs without these keys behave as
+before, and any other key is refused.
 
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a

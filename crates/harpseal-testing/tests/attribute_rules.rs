@@ -240,6 +240,47 @@ async fn a_staff_member_reads_the_label_in_their_locale_else_the_default_locale(
     assert!(list.contains("จบการศึกษา"), "{list}");
 }
 
+/// A signed-in Officer whose Locale is English.
+async fn english_officer<'a>(h: &Harness, app: &'a TestApp) -> Browser<'a> {
+    let mut s = NewStaff::new(
+        "english@sealbay.example",
+        "Test",
+        "kelp forest at dawn",
+        Locale::en(),
+    );
+    s.roles = vec!["Officer".into()];
+    h.create_staff_with(s).await;
+    let b = app.browser();
+    let r = b
+        .login("english@sealbay.example", "kelp forest at dawn")
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    b
+}
+
+#[tokio::test]
+async fn an_english_staff_member_is_told_the_labels_the_import_reads() {
+    let (h, app) = boot().await;
+    let b = english_officer(&h, &app).await;
+    // The import reads the default Locale's label, so that is what both
+    // lists offer, even though this Staff member reads English elsewhere.
+    let page = b.get("/admin/roster").await.body;
+    assert!(page.contains("กำลังศึกษา (current)"), "{page}");
+    assert!(!page.contains("Studying (current)"), "{page}");
+    let r = upload(&b, "a.csv", &csv(&["68000001,นก,,,,Studying,1"]), "full").await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let id = import_id(&r);
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("กำลังศึกษา (current)"), "{report}");
+    assert!(!report.contains("Studying"), "{report}");
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(page.contains("กำลังศึกษา (current)"), "{page}");
+    assert!(!page.contains("Studying (current)"), "{page}");
+    // What they were told works.
+    let r = upload(&b, "a.csv", &csv(&["68000001,นก,,,,กำลังศึกษา,1"]), "full").await;
+    assert_eq!(flash(&b), "ok:kernel.roster.previewed", "{}", r.body);
+}
+
 fn edit_form(year: &str, status: &str) -> String {
     format!(
         "display_name=Nok+1&email={}&locale=th&attr.status={status}&attr.year={}",

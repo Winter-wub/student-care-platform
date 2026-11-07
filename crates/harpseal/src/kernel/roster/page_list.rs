@@ -109,11 +109,12 @@ fn headers(v: &View<'_>, roster: &RosterConfig) -> Markup {
             .label_in(key, &v.staff.locale, &v.s.config.default_locale)
             .to_string();
         if a.kind == AttributeType::Enum {
-            let (locale, default) = (&v.staff.locale, &v.s.config.default_locale);
+            // The default Locale's labels: the ones a cell may hold.
+            let default = &v.s.config.default_locale;
             let all: Vec<String> = a
                 .values
                 .iter()
-                .map(|x| a.labelled(x, locale, default))
+                .map(|x| a.labelled(x, default, default))
                 .collect();
             holds = format!(
                 "{holds} ({} {})",

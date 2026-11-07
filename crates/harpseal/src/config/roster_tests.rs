@@ -136,11 +136,11 @@ fn a_config_changed_in_code_is_checked_too() {
         ..RosterConfig::default()
     };
     assert!(
-        r.check(&Locale::th()).is_err(),
+        r.check(&Locale::th(), &Default::default()).is_err(),
         "default_mode full is not in modes"
     );
     r.default_mode = "upsert".into();
-    assert!(r.check(&Locale::th()).is_ok());
+    assert!(r.check(&Locale::th(), &Default::default()).is_ok());
 }
 
 #[test]
@@ -233,14 +233,51 @@ fn a_bad_range_or_label_stops_the_build() {
         "{labels}value_labels = {{ x = {{ th = \"เปิด\", en = \"Open\" }}, y = {{ th = \"ปิด\", en = \"Open2\" }} }}"
     );
     assert!(toml(&ok).is_ok());
-    // A label equal to its own value is fine; so is an English label equal
-    // to another value (only the default Locale is read by the import).
+    // A label equal to its own value is fine.
     assert!(
         toml(&format!(
-            "{labels}value_labels = {{ x = {{ th = \"x\", en = \"y\" }} }}"
+            "{labels}value_labels = {{ x = {{ th = \"x\" }} }}"
         ))
         .is_ok()
     );
+    // What a value SHOWS decides: an English label that is another value's
+    // text clashes while that value has no English label (it shows its value)…
+    let clash = format!("{labels}value_labels = {{ x = {{ th = \"x\", en = \"y\" }} }}");
+    let err = toml(&clash).unwrap_err().to_string();
+    assert!(err.contains("`x` and `y` both show `y` in en"), "{err}");
+    // …and a label in one Locale can clash through the default Locale's.
+    let via_default =
+        format!("{labels}value_labels = {{ x = {{ th = \"เปิด\" }}, y = {{ th = \"เปิด\" }} }}");
+    assert!(toml(&via_default).is_err());
+    let via_fallback =
+        format!("{labels}value_labels = {{ x = {{ th = \"เปิด\" }}, y = {{ en = \"เปิด\" }} }}");
+    assert!(toml(&via_fallback).is_err(), "y shows x's Thai label in en");
+    // Both labelled, the English labels may be each other's values.
+    let swapped = format!(
+        "{labels}value_labels = {{ x = {{ th = \"x\", en = \"y\" }}, y = {{ en = \"x\" }} }}"
+    );
+    assert!(toml(&swapped).is_ok());
+    // Labels in one Locale only, the rest falling back, are fine when distinct.
+    let one = format!("{labels}value_labels = {{ x = {{ en = \"Open\" }} }}");
+    assert!(toml(&one).is_ok());
+}
+
+#[test]
+fn a_label_locale_must_be_a_configured_one() {
+    let attr = "[roster.attributes.a]\ncolumn = \"c\"\ntype = \"enum\"\nvalues = [\"x\"]\n";
+    let src = |labels: &str, texts: &str| {
+        crate::DeploymentConfig::from_toml(&format!(
+            "name = \"X\"\ndefault_locale = \"th\"\n{texts}{attr}value_labels = {labels}"
+        ))
+    };
+    assert!(src("{ x = { th = \"เอ็กซ์\", en = \"X\" } }", "").is_ok());
+    for typo in ["TH", "fr", "th-TH", "en "] {
+        let err = src(&format!("{{ x = {{ \"{typo}\" = \"X\" }} }}"), "").unwrap_err();
+        assert!(err.to_string().contains("not configured"), "{typo}: {err}");
+    }
+    // A Locale with a `[texts]` table is configured.
+    let fr = "[texts.fr]\n\"fees.title\" = \"Frais\"\n";
+    assert!(src("{ x = { fr = \"X\" } }", fr).is_ok());
 }
 
 #[test]

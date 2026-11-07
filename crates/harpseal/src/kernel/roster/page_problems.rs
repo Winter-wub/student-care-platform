@@ -50,11 +50,12 @@ fn what_fits(v: &View<'_>, p: &Problem) -> Option<String> {
         "out_of_range" => spec.range_text(),
         // Without labels the report reads as it always did.
         "not_in_list" if !spec.value_labels.is_empty() => {
-            let (locale, default) = (&v.staff.locale, &v.s.config.default_locale);
+            // The default Locale's labels: the ones the import reads.
+            let default = &v.s.config.default_locale;
             let all: Vec<String> = spec
                 .values
                 .iter()
-                .map(|x| spec.labelled(x, locale, default))
+                .map(|x| spec.labelled(x, default, default))
                 .collect();
             Some(all.join(", "))
         }

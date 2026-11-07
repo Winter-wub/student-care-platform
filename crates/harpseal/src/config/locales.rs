@@ -2,7 +2,20 @@
 //! `setting` table with Locale `''` are the Consent version and Module
 //! settings, never texts, so the Texts page must never offer that Locale.
 
+use std::collections::BTreeSet;
+
 use super::DeploymentConfig;
+
+impl DeploymentConfig {
+    /// The Locales a Deployment speaks: `th`, `en`, the default Locale and
+    /// every `[texts.<locale>]` table (the set the Texts page offers).
+    pub(crate) fn known_locales(&self) -> BTreeSet<String> {
+        let mut all: BTreeSet<String> = ["th", "en"].iter().map(|l| l.to_string()).collect();
+        all.insert(self.default_locale.0.clone());
+        all.extend(self.texts.keys().cloned());
+        all
+    }
+}
 
 /// Refuses an empty `default_locale` and a `[texts.""]` table.
 pub(super) fn check(c: &DeploymentConfig) -> crate::Result<()> {

@@ -304,7 +304,7 @@ impl DeploymentConfig {
             return Err(crate::Error::Invalid("[consent] version is empty".into()));
         }
         c.branding.check()?;
-        c.roster.check(&c.default_locale)?;
+        c.roster.check(&c.default_locale, &c.known_locales())?;
         c.backup.check()?;
         c.announcements.check()?;
         c.mini_app.check()?;

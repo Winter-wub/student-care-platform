@@ -2,6 +2,8 @@
 //! (and a config changed in code) refuses.
 
 use super::{AttributeType, RosterConfig, WARNING_CLASSES, rules};
+use std::collections::BTreeSet;
+
 use crate::message::Locale;
 
 impl RosterConfig {
@@ -12,7 +14,11 @@ impl RosterConfig {
     /// `default_mode` outside `modes`, a `blocking` entry that is not a
     /// warning class (or is repeated), and an attribute whose `min` / `max`
     /// / `value_labels` break the rules of [`rules::check`] (#81).
-    pub(crate) fn check(&self, default_locale: &Locale) -> crate::Result<()> {
+    pub(crate) fn check(
+        &self,
+        default_locale: &Locale,
+        known: &BTreeSet<String>,
+    ) -> crate::Result<()> {
         let bad = |m: String| Err(crate::Error::Invalid(format!("[roster] {m}")));
         let mut columns = vec![&self.student_code, &self.display_name, &self.email];
         columns.extend(self.locale.as_ref().map(|l| &l.column));
@@ -67,7 +73,7 @@ impl RosterConfig {
             {
                 return bad(format!("attribute `{key}`: empty or repeated enum value"));
             }
-            if let Err(m) = rules::check(a, default_locale) {
+            if let Err(m) = rules::check(a, default_locale, known) {
                 return bad(format!("attribute `{key}`: {m}"));
             }
             columns.push(&a.column);

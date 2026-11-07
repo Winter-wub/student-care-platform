@@ -20,6 +20,7 @@
 //! [`AttributeSpec::parse_import`]).
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 use serde_json::{Number, Value as Json};
 
@@ -125,10 +126,18 @@ fn compare(a: &Number, b: &Number) -> Ordering {
 /// Refuses `min` / `max` on a type that is not a number, a `min` above
 /// `max`, a fractional bound on an `integer`, labels on a type that is
 /// not an `enum`, a label for a value that is not listed, an empty label,
-/// and a label that two values share in one Locale. In the default Locale
-/// (the one the import reads) a label must also differ from the other
-/// values, or a cell could name two values. The `Err` is the problem.
-pub(super) fn check(a: &AttributeSpec, default_locale: &Locale) -> Result<(), String> {
+/// and a label in a Locale that is not one of `known`. Then, for each
+/// Locale that has a label (and the default Locale), what each value
+/// *shows* there (its label, else the default Locale's, else the value)
+/// must differ between values, or Staff could not tell them apart. In the
+/// default Locale (the one the import reads) a label must also differ from
+/// the other values, or a cell could name two values. The `Err` is the
+/// problem.
+pub(super) fn check(
+    a: &AttributeSpec,
+    default_locale: &Locale,
+    known: &BTreeSet<String>,
+) -> Result<(), String> {
     let numeric = matches!(a.kind, AttributeType::Integer | AttributeType::Number);
     for (name, bound) in [("min", &a.min), ("max", &a.max)] {
         let Some(n) = bound else { continue };
@@ -150,7 +159,7 @@ pub(super) fn check(a: &AttributeSpec, default_locale: &Locale) -> Result<(), St
     if a.kind != AttributeType::Enum {
         return Err("value_labels only fit an enum".into());
     }
-    let mut by_locale: std::collections::BTreeMap<&str, Vec<(&str, &str)>> = Default::default();
+    let mut locales: BTreeSet<&str> = BTreeSet::from([default_locale.0.as_str()]);
     for (value, labels) in &a.value_labels {
         if !a.values.contains(value) {
             return Err(format!(
@@ -158,33 +167,48 @@ pub(super) fn check(a: &AttributeSpec, default_locale: &Locale) -> Result<(), St
             ));
         }
         for (locale, label) in labels {
+            if !known.contains(locale) {
+                let all = known.iter().cloned().collect::<Vec<_>>().join("`, `");
+                return Err(format!(
+                    "the {locale} label of `{value}` names a Locale that is not configured \
+                     (one of `{all}`)"
+                ));
+            }
             if label.trim().is_empty() {
                 return Err(format!("the {locale} label of `{value}` is empty"));
             }
-            by_locale
-                .entry(locale)
-                .or_default()
-                .push((value, label.trim()));
+            locales.insert(locale);
         }
     }
-    for (locale, labels) in by_locale {
-        for (i, (value, label)) in labels.iter().enumerate() {
-            let clash = labels[..i]
+    for locale in locales {
+        let loc = Locale::new(locale);
+        let shown: Vec<(&str, &str, bool)> = a
+            .values
+            .iter()
+            .map(|v| {
+                let labelled = a.value_label(v, &loc, default_locale);
+                (v.as_str(), labelled.trim(), labelled != v.as_str())
+            })
+            .collect();
+        for (i, (value, text, from_label)) in shown.iter().enumerate() {
+            // Two bare values keep today's rules (`A` and `a` may coexist).
+            let clash = shown[..i]
                 .iter()
-                .find(|(_, l)| l.eq_ignore_ascii_case(label));
-            if let Some((other, _)) = clash {
+                .find(|(_, t, l)| (*l || *from_label) && t.eq_ignore_ascii_case(text));
+            if let Some((other, _, _)) = clash {
                 return Err(format!(
-                    "`{other}` and `{value}` share the {locale} label `{label}`"
+                    "`{other}` and `{value}` both show `{text}` in {locale} \
+                     (a label is missing, or two values share one)"
                 ));
             }
             let is_default = locale == default_locale.0;
             let other = a
                 .values
                 .iter()
-                .find(|v| v != value && v.trim().eq_ignore_ascii_case(label));
-            if let (true, Some(other)) = (is_default, other) {
+                .find(|v| *v != value && v.trim().eq_ignore_ascii_case(text));
+            if let (true, true, Some(other)) = (is_default, *from_label, other) {
                 return Err(format!(
-                    "the {locale} label `{label}` of `{value}` is also the value `{other}`"
+                    "the {locale} label `{text}` of `{value}` is also the value `{other}`"
                 ));
             }
         }
