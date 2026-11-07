@@ -82,7 +82,7 @@ pub use error::{BuildError, Error, Part, Result};
 pub use file_key::check_file_key;
 pub use jobs::{JobId, Jobs};
 pub use kernel::admin::texts_api as texts;
-pub use kernel::app::AppStudent;
+pub use kernel::app::{AppForm, AppStudent};
 pub use kernel::audience;
 pub use kernel::links;
 pub use kernel::links::LinkChange;

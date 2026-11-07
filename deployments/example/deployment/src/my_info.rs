@@ -2,6 +2,9 @@
 //! who opened it their own record (student id, name and the
 //! `[roster.attributes]` values), linked from the Mini App home.
 //!
+//! It lists the `[roster.attributes]` marked `student_visible` (programme
+//! and year in `deployment.toml`; the GPA stays staff-only).
+//!
 //! The handler takes [`AppStudent`] and nothing else from the request:
 //! the record comes from the App Session, so no URL, query or form value
 //! can show another Student's. Without a session the extractor answers
@@ -50,6 +53,8 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
         .roster
         .attributes_in_order()
         .into_iter()
+        // `AppStudent::attributes` holds only these.
+        .filter(|(_, spec)| spec.student_visible)
         .map(|(key, spec)| {
             let label = spec.label_in(key, &me.locale, default).to_string();
             (label, AttributeSpec::display(me.attributes.get(key)))

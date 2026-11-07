@@ -96,10 +96,11 @@ async fn the_home_links_to_my_info_which_shows_my_record() {
         "<dd>68010001</dd>",
         "<dt>หลักสูตร</dt><dd>MSC</dd>",
         "<dt>ชั้นปี</dt><dd>2</dd>",
-        "<dt>เกรดเฉลี่ย</dt><dd>3.41</dd>",
     ] {
         assert!(r.body.contains(seen), "{seen}");
     }
+    // The GPA is not `student_visible`: neither its label nor its value.
+    assert!(!r.body.contains("เกรดเฉลี่ย") && !r.body.contains("3.41"));
     assert!(r.header("content-security-policy").is_some());
 }
 

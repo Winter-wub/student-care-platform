@@ -27,7 +27,9 @@ pub(crate) fn check(
     let locale = catalog.default_locale();
     let mut out = Vec::with_capacity(links.len());
     for (module, l) in links {
-        let plain = l.path.starts_with("/app/") && super::safe_next(l.path) == l.path;
+        // A page of its own: `/app/` alone is the Kernel's home.
+        let below = l.path.len() > "/app/".len() && l.path.starts_with("/app/");
+        let plain = below && super::safe_next(l.path) == l.path;
         let own = public.iter().any(|(m, p)| *m == module && *p == l.path);
         if !plain || !own {
             return Err(BuildError::InvalidRoute {
@@ -98,6 +100,7 @@ mod tests {
         for (module, path) in [
             ("m", "/mine"),
             ("m", "/app"),
+            ("m", "/app/"),
             ("m", "/app/x/{id}"),
             ("m", "/app/n"),
             ("m", "/app/unregistered"),
