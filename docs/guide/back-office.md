@@ -44,8 +44,16 @@ multicast group of 500 (LINE) or 25 accounts (Telegram, paced). The Card has
 Students and press "เพิ่ม" (needs `kernel.student.view`). The list is one more
 AND filter; on its own it is the whole Audience. The preview lists the IDs that
 match nobody (or do not fit `[student] id_pattern`) and the Students without a
-live Link; none of them is sent to. The list is saved with the announcement
+live Link; none of them is sent to. Anyone who may send (`announcements.send`)
+sees that preview, so it reveals roster membership and Link status of the IDs
+they paste, even without `kernel.student.view` (which only the search box
+needs); the detail page shows the saved list to anyone with
+`announcements.view`. IDs may also be separated by `;` and zero-width characters
+from a spreadsheet paste are ignored. The list is saved with the announcement
 (shown on its detail page) and the audit rows record its size, not the IDs.
+Before rolling back to a build without hand-picked lists, cancel or pause every
+scheduled hand-picked announcement: an older build ignores the list and would
+send it to the remaining filters, possibly everyone.
 The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`, "ส่งซ้ำ" is a new round,
 and a retract deletes where the Channel can (Telegram, within 48 h). Edits and

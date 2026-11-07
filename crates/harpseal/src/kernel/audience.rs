@@ -104,11 +104,18 @@ impl Audience {
     }
 }
 
-/// Student ids in `text`, separated by newlines, commas or spaces:
-/// trimmed, empty ones dropped, duplicates removed (first one kept).
+/// Student ids in `text`, separated by newlines, commas, semicolons or
+/// spaces: zero-width characters (U+200B..U+200D, U+FEFF, common in
+/// spreadsheet pastes) removed, trimmed, empty ones dropped, duplicates
+/// removed (first one kept).
 pub fn parse_student_ids(text: &str) -> Vec<String> {
+    let clean: String = text
+        .chars()
+        .filter(|c| !matches!(c, '\u{200B}'..='\u{200D}' | '\u{FEFF}'))
+        .collect();
     let mut seen = std::collections::HashSet::new();
-    text.split(|c: char| c == ',' || c.is_whitespace())
+    clean
+        .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
         .filter(|id| !id.is_empty() && seen.insert(*id))
         .map(str::to_string)
         .collect()
@@ -219,6 +226,9 @@ fn marks(n: usize) -> String {
 /// Runs [`statement`] on `d`: every Recipient of `a` on a Channel the
 /// Deployment has (Links on a Channel since removed are left out).
 pub async fn resolve(d: &Deployment, a: &Audience) -> Result<Vec<Recipient>> {
+    // The whole list is checked first: ids dropped below still count
+    // against the cap.
+    a.check(&d.config().roster)?;
     let mut a = std::borrow::Cow::Borrowed(a);
     if !a.students.is_empty() {
         // Ids that do not fit `[student] id_pattern` name nobody. A list
@@ -231,7 +241,6 @@ pub async fn resolve(d: &Deployment, a: &Audience) -> Result<Vec<Recipient>> {
             .cloned()
             .collect();
         if fit.is_empty() {
-            a.check(&d.config().roster)?;
             return Ok(Vec::new());
         }
         if fit.len() != a.students.len() {

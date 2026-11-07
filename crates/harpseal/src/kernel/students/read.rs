@@ -106,11 +106,20 @@ pub(crate) struct ListRow {
     pub(crate) links: Vec<(String, String)>,
 }
 
-/// `q` as a `LIKE` pattern matching it anywhere (`\` escapes).
+/// Longest `LIKE` pattern in bytes: Cloudflare D1 refuses more than 50.
+const MAX_LIKE: usize = 50;
+
+/// `q` as a `LIKE` pattern matching it anywhere (`\` escapes), cut after
+/// the last whole character that keeps the pattern, both `%` and the
+/// escapes included, within [`MAX_LIKE`] bytes.
 fn like(q: &str) -> String {
     let mut p = String::from("%");
     for c in q.chars() {
-        if matches!(c, '%' | '_' | '\\') {
+        let escape = matches!(c, '%' | '_' | '\\');
+        if p.len() + usize::from(escape) + c.len_utf8() + 1 > MAX_LIKE {
+            break;
+        }
+        if escape {
             p.push('\\');
         }
         p.push(c);
@@ -298,5 +307,20 @@ mod tests {
     fn like_patterns_escape_wildcards() {
         assert_eq!(super::like("a%b_c\\"), "%a\\%b\\_c\\\\%");
         assert_eq!(super::like(""), "%%");
+    }
+
+    #[test]
+    fn like_patterns_fit_the_d1_limit_on_whole_characters() {
+        // Thai letters are 3 bytes each: 16 fit (1 + 48 + 1 = 50), the
+        // 17th would make 53.
+        let thai = "ก".repeat(20);
+        let p = super::like(&thai);
+        assert_eq!(p.len(), 50);
+        assert_eq!(p.chars().filter(|c| *c == 'ก').count(), 16);
+        // Escapes count, and are never split from their character.
+        let p = super::like(&"%".repeat(40));
+        assert!(p.len() <= 50 && p.ends_with("\\%%"), "{p}");
+        let p = super::like(&"a".repeat(80));
+        assert_eq!(p.len(), 50);
     }
 }

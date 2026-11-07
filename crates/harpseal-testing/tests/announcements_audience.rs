@@ -332,3 +332,54 @@ async fn the_picker_needs_permission_to_see_students() {
     let v = signed_in(&w, "Viewer").await;
     assert_eq!(v.get("/admin/announcements/pick?q=Name").await.status, 403);
 }
+
+#[tokio::test]
+async fn ids_dropped_for_their_shape_still_count_against_the_cap() {
+    let w = world().await;
+    let b = signed_in(&w, "Officer").await;
+    // 1,900 well-formed ids and 200 that fit no pattern: 2,100 in all.
+    let mut list: Vec<String> = (0..1900).map(|i| format!("id-{i:05}")).collect();
+    list.extend((0..200).map(|i| format!("x{i}")));
+    let mut a = Audience::everyone();
+    a.students = list.clone();
+    assert!(audience::resolve(w.app.deployment(), &a).await.is_err());
+    assert!(audience::count(w.app.deployment(), &a).await.is_err());
+    // The preview says why, and Save refuses with the same message.
+    let form_list = format!("students={}", urlencode(&list.join("\n")));
+    let preview = b.post("/admin/announcements/audience", &form_list).await;
+    assert!(preview.body.contains("2000"), "{}", preview.body);
+    assert!(!preview.body.contains("hand-picked-report"));
+    let save = b
+        .post(
+            "/admin/announcements/new",
+            &form("ก", "ข", &format!("&{form_list}")),
+        )
+        .await;
+    assert_eq!(save.status, 422);
+    // Just under the cap, the same mix resolves (to nobody).
+    a.students.truncate(2000);
+    assert!(
+        audience::resolve(w.app.deployment(), &a)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn pasted_ids_split_on_semicolons_and_lose_zero_width_characters() {
+    let raw = "code-s1;code-s3\u{200B}\ncode\u{FEFF}-s4\u{200C},\u{200D}code-s1 ;; ";
+    assert_eq!(
+        audience::parse_student_ids(raw),
+        ["code-s1", "code-s3", "code-s4"]
+    );
+    assert!(audience::parse_student_ids("\u{200B}\u{FEFF} ; ,").is_empty());
+}
+
+#[tokio::test]
+async fn a_spreadsheet_paste_reaches_the_right_students() {
+    let w = world().await;
+    let b = signed_in(&w, "Officer").await;
+    sent(&w, &b, &ids(&["code-s3;\u{200B}code-s4\u{FEFF}"])).await;
+    assert_eq!(delivered(&w).await, ["s3", "s4"]);
+}

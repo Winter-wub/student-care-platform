@@ -20,7 +20,8 @@ use crate::{AppState, CurrentStaff};
 
 const PATH: &str = "/admin/announcements/pick";
 const VIEW: &str = "kernel.student.view";
-/// Most characters of a search.
+/// Most characters of a search (the Students search cuts it again to fit
+/// the 50-byte `LIKE` limit of D1).
 const MAX_QUERY: usize = 100;
 
 #[derive(Debug, Default, Deserialize)]
