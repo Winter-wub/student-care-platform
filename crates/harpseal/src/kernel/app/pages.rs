@@ -116,7 +116,7 @@ fn has_news(s: &AppState) -> bool {
 }
 
 /// A visitor and their texts, or the response to send instead.
-async fn open(
+pub(super) async fn open(
     s: &AppState,
     headers: &HeaderMap,
     path: &str,
@@ -154,9 +154,16 @@ pub(crate) async fn home(State(s): State<AppState>, headers: HeaderMap, uri: Uri
     } else {
         None
     };
+    let links: Vec<_> = s
+        .deployment
+        .app_links()
+        .iter()
+        .map(|l| (t.t(l.label_key), l.path))
+        .collect();
     let h = Home {
         consent,
         reconsent,
+        links: &links,
         news: list.as_deref(),
     };
     view::home(&s, &t, &v, &h)

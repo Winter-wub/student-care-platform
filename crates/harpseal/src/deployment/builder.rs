@@ -101,6 +101,8 @@ impl DeploymentBuilder {
         check_menu_keys(&catalog)?;
         check_nav(&collected.nav, &catalog)?;
         let nav = nav_items(collected.nav);
+        let public: Vec<_> = collected.public.iter().map(|(m, p, _)| (*m, *p)).collect();
+        let app_links = crate::kernel::app::check_links(collected.app_links, &public, &catalog)?;
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
         menu.sort_by_key(|e| e.order);
         let queue =
@@ -124,6 +126,7 @@ impl DeploymentBuilder {
                 uploads: collected.uploads,
                 public: collected.public,
                 nav,
+                app_links,
             }),
         })
     }
@@ -149,6 +152,7 @@ struct Collected {
     mini_app_users: Vec<&'static str>,
     catalog: Catalog,
     nav: Vec<(&'static str, NavSpec)>,
+    app_links: Vec<(&'static str, crate::module::AppLinkSpec)>,
 }
 
 impl Default for Collected {
@@ -168,6 +172,7 @@ impl Default for Collected {
             mini_app_users: Vec::new(),
             catalog: Catalog::default(),
             nav: Vec::new(),
+            app_links: Vec::new(),
         }
     }
 }
@@ -219,6 +224,8 @@ impl Collected {
         }
         self.menu.extend(r.menu.into_iter().map(|e| (module, e)));
         self.nav.extend(r.nav.into_iter().map(|n| (module, n)));
+        self.app_links
+            .extend(r.app_links.into_iter().map(|l| (module, l)));
         self.migrations.extend(r.migrations);
         if !r.mini_app_paths.is_empty() {
             self.mini_app_users.push(module);

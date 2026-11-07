@@ -80,6 +80,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "You have not accepted the privacy notice yet."
     ),
     ("kernel.app.news", "ข่าวของฉัน", "My announcements"),
+    // The label of the Modules' links on the home (#72), for screen readers.
+    ("kernel.app.links", "บริการอื่น", "More services"),
     (
         "kernel.app.news_empty",
         "ยังไม่มีข่าวสำหรับคุณ",

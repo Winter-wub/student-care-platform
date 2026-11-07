@@ -169,6 +169,16 @@ pub struct ModuleRegistrar {
     pub(crate) migrations: Vec<Migration>,
     pub(crate) mini_app_paths: Vec<&'static str>,
     pub(crate) nav: Vec<NavSpec>,
+    /// Links on the Mini App home (#72).
+    pub(crate) app_links: Vec<AppLinkSpec>,
+}
+
+/// A link on the Mini App home (#72), as registered.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AppLinkSpec {
+    pub(crate) label_key: &'static str,
+    pub(crate) path: &'static str,
+    pub(crate) order: u16,
 }
 
 /// A back-office upload route (paths under `/admin`, as registered).
@@ -207,6 +217,7 @@ impl ModuleRegistrar {
             migrations: Vec::new(),
             mini_app_paths: Vec::new(),
             nav: Vec::new(),
+            app_links: Vec::new(),
         }
     }
 
@@ -331,6 +342,34 @@ impl ModuleRegistrar {
     /// the adapter degrades it at send time to a visible notice.
     pub fn mini_app_button(&mut self, path: &'static str) -> &mut Self {
         self.mini_app_paths.push(path);
+        self
+    }
+
+    // --- Mini App pages of a Module (#72) ---
+
+    /// A link to one of this Module's Mini App pages on the Mini App home
+    /// (`/app`): `label_key` is a catalog key, `order` sorts the links of
+    /// every Module, the Kernel's included (lower first; equal orders keep
+    /// registration order). The page itself is a [`ModuleRegistrar::public`]
+    /// route whose handler extracts [`crate::AppStudent`].
+    ///
+    /// `build()` refuses ([`crate::BuildError::InvalidRoute`]) a `path`
+    /// that is not a plain path under `/app/` (no parameters, query or
+    /// `..`) or that this Module did not register with
+    /// [`ModuleRegistrar::public`], and ([`crate::BuildError::UnknownText`])
+    /// an unknown `label_key`. Only under `/app` does a page get the App
+    /// Session cookie (`Path=/app`), the Mini App CSP and its deep link.
+    pub fn mini_app_link(
+        &mut self,
+        label_key: &'static str,
+        path: &'static str,
+        order: u16,
+    ) -> &mut Self {
+        self.app_links.push(AppLinkSpec {
+            label_key,
+            path,
+            order,
+        });
         self
     }
 
