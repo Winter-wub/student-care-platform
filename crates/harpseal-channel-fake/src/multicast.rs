@@ -35,6 +35,7 @@ impl Multicast for FakeChannel {
         locale: &Locale,
         key: &str,
     ) -> BatchReceipt {
+        self.run_before_send();
         let limits = self.profile.limits();
         let size = self.profile.request_size();
         let mut s = self.lock();

@@ -54,9 +54,10 @@ pub(super) async fn page(
             store::texts(svc, &id).await?,
             stats(&s.deployment, &id).await?,
             deliveries(svc, &id, filter, page).await?,
+            super::maint::in_progress(svc, &id).await?,
         ))
     };
-    let (texts, st, list) = match loaded.await {
+    let (texts, st, list, busy) = match loaded.await {
         Ok(x) => x,
         Err(e) => return v.error(&e),
     };
@@ -64,7 +65,13 @@ pub(super) async fn page(
     fragment_or_page(&headers, fragment, |fragment| {
         let title = texts.pick(&staff.locale).0.to_string();
         let body = html! {
-            h1 { (title) " " (v.status_chip(&row.status)) }
+            h1 {
+                (title) " " (v.status_chip(&row.status))
+                // Edit or retract Jobs still queued or running (#49).
+                @if busy {
+                    " " span class="chip" role="status" { (v.t("announcements.page.in_progress")) }
+                }
+            }
             (summary(&v, &row, &st))
             (actions(&v, &row))
             (texts_card(&texts))
@@ -107,7 +114,11 @@ fn summary(v: &View<'_>, row: &Row, st: &Stats) -> Markup {
                 }
                 @if let Some(r) = &row.edit_report {
                     dt { (v.t("announcements.page.edited")) }
-                    dd { (r["edited"]) " / " (v.t("announcements.page.edit_failed")) " " (r["failed"]) }
+                    dd {
+                        (r["edited"])
+                        @if let Some(total) = r.get("total") { " / " (total) }
+                        " · " (v.t("announcements.page.edit_failed")) " " (r["failed"])
+                    }
                 }
             }
         }

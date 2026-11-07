@@ -20,7 +20,8 @@
 //!   ([`ack`]); Menu entry `announcements.latest` ("ข่าวล่าสุด", [`latest`]).
 //! - **Edit / retract**: Jobs `announcements.edit` (`EditMessage` where
 //!   the Channel has it) and `announcements.retract` (`DeleteMessage`,
-//!   within 48 hours).
+//!   within 48 hours, plus a late pass 16 minutes later), each fanned out
+//!   into paced chunk Jobs that resume after a rate limit.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
@@ -33,6 +34,7 @@ mod deliver;
 mod form;
 mod gate;
 mod maint;
+mod maint_chunk;
 mod outcome;
 mod page_actions;
 mod page_detail;
@@ -71,6 +73,8 @@ pub(crate) const DELIVER: &str = "announcements.deliver";
 pub(crate) const DELIVER_CHANNEL: &str = "announcements.deliver.channel";
 pub(crate) const EDIT: &str = "announcements.edit";
 pub(crate) const RETRACT: &str = "announcements.retract";
+pub(crate) const EDIT_CHUNK: &str = "announcements.edit.chunk";
+pub(crate) const RETRACT_CHUNK: &str = "announcements.retract.chunk";
 pub(crate) const SWEEP: &str = "announcements.sweep";
 /// How often stuck rounds are looked for.
 const SWEEP_SCHEDULE: &str = "*/10 * * * *";
@@ -122,6 +126,8 @@ impl Module for Announcements {
         .job(JobSpec::new(DELIVER_CHANNEL), deliver::child)
         .job(JobSpec::new(EDIT), maint::edit)
         .job(JobSpec::new(RETRACT), maint::retract)
+        .job(JobSpec::new(EDIT_CHUNK), maint_chunk::edit_chunk)
+        .job(JobSpec::new(RETRACT_CHUNK), maint_chunk::retract_chunk)
         .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job);
         pages(r);
     }

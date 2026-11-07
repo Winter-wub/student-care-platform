@@ -10,6 +10,7 @@ use harpseal::{
 };
 
 use crate::FakeChannel;
+use crate::hooks::Hook;
 use crate::render::render;
 
 /// `retry_after_secs` of the failure [`FakeChannel::fail_next_batch_at`]
@@ -73,6 +74,13 @@ pub(crate) struct State {
     pub(crate) fail_at: Option<usize>,
     /// When set, that armed failure is `Error::Platform(this)` instead.
     pub(crate) fail_with: Option<String>,
+    /// The next edit or delete fails with `Error::RateLimited` after this
+    /// many more succeed ([`FakeChannel::fail_next_maintenance_at`]).
+    pub(crate) maint_fail_at: Option<usize>,
+    /// How many edits or deletes in a row fail once it fires.
+    pub(crate) maint_fails: usize,
+    /// Runs once before the next batch or multicast is recorded.
+    pub(crate) before_send: Option<Hook>,
     /// Idempotency keys of the batches sent ([`FakeChannel::keys`]).
     pub(crate) keys: Vec<String>,
     pub(crate) next_id: u64,
@@ -105,6 +113,7 @@ impl FakeChannel {
         msgs: &[Message],
         locale: &Locale,
     ) -> BatchReceipt {
+        self.run_before_send();
         let profile = self.profile;
         let attachments_off = self.attachments_off();
         let mut s = self.lock();
@@ -303,7 +312,9 @@ impl EditMessage for FakeChannel {
         m: &Message,
         _: &Locale,
     ) -> Result<()> {
-        self.lock().edited.push((id.clone(), m.clone()));
+        let mut s = self.lock();
+        s.maintenance()?;
+        s.edited.push((id.clone(), m.clone()));
         Ok(())
     }
 }
@@ -311,7 +322,9 @@ impl EditMessage for FakeChannel {
 #[async_trait]
 impl DeleteMessage for FakeChannel {
     async fn delete(&self, _: &ChannelAccountId, id: &PlatformMessageId) -> Result<()> {
-        self.lock().deleted.push(id.clone());
+        let mut s = self.lock();
+        s.maintenance()?;
+        s.deleted.push(id.clone());
         Ok(())
     }
 }

@@ -58,7 +58,8 @@ pub enum AckOutcome {
     Recorded,
     /// The Student had already acknowledged it.
     Already,
-    /// The announcement was retracted: nothing recorded.
+    /// The announcement was retracted: nothing recorded. Only for a
+    /// Student with a delivery row (otherwise [`AckOutcome::Unknown`]).
     Retracted,
     /// No such announcement, or the Student is not in its Audience.
     Unknown,
@@ -80,9 +81,8 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
     let Some(row) = store::load(s, id).await? else {
         return Ok(AckOutcome::Unknown);
     };
-    if row.status == "retracted" {
-        return Ok(AckOutcome::Retracted);
-    }
+    // The delivery row first: a Student outside the Audience learns
+    // nothing, not even that a retracted announcement exists (#49).
     let rows =
         s.db.query(
             Statement::new(
@@ -95,6 +95,9 @@ pub(crate) async fn ack_with(s: &Services, id: &str, student: &str) -> Result<Ac
         .await?;
     if store::int(&rows, 0, "n").unwrap_or(0) == 0 {
         return Ok(AckOutcome::Unknown);
+    }
+    if row.status == "retracted" {
+        return Ok(AckOutcome::Retracted);
     }
     // Once per Student: an earlier acknowledgement (any round, any
     // Channel) stands, and covers rows added since (a resend).
