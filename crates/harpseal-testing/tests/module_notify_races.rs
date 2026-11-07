@@ -162,3 +162,33 @@ async fn old_rows_are_pruned_after_90_days() {
     s.notify("other", &["68019999"]).await;
     assert_eq!(s.app.count("SELECT count(*) FROM notify_delivery").await, 0);
 }
+
+#[tokio::test]
+async fn a_restored_backup_keeps_what_was_sent() {
+    use harpseal::backup::{self, LoadOptions, MemoryBackup};
+    let s = Setup::new(FakeProfile::LineLike).await;
+    s.student(2, Some("s2@seal-bay.invalid"), None).await;
+    s.notify("w45", &["68010002"]).await;
+    let mut b = MemoryBackup::new();
+    backup::dump(s.app.deployment(), &mut b).await.unwrap();
+    assert!(b.entries.contains_key("tables/notify_delivery.ndjson"));
+
+    let fresh = harpseal_testing::Harness::new();
+    let reports = notify_support::Reports::default();
+    let d = fresh
+        .builder()
+        .module(notify_support::Probe(reports.clone()))
+        .build()
+        .unwrap();
+    backup::load(&d, &b, &LoadOptions::new()).await.unwrap();
+    let rows = d
+        .services()
+        .db
+        .query(harpseal::Statement::new(
+            "SELECT count(*) AS n FROM notify_delivery WHERE status = 'done'",
+        ))
+        .await
+        .unwrap();
+    let n = rows.get(0, "n").and_then(|v| v.as_i64());
+    assert_eq!(n, Some(1), "the done row survives the restore");
+}
