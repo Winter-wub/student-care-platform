@@ -32,6 +32,7 @@ mod sdk;
 pub(crate) mod session;
 mod sign_out;
 mod student;
+mod tab;
 mod texts;
 mod view;
 
@@ -40,7 +41,7 @@ use axum::routing::{get, post};
 pub(crate) use exchange::safe_next;
 pub(crate) use links::{AppLink, check as check_links};
 pub use student::{AppForm, AppStudent};
-pub(crate) use view::tab_js;
+pub(crate) use tab::tab_js;
 
 use crate::manifest::{Job, JobSpec};
 use crate::message::Locale;
