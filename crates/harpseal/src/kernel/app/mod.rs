@@ -13,18 +13,27 @@
 //! `/app/session` with its own path as `next`; the exchange redirects
 //! back there. Sessions: [`session`]. The Kernel's scheduled Job
 //! `kernel.app.prune_sessions` deletes rows expired over a day ago.
+//!
+//! A Module's own Mini App page (#72) is a public route under `/app/`
+//! whose handler extracts [`AppStudent`] (same session, same entry page;
+//! CSRF checked on every unsafe method) or [`AppForm`] for a plain form;
+//! [`crate::ModuleRegistrar::mini_app_link`] lists it on the home ([`links`]).
 
 mod exchange;
 mod limit;
+mod links;
 mod pages;
 mod sdk;
 pub(crate) mod session;
+mod student;
 mod texts;
 mod view;
 
 use axum::routing::{get, post};
 
 pub(crate) use exchange::safe_next;
+pub(crate) use links::{AppLink, check as check_links};
+pub use student::{AppForm, AppStudent};
 
 use crate::manifest::{Job, JobSpec};
 use crate::message::Locale;

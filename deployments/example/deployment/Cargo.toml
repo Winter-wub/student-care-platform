@@ -8,6 +8,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+axum.workspace = true
+maud.workspace = true
 harpseal.workspace = true
 harpseal-channel-line.workspace = true
 harpseal-channel-telegram.workspace = true

@@ -15,6 +15,9 @@ use crate::message::{ActionId, Locale, Message};
 use crate::port_types::Statement;
 use crate::{Result, Services};
 
+mod mini_app;
+pub(crate) use mini_app::AppLinkSpec;
+
 /// A switchable part of the Core or customer code.
 pub trait Module: Send + Sync + 'static {
     /// Prefix for Permission ids, catalog keys, migrations and Jobs.
@@ -169,6 +172,8 @@ pub struct ModuleRegistrar {
     pub(crate) migrations: Vec<Migration>,
     pub(crate) mini_app_paths: Vec<&'static str>,
     pub(crate) nav: Vec<NavSpec>,
+    /// Links on the Mini App home (#72).
+    pub(crate) app_links: Vec<AppLinkSpec>,
 }
 
 /// A back-office upload route (paths under `/admin`, as registered).
@@ -207,6 +212,7 @@ impl ModuleRegistrar {
             migrations: Vec::new(),
             mini_app_paths: Vec::new(),
             nav: Vec::new(),
+            app_links: Vec::new(),
         }
     }
 
@@ -322,15 +328,6 @@ impl ModuleRegistrar {
     /// the Kernel owns ([`crate::BuildError::DuplicateRoute`]).
     pub fn public(&mut self, path: &'static str, route: MethodRouter<AppState>) -> &mut Self {
         self.public.push((path, route));
-        self
-    }
-
-    /// Declares that this Module sends `Button::MiniApp` to `path`.
-    /// `build()` then requires every Channel to have a Mini App. A Mini App
-    /// button sent without this declaration is not checked at build time:
-    /// the adapter degrades it at send time to a visible notice.
-    pub fn mini_app_button(&mut self, path: &'static str) -> &mut Self {
-        self.mini_app_paths.push(path);
         self
     }
 

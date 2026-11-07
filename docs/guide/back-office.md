@@ -31,7 +31,9 @@ legacy rule would give it unlink back): create it on the Roles page.
 The attributes come from `[roster.attributes.<key>]` in
 `deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
 `enum` with `values`), `label = { th = "..", en = ".." }`, `optional`,
-`shown_in_list` and `order` (see `harpseal::RosterConfig`).
+`shown_in_list`, `student_visible` (default `false`: shown to the Student
+on a Module's Mini App page only when `true`) and `order` (see
+`harpseal::RosterConfig`).
 
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a

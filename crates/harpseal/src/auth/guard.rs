@@ -107,7 +107,8 @@ impl<S: Send + Sync> FromRequestParts<S> for CurrentStaff {
 /// Outermost layer: gives each request a [`RequestCtx`], answers with its
 /// id in `x-request-id`, and adds `Cache-Control: no-store`,
 /// `X-Frame-Options: DENY` and `Referrer-Policy: same-origin` to every
-/// `/admin` response, and [`APP_FRAME_ANCESTORS`] to every `/app` one.
+/// `/admin` response, and [`APP_FRAME_ANCESTORS`] and `Cache-Control:
+/// no-store` to every `/app` one.
 pub(crate) async fn request_ctx(
     State(state): State<AppState>,
     req: Request,
@@ -140,6 +141,9 @@ pub(crate) async fn request_ctx(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(APP_FRAME_ANCESTORS),
         );
+        // Mini App pages are one Student's data, whatever a Module returns
+        // (a fragment, JSON, a file): never cached by anyone (#72).
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
     resp
 }

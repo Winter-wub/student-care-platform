@@ -28,3 +28,6 @@ http-body.workspace = true
 # Real adapters' Mini App verification at the HTTP seam (#28).
 harpseal-channel-line.workspace = true
 harpseal-channel-telegram.workspace = true
+# A Module's own Mini App page in the seam tests (#72).
+maud.workspace = true
+serde.workspace = true

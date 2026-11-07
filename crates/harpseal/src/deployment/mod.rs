@@ -62,6 +62,8 @@ struct Registry {
     public: Vec<(&'static str, &'static str, Route)>,
     /// Back-office navigation, sorted (#21).
     nav: Vec<crate::auth::NavItem>,
+    /// Links on the Mini App home, sorted (#72).
+    app_links: Vec<crate::kernel::app::AppLink>,
 }
 
 /// One registered route's handler.
@@ -208,6 +210,11 @@ impl Deployment {
             return Some((*m, h.clone()));
         }
         resolve_prefix(&self.registry.action_prefixes, action.as_str())
+    }
+
+    /// The Mini App home's links, sorted (#72).
+    pub(crate) fn app_links(&self) -> &[crate::kernel::app::AppLink] {
+        &self.registry.app_links
     }
 
     /// The merged catalog, shared.

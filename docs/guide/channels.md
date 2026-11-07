@@ -39,7 +39,8 @@ page runs in a cross-site iframe and its cookie is
 cookies without supporting partitioned ones ends at "open from the chat".
 The Mini App still needs a manual check inside real LIFF and Telegram
 webviews before a release (the e2e walk opens it with the Fake Channel's
-token only).
+token only). A Deployment's own Module adds pages under `/app/` and links on
+the home: see "A Module's Mini App page" in [deployment.md](deployment.md).
 
 ## LINE
 
