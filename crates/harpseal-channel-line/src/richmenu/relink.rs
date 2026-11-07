@@ -28,8 +28,8 @@ enum Bulk {
     Gone,
     /// LINE refused the user id at this position (400 `userIds[n]`).
     BadUser(usize),
-    /// Another 400, not about one user id.
-    Refused,
+    /// Another 400, not about one user id (LINE's message).
+    Refused(String),
 }
 
 /// A LINE user id: `U` and 32 lowercase hex digits. Anything else would
@@ -79,6 +79,7 @@ impl LineChannel {
             Err(e) => return MenuRelinked::stopped(0, e),
         };
         let mut recreated = false;
+        let mut restored = false;
         let mut budget = ONE_BY_ONE_MAX;
         for group in valid.chunks(BULK_LINK_MAX) {
             let first = group[0];
@@ -101,7 +102,17 @@ impl LineChannel {
                         let i = group.remove(n);
                         got.skip(i, not_a_user(&to[i].external_id));
                     }
-                    Ok(Bulk::Refused) => {
+                    Ok(Bulk::Refused(why)) => {
+                        // Perhaps no image (a menu left without one): upload
+                        // it and bulk link again, once per call.
+                        if !restored {
+                            restored = true;
+                            match self.restore_image(&found.id, image, &why).await {
+                                Ok(true) => continue,
+                                Ok(false) => {}
+                                Err(e) => return stop(got, first, e),
+                            }
+                        }
                         let take = group.len().min(budget);
                         let some = &group[..take];
                         if let Err(e) = self.one_by_one(to, some, &found.id, &mut got).await {
@@ -134,7 +145,9 @@ impl LineChannel {
         {
             Ok(_) => Ok(Bulk::Linked),
             Err(f) if f.status == 404 => Ok(Bulk::Gone),
-            Err(f) if f.status == 400 => Ok(bad_user(&f).map_or(Bulk::Refused, Bulk::BadUser)),
+            Err(f) if f.status == 400 => {
+                Ok(bad_user(&f).map_or(Bulk::Refused(f.message), Bulk::BadUser))
+            }
             Err(f) => Err(fail(f)),
         }
     }

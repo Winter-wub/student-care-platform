@@ -46,7 +46,10 @@
 //! reuse. A link answered 400 that is not about the user id (one of LINE's
 //! reasons is "no image set to the rich menu") is checked with
 //! `GET api-data.line.me/v2/bot/richmenu/{id}/content` (404: none): the
-//! image is uploaded and the link repeated, once. A failed upload deletes it.
+//! image is uploaded and the link repeated, once. The rich menu is never
+//! deleted for it (others may be linked): an upload LINE refuses because
+//! another isolate was first counts as done if the image is there now.
+//! The bulk re-link below does the same on a refused bulk call.
 //!
 //! # Cleanup
 //!
@@ -279,7 +282,7 @@ impl LineChannel {
             // image: upload it and link again, once.
             if f.status == 400
                 && !relink::about_user(&f)
-                && self.restore_image(&name, &found.id, image).await?
+                && self.restore_image(&found.id, image, &f.message).await?
             {
                 self.link(user, &found.id).await?.map_err(fail)?;
             } else if f.status != 404 {

@@ -144,6 +144,10 @@ impl LineApi {
     pub fn preexisting_imageless(&self, id: &str, obj: Value) {
         self.state.lock().unwrap().menus.push((id.into(), obj));
     }
+    /// Uploads an image to rich menu `id` as another isolate would.
+    pub fn give_image(&self, id: &str) {
+        self.state.lock().unwrap().images.push(id.into());
+    }
     /// Whether rich menu `id` has an image.
     pub fn has_image(&self, id: &str) -> bool {
         self.state.lock().unwrap().imaged(id)
@@ -273,6 +277,11 @@ impl HttpClient for LineApi {
                 return found(404, br#"{"message":"Not found"}"#.to_vec());
             }
             if method == http::Method::POST {
+                // LINE never replaces an image.
+                if s.imaged(&id) {
+                    let m = r#"{"message":"An image has already been uploaded to the richmenu"}"#;
+                    return found(400, m.as_bytes().to_vec());
+                }
                 s.images.push(id);
                 return found(200, b"{}".to_vec());
             }

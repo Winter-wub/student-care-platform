@@ -92,3 +92,36 @@ async fn the_per_user_fallback_stays_within_its_budget_per_run() {
         assert!(is_rev(&s.shown(i), 1), "account {i}");
     }
 }
+
+#[tokio::test]
+async fn a_reused_menu_without_an_image_is_repaired_by_the_bulk_relink() {
+    let s = setup(60).await;
+    s.api.take();
+    // list, create, upload: LINE fails, and the delete too: the new revision
+    // stays as a rich menu without its image, and the run is retried.
+    s.api.http().respond_with(200, "{}");
+    s.api.http().respond_with(200, "{}");
+    let down = r#"{"message":"Internal server error"}"#;
+    s.api.http().respond_with(500, down);
+    s.api.http().respond_with(500, down);
+    s.save(EDITED).await;
+    let r = s.tick().await;
+    assert_eq!(r.retried, 1, "{r:?}");
+    assert_eq!(s.api.live_names().len(), 2, "revision 0 and the leftover");
+    s.api.take();
+
+    // The retry finds the leftover by name: the bulk link is refused (no
+    // image), the image uploaded, the bulk link repeated.
+    s.minutes(1);
+    s.drain().await;
+    let reqs = s.api.take();
+    let bulk = bulk_calls(&reqs);
+    assert_eq!(bulk.len(), 2, "refused once, then linked: {bulk:?}");
+    let uploads = reqs.iter().filter(|r| r.uri.contains("/content")).count();
+    assert_eq!(uploads, 2, "one content check, one upload");
+    let rev1 = s.api.linked(&user(59)).unwrap();
+    assert!(is_rev(&s.shown(59), 1));
+    assert_eq!(s.api.linked(&user(0)), Some(rev1.clone()));
+    assert!(s.api.has_image(&rev1));
+    assert_eq!(s.api.live_names().len(), 2, "no second revision");
+}

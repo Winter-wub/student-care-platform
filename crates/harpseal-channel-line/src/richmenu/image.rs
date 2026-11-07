@@ -2,7 +2,7 @@
 //! of a new rich menu, and repairing a reused one that has none (the rules
 //! are in [`crate::richmenu`]).
 
-use harpseal::Result;
+use harpseal::{Error, Result};
 use http::Method;
 
 use super::fail;
@@ -33,21 +33,39 @@ impl LineChannel {
         }
     }
 
-    /// After LINE refused to link the reused rich menu `id` (named `name`)
-    /// with a 400: uploads `image` if it has none, and says so (`true`:
-    /// link again). `false`: it has its image, so the 400 is about
-    /// something else. If the upload fails, the rich menu is deleted (it
-    /// cannot be linked, nobody is on it) and forgotten, so that the next
-    /// call creates it cleanly.
-    pub(super) async fn restore_image(&self, name: &str, id: &str, image: &[u8]) -> Result<bool> {
-        if self.has_image(id).await? {
-            return Ok(false);
+    /// After LINE refused to link the reused rich menu `id` with a 400
+    /// (`refusal`, LINE's message): uploads `image` if it has none, and says
+    /// so (`true`: link again). `false`: it has its image, so the 400 is
+    /// about something else. LINE never replaces an image ("An image has
+    /// already been uploaded to the richmenu", 400), so when another isolate
+    /// or Deployment repairs the same rich menu first, this upload fails: the
+    /// image is checked again and, if it is there now, that is a repair too.
+    /// Otherwise the upload's error is returned. The rich menu is never
+    /// deleted here: others may be linked to it (the KEEP rule).
+    ///
+    /// The check downloads the image (up to 1 MB), the only way LINE offers
+    /// to ask; it runs only after such a 400, once per call. If the check
+    /// itself fails, the error keeps the 400.
+    pub(super) async fn restore_image(
+        &self,
+        id: &str,
+        image: &[u8],
+        refusal: &str,
+    ) -> Result<bool> {
+        match self.has_image(id).await {
+            Ok(true) => return Ok(false),
+            Ok(false) => {}
+            Err(e) => {
+                return Err(Error::Platform(format!(
+                    "LINE answered 400: {refusal}; checking the image of {id} failed: {e}"
+                )));
+            }
         }
-        if let Err(e) = self.upload_image(id, image).await {
-            self.menus.forget(name);
-            self.delete_rich_menu(id).await;
-            return Err(e);
+        match self.upload_image(id, image).await {
+            Ok(()) => Ok(true),
+            // Lost the race: someone else's image is there now.
+            Err(_) if matches!(self.has_image(id).await, Ok(true)) => Ok(true),
+            Err(e) => Err(e),
         }
-        Ok(true)
     }
 }
