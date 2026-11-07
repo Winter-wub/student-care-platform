@@ -262,3 +262,108 @@ async fn a_backup_that_would_not_insert_is_refused_before_any_write() {
     assert_eq!(students.rows[0][0].as_i64(), Some(0));
     assert!(fresh.files().keys().is_empty());
 }
+
+/// The real database; a Student unlinks and links again (same account)
+/// right after the dump read the first page of `link`.
+struct Relinking {
+    inner: Arc<dyn Db>,
+    done: Mutex<bool>,
+}
+
+#[async_trait]
+impl Db for Relinking {
+    async fn query(&self, stmt: Statement) -> Result<Rows> {
+        let first_page = stmt.sql.contains("FROM \"link\"") && stmt.sql.contains("LIMIT");
+        let page = self.inner.query(stmt).await?;
+        if first_page && !std::mem::replace(&mut *self.done.lock().unwrap(), true) {
+            self.inner
+                .batch(vec![
+                    Statement::new("UPDATE link SET status = 'revoked' WHERE id = 'l-0001'"),
+                    Statement::new(
+                        "INSERT INTO link (id, student_id, channel_account_id, channel, status, \
+                         method, linked_at, updated_at) \
+                         VALUES ('l-9999', 'st-0001', 'ca-0001', 'fake', 'active', 'manual', 2, 2)",
+                    ),
+                ])
+                .await?;
+        }
+        Ok(page)
+    }
+    async fn execute(&self, stmt: Statement) -> Result<ExecResult> {
+        self.inner.execute(stmt).await
+    }
+    async fn batch(&self, stmts: Vec<Statement>) -> Result<Vec<ExecResult>> {
+        self.inner.batch(stmts).await
+    }
+}
+
+#[tokio::test]
+async fn a_relink_during_the_backup_is_refused_by_the_partial_unique_index() {
+    let (h, _app) = populated().await;
+    let db = h.db();
+    // 600 Links, more than a page: l-0001 is in the first.
+    let mut setup = Vec::new();
+    for i in 0..600 {
+        setup.push(Statement::new(format!(
+            "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+             VALUES ('st-{i:04}', '6902{i:04}', 'นักศึกษา {i}', 'th', 1, 1)"
+        )));
+        setup.push(Statement::new(format!(
+            "INSERT INTO channel_account (id, channel, external_id, first_seen_at, updated_at) \
+             VALUES ('ca-{i:04}', 'fake', 'u-relink-{i:04}', 1, 1)"
+        )));
+        setup.push(Statement::new(format!(
+            "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+             linked_at, updated_at) VALUES ('l-{i:04}', 'st-{i:04}', 'ca-{i:04}', 'fake', \
+             'active', 'manual', 1, 1)"
+        )));
+    }
+    db.batch(setup).await.unwrap();
+
+    let mut services = h.services();
+    services.db = Arc::new(Relinking {
+        inner: db.clone(),
+        done: Mutex::new(false),
+    });
+    let d = deployment_with(&h, services);
+    h.clock().set_ms(NIGHT);
+    for _ in 0..10 {
+        d.tick(Timestamp(h.clock().now_ms())).await.unwrap();
+        h.clock().advance_minutes(1);
+    }
+    let files: Arc<dyn FileStore> = Arc::new(h.files().clone());
+    let source = FileStoreBackup::new(files, format!("backups/{}/", stamp_of(NIGHT)));
+    let links = String::from_utf8(
+        harpseal::backup::BackupSource::read(&source, "tables/link.ndjson")
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        links.contains("\"l-9999\""),
+        "the new Link is in the backup"
+    );
+
+    // Into a fresh database: refused before any write, naming the index.
+    let fresh = Harness::new();
+    let d2 = deployment(&fresh);
+    let err = backup::load(&d2, &source, &LoadOptions::new())
+        .await
+        .unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("nothing was restored"), "{text}");
+    assert!(
+        text.contains("link_live_account") && text.contains("link_live_student_channel"),
+        "{text}"
+    );
+    let students = query(fresh.db().as_ref(), "SELECT count(*) FROM student").await;
+    assert_eq!(students.rows[0][0].as_i64(), Some(0));
+    // Over the source itself, forced: the wipe never runs.
+    let before = query(db.as_ref(), "SELECT count(*) FROM link").await;
+    let forced = backup::load(&deployment(&h), &source, &LoadOptions::new().force(true)).await;
+    assert!(forced.is_err());
+    assert_eq!(
+        query(db.as_ref(), "SELECT count(*) FROM link").await.rows,
+        before.rows
+    );
+}

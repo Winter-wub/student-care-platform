@@ -39,26 +39,32 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.backup.export_note",
-        "หนึ่งชีตต่อหนึ่งตาราง ไม่รวมรหัสผ่าน โทเคน และค่าลับอื่น ๆ ไม่ใช่ชุดสำรองสำหรับกู้คืน",
-        "One sheet per table, without password hashes, tokens and other secrets. Not a backup: it cannot be restored."
+        "หนึ่งชีตต่อหนึ่งตาราง ไม่รวมตารางงานระบบ (log, งาน, ข้อความขาออก) รหัสผ่าน โทเคน และค่าลับอื่น ๆ ไม่ใช่ชุดสำรองสำหรับกู้คืน",
+        "One sheet per table, without the operational tables (logs, Jobs, outbound messages), password hashes, tokens and other secrets. Not a backup: it cannot be restored."
     ),
-    // {cells} {limit}
+    // {cells} {limit} {table} {table_cells}
     (
         "kernel.backup.export_too_big",
-        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ให้ดาวน์โหลดชุดสำรองแทน หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
-        "The data has {cells} cells, over the Excel download's limit of {limit}. Download a backup instead, or raise [backup] max_export_cells on a native server."
+        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ตารางที่ใหญ่ที่สุดคือ {table} ({table_cells} ช่อง) ให้ดาวน์โหลดตารางนั้นแยกจากรายการตารางด้านล่าง หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
+        "The data has {cells} cells, over the Excel download's limit of {limit}. The largest table is {table} ({table_cells} cells): download it alone from the table list, or raise [backup] max_export_cells on a native server."
     ),
-    // {size}
+    // {table} {cells} {limit}
     (
-        "kernel.backup.total",
-        "พื้นที่ที่ชุดสำรองใช้: {size}",
-        "Storage used by backups: {size}"
+        "kernel.backup.export_table_too_big",
+        "ตาราง {table} มี {cells} ช่อง เกินขีดจำกัด {limit} ช่อง ให้ดาวน์โหลดชุดสำรองแทน หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
+        "Table {table} alone has {cells} cells, over the limit of {limit}. Download a backup instead, or raise [backup] max_export_cells on a native server."
     ),
-    // {error}
     (
-        "kernel.backup.prune_failed",
-        "ลบชุดสำรองเก่าไม่สำเร็จ: {error}",
-        "Deleting old backups failed: {error}"
+        "kernel.backup.tables",
+        "ดาวน์โหลดทีละตาราง (Excel)",
+        "Download one table (Excel)"
+    ),
+    ("kernel.backup.table", "ตาราง", "Table"),
+    ("kernel.backup.rows", "แถว", "Rows"),
+    (
+        "kernel.backup.not_in_all",
+        "ไม่รวมใน \"ดาวน์โหลดข้อมูลทั้งหมด\"",
+        "Not in \"Download all data\""
     ),
     ("kernel.backup.started", "เริ่ม", "Started"),
     ("kernel.backup.state", "สถานะ", "Status"),

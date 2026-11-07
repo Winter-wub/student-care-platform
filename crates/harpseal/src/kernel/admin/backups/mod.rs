@@ -8,7 +8,8 @@
 //! | Page, `GET /admin/backups` | `kernel.backup.manage`, nav order 90 |
 //! | "Back up now", `POST /admin/backups/now` | same; audited `backup.request` |
 //! | One backup as a `.tar`, `GET /admin/backups/{id}/download` | `kernel.backup.download`; streamed, audited `backup.download` |
-//! | All data as `.xlsx`, `GET /admin/backups/export.xlsx` | `kernel.backup.download`; built in the request, audited `data.export` |
+//! | All data as `.xlsx`, `GET /admin/backups/export.xlsx` (operational tables left out) | `kernel.backup.download`; built in the request, audited `data.export` |
+//! | One table as `.xlsx`, `GET /admin/backups/export/{table}` | same |
 //! | Job `kernel.backup.run` | on `[backup] schedule` when `enabled` |
 //!
 //! **Where.** Each backup is the FileStore objects under
@@ -70,7 +71,8 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .back_office_page(MANAGE, PATH, "kernel.backup.title", 90, get(page::page))
         .back_office(MANAGE, "/backups/now", post(page::now))
-        .back_office(DOWNLOAD, "/backups/export.xlsx", get(export::xlsx))
+        .back_office(DOWNLOAD, "/backups/export.xlsx", get(export::all))
+        .back_office(DOWNLOAD, "/backups/export/{table}", get(export::one))
         .back_office(DOWNLOAD, "/backups/{id}/download", get(download::tar))
         .job(JobSpec::new(KIND), run::run);
 }

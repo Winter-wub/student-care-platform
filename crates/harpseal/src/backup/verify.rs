@@ -1,7 +1,8 @@
 //! [`verify`]: the restore's last check before it writes anything. The
 //! decoded rows must insert cleanly: no two rows share a primary key or a
-//! (non-partial) `UNIQUE` index, and every foreign key resolves among the
-//! rows of the backup.
+//! key of any `UNIQUE` index, partial and expression ones included
+//! (`unique.rs`), and every foreign key resolves among the rows of the
+//! backup.
 //!
 //! A backup taken while the Deployment writes (the nightly one) may hold a
 //! child row whose parent was deleted after the child's table was read,
@@ -14,6 +15,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use super::schema::{Table, quote};
+use super::unique::{repeats, uniques as uniques_of};
 use crate::port_types::{Statement, Value};
 use crate::{Db, Error, Result};
 
@@ -93,42 +95,6 @@ async fn foreign_keys(db: &dyn Db, t: &Table, tables: &[Table]) -> Result<Vec<Fk
     Ok(out)
 }
 
-/// The primary key and every non-partial `UNIQUE` index of `t`, as columns.
-async fn unique_keys(db: &dyn Db, t: &Table) -> Result<Vec<Vec<String>>> {
-    let mut keys = Vec::new();
-    let pk: Vec<String> = t.pk_columns().iter().map(|c| c.to_string()).collect();
-    if !pk.is_empty() {
-        keys.push(pk);
-    }
-    let list = db
-        .query(Statement::new(format!(
-            "PRAGMA index_list({})",
-            quote(&t.name)
-        )))
-        .await?;
-    for i in 0..list.len() {
-        let unique = list.get(i, "unique").and_then(Value::as_i64) == Some(1);
-        let partial = list.get(i, "partial").and_then(Value::as_i64) == Some(1);
-        let origin = text(list.get(i, "origin"));
-        if !unique || partial || origin == "pk" {
-            continue;
-        }
-        let name = text(list.get(i, "name"));
-        let info = db
-            .query(Statement::new(format!(
-                "PRAGMA index_info({})",
-                quote(&name)
-            )))
-            .await?;
-        let cols: Vec<String> = (0..info.len()).map(|r| text(info.get(r, "name"))).collect();
-        // An index on an expression names no column: not checked here.
-        if !cols.is_empty() && cols.iter().all(|c| !c.is_empty()) {
-            keys.push(cols);
-        }
-    }
-    Ok(keys)
-}
-
 /// Checks `decoded` (table name to rows) against the schema of `tables`;
 /// drops rows orphaned through a cascading key and returns how many per
 /// table, or refuses.
@@ -141,7 +107,7 @@ pub(super) async fn verify(
     let mut uniques = BTreeMap::new();
     for t in tables.iter().filter(|t| decoded.contains_key(&t.name)) {
         fks.insert(t.name.clone(), foreign_keys(db, t, tables).await?);
-        uniques.insert(t.name.clone(), unique_keys(db, t).await?);
+        uniques.insert(t.name.clone(), uniques_of(db, t).await?);
     }
     let mut problems = Vec::new();
     let mut dropped: BTreeMap<String, u64> = BTreeMap::new();
@@ -188,16 +154,10 @@ pub(super) async fn verify(
     }
     for (name, keys) in &uniques {
         let d = &decoded[name];
-        for cols in keys {
-            let mut seen = HashSet::new();
-            let dup = d
-                .rows
-                .iter()
-                .filter_map(|r| tuple(d, r, cols))
-                .filter(|k| !seen.insert(k.clone()))
-                .count();
+        for u in keys {
+            let dup = repeats(db, u, d.columns, &d.rows).await?;
             if dup > 0 {
-                problems.push(format!("{name}: {dup} rows repeat ({})", cols.join(", ")));
+                problems.push(format!("{name}: {dup} rows repeat a key of {}", u.name));
             }
         }
     }

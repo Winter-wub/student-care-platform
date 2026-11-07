@@ -112,12 +112,21 @@ async fn all_data_downloads_as_xlsx_without_secrets() {
         "student",
         "staff",
         "staff_session",
-        "audit_log",
         "announcement",
+        "verification_challenge",
     ] {
         assert!(sheets.iter().any(|s| s == t), "{t} in {sheets:?}");
     }
     assert!(!sheets.iter().any(|s| s == "migration"), "as the backup");
+    for t in [
+        "audit_log",
+        "job",
+        "inbound_event",
+        "outbound_message",
+        "rate_limit",
+    ] {
+        assert!(!sheets.iter().any(|s| s == t), "operational {t} left out");
+    }
     let header = |book: &mut Xlsx<_>, sheet: &str| -> Vec<String> {
         let range = book.worksheet_range(sheet).unwrap();
         range
@@ -137,15 +146,8 @@ async fn all_data_downloads_as_xlsx_without_secrets() {
     let sessions = header(&mut book, "staff_session");
     assert!(!sessions.contains(&"id".to_string()), "{sessions:?}");
     assert!(sessions.contains(&"staff_id".to_string()));
-    for (sheet, gone) in [
-        ("verification_challenge", "secret_hash"),
-        ("job", "lock_token"),
-    ] {
-        assert!(
-            !header(&mut book, sheet).contains(&gone.to_string()),
-            "{sheet}"
-        );
-    }
+    let challenges = header(&mut book, "verification_challenge");
+    assert!(!challenges.contains(&"secret_hash".to_string()));
     // The rows came along: three Students, with their codes.
     let students = book.worksheet_range("student").unwrap();
     assert_eq!(students.height(), 4, "header and three rows");
@@ -246,4 +248,59 @@ async fn an_export_over_the_cell_limit_is_refused_before_it_is_built() {
     assert!(r.body.contains("id=\"export-too-big\""));
     assert!(r.body.contains("max_export_cells"));
     assert_eq!(audits(&h, "data.export").await, 0);
+}
+
+#[tokio::test]
+async fn one_table_downloads_alone_and_a_large_one_is_named() {
+    let (h, app) = populated().await;
+    let b = admin(&h, &app).await;
+    let page = b.get("/admin/backups").await;
+    assert!(page.body.contains("id=\"backup-tables\""), "{}", page.body);
+    assert!(page.body.contains("href=\"/admin/backups/export/job\""));
+    // An operational table, alone: secrets still left out.
+    let r = b.get("/admin/backups/export/job").await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    let mut book: Xlsx<_> = Xlsx::new(Cursor::new(r.bytes.clone())).unwrap();
+    assert_eq!(book.sheet_names(), ["job"]);
+    let range = book.worksheet_range("job").unwrap();
+    let head: Vec<String> = range
+        .rows()
+        .next()
+        .unwrap()
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
+    assert!(head.contains(&"kind".to_string()) && !head.contains(&"lock_token".to_string()));
+    let after = text(
+        &h,
+        "SELECT after FROM audit_log WHERE action = 'data.export'",
+    )
+    .await;
+    assert!(after.contains("\"tables\":[\"job\"]"), "{after}");
+    assert_eq!(
+        b.get("/admin/backups/export/no_such_table").await.status,
+        404
+    );
+}
+
+#[tokio::test]
+async fn an_export_over_the_limit_names_the_table_to_fetch_alone() {
+    let h = Harness::new();
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                utc_offset = \"+07:00\"\n[backup]\nmax_export_cells = 40\n";
+    let config = harpseal::DeploymentConfig::from_toml(toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    let b = admin(&h, &app).await;
+    for i in 0..5 {
+        h.create_staff(&format!("s{i}@sealbay.example"), PASSWORD, &[])
+            .await;
+    }
+    let r = b.get("/admin/backups/export.xlsx").await;
+    assert_eq!(r.status, 413, "{}", r.body);
+    assert!(r.body.contains("data-table=\"staff\""), "{}", r.body);
+    let alone = b.get("/admin/backups/export/role").await;
+    assert_eq!(alone.status, 200, "{}", alone.body);
+    let too_big = b.get("/admin/backups/export/staff").await;
+    assert_eq!(too_big.status, 413);
+    assert!(too_big.body.contains("staff"));
 }

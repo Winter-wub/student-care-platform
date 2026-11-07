@@ -1,11 +1,12 @@
-//! "Download all data" (#78): every table a backup holds, Kernel and
-//! Module tables alike, as one XLSX workbook with one sheet per table,
-//! written by `rust_xlsxwriter`. Secret columns are left out
-//! ([`is_secret`]); everything else is exported as stored.
+//! "Download all data" (#78): the tables a backup holds, Kernel and Module
+//! tables alike, but the [`OPERATIONAL`] ones, as one XLSX workbook with
+//! one sheet per table, written by `rust_xlsxwriter`; or one table alone
+//! ([`Selection`]). Secret columns are left out ([`is_secret`]); everything
+//! else is exported as stored.
 //!
 //! The workbook is built in memory in one request (`rust_xlsxwriter` has
 //! no streaming mode on wasm32), at about 200 bytes per cell, so the page
-//! first counts the cells ([`cells`]) and refuses above `[backup]
+//! first counts the cells ([`sizes`]) and refuses above `[backup]
 //! max_export_cells`. A table longer than Excel's 1,048,575 data rows is
 //! cut there and named in [`Export::cut`].
 
@@ -87,28 +88,62 @@ fn cell_text(s: &str) -> std::borrow::Cow<'_, str> {
     t.into()
 }
 
-/// Cells the workbook of `d` would hold (rows × exported columns, every
-/// table, header rows left out), counted without reading the rows.
-pub(crate) async fn cells(d: &Deployment) -> Result<u64> {
+/// Operational tables "Download all data" leaves out (they are large and
+/// rarely read as a spreadsheet): each can still be downloaded alone.
+pub(crate) const OPERATIONAL: [&str; 5] = [
+    "audit_log",
+    "inbound_event",
+    "job",
+    "outbound_message",
+    "rate_limit",
+];
+
+/// Which tables a workbook holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Selection<'a> {
+    /// Every table but the [`OPERATIONAL`] ones: "Download all data".
+    Default,
+    /// Every table (the backup's list): for the page's table list.
+    Every,
+    /// One table, by name.
+    One(&'a str),
+}
+
+async fn selected(db: &dyn crate::Db, sel: Selection<'_>) -> Result<Vec<schema::Table>> {
+    let all = schema::tables(db).await?;
+    Ok(all
+        .into_iter()
+        .filter(|t| match sel {
+            Selection::Default => !OPERATIONAL.contains(&t.name.as_str()),
+            Selection::Every => true,
+            Selection::One(n) => t.name == n,
+        })
+        .collect())
+}
+
+/// `(table, rows, cells)` of each table `sel` names, cells being rows ×
+/// exported columns (header rows left out), counted without reading rows.
+pub(crate) async fn sizes(d: &Deployment, sel: Selection<'_>) -> Result<Vec<(String, u64, u64)>> {
     let db = d.services().db.as_ref();
-    let mut total = 0u64;
-    for t in schema::tables(db).await? {
+    let mut out = Vec::new();
+    for t in selected(db, sel).await? {
         let kept = t
             .columns
             .iter()
             .filter(|c| !is_secret(&t.name, &c.name))
             .count();
-        total += schema::count(db, &t.name).await? * kept as u64;
+        let rows = schema::count(db, &t.name).await?;
+        out.push((t.name.clone(), rows, rows * kept as u64));
     }
-    Ok(total)
+    Ok(out)
 }
 
-/// Builds the workbook of every table of `d` (the backup's table list, in
-/// name order), secret columns left out.
-pub(crate) async fn export(d: &Deployment) -> Result<Export> {
+/// Builds the workbook of the tables `sel` names (in name order), secret
+/// columns left out.
+pub(crate) async fn export(d: &Deployment, sel: Selection<'_>) -> Result<Export> {
     let db = d.services().db.as_ref();
     let now = d.services().now_ms();
-    let tables = schema::tables(db).await?;
+    let tables = selected(db, sel).await?;
     let mut book = Workbook::new();
     let bold = Format::new().set_bold();
     let mut names = Vec::with_capacity(tables.len());

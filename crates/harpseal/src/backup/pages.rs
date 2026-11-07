@@ -8,6 +8,14 @@
 //! again under its new `rowid` and dump a duplicate key, which the restore
 //! cannot insert. Only a table without a primary key is read by `rowid`.
 //!
+//! What keyset paging cannot see: a row whose primary key is **updated**
+//! between two pages moves in the order, so it may be read twice (under
+//! both keys) or not at all. No Kernel path updates a primary key except
+//! the single-row `menu_salt`, which never spans pages. A `NULL` in a
+//! primary key (SQLite allows it outside `INTEGER PRIMARY KEY` and `NOT
+//! NULL`) would end the paging early, so it refuses the dump instead,
+//! naming the table.
+//!
 //! **Transient rows.** Live Verification challenges (`pending` and not yet
 //! expired) are never read: their salted hash of a short code is
 //! crackable offline, and a challenge is worth nothing after a restore.
@@ -15,7 +23,7 @@
 use super::PAGE;
 use super::schema::{Table, quote};
 use crate::port_types::{Rows, Statement, Value};
-use crate::{Db, Result};
+use crate::{Db, Error, Result};
 
 /// Column the rowid is read into, ahead of `*` (tables without a key).
 const ROWID: &str = "__harpseal_rowid";
@@ -77,6 +85,24 @@ pub(crate) async fn read_pages(
                 params,
             })
             .await?;
+        if skip == 0 {
+            let idx: Vec<usize> = key
+                .iter()
+                .filter_map(|k| page.columns.iter().position(|c| c == k))
+                .collect();
+            let null = page.rows.iter().any(|r| {
+                idx.iter()
+                    .any(|&i| matches!(r.get(i), None | Some(Value::Null)))
+            });
+            if null {
+                return Err(Error::Invalid(format!(
+                    "table {} has a row with a NULL primary key ({}); it cannot be backed up \
+                     page by page: give the row a key first",
+                    t.name,
+                    key.join(", ")
+                )));
+            }
+        }
         if !f(&page, skip)? || page.len() < PAGE {
             return Ok(());
         }

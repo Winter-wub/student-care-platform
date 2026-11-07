@@ -30,17 +30,28 @@ use crate::{Deployment, Error, JobContext, Result};
 /// What one Job run may dump before it saves and hands over (well inside
 /// a Worker's CPU, memory and subrequest limits), and the largest table it
 /// accepts (`[backup] max_table_mb`, `max_table_rows`).
+///
+/// **Subrequests.** A Worker invocation may make 1,000, and one tick runs
+/// up to 25 Jobs in a single invocation. A step stops before a table or
+/// object would take its own queries past [`STEP_QUERIES`]; with the run's
+/// bookkeeping (about ten more) and, on the first step only, the schema
+/// read (two per table), a step stays near 400, leaving at least 550 for
+/// the other Jobs of its tick.
 fn budget(d: &Deployment) -> Budget {
     let b = &d.config().backup;
     Budget {
         rows: 50_000,
         bytes: 32 * 1024 * 1024,
         files: 200,
+        queries: STEP_QUERIES,
         max_table_rows: b.max_table_rows,
         max_table_bytes: u64::from(b.max_table_mb) * 1024 * 1024,
         pause_before_files: true,
     }
 }
+/// Database queries and FileStore calls one step may make (see [`budget`]).
+const STEP_QUERIES: u64 = 350;
+
 /// A run that has not moved for this long is failed by its watch.
 pub(super) const STALL_MS: i64 = 2 * 3_600_000;
 

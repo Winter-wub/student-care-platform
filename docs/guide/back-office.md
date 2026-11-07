@@ -99,4 +99,4 @@ Student to accept again on their next message. Edits take effect on the next
 message: `setting` is read on every Inbound, with no cache.
 `/admin/backups` (`kernel.backup.manage`) lists the nightly backups, downloads
 one as a `.tar`, starts one now, and downloads all data as an Excel workbook
-without secret columns; see [Nightly backups](self-hosting.md#nightly-backups-and-the-backups-page).
+without secret columns; see [Backups](backups.md).

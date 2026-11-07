@@ -14,7 +14,7 @@ use super::dump::{applied_migrations, dump_table, file_keys};
 use super::schema::{self, Table};
 use super::{
     BackupSink, DumpReport, FORMAT, MANIFEST, Manifest, ManifestFile, ManifestMigration,
-    ManifestTable, file_entry, sha256_hex, table_entry,
+    ManifestTable, PAGE, file_entry, sha256_hex, table_entry,
 };
 use crate::{Deployment, Error, Result};
 
@@ -49,6 +49,10 @@ pub(crate) struct Budget {
     pub(crate) bytes: u64,
     /// Objects copied; checked before each object.
     pub(crate) files: u64,
+    /// Subrequests (database queries and FileStore calls) one step may
+    /// make; a table or object that would go past it waits for the next
+    /// step, unless the step has done nothing yet.
+    pub(crate) queries: u64,
     /// Refuse a table with more rows than this (format 1 cannot split it).
     pub(crate) max_table_rows: u64,
     /// Refuse a table whose NDJSON would be larger than this, estimated
@@ -66,6 +70,7 @@ impl Budget {
         rows: u64::MAX,
         bytes: u64::MAX,
         files: u64::MAX,
+        queries: u64::MAX,
         max_table_rows: u64::MAX,
         max_table_bytes: u64::MAX,
         pause_before_files: false,
@@ -143,6 +148,8 @@ impl DumpProgress {
         let s = d.services();
         let db = s.db.as_ref();
         let (mut rows, mut bytes, mut files) = (0u64, 0u64, 0u64);
+        // Subrequests so far: what the caller reports it used, then ours.
+        let mut used = 0u64;
         let spent = |rows: u64, bytes: u64, files: u64| {
             rows >= budget.rows || bytes >= budget.bytes || files >= budget.files
         };
@@ -162,12 +169,19 @@ impl DumpProgress {
                 })?;
                 if budget.limited() {
                     let (n, est) = estimate(db, t).await?;
+                    used += 1;
                     check_limits(t, n, est, budget)?;
+                    // Its pages, the file-key reads and the entry's write.
+                    let need = n / PAGE as u64 + 1 + t.file_key_columns().len() as u64 + 1;
                     // A table that would overrun this step gets a step of its own.
                     let worked = rows > 0 || bytes > 0;
-                    if worked && (rows + n > budget.rows || bytes + est > budget.bytes) {
+                    let over = rows + n > budget.rows
+                        || bytes + est > budget.bytes
+                        || used + need > budget.queries;
+                    if worked && over {
                         return Ok(Step::More);
                     }
+                    used += need;
                 }
                 let (out, n) = dump_table(db, t, s.now_ms()).await?;
                 sink.write(&table_entry(&t.name), &out).await?;
@@ -192,9 +206,11 @@ impl DumpProgress {
             return Ok(Step::More);
         }
         while let Some(key) = self.keys.get(self.files.len()).cloned() {
-            if spent(rows, bytes, files) {
+            // A copy is a read and a write.
+            if spent(rows, bytes, files) || (files > 0 && used + 2 > budget.queries) {
                 return Ok(Step::More);
             }
+            used += 2;
             let entry = file_entry(&key);
             let found = s.files.get(&key).await?;
             let file = match found {
@@ -254,18 +270,20 @@ impl DumpProgress {
     }
 }
 
-/// Rows of `t` and the size of its NDJSON entry, estimated in one scan:
-/// the values (a quarter more for base64 blobs and escapes) plus, per row,
-/// each column's name, quotes and separators.
+/// Rows of `t` and the size of its NDJSON entry, estimated in one scan,
+/// on the high side: the values plus a third (base64 makes a blob a third
+/// larger; escapes in text add less), plus, per row, each column's quoted
+/// name, `:`, `,` and the quotes around a text value, and the braces and
+/// newline.
 async fn estimate(db: &dyn crate::Db, t: &Table) -> Result<(u64, u64)> {
     let (n, data) = schema::size(db, t).await?;
     let per_row: u64 = t
         .columns
         .iter()
-        .map(|c| c.name.len() as u64 + 4)
+        .map(|c| c.name.len() as u64 + 6)
         .sum::<u64>()
-        + 2;
-    Ok((n, data + data / 4 + n * per_row))
+        + 3;
+    Ok((n, data + data / 3 + n * per_row))
 }
 
 /// Refuses a table over the budget's limits, naming it.
@@ -277,8 +295,9 @@ fn check_limits(t: &Table, rows: u64, bytes: u64, budget: Budget) -> Result<()> 
     Err(Error::Invalid(format!(
         "table {} has {rows} rows (about {} MB as NDJSON), over the nightly backup's limit of \
          {} rows or {} MB per table ([backup] max_table_rows, max_table_mb): a table is one \
-         entry built in memory. Back this Deployment up natively with `harpseal backup` \
-         until backups can split tables",
+         entry built in memory, until backups can split tables (#88). On Workers, export the \
+         database with `wrangler d1 export` meanwhile (it does not copy the files); on a \
+         native server, raise the limits or run `harpseal backup`",
         t.name,
         mb(bytes),
         budget.max_table_rows,

@@ -6,7 +6,7 @@
 //! schedule = "0 2 * * *"    # cron, in the Deployment's utc_offset (default 02:00)
 //! retention_days = 30       # default 30
 //! max_table_mb = 24         # default 24: largest table the Job dumps
-//! max_table_rows = 200000   # default 200,000
+//! max_table_rows = 150000   # default 150,000
 //! max_export_cells = 150000 # default 150,000: "Download all data" limit
 //! ```
 
@@ -31,13 +31,14 @@ pub struct BackupConfig {
     pub retention_days: u32,
     /// The largest table the Job dumps, in MB of NDJSON (estimated before
     /// reading it). A table is one entry built in memory (format 1 has no
-    /// table parts yet), and a Worker has 128 MB, with the entry held about
-    /// three times over while it is written to R2: default 24. A larger
-    /// table fails the run, naming it; back such a Deployment up natively
-    /// (`harpseal backup`), or raise this on a native server.
+    /// table parts yet, #88), and a Worker has 128 MB, with the entry held
+    /// about three times over while it is written to R2: default 24. A
+    /// larger table fails the run, naming it. On Workers there is no other
+    /// way yet (see the Backups guide); on a native server raise it, or use
+    /// `harpseal backup`.
     pub max_table_mb: u32,
-    /// The most rows of one table the Job dumps: default 200,000, that is
-    /// 400 D1 queries of 500 rows, inside a Worker invocation's 1,000
+    /// The most rows of one table the Job dumps: default 150,000, that is
+    /// 300 D1 queries of 500 rows, so the table fits one step's 350
     /// subrequests. Larger fails the run like `max_table_mb`.
     pub max_table_rows: u64,
     /// The most cells (rows × exported columns, all tables) "Download all
@@ -56,7 +57,7 @@ impl Default for BackupConfig {
             schedule: "0 2 * * *".into(),
             retention_days: 30,
             max_table_mb: 24,
-            max_table_rows: 200_000,
+            max_table_rows: 150_000,
             max_export_cells: 150_000,
         }
     }
@@ -92,7 +93,7 @@ mod tests {
         assert_eq!(c.backup.retention_days, 30);
         assert_eq!(
             (c.backup.max_table_mb, c.backup.max_table_rows),
-            (24, 200_000)
+            (24, 150_000)
         );
         for bad in [
             "[backup]\nschedule = \"@daily\"",

@@ -11,7 +11,8 @@ use serde_json::json;
 use super::store::{self, Run};
 use super::{DOWNLOAD, KIND, human_bytes};
 use crate::audit::{self, Actor, RequestCtx};
-use crate::kernel::admin::view::View;
+use crate::backup::xlsx::{self, OPERATIONAL, Selection};
+use crate::kernel::admin::view::{View, enc};
 use crate::kernel::text::fill;
 use crate::port_types::{Statement, Value};
 use crate::{AppState, CurrentStaff, Result, Services};
@@ -25,12 +26,18 @@ const ERRORS_DAYS: i64 = 30;
 pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     let v = View::new(&s, &staff);
     let loaded = async {
+        let tables = if staff.can(DOWNLOAD) {
+            xlsx::sizes(&s.deployment, Selection::Every).await?
+        } else {
+            Vec::new()
+        };
         Ok::<_, crate::Error>((
             store::list(&s.services, SHOWN).await?,
             job_errors(&s.services).await?,
+            tables,
         ))
     };
-    let (runs, errors) = match loaded.await {
+    let (runs, errors, tables) = match loaded.await {
         Ok(x) => x,
         Err(e) => return v.error(&e),
     };
@@ -74,6 +81,7 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
             p class="muted" { (v.t("kernel.backup.restore_hint")) }
         }
         (table(&v, &runs))
+        @if !tables.is_empty() { (table_list(&v, &tables)) }
         @if !errors.is_empty() {
             section class="card" id="backup-job-errors" {
                 h2 { (v.t("kernel.backup.job_errors")) }
@@ -130,6 +138,35 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                                     href=(format!("/admin/backups/{}/download", r.id)) {
                                     (v.t("kernel.backup.download"))
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Every table with its rows and a download of it alone.
+fn table_list(v: &View<'_>, tables: &[(String, u64, u64)]) -> Markup {
+    html! {
+        section class="card" id="backup-tables" {
+            h2 { (v.t("kernel.backup.tables")) }
+            table class="rows" aria-label=(v.t("kernel.backup.tables")) {
+                thead { tr { th { (v.t("kernel.backup.table")) } th { (v.t("kernel.backup.rows")) } th {} } }
+                tbody {
+                    @for (name, rows, _) in tables {
+                        tr data-table=(name) {
+                            td data-label=(v.t("kernel.backup.table")) {
+                                span class="code" { (name) }
+                                @if OPERATIONAL.contains(&name.as_str()) {
+                                    br; span class="muted" { (v.t("kernel.backup.not_in_all")) }
+                                }
+                            }
+                            td data-label=(v.t("kernel.backup.rows")) { (rows) }
+                            td {
+                                a class="btn secondary" download
+                                    href=(format!("/admin/backups/export/{}", enc(name))) { "Excel" }
                             }
                         }
                     }

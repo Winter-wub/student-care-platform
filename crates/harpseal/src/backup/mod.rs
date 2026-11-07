@@ -63,6 +63,7 @@ mod pages;
 pub(crate) mod progress;
 pub(crate) mod schema;
 mod store;
+mod unique;
 mod value;
 mod verify;
 pub(crate) mod xlsx;
