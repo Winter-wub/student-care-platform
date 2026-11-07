@@ -29,6 +29,8 @@ mod tags;
 pub(crate) mod texts;
 pub(crate) mod view;
 
+pub(crate) use read::search;
+
 use axum::routing::{get, post};
 use serde_json::{Map, Value as Json};
 

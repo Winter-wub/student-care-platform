@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::service::Draft;
 use super::store::{Row, Texts};
 use super::view::{end_of_day, input_date, input_datetime, local_datetime};
-use crate::audience::Audience;
+use crate::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use crate::config::{AttributeType, RosterConfig};
 
 /// Longest title and body, in characters.
@@ -28,6 +28,8 @@ pub(crate) struct Fields {
     /// `attr.<key>` values (checkboxes, or one comma-separated text).
     pub(crate) attrs: BTreeMap<String, Vec<String>>,
     pub(crate) tags: String,
+    /// Hand-picked student ids as typed (newline, comma or space separated).
+    pub(crate) students: String,
     pub(crate) unreachable: bool,
     pub(crate) version: Option<i64>,
     /// The submit button pressed: `draft` or `confirm`.
@@ -55,6 +57,7 @@ impl Fields {
                 "when" => f.when.clone_from(v),
                 "send_at" => f.send_at.clone_from(v),
                 "tags" => f.tags.clone_from(v),
+                "students" => f.students.clone_from(v),
                 "unreachable" => f.unreachable = true,
                 "version" => f.version = v.parse().ok(),
                 "do" => f.submit.clone_from(v),
@@ -98,6 +101,7 @@ impl Fields {
                 .unwrap_or_default(),
             attrs: row.audience.attributes.clone(),
             tags: row.audience.tags.join(", "),
+            students: row.audience.students.join("\n"),
             unreachable: row.audience.include_unreachable,
             version: Some(row.version),
             submit: String::new(),
@@ -114,6 +118,7 @@ impl Fields {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         a.tags = split(&self.tags).collect();
+        a.students = parse_student_ids(&self.students);
         a.include_unreachable = self.unreachable;
         a
     }
@@ -177,7 +182,9 @@ impl Fields {
                 errors.push(("audience", "announcements.form.bad_audience"));
             }
         }
-        if audience.check(roster).is_err() {
+        if audience.students.len() > MAX_STUDENTS {
+            errors.push(("audience", "announcements.form.students_too_many"));
+        } else if audience.check(roster).is_err() {
             errors.push(("audience", "announcements.form.bad_audience"));
         }
         if !errors.is_empty() {

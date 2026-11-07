@@ -25,6 +25,7 @@ utc_offset = "+07:00"
 [roles]
 Officer = ["kernel.student.view", "announcements.view", "announcements.send", "announcements.retract"]
 Viewer = ["announcements.view"]
+Sender = ["announcements.view", "announcements.send"]
 
 [roster.attributes.programme]
 column = "หลักสูตร"

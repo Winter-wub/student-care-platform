@@ -59,6 +59,13 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
             a.tags.join(" / ")
         ));
     }
+    if !a.students.is_empty() {
+        parts.push(format!(
+            "{}: {}",
+            v.t("announcements.form.hand_picked"),
+            a.students.len()
+        ));
+    }
     if parts.is_empty() {
         parts.push(v.t("announcements.form.everyone"));
     }
