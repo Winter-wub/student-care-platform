@@ -5,8 +5,8 @@ mod common;
 use std::sync::Arc;
 
 use common::{LineApi, SECRET, TOKEN, USER};
-use harpseal::{Channel, Error};
-use harpseal_channel_line::{KIND, LineChannel, LineConfig};
+use harpseal::{Channel, Error, WebClient};
+use harpseal_channel_line::{KIND, LINE_MINI_APP_BASE, LineChannel, LineConfig};
 
 const LIFF: &str = "2000000000-SealBay0";
 
@@ -37,6 +37,19 @@ async fn launch_urls_open_the_liff_app() {
         app.launch_url("/news/1042?from=menu"),
         "https://liff.line.me/2000000000-SealBay0/news/1042?from=menu"
     );
+    assert_eq!(app.web_client(), Some(WebClient::Liff { id: LIFF.into() }));
+}
+
+#[tokio::test]
+async fn a_line_mini_app_launches_under_its_own_base_with_the_same_sdk() {
+    let cfg = LineConfig::new(SECRET, TOKEN, LIFF).with_launch_base(LINE_MINI_APP_BASE);
+    let ch = LineChannel::new(cfg, Arc::new(LineApi::default()));
+    let app = ch.mini_app().unwrap();
+    assert_eq!(
+        app.launch_url("/app"),
+        "https://miniapp.line.me/2000000000-SealBay0/app"
+    );
+    assert_eq!(app.web_client(), Some(WebClient::Liff { id: LIFF.into() }));
 }
 
 #[tokio::test]

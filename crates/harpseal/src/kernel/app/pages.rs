@@ -15,7 +15,7 @@ use crate::kernel::text::Texts;
 use crate::message::Locale;
 use crate::modules::announcements::{self as news, AckOutcome};
 use crate::port_types::{Statement, Value};
-use crate::{AppState, Result};
+use crate::{AppState, Error, ErrorReport, Result};
 
 /// Most announcements the page lists.
 const LIST_LIMIT: i64 = 100;
@@ -70,25 +70,37 @@ async fn visitor(s: &AppState, headers: &HeaderMap) -> Result<Option<AppVisitor>
 async fn entry(s: &AppState, headers: &HeaderMap, next: &str) -> Response {
     let t = match super::texts(s, &s.config.default_locale).await {
         Ok(t) => t,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(e) => return unavailable(&e),
     };
     let mut r = view::entry(s, &t, &Sdks::of(&s.deployment), super::safe_next(next));
     if crate::auth::cookie(headers, session::COOKIE).is_some() {
-        let clear = session::cookie(None, s.config.staff.cookie_secure);
-        r.headers_mut()
-            .insert(axum::http::header::SET_COOKIE, clear);
+        for clear in session::clear(s.config.staff.cookie_secure) {
+            r.headers_mut()
+                .append(axum::http::header::SET_COOKIE, clear);
+        }
     }
     r
 }
 
-fn error(s: &AppState, t: &Texts) -> Response {
-    view::answer(
+/// [`ErrorReport::area`] of the pages.
+const AREA: &str = "app.page";
+
+/// The generic error page, reporting `e`'s kind (never its message) to
+/// the runtime's log.
+fn error(s: &AppState, t: &Texts, e: &Error) -> Response {
+    let page = view::answer(
         s,
         t,
         StatusCode::INTERNAL_SERVER_ERROR,
         "kernel.app.error",
         None,
-    )
+    );
+    ErrorReport::attach(page, AREA, e)
+}
+
+/// 503 when not even the texts or the session can be read.
+fn unavailable(e: &Error) -> Response {
+    ErrorReport::attach(StatusCode::SERVICE_UNAVAILABLE.into_response(), AREA, e)
 }
 
 fn not_found(s: &AppState, t: &Texts) -> Response {
@@ -112,11 +124,11 @@ async fn open(
     let v = match visitor(s, headers).await {
         Ok(Some(v)) => v,
         Ok(None) => return Err(Box::new(entry(s, headers, path).await)),
-        Err(_) => return Err(Box::new(StatusCode::SERVICE_UNAVAILABLE.into_response())),
+        Err(e) => return Err(Box::new(unavailable(&e))),
     };
     match super::texts(s, &v.locale).await {
         Ok(t) => Ok((v, t)),
-        Err(_) => Err(Box::new(StatusCode::SERVICE_UNAVAILABLE.into_response())),
+        Err(e) => Err(Box::new(unavailable(&e))),
     }
 }
 
@@ -129,36 +141,51 @@ pub(crate) async fn home(State(s): State<AppState>, headers: HeaderMap, uri: Uri
     let Some(st) = &v.student else {
         return view::not_linked(&s, &t, Some(&v.csrf));
     };
-    let consent = match latest_consent(&s, &st.id).await {
+    let current = t.consent_version(&s.config.consent.version);
+    let (consent, reconsent) = match latest_consent(&s, &st.id, &current).await {
         Ok(c) => c,
-        Err(_) => return error(&s, &t),
+        Err(e) => return error(&s, &t, &e),
     };
     let list = if has_news(&s) {
         match news::list_for_student(&s.deployment, &st.id, &v.locale, LIST_LIMIT).await {
             Ok(l) => Some(l),
-            Err(_) => return error(&s, &t),
+            Err(e) => return error(&s, &t, &e),
         }
     } else {
         None
     };
     let h = Home {
         consent,
+        reconsent,
         news: list.as_deref(),
     };
     view::home(&s, &t, &v, &h)
 }
 
-async fn latest_consent(s: &AppState, student: &str) -> Result<Option<String>> {
+/// The latest Consent's notice version, and whether a re-consent is
+/// pending: the Student has a Consent but none for `current` (the rule
+/// the chat flow applies, `kernel::flow::linked`).
+async fn latest_consent(
+    s: &AppState,
+    student: &str,
+    current: &str,
+) -> Result<(Option<String>, bool)> {
     let stmt = Statement::new(
-        "SELECT notice_version FROM consent WHERE student_id = ? \
+        "SELECT notice_version, EXISTS (SELECT 1 FROM consent WHERE student_id = ? \
+         AND notice_version = ?) AS has_current FROM consent WHERE student_id = ? \
          ORDER BY accepted_at DESC LIMIT 1",
     )
+    .bind(student)
+    .bind(current)
     .bind(student);
     let rows = s.services.db.query(stmt).await?;
-    Ok(rows
+    let latest = rows
         .get(0, "notice_version")
         .and_then(Value::as_text)
-        .map(str::to_string))
+        .map(str::to_string);
+    let has_current = rows.get(0, "has_current").and_then(Value::as_i64) == Some(1);
+    let pending = latest.is_some() && !has_current;
+    Ok((latest, pending))
 }
 
 /// `GET /app/announcements/{id}`: one announcement the Student was sent.
@@ -180,7 +207,7 @@ pub(crate) async fn detail(
     match news::detail_for_student(&s.deployment, &id, &st.id, &v.locale).await {
         Ok(Some(a)) => view::detail(&s, &t, &v, &a),
         Ok(None) => not_found(&s, &t),
-        Err(_) => error(&s, &t),
+        Err(e) => error(&s, &t, &e),
     }
 }
 
@@ -198,7 +225,7 @@ pub(crate) async fn ack(
     let htmx = is_htmx(&headers);
     let (v, t) = match open(&s, &headers, &here).await {
         Ok(x) => x,
-        Err(_) if htmx => return hx_redirect(&here),
+        Err(r) if htmx && ErrorReport::of(&r).is_none() => return hx_redirect(&here),
         Err(r) => return *r,
     };
     let sent = headers
@@ -218,7 +245,7 @@ pub(crate) async fn ack(
     let a = match news::detail_for_student(&s.deployment, &id, &st.id, &v.locale).await {
         Ok(Some(a)) => a,
         Ok(None) => return not_found(&s, &t),
-        Err(_) => return error(&s, &t),
+        Err(e) => return error(&s, &t, &e),
     };
     // Nothing to acknowledge: answered like an unknown id.
     if !a.require_ack && !a.retracted {
@@ -229,7 +256,7 @@ pub(crate) async fn ack(
     } else {
         match news::ack(&s.deployment, &id, &st.id).await {
             Ok(o) => o,
-            Err(_) => return error(&s, &t),
+            Err(e) => return error(&s, &t, &e),
         }
     };
     match outcome {

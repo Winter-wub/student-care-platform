@@ -95,6 +95,23 @@ impl std::error::Error for Error {
 }
 
 impl Error {
+    /// The variant's name, without the message: what may be logged where
+    /// the message must not ([`crate::ErrorReport`]).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Error::Unsupported(_) => "unsupported",
+            Error::Unreachable => "unreachable",
+            Error::RateLimited { .. } => "rate_limited",
+            Error::BadSignature => "bad_signature",
+            Error::Invalid(_) => "invalid",
+            Error::Db(_) => "db",
+            Error::Platform(_) => "platform",
+            Error::Forbidden { .. } => "forbidden",
+            Error::Conflict(_) => "conflict",
+            Error::PartialSend { .. } => "partial_send",
+        }
+    }
+
     /// The error underneath a [`Error::PartialSend`] (itself otherwise), so
     /// callers can match `Unreachable` or `RateLimited` either way.
     pub fn root(&self) -> &Error {

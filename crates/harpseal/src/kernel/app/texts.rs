@@ -70,6 +70,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "You accepted privacy notice version {version}."
     ),
     (
+        "kernel.app.consent_pending",
+        "มีประกาศความเป็นส่วนตัวฉบับใหม่ กรุณายอมรับในแชท",
+        "There is a new privacy notice. Please accept it in the chat."
+    ),
+    (
         "kernel.app.consent_none",
         "ยังไม่ได้ยอมรับประกาศความเป็นส่วนตัว",
         "You have not accepted the privacy notice yet."
@@ -94,6 +99,21 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.app.notice_version",
         "ฉบับที่ {version}",
         "Version {version}"
+    ),
+    (
+        "kernel.app.outside",
+        "หน้านี้สำหรับนักศึกษา กรุณาเปิดจากปุ่มในแชท LINE หรือ Telegram",
+        "This page is for students. Please open it from a button in the LINE or Telegram chat."
+    ),
+    (
+        "kernel.app.staff_login",
+        "เจ้าหน้าที่ เข้าสู่ระบบ",
+        "Staff sign-in"
+    ),
+    (
+        "kernel.app.line_login",
+        "เข้าสู่ระบบด้วย LINE",
+        "Log in with LINE"
     ),
     (
         "kernel.app.notice_link",

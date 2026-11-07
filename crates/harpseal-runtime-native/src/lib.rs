@@ -89,12 +89,23 @@ pub fn services(s: &NativeSettings) -> Result<Services> {
 
 /// `axum::serve` on a TCP listener at `addr`. Each request carries the
 /// peer's IP as [`harpseal::PeerIp`] (audit rows fall back to it when there
-/// is no `X-Forwarded-For`).
+/// is no `X-Forwarded-For`). A response carrying a
+/// [`harpseal::ErrorReport`] logs its line to stderr (the area and the
+/// error kind, never the message).
 pub async fn serve(router: axum::Router, addr: &str) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    let app = router.layer(axum::middleware::from_fn(peer_ip));
+    let app = router
+        .layer(axum::middleware::map_response(log_report))
+        .layer(axum::middleware::from_fn(peer_ip));
     let app = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
     axum::serve(listener, app).await
+}
+
+async fn log_report(r: axum::response::Response) -> axum::response::Response {
+    if let Some(report) = harpseal::ErrorReport::of(&r) {
+        eprintln!("error: {report}");
+    }
+    r
 }
 
 async fn peer_ip(

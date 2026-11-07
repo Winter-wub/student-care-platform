@@ -1,5 +1,8 @@
 //! Mini App = LIFF. Launch URLs are `https://liff.line.me/{liffId}{path}`
-//! (<https://developers.line.biz/en/docs/liff/opening-liff-app/>). A page
+//! (<https://developers.line.biz/en/docs/liff/opening-liff-app/>), or
+//! `https://miniapp.line.me/{liffId}{path}` for a LINE MINI App
+//! (<https://developers.line.biz/en/docs/line-mini-app/develop/permanent-links/>),
+//! which is a LIFF app too ([`crate::LineConfig::with_launch_base`]). A page
 //! sends the LIFF ID token (`liff.getIDToken()`); it is checked with
 //! `POST /oauth2/v2.1/verify`
 //! (<https://developers.line.biz/en/reference/line-login/#verify-id-token>)
@@ -8,7 +11,7 @@
 //! LIFF id before `-`).
 
 use async_trait::async_trait;
-use harpseal::{ChannelAccountId, Error, MiniApp, Result};
+use harpseal::{ChannelAccountId, Error, MiniApp, Result, WebClient};
 use http::Method;
 
 use crate::api::{API, parse};
@@ -16,6 +19,10 @@ use crate::{KIND, LineChannel};
 
 /// Issuer of LINE ID tokens.
 pub const ISSUER: &str = "https://access.line.me";
+/// Launch URLs of a LIFF app.
+pub const LIFF_BASE: &str = "https://liff.line.me/";
+/// Launch URLs of a LINE MINI App.
+pub const LINE_MINI_APP_BASE: &str = "https://miniapp.line.me/";
 
 impl LineChannel {
     /// `path` is appended to the LIFF URL; one that starts with neither
@@ -26,7 +33,11 @@ impl LineChannel {
         } else {
             "/"
         };
-        format!("https://liff.line.me/{}{sep}{path}", self.cfg.liff_id)
+        let base = match self.cfg.launch_base.as_str() {
+            "" => LIFF_BASE,
+            b => b,
+        };
+        format!("{base}{}{sep}{path}", self.cfg.liff_id)
     }
 
     /// The LINE Login channel id of the LIFF app.
@@ -55,6 +66,13 @@ fn form(s: &str) -> String {
 impl MiniApp for LineChannel {
     fn launch_url(&self, path: &str) -> String {
         self.liff_url(path)
+    }
+
+    /// The LIFF SDK with the configured LIFF id, whatever the launch URL.
+    fn web_client(&self) -> Option<WebClient> {
+        Some(WebClient::Liff {
+            id: self.cfg.liff_id.clone(),
+        })
     }
 
     /// The LINE user id of a valid ID token issued for this LIFF app. A

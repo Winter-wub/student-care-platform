@@ -43,6 +43,7 @@ use harpseal::{
 use http::Method;
 
 pub use api::{API, API_DATA, DEFAULT_RETRY_AFTER_SECS, RETRY_KEY_HEADER};
+pub use liff::{LIFF_BASE, LINE_MINI_APP_BASE};
 pub use send::metering;
 pub use signature::{SIGNATURE_HEADER, sign};
 
@@ -65,6 +66,10 @@ pub struct LineConfig {
     /// as `client_id` when verifying ID tokens. Empty: the part of
     /// `liff_id` before `-` (LIFF ids are `{loginChannelId}-{suffix}`).
     pub login_channel_id: String,
+    /// Where launch URLs start, before the LIFF id. Empty: LIFF's
+    /// `https://liff.line.me/`; a LINE MINI App uses
+    /// [`LINE_MINI_APP_BASE`].
+    pub launch_base: String,
     /// The locked Menu (before a Link), shown by `set_menu(None)`. Empty:
     /// `set_menu(None)` unlinks, showing the account's default rich menu.
     pub locked_menu: Menu,
@@ -104,6 +109,14 @@ impl LineConfig {
         self
     }
 
+    /// Launch URLs under `base` instead of `https://liff.line.me/`, e.g.
+    /// [`LINE_MINI_APP_BASE`] for a LINE MINI App (also a LIFF app: the
+    /// page loads the same SDK with the same id).
+    pub fn with_launch_base(mut self, base: impl Into<String>) -> Self {
+        self.launch_base = base.into();
+        self
+    }
+
     /// The locked Menu.
     pub fn with_locked_menu(mut self, menu: Menu) -> Self {
         self.locked_menu = menu;
@@ -118,6 +131,7 @@ impl core::fmt::Debug for LineConfig {
             .field("access_token", &"<redacted>")
             .field("liff_id", &self.liff_id)
             .field("login_channel_id", &self.login_channel_id)
+            .field("launch_base", &self.launch_base)
             .field("locked_menu", &self.locked_menu)
             .field("locked_menu_image", &self.locked_menu_image.len())
             .field("unlocked_menu_image", &self.unlocked_menu_image.len())

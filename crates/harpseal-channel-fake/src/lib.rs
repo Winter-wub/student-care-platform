@@ -128,6 +128,7 @@ pub struct FakeChannel {
     kind: ChannelKind,
     secret: String,
     mini_app: bool,
+    web_client: Option<harpseal::WebClient>,
     profile: FakeProfile,
     max_recipients: usize,
     state: Arc<Mutex<State>>,
@@ -147,6 +148,7 @@ impl FakeChannel {
             kind: KIND,
             secret,
             mini_app: true,
+            web_client: None,
             profile: FakeProfile::Full,
             max_recipients: multicast::MAX_RECIPIENTS,
             state: Arc::default(),
@@ -170,6 +172,13 @@ impl FakeChannel {
     /// URL were configured).
     pub fn without_mini_app(mut self) -> Self {
         self.mini_app = false;
+        self
+    }
+
+    /// The same Channel reporting `client` as its Mini App's web client
+    /// (default none: tests post the token themselves).
+    pub fn with_web_client(mut self, client: harpseal::WebClient) -> Self {
+        self.web_client = Some(client);
         self
     }
 
@@ -356,5 +365,8 @@ impl MiniApp for FakeChannel {
             return Err(Error::BadSignature);
         }
         Ok(ChannelAccountId::new(self.kind, id))
+    }
+    fn web_client(&self) -> Option<harpseal::WebClient> {
+        self.web_client.clone()
     }
 }

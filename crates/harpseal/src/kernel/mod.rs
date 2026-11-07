@@ -78,6 +78,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0007_rate_limit",
         include_str!("../../migrations/0007_rate_limit.sql"),
     ),
+    (
+        "0008_app_session_expires_idx",
+        include_str!("../../migrations/0008_app_session_expires_idx.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.
