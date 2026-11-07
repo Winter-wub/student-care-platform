@@ -4,7 +4,8 @@
 //! `{import_id, chunk, left: n}`: left batch `n` of a `full` import
 //! (`finish.rs`). Each run is small, so it fits a Worker's limits.
 //!
-//! Idempotent: each run re-reads and re-parses the stored file, and each
+//! Idempotent: each run reads its rows from the import's parsed rows
+//! (`rows.rs`; the original file when they are missing), and each
 //! batch claims its step with a compare-and-set that every other statement
 //! of the batch is gated on (through a per-run token in `counts.run`), so
 //! a repeated run of a finished step writes nothing.

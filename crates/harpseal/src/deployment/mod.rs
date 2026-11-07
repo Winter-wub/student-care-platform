@@ -55,6 +55,8 @@ struct Registry {
     migrations: Vec<Migration>,
     /// (module, permission, path under `/admin`, handler).
     back_office: Vec<(&'static str, &'static str, &'static str, Route)>,
+    /// (path under `/admin`, body limit) of the upload routes (#46).
+    uploads: Vec<(&'static str, usize)>,
     /// (module, path, handler).
     public: Vec<(&'static str, &'static str, Route)>,
     /// Back-office navigation, sorted (#21).

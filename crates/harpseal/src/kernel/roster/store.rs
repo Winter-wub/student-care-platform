@@ -24,7 +24,9 @@ pub(crate) struct Tally {
     pub(crate) unchanged: u64,
     /// Left Students listed again (they become active).
     pub(crate) returning: u64,
-    /// Fields kept because Staff edited them by hand (`Merge::skipped`).
+    /// Fields of listed Students kept because Staff edited them by hand
+    /// (`Merge::skipped`). Fields, not Students: the preview and the
+    /// result count the same thing.
     pub(crate) skipped_by_override: u64,
 }
 
@@ -46,6 +48,9 @@ pub(crate) struct Preview {
     pub(crate) tally: Tally,
     /// Active Students missing from a `full` file (0 in `upsert`).
     pub(crate) will_become_left: u64,
+    /// Active Students missing from a `full` file whose status Staff set
+    /// by hand: they stay active (0 in `upsert`).
+    pub(crate) kept_by_status: u64,
     pub(crate) empty_email: u64,
     /// Active Students before the import.
     pub(crate) active_before: u64,
@@ -63,8 +68,10 @@ pub(crate) struct Preview {
 #[serde(default)]
 pub(crate) struct Counts {
     pub(crate) sha256: String,
-    /// When the stored file may be deleted (1 year after upload; pruning
-    /// it is a follow-up).
+    /// SHA-256 of the parsed rows (`rows.rs`); empty when none were stored.
+    pub(crate) rows_sha256: String,
+    /// When the stored file and its parsed rows are deleted (1 year after
+    /// upload, `prune.rs`).
     pub(crate) keep_file_until: i64,
     pub(crate) preview: Preview,
     /// What the chunks applied so far.
@@ -72,6 +79,9 @@ pub(crate) struct Counts {
     /// Students the last chunk marked left, Links it revoked, revoked
     /// notices that did not reach the Student.
     pub(crate) left: u64,
+    /// Active Students the file did not list whose status Staff set by
+    /// hand, counted when the import is done (`full` only).
+    pub(crate) kept_by_status: u64,
     pub(crate) links_revoked: u64,
     pub(crate) notices_failed: u64,
     /// Left batches applied so far (the left phase's compare-and-set).

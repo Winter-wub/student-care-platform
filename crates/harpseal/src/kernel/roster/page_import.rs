@@ -62,7 +62,11 @@ fn full(v: &View<'_>, imp: &Import) -> Response {
                 dt { (v.t("kernel.roster.file")) }
                 dd {
                     (imp.file_name) " · "
-                    a href=(format!("{BASE}/{}/file", imp.id)) { (v.t("kernel.roster.download_file")) }
+                    @if imp.file_key.is_empty() {
+                        span class="muted" { (v.t("kernel.roster.file_pruned")) }
+                    } @else {
+                        a href=(format!("{BASE}/{}/file", imp.id)) { (v.t("kernel.roster.download_file")) }
+                    }
                 }
                 dt { (v.t("kernel.roster.mode")) } dd { (v.mode(&imp.mode)) }
                 dt { (v.t("kernel.roster.when")) } dd { (v.time(imp.created_at)) }
@@ -108,6 +112,8 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
                 @if full {
                     dt { (v.t("kernel.roster.will_become_left")) }
                     dd data-count="will_become_left" { (p.will_become_left) }
+                    dt { (v.t("kernel.roster.kept_by_status")) }
+                    dd data-count="kept_by_status" { (p.kept_by_status) }
                 }
                 dt { (v.t("kernel.roster.empty_email")) } dd { (p.empty_email) }
                 dt { (v.t("kernel.roster.active_before")) } dd { (p.active_before) }
@@ -152,12 +158,11 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
                 progress id="roster-bar" max=(imp.total_rows.max(1)) value=(imp.applied_rows) {}
             } @else {
                 h2 { (v.t("kernel.roster.result")) " " (v.state(&imp.state)) }
-                dl class="facts counts" {
+                dl class="facts" {
                     dt { (v.t("kernel.roster.progress")) } dd { (imp.applied_rows) " / " (imp.total_rows) }
-                    (tally_rows(v, &c.result))
-                    @if imp.mode == "full" {
-                        dt { (v.t("kernel.roster.left")) } dd data-count="left" { (c.left) }
-                    }
+                }
+                (super::view::compared(v, imp))
+                dl class="facts counts" {
                     dt { (v.t("kernel.roster.links_revoked")) } dd { (c.links_revoked) }
                     dt { (v.t("kernel.roster.notices_failed")) } dd { (c.notices_failed) }
                 }
@@ -302,6 +307,10 @@ pub(super) async fn file(
         Ok(None) => return v.not_found(),
         Err(e) => return v.error(&e),
     };
+    if imp.file_key.is_empty() {
+        // Deleted a year after upload (`prune.rs`).
+        return v.not_found();
+    }
     let bytes = match s.services.files.get(&imp.file_key).await {
         Ok(Some(b)) => b,
         Ok(None) => return v.not_found(),

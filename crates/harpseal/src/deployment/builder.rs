@@ -120,6 +120,7 @@ impl DeploymentBuilder {
                 schedules: collected.schedules,
                 migrations: collected.migrations,
                 back_office: collected.back_office,
+                uploads: collected.uploads,
                 public: collected.public,
                 nav,
             }),
@@ -141,6 +142,7 @@ struct Collected {
     schedules: Vec<(&'static str, crate::jobs::cron::Schedule)>,
     migrations: Vec<crate::Migration>,
     back_office: BackOffice,
+    uploads: Vec<(&'static str, usize)>,
     public: Vec<(&'static str, &'static str, Route)>,
     routes: Routes,
     mini_app_users: Vec<&'static str>,
@@ -159,6 +161,7 @@ impl Default for Collected {
             schedules: Vec::new(),
             migrations: Vec::new(),
             back_office: Vec::new(),
+            uploads: Vec::new(),
             public: Vec::new(),
             routes: Routes::new(),
             mini_app_users: Vec::new(),
@@ -188,6 +191,7 @@ impl Collected {
             self.routes.back_office(module, path)?;
             self.back_office.push((module, permission, path, route));
         }
+        self.uploads.extend(r.uploads);
         for (spec, h) in r.jobs {
             if let Some(cron) = spec.schedule {
                 let s = crate::jobs::cron::parse(cron).map_err(|reason| {

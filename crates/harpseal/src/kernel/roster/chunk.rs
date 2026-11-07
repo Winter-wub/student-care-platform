@@ -1,5 +1,6 @@
 //! One chunk of the import Job: rows `[applied_rows, applied_rows + 500)`
-//! of the stored file in one `Db::batch`. The batch's first statement
+//! of the stored file (read from its parsed rows, `rows.rs`) in one
+//! `Db::batch`. The batch's first statement
 //! advances `applied_rows` with a compare-and-set and writes a per-run
 //! token into `counts.run`; every other statement is gated on both, so a
 //! repeated or concurrent run of the same chunk writes nothing. The batch
@@ -27,27 +28,14 @@ const TAGS_PER_INSERT: usize = 30;
 /// applied it first.
 pub(super) async fn apply(cx: &JobContext, imp: &Import) -> Result<bool> {
     let s = &cx.services;
-    let bytes = s
-        .files
-        .get(&imp.file_key)
-        .await?
-        .ok_or_else(|| Error::Invalid("the stored roster file is missing".into()))?;
-    if crate::auth::sha256_hex(&bytes) != imp.counts.sha256 {
-        return Err(Error::Invalid("the stored roster file changed".into()));
-    }
-    let rows = super::file::parse(&bytes, &imp.file_name, &cx.config.roster)
-        .map_err(|_| Error::Invalid("the stored roster file no longer reads".into()))?;
-    let valid = super::validate::validate(&rows, &cx.config)
-        .map_err(|_| Error::Invalid("the stored roster file no longer validates".into()))?;
-    let from = usize::try_from(imp.applied_rows).unwrap_or(usize::MAX);
-    let to = (from + CHUNK as usize).min(valid.records.len());
-    let records = valid.records.get(from..to).unwrap_or_default();
+    let records = super::rows::chunk(cx, imp, CHUNK as usize).await?;
+    let to = imp.applied_rows + records.len() as i64;
     let codes: Vec<&str> = records.iter().map(|r| r.code.as_str()).collect();
     let existing = store::students_by_code(s, &codes).await?;
 
     let gate = Gate {
         id: imp.id.clone(),
-        applied: to as i64,
+        applied: to,
         token: s.random_hex(8)?,
     };
     let started = imp.started_at.unwrap_or_else(|| s.now_ms());
@@ -56,7 +44,7 @@ pub(super) async fn apply(cx: &JobContext, imp: &Import) -> Result<bool> {
     let mut stmts = Vec::new();
     let mut tally = Tally::default();
     let mut tag_names = BTreeSet::new();
-    for rec in records {
+    for rec in &records {
         let e = existing.get(&rec.code);
         let (t, merge) = store::classify(e, rec);
         tally.add(&t);

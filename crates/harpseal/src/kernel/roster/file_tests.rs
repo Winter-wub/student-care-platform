@@ -139,3 +139,39 @@ fn formula_cells_read_their_cached_value_and_error_cells_their_code() {
     let problems = crate::kernel::roster::validate::validate(&rows, &c).unwrap_err();
     assert_eq!(problems[0].reason, "not_number");
 }
+
+#[test]
+fn file_names_are_made_safe() {
+    assert_eq!(
+        safe_name("C:\\Users\\x\\รายชื่อ 2569.xlsx"),
+        "รายชื่อ 2569.xlsx"
+    );
+    assert_eq!(safe_name("../../etc/passwd"), "passwd");
+    assert_eq!(safe_name(".."), "roster");
+    assert_eq!(safe_name("a:b\n.csv"), "a_b_.csv");
+    assert_eq!(safe_name(""), "roster");
+    for n in ["x", "..", "a/b", "ok.csv"] {
+        assert!(crate::check_file_key(&format!("roster/id/{}", safe_name(n))).is_ok());
+    }
+}
+
+#[test]
+fn cells_without_a_header_are_kept_by_column_and_txt_is_refused() {
+    let c = test_config();
+    let text = format!(
+        "{},,\r\n68000001,นก,,th,,MSC,1,,ลืม,\r\n,,,,,,,,,,ท้าย\r\n",
+        expected_headers(&c.roster).join(",")
+    );
+    let rows = parse(text.as_bytes(), "a.csv", &c.roster).unwrap();
+    assert_eq!(rows[0].unheaded, vec!["I".to_string()]);
+    assert_eq!(rows[1].unheaded, vec!["K".to_string()]);
+    assert_eq!(rows[0].get("ชื่อ-สกุล"), Some("นก"));
+    assert_eq!(
+        parse(text.as_bytes(), "a.txt", &c.roster),
+        Err(FileError::Unsupported)
+    );
+    assert_eq!(column_name(0), "A");
+    assert_eq!(column_name(25), "Z");
+    assert_eq!(column_name(26), "AA");
+    assert_eq!(column_name(63), "BL");
+}

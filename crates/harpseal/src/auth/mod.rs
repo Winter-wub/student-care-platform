@@ -31,7 +31,7 @@ mod texts;
 pub(crate) use cookies::flash as flash_cookie;
 pub(crate) use cookies::{ct_eq, form_field, get as cookie};
 pub use guard::CurrentStaff;
-pub(crate) use guard::{AdminCx, Gate, NavItem, UPLOAD_LIMIT, guard, request_ctx};
+pub(crate) use guard::{AdminCx, Gate, MULTIPART_LIMIT, NavItem, guard, request_ctx};
 pub(crate) use login::{login_form, login_submit, logout, password_form, password_submit};
 pub(crate) use pages::home;
 pub(crate) use session::prune as prune_sessions;

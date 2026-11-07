@@ -161,6 +161,8 @@ pub struct ModuleRegistrar {
     pub(crate) actions: Vec<(ActionId, Arc<dyn ActionHandler>)>,
     pub(crate) action_prefixes: Vec<(&'static str, Arc<dyn ActionHandler>)>,
     pub(crate) back_office: Vec<(&'static str, &'static str, MethodRouter<AppState>)>,
+    /// (path, body limit) of the back-office upload routes.
+    pub(crate) uploads: Vec<(&'static str, usize)>,
     pub(crate) public: Vec<(&'static str, MethodRouter<AppState>)>,
     pub(crate) catalog: Vec<CatalogEntry>,
     pub(crate) jobs: Vec<(JobSpec, Arc<dyn JobHandler>)>,
@@ -187,6 +189,7 @@ impl ModuleRegistrar {
             actions: Vec::new(),
             action_prefixes: Vec::new(),
             back_office: Vec::new(),
+            uploads: Vec::new(),
             public: Vec::new(),
             catalog: Vec::new(),
             jobs: Vec::new(),
@@ -259,6 +262,23 @@ impl ModuleRegistrar {
     ) -> &mut Self {
         self.back_office.push((permission, path, route));
         self
+    }
+
+    /// Like [`ModuleRegistrar::back_office`] for a route that takes a
+    /// `multipart/form-data` upload: the guard reads its body (for the
+    /// `_csrf` part) up to `max_body` bytes, after the Permission check.
+    /// Every other back-office route gets the small
+    /// `auth::MULTIPART_LIMIT`. The route still needs its own
+    /// `DefaultBodyLimit` for axum's `Multipart`.
+    pub(crate) fn back_office_upload(
+        &mut self,
+        permission: &'static str,
+        path: &'static str,
+        route: MethodRouter<AppState>,
+        max_body: usize,
+    ) -> &mut Self {
+        self.uploads.push((path, max_body));
+        self.back_office(permission, path, route)
     }
 
     /// Like [`ModuleRegistrar::back_office`], and also lists the page in

@@ -55,6 +55,9 @@ pub struct TickReport {
     /// Webhook event claims left unfinished past the 60 s lease and logged
     /// as `inbound.lost`, at most 100 per tick (#44).
     pub events_lost: u64,
+    /// Roster imports whose stored file (and parsed rows) were deleted a
+    /// year after upload, at most 20 per tick (#46).
+    pub roster_files_pruned: u64,
 }
 
 impl core::fmt::Display for TickReport {
@@ -150,7 +153,8 @@ impl Deployment {
     /// `attempts > max_attempts`; a handler panic (native) is a failed run.
     /// Last, `done` rows older than `[retention] job_days` and `failed`
     /// rows older than 90 days are deleted, then webhook event claims older
-    /// than 7 days (at most 500). Handlers must be idempotent: a
+    /// than 7 days (at most 500), then roster files kept for a year
+    /// (at most 20 imports, audited `roster.file.prune`). Handlers must be idempotent: a
     /// Cron Trigger may fire twice, and an expired lock re-runs a Job.
     pub async fn tick(&self, now: Timestamp) -> Result<TickReport> {
         let db = self.services.db.as_ref();
@@ -257,6 +261,10 @@ impl Deployment {
         match self.prune_inbound_events(now.ms()).await {
             Ok(n) => report.events_pruned = n,
             Err(e) => report.errors.push(format!("webhook event prune: {e}")),
+        }
+        match crate::kernel::roster::prune_files(&self.services, now.ms()).await {
+            Ok(n) => report.roster_files_pruned = n,
+            Err(e) => report.errors.push(format!("roster file prune: {e}")),
         }
         Ok(report)
     }

@@ -20,9 +20,11 @@ use crate::{AppState, Result};
 
 /// Largest form body the guard reads to find the CSRF field.
 const FORM_LIMIT: usize = 1024 * 1024;
-/// Largest `multipart/form-data` body read for its `_csrf` part (a roster
-/// file of up to 4 MiB plus the form's other fields).
-pub(crate) const UPLOAD_LIMIT: usize = 4 * 1024 * 1024 + 64 * 1024;
+/// Largest `multipart/form-data` body read for its `_csrf` part on a route
+/// that does not take uploads. An upload route (`back_office_upload`, the
+/// roster import) sets its own limit in [`Gate::body_limit`], and its body
+/// is only read once the Staff member is known to hold its Permission.
+pub(crate) const MULTIPART_LIMIT: usize = 64 * 1024;
 
 /// One back-office page in the navigation.
 #[derive(Debug, Clone)]
@@ -48,6 +50,8 @@ pub(crate) struct Gate {
     pub(crate) permission: Option<&'static str>,
     /// Reachable while a password change is pending.
     pub(crate) during_forced_change: bool,
+    /// Largest `multipart/form-data` body the guard reads for `_csrf`.
+    pub(crate) body_limit: usize,
 }
 
 /// The signed-in Staff member, for back-office handlers:
@@ -187,14 +191,6 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         )));
     };
     let csrf = csrf_for(&token);
-    let (req, csrf_ok) = check_csrf(req, &csrf).await;
-    if !csrf_ok {
-        let text = state.t("kernel.auth.csrf_failed");
-        return Ok(Err(bare_page(state, StatusCode::FORBIDDEN, &text)));
-    }
-    if live.must_change_password && !gate.during_forced_change {
-        return Ok(Err(redirect(req.headers(), PASSWORD_PATH, None)));
-    }
     let permissions: Arc<[String]> = roles::permissions_of(&state.services, &live.staff_id)
         .await?
         .into();
@@ -226,17 +222,26 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         flash,
         usage_banner,
     };
+    // Nothing above read the body. A pending password change and a missing
+    // Permission answer without reading it (the handler never runs), so a
+    // POST body is buffered, up to the route's limit, only for Staff who
+    // may use the route.
+    if staff.must_change_password && !gate.during_forced_change {
+        return Ok(Err(redirect(req.headers(), PASSWORD_PATH, None)));
+    }
     if let Some(p) = forbidden_permission {
         return Ok(Err(forbidden(state, &staff, p)));
+    }
+    let (req, csrf_ok) = check_csrf(req, &staff.csrf, gate.body_limit).await;
+    if !csrf_ok {
+        let text = state.t("kernel.auth.csrf_failed");
+        return Ok(Err(bare_page(state, StatusCode::FORBIDDEN, &text)));
     }
     let mut req = req;
     req.extensions_mut().insert(staff);
     Ok(Ok((req, had_flash)))
 }
 
-/// Safe methods pass. Otherwise the `X-CSRF-Token` header or the `_csrf`
-/// field of a urlencoded body must equal `expected`; the body is read and
-/// put back for the handler.
 /// Only a full-page GET shows the usage banner: POST redirects, HTMX
 /// fragments and `.json`/`.csv` downloads skip its `usage_daily` read.
 fn renders_a_page(req: &Request) -> bool {
@@ -247,7 +252,15 @@ fn renders_a_page(req: &Request) -> bool {
         && !path.ends_with(".csv")
 }
 
-pub(crate) async fn check_csrf(req: Request, expected: &str) -> (Request, bool) {
+/// Safe methods pass. Otherwise the `X-CSRF-Token` header or the `_csrf`
+/// field of a urlencoded body must equal `expected`; the body is read and
+/// put back for the handler. A multipart body is read up to
+/// `multipart_limit` for its `_csrf` part; a larger one is refused.
+pub(crate) async fn check_csrf(
+    req: Request,
+    expected: &str,
+    multipart_limit: usize,
+) -> (Request, bool) {
     if matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
         return (req, true);
     }
@@ -267,7 +280,7 @@ pub(crate) async fn check_csrf(req: Request, expected: &str) -> (Request, bool) 
     if !is_form && boundary.is_none() {
         return (req, false);
     }
-    let limit = if is_form { FORM_LIMIT } else { UPLOAD_LIMIT };
+    let limit = if is_form { FORM_LIMIT } else { multipart_limit };
     let (parts, body) = req.into_parts();
     let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
         return (Request::from_parts(parts, Body::empty()), false);
