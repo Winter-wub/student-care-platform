@@ -125,3 +125,6 @@ edits any catalog text per Locale (it must keep the default's `{name}`
 placeholders) and bumps the privacy notice version, which asks every linked
 Student to accept again on their next message. Edits take effect on the next
 message: `setting` is read on every Inbound, with no cache.
+`/admin/backups` (`kernel.backup.manage`) lists the nightly backups, downloads
+one as a `.tar`, starts one now, and downloads all data as an Excel workbook
+without secret columns; see [Backups](backups.md).

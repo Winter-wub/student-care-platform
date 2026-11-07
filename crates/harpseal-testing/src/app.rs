@@ -25,6 +25,8 @@ pub struct TestResponse {
     pub headers: HeaderMap,
     /// Body, decoded as UTF-8 (lossy).
     pub body: String,
+    /// Body as sent (downloads: `.xlsx`, `.tar`).
+    pub bytes: Vec<u8>,
     /// The [`harpseal::ErrorReport`] a handler attached, as the runtime
     /// would log it.
     pub error_report: Option<harpseal::ErrorReport>,
@@ -76,6 +78,7 @@ impl TestApp {
             status,
             headers,
             body: String::from_utf8_lossy(&bytes).into_owned(),
+            bytes: bytes.to_vec(),
             error_report,
         }
     }

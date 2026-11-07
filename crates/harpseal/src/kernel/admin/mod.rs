@@ -8,6 +8,7 @@
 //! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{roles,status,password,unlock}` | `kernel.staff.manage` |
 //! | `GET/POST /admin/roles`, `GET/POST /admin/roles/{id}`, `POST …/delete` | `kernel.staff.manage` |
 //! | `GET /admin/texts`, `GET/POST /admin/texts/{key}`, `POST /admin/texts/consent` | `kernel.setting.edit` |
+//! | `GET /admin/backups`, `POST …/now`, `GET …/{id}/download`, `GET …/export.xlsx` | `kernel.backup.manage` ([`backups`]) |
 //!
 //! Reads of Security Events and the audit log are logged as sensitive
 //! reads (`security.view`, `audit.view`, `audit.detail`), one row per
@@ -16,6 +17,7 @@
 
 mod audit;
 mod audit_detail;
+pub(crate) mod backups;
 mod roles_pages;
 mod security;
 mod settings;
@@ -31,12 +33,15 @@ use axum::routing::{get, post};
 
 use crate::module::ModuleRegistrar;
 
+pub(crate) use backups::backup_schedule;
+
 /// Registers the pages on the Kernel, after Students (10) and the roster.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     const SECURITY: &str = "kernel.security.view";
     const AUDIT: &str = "kernel.audit.view";
     const STAFF: &str = "kernel.staff.manage";
     const SETTING: &str = "kernel.setting.edit";
+    backups::register(r);
     r.messages(texts::DEFAULTS)
         .messages(texts::STAFF)
         .back_office_page(

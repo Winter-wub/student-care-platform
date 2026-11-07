@@ -53,6 +53,8 @@ pbkdf2 = { version = "0.13", default-features = false, features = ["phc", "alloc
 sha2 = { version = "0.11", default-features = false }
 hmac = "0.13"
 calamine = { version = "0.38", default-features = false }
+# "Download all data" (#78); approved by the owner (#69) for wasm32.
+rust_xlsxwriter = { version = "0.102", default-features = false }
 
 # Argon2id (m=19 MiB, t=2) takes seconds per hash unoptimised; tests log in
 # many times, so dev and test builds optimise the hashing crates only.

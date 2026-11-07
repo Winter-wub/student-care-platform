@@ -31,3 +31,5 @@ harpseal-channel-telegram.workspace = true
 # A Module's own Mini App page in the seam tests (#72).
 maud.workspace = true
 serde.workspace = true
+# Reads the "Download all data" workbook back (#78).
+calamine.workspace = true

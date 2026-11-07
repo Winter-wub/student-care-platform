@@ -15,6 +15,7 @@ categories = ["web-programming", "wasm"]
 async-trait.workspace = true
 axum = { workspace = true, features = ["form", "query", "multipart"] }
 http.workspace = true
+http-body.workspace = true
 http-body-util.workspace = true
 serde.workspace = true
 toml.workspace = true
@@ -24,6 +25,7 @@ pbkdf2.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 calamine.workspace = true
+rust_xlsxwriter.workspace = true
 
 [features]
 # Sample first-slice messages for adapter tests (issue #3). Test-only, not a platform flag.

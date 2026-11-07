@@ -54,6 +54,11 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
         "kernel.setting.edit",
         "Edit texts and the privacy notice version",
     ),
+    Permission::new("kernel.backup.manage", "See the backups and back up now"),
+    Permission::new(
+        "kernel.backup.download",
+        "Download a backup or all data (Administrator-equivalent: backups hold password hashes)",
+    ),
 ];
 
 const MIGRATIONS: &[(&str, &str)] = &[
@@ -104,6 +109,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0012_link_revoke_permission",
         include_str!("../../migrations/0012_link_revoke_permission.sql"),
+    ),
+    (
+        "0013_backup_run",
+        include_str!("../../migrations/0013_backup_run.sql"),
     ),
 ];
 

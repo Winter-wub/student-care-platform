@@ -135,8 +135,9 @@ handing over. Put Students' data mapping in `[roster]`, Roles in `[roles]`,
 texts in `[texts.<locale>]`; secrets only in the environment.
 
 Behind a reverse proxy, terminate TLS there, forward to `HARPSEAL_ADDR` and
-set `[staff] trust_forwarded_for = true`. Back up with `harpseal backup`
-(below).
+set `[staff] trust_forwarded_for = true`. The Deployment backs itself up
+every night into the FileStore; `harpseal backup` makes a point-in-time
+copy by hand (below).
 
 ## Backup and restore
 
@@ -172,10 +173,12 @@ It writes to `DIR.partial` and renames it to `DIR` at the end, so `DIR` only
 ever holds a finished backup (`DIR/` is the same: the temporary
 directory is always next to `DIR`, not in it). `DIR` must be new or empty.
 
-**Stop the server first** (or at least make sure no tick runs): the `Db`
-port has no read transaction, so the backup reads table by table and a write
-in between would make it inconsistent. The manifest records when the dump
-started and finished.
+**Stop the server first** for a point-in-time copy: the `Db` port has no
+read transaction, so the backup reads table by table (children before
+parents) and a write in between may or may not be in it. A backup taken
+while the server runs, as the nightly one is, still restores: see
+[Nightly backups](backups.md). The manifest
+records when the dump started and finished.
 
 **The backup directory is as sensitive as the database.** It holds Staff
 password hashes, session ids, Students' personal data and the roster files,
@@ -246,9 +249,14 @@ run it again with `--force`.
   bulk-links its users. A revision such a Job left `linking` is picked up by
   the next Menu label save.
 
-**D1.** The CLI runs natively and has no D1 adapter yet, so a Worker
-Deployment is backed up with Cloudflare's own export
-(`npx wrangler@4 d1 export <database> --remote --output backup.sql`) and R2's
-tools for the files. The format above is the one `restore` reads; a D1 HTTP
-adapter for the CLI would let `backup`/`restore` run against D1 through the
-same `Db` port.
+**D1.** The CLI runs natively and has no D1 adapter yet. A Worker
+Deployment is backed up by its nightly Job instead (next section), and
+restored through a native restore; see [Back into D1](backups.md#back-into-d1).
+Cloudflare's own export
+(`npx wrangler@4 d1 export <database> --remote --output backup.sql`)
+remains a second, independent copy.
+
+## Nightly backups
+
+Every Deployment also backs itself up each night into its FileStore, with
+a Backups page to list, download and export: see [Backups](backups.md).
