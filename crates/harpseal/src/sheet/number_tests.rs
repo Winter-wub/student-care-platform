@@ -107,3 +107,26 @@ fn blank_and_dash_follow_the_callers_rule() {
     }
     assert_eq!(number("5", Blank::Zero), Ok(Some(5.0)));
 }
+
+#[test]
+fn a_scale_beyond_what_an_i64_holds_is_refused_not_a_panic() {
+    assert_eq!(number_scaled("1", 70_000, Blank::Missing), Err(NotANumber));
+    assert_eq!(
+        number_scaled("1", MAX_SCALE + 1, Blank::Missing),
+        Err(NotANumber)
+    );
+    assert_eq!(
+        number_scaled("1", MAX_SCALE, Blank::Missing),
+        Ok(Some(1_000_000_000_000_000_000))
+    );
+    assert_eq!(number_scaled("", 70_000, Blank::Zero), Err(NotANumber));
+    // ±i64::MAX: i64::MIN itself is one short, documented.
+    assert_eq!(
+        number_scaled("-9223372036854775807", 0, Blank::Missing),
+        Ok(Some(-i64::MAX))
+    );
+    assert_eq!(
+        number_scaled("-9223372036854775808", 0, Blank::Missing),
+        Err(NotANumber)
+    );
+}

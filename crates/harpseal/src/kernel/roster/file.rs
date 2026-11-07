@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AttributeType, RosterConfig};
-use crate::sheet::{HeaderError, Limits, SheetError, TableSpec, Workbook};
+use crate::sheet::{HeaderError, Limits, SheetError, TableError, TableSpec, Workbook};
 
 pub(crate) use crate::sheet::{Row, is_xlsx};
 #[cfg(test)]
@@ -38,6 +38,8 @@ pub(crate) enum FileError {
     Xlsx,
     /// No sheet with a non-empty cell.
     Empty,
+    /// Content only in hidden sheets (named).
+    OnlyHidden(Vec<String>),
     /// More than [`MAX_ROWS`] data rows (or an XLSX cell far below them).
     TooManyRows,
     /// An XLSX cell right of column [`MAX_COLUMNS`].
@@ -57,8 +59,11 @@ pub(crate) struct HeaderMismatch {
     pub(crate) row: usize,
     pub(crate) missing: Vec<String>,
     pub(crate) unexpected: Vec<String>,
-    /// No row holds any of the columns: one problem, not one per column.
-    pub(crate) no_header: bool,
+    /// A problem of the sheet as a whole, reported once instead of per
+    /// column: `no_header_row` (no row holds any of the columns) or
+    /// `only_footer` (the footer rule would skip every row under the
+    /// header).
+    pub(crate) whole: Option<&'static str>,
 }
 
 /// A row or sheet the import left out, shown on the preview and in the
@@ -133,12 +138,22 @@ pub(crate) fn read(
     let mut out = Read::default();
     let mut mismatches = Vec::new();
     let mut any = false;
+    let mut hidden = Vec::new();
     for s in book.sheets().iter().filter(|s| !s.is_empty()) {
         if s.is_hidden() {
+            // A hidden sheet that holds the roster header is listed apart:
+            // a `full` import must not make its Students left unseen.
+            let roster_sheet = !matches!(s.table(&spec), Err(TableError::Header(_)));
+            hidden.push(s.name().to_string());
             out.skipped.push(Skipped {
                 sheet: s.name().to_string(),
                 row: 0,
-                reason: "hidden_sheet".into(),
+                reason: if roster_sheet {
+                    "hidden_roster_sheet"
+                } else {
+                    "hidden_sheet"
+                }
+                .into(),
                 text: String::new(),
             });
             continue;
@@ -153,7 +168,7 @@ pub(crate) fn read(
                         row: table.header_row(),
                         missing: Vec::new(),
                         unexpected,
-                        no_header: false,
+                        whole: None,
                     });
                     continue;
                 }
@@ -169,8 +184,18 @@ pub(crate) fn read(
                     return Err(FileError::TooManyRows);
                 }
             }
-            Err(e) => mismatches.push(not_found(e, &expected)),
+            Err(TableError::Header(e)) => mismatches.push(not_found(e, &expected)),
+            Err(_) => mismatches.push(HeaderMismatch {
+                sheet: s.name().to_string(),
+                row: 0,
+                missing: Vec::new(),
+                unexpected: Vec::new(),
+                whole: Some("only_footer"),
+            }),
         }
+    }
+    if !any && !hidden.is_empty() {
+        return Err(FileError::OnlyHidden(hidden));
     }
     if !any {
         return Err(FileError::Empty);
@@ -196,7 +221,7 @@ fn sheet_error(e: SheetError) -> FileError {
 /// The closest row's mismatch (a repeated column is unexpected); when it
 /// holds none of the columns, one "no header row" problem for the sheet.
 fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
-    let no_header = e.missing.len() == expected.len();
+    let no_header = e.missing.len() == expected.len() && e.repeated.is_empty();
     HeaderMismatch {
         unexpected: if no_header {
             Vec::new()
@@ -206,7 +231,7 @@ fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
         missing: if no_header { Vec::new() } else { e.missing },
         sheet: e.sheet,
         row: e.row,
-        no_header,
+        whole: no_header.then_some("no_header_row"),
     }
 }
 

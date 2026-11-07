@@ -33,6 +33,9 @@ impl std::fmt::Display for NotANumber {
 
 impl std::error::Error for NotANumber {}
 
+/// Largest scale [`number_scaled`] takes: `10^18` still fits an `i64`.
+pub const MAX_SCALE: u32 = 18;
+
 /// Most significant digits [`number`] accepts: an `f64` holds 15 exactly.
 pub const MAX_F64_DIGITS: usize = 15;
 
@@ -77,8 +80,10 @@ pub fn number(raw: &str, blank: Blank) -> Result<Option<f64>, NotANumber> {
 /// Reads a number exactly, as an integer count of `10^-scale` units:
 /// `number_scaled("12,500.50", 2, ..)` is `1_250_050` satang. Digits
 /// beyond `scale` must be zeros (`12.505` at scale 2 is refused, never
-/// rounded), and a value that does not fit an `i64` is refused. Scale 0
-/// reads whole numbers (`12,500.00` is `12500`, `3.5` is refused).
+/// rounded), and a value that does not fit an `i64` is refused (also
+/// `i64::MIN` itself: the range is `±i64::MAX`). Scale 0 reads whole
+/// numbers (`12,500.00` is `12500`, `3.5` is refused); a scale above
+/// [`MAX_SCALE`] is refused for any input.
 ///
 /// ```
 /// use harpseal::sheet::{number_scaled, Blank};
@@ -89,6 +94,9 @@ pub fn number(raw: &str, blank: Blank) -> Result<Option<f64>, NotANumber> {
 /// assert!(number_scaled("1.005", 2, Blank::Missing).is_err());
 /// ```
 pub fn number_scaled(raw: &str, scale: u32, blank: Blank) -> Result<Option<i64>, NotANumber> {
+    if scale > MAX_SCALE {
+        return Err(NotANumber);
+    }
     let Some(p) = parts(raw)? else {
         return Ok(blank_value(blank, 0));
     };

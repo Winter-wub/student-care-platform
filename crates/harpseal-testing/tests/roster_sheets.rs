@@ -109,3 +109,37 @@ async fn a_full_import_never_drops_a_trailing_student_into_left() {
     );
     assert_eq!(int(&h, active, &[]).await, 5);
 }
+
+const HIDDEN_ROSTER: &[u8] =
+    include_bytes!("../../harpseal/tests/fixtures/roster/cohorts_hidden_roster.xlsx");
+
+#[tokio::test]
+async fn a_hidden_roster_sheet_blocks_a_full_import_and_is_listed_in_upsert() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    let active = "SELECT count(*) FROM student WHERE status = 'active'";
+    assert_eq!(int(&h, active, &[]).await, 5);
+    // "ปี 2" is hidden: in full mode its two Students would become left.
+    let r = upload(&b, "h.xlsx", HIDDEN_ROSTER, "full").await;
+    let id = import_id(&r);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("ปี 2,0,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
+    assert_eq!(int(&h, active, &[]).await, 5, "nobody became left");
+    // In upsert nobody becomes left: it previews, listing the hidden sheet.
+    let id = previewed(&b, "h.xlsx", HIDDEN_ROSTER, "upsert").await;
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(page.contains("ข้ามชีตที่ซ่อนอยู่ (มีหัวคอลัมน์รายชื่อ) (ปี 2)"), "{page}");
+}
+
+#[tokio::test]
+async fn a_calculated_gpa_column_is_imported() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let calc = include_bytes!("../../harpseal/tests/fixtures/roster/calculated.xlsx");
+    let id = previewed(&b, "calculated.xlsx", calc, "upsert").await;
+    assert_eq!(counts(&h, &id).await["preview"]["new"], 3);
+}

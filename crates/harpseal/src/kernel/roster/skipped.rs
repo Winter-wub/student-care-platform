@@ -32,7 +32,10 @@ pub(super) fn card(v: &View<'_>, skipped: &[Skipped]) -> Markup {
             }
             ul class="muted" {
                 @for s in skipped.iter().filter(|s| !s.text.is_empty()).take(SHOWN) {
-                    li { (s.row) ": " (s.text) }
+                    li {
+                        @if !s.sheet.is_empty() { (s.sheet) " · " }
+                        (v.t("kernel.roster.report_row")) " " (s.row) ": " (s.text)
+                    }
                 }
             }
         }

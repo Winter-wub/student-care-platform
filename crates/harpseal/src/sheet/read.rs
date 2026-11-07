@@ -137,10 +137,45 @@ pub(crate) fn cell_text(d: &Data) -> String {
     }
 }
 
-fn number_text(f: f64) -> String {
+/// A numeric cell as text, rounded to 15 significant digits first (what
+/// Excel shows and what an `f64` holds exactly): a calculated
+/// `12500.000000000002` reads `12500`, an `=AVERAGE` GPA of
+/// `3.3333333333333335` reads `3.33333333333333`, so the number helpers
+/// accept them. Text cells are never rounded.
+pub(crate) fn number_text(f: f64) -> String {
+    let f = if f.is_finite() && f != 0.0 {
+        format!("{f:.14e}").parse::<f64>().unwrap_or(f)
+    } else {
+        f
+    };
     if f.fract() == 0.0 && f.abs() < 1e15 {
         format!("{}", f as i64)
     } else {
         f.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::number_text;
+    use crate::sheet::{Blank, number, number_scaled};
+
+    #[test]
+    fn calculated_cells_read_as_excel_shows_them() {
+        assert_eq!(number_text(12500.000000000002), "12500");
+        assert_eq!(number_text(3.3333333333333335), "3.33333333333333");
+        assert_eq!(number_text(0.30000000000000004), "0.3");
+        assert_eq!(number_text(68010001.0), "68010001");
+        assert_eq!(number_text(2.5), "2.5");
+        assert_eq!(number_text(-0.1), "-0.1");
+        assert_eq!(number_text(0.0), "0");
+        assert_eq!(number_text(1e-7), "0.0000001");
+        let amount = number_text(12500.000000000002);
+        assert_eq!(
+            number_scaled(&amount, 2, Blank::Missing),
+            Ok(Some(1_250_000))
+        );
+        let gpa = number_text(3.3333333333333335);
+        assert_eq!(number(&gpa, Blank::Missing), Ok(Some(3.33333333333333)));
     }
 }

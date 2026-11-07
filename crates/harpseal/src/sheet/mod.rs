@@ -21,19 +21,22 @@
 //!   unless the spec turns the footer on.
 //! - **Footer** ([`TableSpec::skip_footer`], opt-in): read from the
 //!   bottom up, a row is a footer row (totals, notes) when its key cell
-//!   ([`TableSpec::key`], by default the first column) is empty or a
-//!   label, and no required column other than the key and the numeric
-//!   columns holds a value. A label is text that is not a key
+//!   ([`TableSpec::key`], by default the first column) holds a **label**
+//!   and every other headed column is empty except the numeric columns
+//!   the spec names. A label is text that is not a key
 //!   ([`TableSpec::is_key`], [`looks_like_key`] by default) and is not
-//!   digits without letters: `6801 0002` is a malformed id, so data. A row
-//!   with an unreadable cell or a cell outside the header is always data.
-//!   The first row from the bottom that is not a footer row ends the
-//!   footer. So with `Student id, Name, Amount` (Amount numeric),
-//!   `Total,,22 500` and a note in column A are skipped, while `,Pla,500`
-//!   (an id missing) stays data. Skipped rows come back in
-//!   [`Table::footer`], to be shown, never silently lost. A table keyed
-//!   by names or letter codes needs its own `is_key` before the footer is
-//!   turned on.
+//!   digits without letters (`6801 0002` is a malformed id). A row is
+//!   always data when its key cell is empty (only numbers: an id was
+//!   lost), when any other headed column holds a value (`,Pla,500`), or
+//!   when it has an unreadable cell or a cell outside the header. The
+//!   first row from the bottom that is not a footer row ends the footer.
+//!   So with `Student id, Name, Amount` (Amount numeric), `Total,,22 500`
+//!   and a note in column A are skipped. Skipped rows come back in
+//!   [`Table::footer`], to be shown, never silently lost; when the rule
+//!   would skip every row under the header, [`TableError::OnlyFooter`]
+//!   is returned instead. The rule cannot tell `Pla Thong,,500` (a name
+//!   typed in the id column) from `Total,,500`: a table keyed by names or
+//!   letter codes needs its own `is_key` before the footer is turned on.
 //!
 //! Cell values: XLSX numbers as written without a trailing `.0`, dates as
 //! `YYYY-MM-DD` (with ` HH:MM:SS` when they hold a time), booleans as
@@ -75,8 +78,8 @@ mod table;
 
 use std::collections::BTreeMap;
 
-pub use number::{Blank, MAX_F64_DIGITS, NotANumber, number, number_scaled};
-pub use table::{HeaderError, KeyTest, SkippedRow, Table, TableSpec, looks_like_key};
+pub use number::{Blank, MAX_F64_DIGITS, MAX_SCALE, NotANumber, number, number_scaled};
+pub use table::{HeaderError, KeyTest, SkippedRow, Table, TableError, TableSpec, looks_like_key};
 
 /// Rows searched for the header, counting only non-empty ones.
 pub const HEADER_SEARCH_ROWS: usize = 10;

@@ -50,6 +50,7 @@ mod skipped;
 mod store;
 mod stuck;
 mod texts;
+mod texts_sheets;
 pub(crate) mod validate;
 mod view;
 
@@ -82,6 +83,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         too_large: "kernel.roster.reason_too_large",
     };
     r.messages(texts::DEFAULTS)
+        .messages(texts_sheets::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",

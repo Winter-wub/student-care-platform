@@ -165,9 +165,64 @@ impl std::fmt::Display for HeaderError {
 
 impl std::error::Error for HeaderError {}
 
+/// Why [`Sheet::table`] gives no table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TableError {
+    /// No usable header row.
+    Header(HeaderError),
+    /// The header has rows under it, but the footer rule would skip them
+    /// all: more likely data than a footer, so the sheet is not read.
+    OnlyFooter {
+        /// The sheet's name.
+        sheet: String,
+        /// The rows the footer rule matched.
+        rows: Vec<SkippedRow>,
+    },
+}
+
+impl TableError {
+    /// The header error, if that is what it is.
+    pub fn header(&self) -> Option<&HeaderError> {
+        match self {
+            Self::Header(e) => Some(e),
+            Self::OnlyFooter { .. } => None,
+        }
+    }
+}
+
+impl std::fmt::Display for TableError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Header(e) => e.fmt(f),
+            Self::OnlyFooter { sheet, .. } => {
+                write!(f, "only footer rows under the header in sheet `{sheet}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TableError {}
+
 impl Sheet {
     /// The table `spec` describes: header, data rows and skipped footer.
-    pub fn table(&self, spec: &TableSpec) -> Result<Table, HeaderError> {
+    pub fn table(&self, spec: &TableSpec) -> Result<Table, TableError> {
+        self.find(spec)
+            .map_err(TableError::Header)
+            .and_then(|(at, headers)| {
+                let t = self.table_at(at, headers, spec);
+                if t.rows.is_empty() && !t.footer.is_empty() {
+                    return Err(TableError::OnlyFooter {
+                        sheet: self.name.clone(),
+                        rows: t.footer,
+                    });
+                }
+                Ok(t)
+            })
+    }
+
+    /// The header row's index among the rows, and its cells.
+    fn find(&self, spec: &TableSpec) -> Result<(usize, Vec<String>), HeaderError> {
         let window = self.rows.iter().take(HEADER_SEARCH_ROWS).enumerate();
         let mut best: Option<(usize, usize)> = None;
         for (i, raw) in window {
@@ -178,7 +233,7 @@ impl Sheet {
                 if !repeated.is_empty() {
                     return Err(self.error(raw, headers, Vec::new(), repeated));
                 }
-                return Ok(self.table_at(i, headers, spec));
+                return Ok((i, headers));
             }
             if found > 0 && best.is_none_or(|(_, f)| found > f) {
                 best = Some((i, found));
@@ -278,10 +333,13 @@ impl Sheet {
     }
 }
 
-/// Whether `r` is a footer row (see the module docs).
+/// Whether `r` is a footer row (see the module docs): a label in its
+/// key cell, nothing under any other headed column but the numeric ones,
+/// no unreadable cell and no cell outside the header.
 fn is_footer(r: &RawRow, headers: &[String], spec: &TableSpec, numeric: &[String]) -> bool {
     let column = |name: &str| headers.iter().position(|h| h == name);
     let key = spec.key_column().and_then(column);
+    let mut label = false;
     for (i, cell) in r.cells.iter().enumerate() {
         let Some(cell) = cell else { continue };
         let Cell::Text(text) = cell else {
@@ -295,14 +353,13 @@ fn is_footer(r: &RawRow, headers: &[String], spec: &TableSpec, numeric: &[String
             if (spec.is_key)(text) || is_malformed_key(text) {
                 return false;
             }
-            continue;
-        }
-        let required = spec.columns.iter().any(|c| c == header);
-        if required && !numeric.iter().any(|n| n == header) {
-            return false;
+            label = true;
+        } else if !numeric.iter().any(|n| n == header) {
+            return false; // a value under a non-numeric column: data
         }
     }
-    true
+    // Only numbers and no label: a row whose id was lost, not a total.
+    label
 }
 
 /// Digits and no letters (`6801 0002`, `68-01`): an id typed wrong, never

@@ -74,6 +74,10 @@ pub(crate) async fn upload(
             .map_err(|e: FileError| validate::file_problems(&e))
             .and_then(|r| {
                 skipped = r.skipped;
+                // Students in a hidden roster sheet would become left.
+                if mode == "full" {
+                    hidden_roster_sheets(&skipped)?;
+                }
                 validate::validate(&r.rows, config)
             })
             .and_then(|v| {
@@ -289,6 +293,21 @@ impl NewRow<'_> {
             Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ?)").bind(self.id),
         )?;
         Ok(vec![insert, audit])
+    }
+}
+
+/// Refuses a `full` file with a hidden sheet holding the roster header:
+/// one problem per such sheet.
+fn hidden_roster_sheets(skipped: &[file::Skipped]) -> core::result::Result<(), Vec<Problem>> {
+    let problems: Vec<Problem> = skipped
+        .iter()
+        .filter(|s| s.reason == "hidden_roster_sheet")
+        .map(|s| problem("hidden_roster_sheet").on(&s.sheet))
+        .collect();
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(problems)
     }
 }
 

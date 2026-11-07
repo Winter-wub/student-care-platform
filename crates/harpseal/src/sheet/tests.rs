@@ -3,6 +3,7 @@ use super::*;
 const FEES: &[u8] = include_bytes!("../../tests/fixtures/roster/fees.xlsx");
 const COHORTS: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts.xlsx");
 const TRAILING: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts_trailing.xlsx");
+const CALC_FEES: &[u8] = include_bytes!("../../tests/fixtures/roster/calculated_fees.xlsx");
 const HIDDEN: &[u8] = include_bytes!("../../tests/fixtures/roster/cohorts_hidden.xlsx");
 
 const AMOUNT: &str = "ยอดค้างชำระ";
@@ -105,11 +106,8 @@ fn the_footer_never_swallows_a_data_row() {
         read("รวม 2 คน\nหมายเหตุ: 1 พ.ย. 2569\n"),
         (vec![2], vec![3, 4])
     );
-    assert_eq!(
-        read(",,\"12,500\"\n"),
-        (vec![2], vec![3]),
-        "an unlabelled sum"
-    );
+    // No label, only numbers: a row whose id was lost, data.
+    assert_eq!(read(",,\"12,500\"\n"), (vec![2, 3], vec![]), "no label");
     // A value under a required non-numeric column keeps the row as data.
     assert_eq!(
         read(",Pla,\"12,500\"\n"),
@@ -170,7 +168,12 @@ fn a_repeated_header_is_an_error_or_its_extra_cells_are_unheaded() {
     let spec = TableSpec::new(["Student id", "Amount"]);
     let text = "Student id,Amount,Amount\n68010001,100,200\n";
     let book = Workbook::open(text.as_bytes(), "a.csv").unwrap();
-    let e = book.sheets()[0].table(&spec).unwrap_err();
+    let e = book.sheets()[0]
+        .table(&spec)
+        .unwrap_err()
+        .header()
+        .cloned()
+        .unwrap();
     assert_eq!((e.row, e.repeated.clone()), (1, vec!["Amount".to_string()]));
     assert!(e.missing.is_empty());
     // A repeated column the spec does not name: first wins, the rest are
@@ -200,7 +203,12 @@ fn every_sheet_is_read_and_hidden_ones_are_marked() {
         (y2.header_row(), y2.rows().len(), y2.footer()[0].row),
         (1, 2, 5)
     );
-    let missing = book.sheets()[2].table(&spec).unwrap_err();
+    let missing = book.sheets()[2]
+        .table(&spec)
+        .unwrap_err()
+        .header()
+        .cloned()
+        .unwrap();
     assert_eq!((missing.sheet.as_str(), missing.row), ("ว่าง", 0));
     let hidden = Workbook::open(HIDDEN, "h.xlsx").unwrap();
     let flags: Vec<_> = hidden
@@ -232,12 +240,20 @@ fn a_header_is_searched_in_the_first_rows_only() {
     assert_eq!(book.sheets()[0].table(&spec).unwrap().header_row(), 10);
     let late = format!("{titles}title\nid,name\n1,a\n");
     let book = Workbook::open(late.as_bytes(), "a.csv").unwrap();
-    let e = book.sheets()[0].table(&spec).unwrap_err();
+    let e = book.sheets()[0]
+        .table(&spec)
+        .unwrap_err()
+        .header()
+        .cloned()
+        .unwrap();
     assert_eq!((e.row, e.missing.len()), (1, 2), "closest: the first row");
     let near = "title\nid,nam\n";
     let e = Workbook::open(near.as_bytes(), "a.csv").unwrap().sheets()[0]
         .table(&spec)
-        .unwrap_err();
+        .unwrap_err()
+        .header()
+        .cloned()
+        .unwrap();
     assert_eq!((e.row, e.missing), (2, vec!["name".to_string()]));
     assert_eq!(e.headers, vec!["id".to_string(), "nam".into()]);
 }
@@ -271,4 +287,56 @@ fn bad_files_and_limits_are_refused() {
     );
     assert_eq!(Limits::default().max_sheets, 50);
     assert!(Workbook::open_with(COHORTS, "c.xlsx", Limits::default().max_sheets(3)).is_ok());
+}
+
+#[test]
+fn every_headed_column_counts_not_only_the_required_ones() {
+    // The spec requires id and amount; the file also has a Name column.
+    let spec = TableSpec::new(["Student id", "Amount"]).skip_footer(["Amount"]);
+    let read = |body: &str| {
+        let text = format!("Student id,Name,Amount\n68010001,Nok,1\n{body}");
+        split(&text, &spec)
+    };
+    assert_eq!(read(",Pla,\"12,500\"\n"), (vec![2, 3], vec![]));
+    assert_eq!(read("Total,,\"12,500\"\n"), (vec![2], vec![3]));
+    assert_eq!(read(",,\"12,500\"\n"), (vec![2, 3], vec![]));
+    // Known limit, documented: a name typed in the id column reads as a
+    // label (`Total` and `Pla Thong` look alike); it is listed, not lost.
+    assert_eq!(read("Pla Thong,,\"12,500\"\n"), (vec![2], vec![3]));
+}
+
+#[test]
+fn a_footer_that_would_swallow_every_row_is_an_error() {
+    let spec = TableSpec::new(["id", "amount"]).skip_footer(["amount"]);
+    let book = Workbook::open(b"id,amount\nTotal,0\nNote: none\n", "a.csv").unwrap();
+    match book.sheets()[0].table(&spec) {
+        Err(TableError::OnlyFooter { sheet, rows }) => {
+            assert_eq!(sheet, "");
+            assert_eq!(rows.iter().map(|r| r.row).collect::<Vec<_>>(), vec![2, 3]);
+        }
+        other => panic!("{other:?}"),
+    }
+    // A header and nothing under it is an empty table, not an error.
+    let book = Workbook::open(b"id,amount\n", "a.csv").unwrap();
+    assert!(book.sheets()[0].table(&spec).unwrap().rows().is_empty());
+}
+
+#[test]
+fn calculated_amounts_read_as_excel_shows_them() {
+    let book = Workbook::open(CALC_FEES, "c.xlsx").unwrap();
+    let t = book.sheets()[0].table(&fees_spec()).unwrap();
+    let satang: Vec<_> = t
+        .rows()
+        .iter()
+        .map(|r| number_scaled(r.get(AMOUNT).unwrap_or(""), 2, Blank::Missing))
+        .collect();
+    // 12500.000000000002 and 0.30000000000000004 read exactly; a third
+    // of a baht has no exact satang and is refused, never rounded.
+    assert_eq!(
+        satang,
+        vec![Ok(Some(1_250_000)), Ok(Some(30)), Err(NotANumber)]
+    );
+    let third = number(t.rows()[2].get(AMOUNT).unwrap_or(""), Blank::Missing);
+    assert_eq!(third, Ok(Some(3.33333333333333)));
+    assert_eq!(t.footer()[0].text, "รวม | 12503.6333333333");
 }

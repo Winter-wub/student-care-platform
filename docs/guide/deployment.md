@@ -300,16 +300,22 @@ header row among the first 10 non-empty rows (title rows above are
 skipped; a required column repeated in the header is an error) and yields
 `Row`s with their sheet name and 1-based row number. By default every row
 under the header is data. `.skip_footer(["Amount"])` skips totals and notes
-rows at the bottom whose key cell is empty or a label and that hold values
-only under the numeric columns you name; show `Table::footer()` (sheet,
-row, text) to Staff, never drop it silently. Keyed by names or letter
-codes? Pass `.is_key(|s| ...)` (a closure, e.g. over the codes you know)
-before turning the footer on. An Excel error cell is `Cell::Unreadable`
+rows at the bottom whose key cell holds a label (text with letters that is
+not a key) and that hold nothing else except under the numeric columns you
+name; a row with only numbers and no label is data (an id was lost). Show
+`Table::footer()` (sheet, row, text) to Staff, never drop it silently; if
+the rule would skip every row under the header, `table()` returns
+`TableError::OnlyFooter`. The rule cannot tell `Pla Thong,,500` (a name in
+the id column) from `Total,,500`: keyed by names or letter codes, pass
+`.is_key(|s| ...)` (a closure, e.g. over the codes you know) before turning
+the footer on. An Excel error cell is `Cell::Unreadable`
 with its code and cell (`#REF!`, `C10`), never text.
 
 Numbers: `sheet::number_scaled(text, 2, Blank::Zero)` reads money exactly
-in satang (`12,500.50` is `1_250_050`; more decimals than the scale, or a
-value beyond `i64`, is refused, never rounded). `sheet::number` gives an
+in satang (`12,500.50` is `1_250_050`; more decimals than the scale, a
+value beyond `±i64::MAX` or a scale above 18 is refused, never rounded).
+Numeric XLSX cells, calculated ones included, arrive as text rounded to 15
+significant digits, as Excel shows them (`12500.000000000002` is `12500`). `sheet::number` gives an
 `f64` of at most 15 significant digits. Both accept `12,500`, ` 12500 `,
 `12,500.00`, `+5`, `.5`; `.` is always the decimal point. They refuse
 `(500)`, `฿`, Thai digits, spaces or no-break spaces inside the number, the

@@ -54,7 +54,8 @@ impl Problem {
         }
     }
 
-    fn on(mut self, sheet: &str) -> Self {
+    /// The same problem on `sheet`.
+    pub(crate) fn on(mut self, sheet: &str) -> Self {
         self.sheet = sheet.into();
         self
     }
@@ -87,6 +88,10 @@ pub(crate) fn file_problems(e: &FileError) -> Vec<Problem> {
         FileError::Csv(r) => vec![Problem::new(*r, "", "bad_csv")],
         FileError::Xlsx => whole("bad_xlsx"),
         FileError::Empty => whole("empty"),
+        FileError::OnlyHidden(sheets) => sheets
+            .iter()
+            .map(|s| Problem::new(0, "", "only_hidden").on(s))
+            .collect(),
         FileError::TooManyRows => whole("too_many_rows"),
         FileError::TooManyColumns => whole("too_many_columns"),
         FileError::TooManySheets => whole("too_many_sheets"),
@@ -95,8 +100,8 @@ pub(crate) fn file_problems(e: &FileError) -> Vec<Problem> {
 }
 
 fn header_problems(m: &HeaderMismatch) -> Vec<Problem> {
-    if m.no_header {
-        return vec![Problem::new(0, "", "no_header_row").on(&m.sheet)];
+    if let Some(reason) = m.whole {
+        return vec![Problem::new(0, "", reason).on(&m.sheet)];
     }
     let at = |h: &String, reason| Problem::new(m.row, h, reason).on(&m.sheet);
     m.missing

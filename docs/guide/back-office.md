@@ -45,13 +45,17 @@ An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; at most 50
 sheets). **Every visible sheet with content must hold the header**: a
 workbook with an extra notes or lookup sheet that imported before #70 is now
 refused, naming that sheet; delete or hide it. Hidden sheets and empty
-sheets are skipped (hidden ones are listed). In each sheet the header row is
-found among its first 10 non-empty rows, so title rows above it are fine.
-Totals and notes rows below the data are skipped when their student id cell
-is empty or a label (text with letters, such as `รวม` or a note) and they
-hold nothing under the other required columns except the `integer` and
-`number` attributes; a row with a name but no id, an id like `6801 0002`,
-or an Excel error stays data and is reported. Skipped rows and sheets are
+sheets are skipped (hidden ones are listed); a workbook whose content is
+only in hidden sheets is refused naming them, and a hidden sheet that holds
+the roster header refuses a `full` import (its Students would become left:
+unhide or delete it; `upsert` lists it as skipped). In each sheet the header
+row is found among its first 10 non-empty rows, so title rows above it are
+fine. A totals or notes row below the data is skipped only when its student
+id cell holds a label (text with letters, such as `รวม` or a note) and the
+other columns are empty except the `integer` and `number` attributes; a row
+with a name but no id, a row with only numbers, an id like `6801 0002`, or
+an Excel error stays data and is reported. A sheet whose rows under the
+header would all be skipped this way is refused. Skipped rows and sheets are
 listed on the preview and in `report.csv`, with sheet, row and text.
 Numbers may be stored as text (`12,500`, `12,500.00`; a lone `-` counts as
 empty; exponents such as `1e3` are refused), and an Excel error cell

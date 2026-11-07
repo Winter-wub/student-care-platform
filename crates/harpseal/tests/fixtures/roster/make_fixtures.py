@@ -106,13 +106,17 @@ def write_book(path, sheets):
 
 def xrow(r, values):
     """One row: str values as inline text, int/float as numbers, ("e", code)
-    as an error cell, None as no cell."""
+    as an error cell, ("f", formula, cached float) as a formula cell, None
+    as no cell."""
     out = []
     for ci, v in enumerate(values):
         ref = f"{col(ci)}{r}"
         if v is None or v == "":
             continue
-        if isinstance(v, tuple):
+        if isinstance(v, tuple) and v[0] == "f":
+            # A formula and its cached value, as Excel stores it.
+            out.append(f'<c r="{ref}"><f>{escape(v[1])}</f><v>{v[2]!r}</v></c>')
+        elif isinstance(v, tuple):
             out.append(f'<c r="{ref}" t="e"><v>{escape(v[1])}</v></c>')
         elif isinstance(v, (int, float)):
             out.append(f'<c r="{ref}"><v>{v}</v></c>')
@@ -178,3 +182,23 @@ write_book(f"{out}/cohorts_trailing.xlsx", [("ปี 1", trailing)])
 # A hidden lookup sheet beside a cohort sheet.
 lookup = xrow(1, ["หลักสูตร"]) + xrow(2, ["MSC"]) + xrow(3, ["MSC-Intl"])
 write_book(f"{out}/cohorts_hidden.xlsx", [("ปี 2", y2), ("lists", lookup, True)])
+
+# Calculated cells (#70 review): an =AVERAGE GPA and calculated amounts
+# whose cached values carry float noise beyond 15 significant digits.
+calc = (xrow(1, H)
+    + xrow(2, student(68010001, "นกน้อย ทะเลใส", 1, ("f", "AVERAGE(3,3,4)", 3.3333333333333335)))
+    + xrow(3, student(68010002, "ปลาทอง อ่าวคราม", 1, ("f", "AVERAGE(2,3,3)", 2.6666666666666665)))
+    + xrow(4, [68010003, "หอยมุก หาดทราย", "s68010003@student.sealbay.example", "th",
+               "ปี1", "MSC", ("f", "0.1*10", 1.0000000000000002), 3.0]))
+write_book(f"{out}/calculated.xlsx", [("ปี 1", calc)])
+calc_fees = (xrow(1, FEES)
+    + xrow(2, [68010001, "นกน้อย ทะเลใส", ("f", "12500.1-0.1", 12500.000000000002)])
+    + xrow(3, [68010002, "ปลาทอง อ่าวคราม", ("f", "0.1+0.2", 0.30000000000000004)])
+    + xrow(4, [68010003, "หอยมุก หาดทราย", ("f", "10/3", 3.3333333333333335)])
+    + xrow(5, ["รวม", None, ("f", "SUM(C2:C4)", 12503.633333333333)]))
+write_book(f"{out}/calculated_fees.xlsx", [("ภาคเรียน 2", calc_fees)])
+
+# A hidden sheet that holds the roster header beside a visible cohort, and
+# a workbook whose only content is in a hidden sheet.
+write_book(f"{out}/cohorts_hidden_roster.xlsx", [("ปี 1", y1), ("ปี 2", y2, True)])
+write_book(f"{out}/only_hidden.xlsx", [("ว่าง", ""), ("ปี 2", y2, True)])

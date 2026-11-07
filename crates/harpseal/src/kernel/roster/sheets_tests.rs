@@ -173,3 +173,56 @@ fn a_repeated_roster_header_is_reported_not_overwritten() {
         vec![("", 1, "อีเมล", "unexpected_header")]
     );
 }
+
+#[test]
+fn a_calculated_gpa_column_imports_as_main_did() {
+    let c = test_config();
+    let calc = include_bytes!("../../../tests/fixtures/roster/calculated.xlsx");
+    let rows = parse(calc, "c.xlsx", &c.roster).unwrap();
+    let valid = validate(&rows, &c).unwrap();
+    let a = |i: usize| &valid.records[i].fields.attributes;
+    assert_eq!(a(0)["gpa"], serde_json::json!(3.33333333333333));
+    assert_eq!(a(1)["gpa"], serde_json::json!(2.66666666666667));
+    assert_eq!(
+        a(2)["year"],
+        serde_json::json!(1),
+        "=0.1*10 is a whole year"
+    );
+}
+
+#[test]
+fn hidden_sheets_are_named_when_they_hold_the_data_or_a_roster() {
+    let c = test_config();
+    let only = include_bytes!("../../../tests/fixtures/roster/only_hidden.xlsx");
+    let e = parse(only, "o.xlsx", &c.roster).unwrap_err();
+    assert_eq!(e, FileError::OnlyHidden(vec!["ปี 2".into()]));
+    let problems = crate::kernel::roster::validate::file_problems(&e);
+    assert_eq!(at(&problems[0]), ("ปี 2", 0, "", "only_hidden"));
+    let roster = include_bytes!("../../../tests/fixtures/roster/cohorts_hidden_roster.xlsx");
+    let r = read(roster, "h.xlsx", &c.roster).unwrap();
+    assert_eq!(r.rows.len(), 3, "the visible sheet");
+    let hidden: Vec<_> = r
+        .skipped
+        .iter()
+        .filter(|s| s.row == 0)
+        .map(|s| (s.sheet.as_str(), s.reason.as_str()))
+        .collect();
+    assert_eq!(hidden, vec![("ปี 2", "hidden_roster_sheet")]);
+}
+
+#[test]
+fn a_number_only_row_below_the_data_is_a_student_without_an_id() {
+    let c = test_config();
+    let text = format!(
+        "{}\n68010001,นก,,,,MSC,1,\n,,,,,,2,3.25\n",
+        expected_headers(&c.roster).join(",")
+    );
+    let rows = parse(text.as_bytes(), "a.csv", &c.roster).unwrap();
+    assert_eq!(rows.len(), 2, "no label: not a footer");
+    let problems = validate(&rows, &c).unwrap_err();
+    assert!(
+        problems
+            .iter()
+            .any(|p| at(p) == ("", 3, "รหัสนักศึกษา", "required"))
+    );
+}
