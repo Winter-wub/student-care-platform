@@ -56,12 +56,14 @@ impl Deployment {
             during_forced_change: false,
             body_limit: auth::MULTIPART_LIMIT,
             too_large: None,
+            module: None,
         };
         let any_time = Gate {
             permission: None,
             during_forced_change: true,
             body_limit: auth::MULTIPART_LIMIT,
             too_large: None,
+            module: None,
         };
         let mut root = axum::Router::new()
             .route(
@@ -80,13 +82,14 @@ impl Deployment {
         for (_module, path, route) in &self.registry.public {
             root = root.route(path, route.clone());
         }
-        for (_module, permission, path, route) in &self.registry.back_office {
+        for (module, permission, path, route) in &self.registry.back_office {
             let upload = self.registry.uploads.iter().find(|u| u.path == *path);
             let gate = Gate {
                 permission: Some(*permission),
                 during_forced_change: false,
                 body_limit: upload.map_or(auth::MULTIPART_LIMIT, |u| u.max_body),
-                too_large: upload.map(|u| (u.back, u.too_large)),
+                too_large: upload.and_then(|u| u.too_large),
+                module: Some(*module),
             };
             root = root.route(
                 &format!("{}{path}", super::routes::ADMIN),

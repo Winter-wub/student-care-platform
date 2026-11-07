@@ -1,9 +1,10 @@
 //! The fictional "Seal Bay University" Deployment: Thai default Locale,
 //! LINE + Telegram + Fake Channels, email-OTP Verification, the built-in
-//! Announcements Module and two small customer Modules: [`Contact`] adds
+//! Announcements Module and three small customer Modules: [`Contact`] adds
 //! a Menu entry, [`my_info::MyInfo`] a Mini App page linked from the Mini
-//! App home. Announcements sends Mini App buttons, so `LINE_LIFF_ID`
-//! and `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
+//! App home, and [`fees::Fees`] a back-office spreadsheet upload.
+//! Announcements sends Mini App buttons, so `LINE_LIFF_ID` and
+//! `TELEGRAM_WEB_APP_URL` must be set or `build()` refuses to start.
 //! LINE's rich menus come with bundled images ([`menu_images`]); with real
 //! LINE credentials the images are checked before the Deployment starts.
 //! Both runtime binaries (`../native`, `../worker`) call [`deployment`]
@@ -12,6 +13,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod fees;
 pub mod menu_images;
 pub mod my_info;
 pub mod seed;
@@ -144,6 +146,7 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
         .module(Announcements)
         .module(Contact)
         .module(my_info::MyInfo)
+        .module(fees::Fees)
 }
 
 /// Why [`deployment`] refused to start.

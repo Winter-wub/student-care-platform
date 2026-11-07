@@ -19,6 +19,9 @@
 //! **Transient rows.** Live Verification challenges (`pending` and not yet
 //! expired) are never read: their salted hash of a short code is
 //! crackable offline, and a challenge is worth nothing after a restore.
+//! Kept Module uploads (`module_upload`, #74) are never read either: a
+//! file waiting for its confirm is worth nothing after a restore, and
+//! Staff did not mean it to be kept for the backups' 30 days.
 
 use super::PAGE;
 use super::schema::{Table, quote};
@@ -31,8 +34,13 @@ const ROWID: &str = "__harpseal_rowid";
 /// The rows of `table` a dump at `now` leaves out, as a `WHERE` condition
 /// for the rows it keeps.
 pub(crate) fn kept_rows(table: &str, now: i64) -> Option<Statement> {
-    (table == "verification_challenge")
-        .then(|| Statement::new("(state <> 'pending' OR expires_at <= ?)").bind(now))
+    match table {
+        "verification_challenge" => {
+            Some(Statement::new("(state <> 'pending' OR expires_at <= ?)").bind(now))
+        }
+        "module_upload" => Some(Statement::new("0")),
+        _ => None,
+    }
 }
 
 /// Reads every row of `t` that a dump at `now` keeps, in pages of

@@ -33,6 +33,7 @@ Administrator = [
     "kernel.staff.manage", "kernel.setting.edit", "kernel.backup.manage",
     "kernel.backup.download",
     "announcements.view", "announcements.send", "announcements.retract",
+    "fees.import",
 ]
 Officer = [
     "kernel.student.view", "kernel.student.edit",

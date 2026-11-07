@@ -48,6 +48,8 @@ pub(crate) struct Gate {
     /// `(path, catalog key)`: an upload route's own form. Elsewhere the
     /// answer is a 413 page.
     pub(crate) too_large: Option<(&'static str, &'static str)>,
+    /// The Module that registered the route, for [`crate::Uploads`] (#74).
+    pub(crate) module: Option<&'static str>,
 }
 
 /// The signed-in Staff member, for back-office handlers:
@@ -242,6 +244,9 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     };
     let mut req = req;
     req.extensions_mut().insert(staff);
+    if let Some(m) = gate.module {
+        req.extensions_mut().insert(crate::module::RouteModule(m));
+    }
     Ok(Ok((req, had_flash)))
 }
 

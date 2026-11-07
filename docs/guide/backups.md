@@ -143,6 +143,9 @@ Columns left out of the Excel export as secrets, by name in every table
 The audit log's `before`/`after` are already redacted when written. Live
 Verification challenges (`pending`, not yet expired) are left out of
 backups altogether: the salted hash of a short code is crackable offline.
+Kept Module uploads (`module_upload`, a spreadsheet waiting for its
+confirm, #74) are left out too, rows and files: they live 24 hours (a week
+once confirmed) and a backup would otherwise keep them for 30 days.
 
 ## Back into D1
 
