@@ -108,7 +108,9 @@ async fn a_full_file_without_rows_is_refused_and_an_upsert_one_is_not() {
 async fn a_long_report_says_how_many_problems_it_leaves_out() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let lines: Vec<String> = (0..1100).map(|n| format!("x{n},นก,,,,MSC,1,")).collect();
+    let lines: Vec<String> = (0..1100)
+        .map(|n| format!("x{n},นก,x{n}@student.sealbay.example,,,MSC,1,3.0"))
+        .collect();
     let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
     let r = upload(&b, "bad.csv", &csv_lines(&refs), "full").await;
     let id = import_id(&r);

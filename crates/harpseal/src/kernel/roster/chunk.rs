@@ -223,7 +223,9 @@ fn upsert(
             .bind(s.new_id()?)
             .bind(rec.code.as_str())
             .bind(f.display_name.as_str())
-            .bind(f.email.clone())
+            .bind(crate::kernel::students::email::normalise(
+                f.email.as_deref(),
+            ))
             .bind(f.locale.0.as_str())
             .bind(f.status.as_str())
             .bind(attributes)

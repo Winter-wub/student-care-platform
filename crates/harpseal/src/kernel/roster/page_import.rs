@@ -11,15 +11,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 
+use super::page_problems as problems;
 use super::service::{self, Outcome};
 use super::store::{self, Counts, Import, Tally};
-use super::validate::Problem;
-use super::view::{BASE, IMPORT, View, csv_body, download, is_fragment};
+use super::view::{BASE, IMPORT, View, download, is_fragment};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::{AppState, CurrentStaff};
-
-/// Problems shown on the page; the CSV has all that were kept.
-const SHOWN_PROBLEMS: usize = 50;
 
 pub(super) async fn page(
     State(s): State<AppState>,
@@ -78,7 +75,7 @@ fn full(v: &View<'_>, imp: &Import) -> Response {
         @match imp.state.as_str() {
             "previewed" => (preview(v, imp)),
             "failed" => (failed(v, imp)),
-            _ => (progress(v, imp)),
+            _ => { (progress(v, imp)) (problems::warnings_card(v, imp)) }
         }
         @if v.staff.can(IMPORT) && super::stuck::may_mark_failed(imp, v.s.services.now_ms()) {
             form method="post" action=(format!("{BASE}/{}/fail", imp.id)) {
@@ -107,6 +104,7 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
     html! {
         @if p.warning { div class="warn" role="alert" { (v.t("kernel.roster.warning")) } }
         (super::skipped::card(v, &imp.counts.skipped))
+        (problems::warnings_card(v, imp))
         div class="card" {
             dl class="facts counts" {
                 dt { (v.t("kernel.roster.total")) } dd { (imp.total_rows) }
@@ -117,7 +115,6 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
                     dt { (v.t("kernel.roster.kept_by_status")) }
                     dd data-count="kept_by_status" { (p.kept_by_status) }
                 }
-                dt { (v.t("kernel.roster.empty_email")) } dd { (p.empty_email) }
                 dt { (v.t("kernel.roster.active_before")) } dd { (p.active_before) }
             }
             @if !p.left_names.is_empty() {
@@ -181,40 +178,20 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
 fn failed(v: &View<'_>, imp: &Import) -> Markup {
     let f = imp.failure.clone().unwrap_or_default();
     if f.job.is_some() {
-        return progress(v, imp);
+        return html! { (progress(v, imp)) (problems::warnings_card(v, imp)) };
     }
-    let sheets = has_sheets(&f.problems);
     html! {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
         (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             p { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (f.total) } }
-            table class="rows" {
-                thead { tr {
-                    @if sheets { th { (v.t("kernel.roster.report_sheet")) } }
-                    th { (v.t("kernel.roster.report_row")) }
-                    th { (v.t("kernel.roster.report_column")) }
-                    th { (v.t("kernel.roster.report_reason")) }
-                } }
-                tbody {
-                    @for p in f.problems.iter().take(SHOWN_PROBLEMS) {
-                        tr {
-                            @if sheets {
-                                td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
-                            }
-                            td data-label=(v.t("kernel.roster.report_row")) { (p.row) }
-                            td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
-                            td data-label=(v.t("kernel.roster.report_reason")) {
-                                (v.t(&format!("kernel.roster.reason_{}", p.reason)))
-                            }
-                        }
-                    }
-                }
-            }
+            (problems::classes(v, &f.classes))
+            (problems::table(v, &f.problems))
             p { a class="btn secondary" href=(format!("{BASE}/{}/report.csv", imp.id)) {
                 (v.t("kernel.roster.report"))
             } }
         }
+        (problems::warnings_card(v, imp))
     }
 }
 
@@ -275,74 +252,6 @@ pub(super) async fn fail(
         Ok(Outcome::Missing) => v.not_found(),
         Err(e) => v.error(&e),
     }
-}
-
-/// Whether the report names sheets (an XLSX's problems do; a CSV's,
-/// and reports stored before #70, do not, and keep their three columns).
-fn has_sheets(problems: &[Problem]) -> bool {
-    problems.iter().any(|p| !p.sheet.is_empty())
-}
-
-/// The column, with the cell when one is at fault: `เกรดเฉลี่ย (H2)`.
-fn column(p: &Problem) -> String {
-    if p.cell.is_empty() {
-        p.column.clone()
-    } else {
-        format!("{} ({})", p.column, p.cell)
-    }
-}
-
-/// The validation report as CSV (row, column, problem in the Staff
-/// member's Locale), read from `roster_import.error`.
-pub(super) async fn report(
-    State(s): State<AppState>,
-    staff: CurrentStaff,
-    Path(id): Path<String>,
-) -> Response {
-    let v = View::new(&s, &staff);
-    let imp = match store::load(&s.services, &id).await {
-        Ok(Some(i)) => i,
-        Ok(None) => return v.not_found(),
-        Err(e) => return v.error(&e),
-    };
-    let failure = imp.failure.unwrap_or_default();
-    let problems = &failure.problems;
-    let skipped = &imp.counts.skipped;
-    let sheets = has_sheets(problems) || skipped.iter().any(|s| !s.sheet.is_empty());
-    let mut head = vec![
-        v.t("kernel.roster.report_row"),
-        v.t("kernel.roster.report_column"),
-        v.t("kernel.roster.report_reason"),
-    ];
-    if sheets {
-        head.insert(0, v.t("kernel.roster.report_sheet"));
-    }
-    let head: Vec<&str> = head.iter().map(String::as_str).collect();
-    let mut lines = vec![super::csv::line(&head)];
-    for p in problems {
-        let row = p.row.to_string();
-        let reason = v.t(&format!("kernel.roster.reason_{}", p.reason));
-        let column = column(p);
-        let mut fields = vec![row.as_str(), column.as_str(), reason.as_str()];
-        if sheets {
-            fields.insert(0, &p.sheet);
-        }
-        lines.push(super::csv::line(&fields));
-    }
-    for f in super::skipped::report_fields(&v, skipped, sheets) {
-        lines.push(super::csv::line(
-            &f.iter().map(String::as_str).collect::<Vec<_>>(),
-        ));
-    }
-    if (problems.len() as u64) < failure.total {
-        let note = v
-            .t("kernel.roster.report_truncated")
-            .replace("{shown}", &problems.len().to_string())
-            .replace("{total}", &failure.total.to_string());
-        lines.push(super::csv::line(&[&note]));
-    }
-    let name = format!("roster-{id}-report.csv");
-    download("text/csv; charset=utf-8", &name, &name, csv_body(lines))
 }
 
 /// The original file. Refused (500) when its audit row cannot be written.

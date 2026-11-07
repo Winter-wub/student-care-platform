@@ -122,6 +122,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0015_notify_delivery",
         include_str!("../../migrations/0015_notify_delivery.sql"),
     ),
+    (
+        "0016_student_email_key_idx",
+        include_str!("../../migrations/0016_student_email_key_idx.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

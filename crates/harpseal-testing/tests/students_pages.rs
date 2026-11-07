@@ -45,7 +45,9 @@ async fn the_list_shows_50_students_per_page_with_a_next_page() {
     let programme = r.body.find("<th>หลักสูตร</th>").unwrap();
     let year = r.body.find("<th>ชั้นปี</th>").unwrap();
     assert!(programme < year, "order 1 before order 2");
-    assert!(!r.body.contains("วันเข้าศึกษา"), "not shown_in_list");
+    // Not shown_in_list: no column (the missing-data badge may name it, #71).
+    assert!(!r.body.contains("<th>วันเข้าศึกษา</th>"), "not shown_in_list");
+    assert!(!r.body.contains("data-label=\"วันเข้าศึกษา\""));
     assert!(r.body.contains("data-label=\"ชั้นปี\">2</td>"));
     assert!(r.body.contains("aria-label=\"fake: ยังไม่เชื่อม\""));
     // The HTMX search box.

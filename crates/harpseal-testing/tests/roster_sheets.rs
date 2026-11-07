@@ -46,10 +46,7 @@ async fn a_refused_workbook_names_the_sheet_row_and_cell_of_each_problem() {
     assert!(page.contains("<th>ชีต</th>"), "{page}");
     assert!(page.contains("เกรดเฉลี่ย (H3)"), "{page}");
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
-    assert!(
-        report.starts_with("\u{feff}ชีต,แถว,คอลัมน์,ปัญหา\r\n"),
-        "{report}"
-    );
+    assert!(report.starts_with("\u{feff}ชีต,แถว,คอลัมน์,ปัญหา"), "{report}");
     assert!(report.contains("ปี 2,2,รหัสนักศึกษา,รหัสนักศึกษาซ้ำ"), "{report}");
     assert!(report.contains("ปี 2,3,เกรดเฉลี่ย (H3),อ่านค่าไม่ได้"), "{report}");
 }

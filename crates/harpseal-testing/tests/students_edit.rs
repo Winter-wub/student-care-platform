@@ -179,6 +179,21 @@ async fn invalid_values_re_render_the_form_and_write_nothing() {
 }
 
 #[tokio::test]
+async fn the_form_applies_the_roster_email_check_so_the_list_never_flags_a_saved_one() {
+    let (h, app) = boot().await;
+    let (b, _) = signed_in(&h, &app, "Officer").await;
+    for bad in ["นก@x.ac.th", "a@x..example", "a@-x.example"] {
+        let form = edit_form("Nok Thale", "2").replace(
+            &urlencode("s68010001@student.sealbay.example"),
+            &urlencode(bad),
+        );
+        let r = save(&b, &form).await;
+        assert_eq!(r.status, 422, "{bad}");
+        assert!(r.body.contains("รูปแบบอีเมลไม่ถูกต้อง"), "{bad}");
+    }
+}
+
+#[tokio::test]
 async fn manual_tags_come_and_go_and_roster_tags_stay() {
     let (h, app) = boot().await;
     run(

@@ -32,6 +32,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "The roster has no email for this ID, so no code can be sent. Please contact Staff to link your account."
     ),
     (
+        "kernel.link.bad_email",
+        "อีเมลของรหัสนี้ในทะเบียนไม่ถูกต้อง จึงส่งรหัสยืนยันไม่ได้ กรุณาติดต่อเจ้าหน้าที่เพื่อแก้อีเมลหรือเชื่อมบัญชีให้",
+        "The email on file for this ID is not valid, so no code can be sent. Please contact Staff to fix it or to link your account."
+    ),
+    (
+        "kernel.link.shared_email",
+        "อีเมลของรหัสนี้ใช้ร่วมกับนักศึกษาอีกคน จึงส่งรหัสยืนยันให้ไม่ได้ กรุณาติดต่อเจ้าหน้าที่เพื่อเชื่อมบัญชีให้",
+        "The email for this ID is also used by another Student, so no code can be sent. Please contact Staff to link your account."
+    ),
+    (
         "kernel.link.already_linked",
         "รหัสนักศึกษานี้เชื่อมกับบัญชีอื่นในช่องทางนี้อยู่แล้ว หากไม่ใช่คุณ กรุณาติดต่อเจ้าหน้าที่",
         "This student ID is already linked to another account on this channel. If that was not you, please contact Staff."
