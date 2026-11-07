@@ -33,6 +33,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod hooks;
 mod multicast;
 mod record;
 mod render;
