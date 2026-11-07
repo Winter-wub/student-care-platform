@@ -194,9 +194,14 @@ descriptions are the labels): the Kernel Job `kernel.menu.relink` calls
 `set_menu` per account (`setMyCommands` and `setChatMenuButton`, two calls
 each), 20 chats per Job run by default: 40 subrequests, under the 50 a
 Cloudflare Workers invocation gets on the free plan (1,000 on paid plans;
-raise it there with `TelegramConfig::with_menu_relink_chunk`). A 429
-continues after Telegram's `retry_after`; a chat that blocked the bot or
-was deleted (403) is passed over and its Link marked `unreachable`.
+raise it there with `TelegramConfig::with_menu_relink_chunk`). One run per
+tick (a minute) re-sets about **1,200 chats an hour** with the default, so a
+roster of 5,000 linked chats takes about 4 hours; with a chunk of 450 on a
+paid plan (900 calls a run) it is about 27,000 an hour, within Telegram's
+30 calls a second. A 429 continues after Telegram's `retry_after`; a chat
+that blocked the bot or was deleted (403), or that the Bot API no longer
+knows (`400 Bad Request: chat not found`), is passed over and its Link
+marked `unreachable`.
 Commands are per chat, not a shared object, so there is nothing to
 retire.
 

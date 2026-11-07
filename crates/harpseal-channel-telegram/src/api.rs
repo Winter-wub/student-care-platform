@@ -44,6 +44,9 @@ pub(crate) fn redact(e: Error, token: &str) -> Error {
     }
 }
 
+/// The Bot API's description for a chat that does not exist (any more).
+const CHAT_NOT_FOUND: &str = "Bad Request: chat not found";
+
 /// What went wrong in one Bot API call, before it becomes an [`Error`].
 fn error_for(method: &str, status: u16, body: &Value) -> Error {
     let code = body["error_code"]
@@ -63,6 +66,12 @@ fn error_for(method: &str, status: u16, body: &Value) -> Error {
                 .map(|s| s.min(u64::from(u32::MAX)) as u32)
                 .unwrap_or(1),
         },
+        // The chat does not exist for this bot (the account was deleted,
+        // or the id never started the bot): the Bot API answers
+        // `400 Bad Request: chat not found`. The text is not in a
+        // documented list, so only that exact phrase counts; a chat id the
+        // Kernel stored came from an Update, so it is not a typo.
+        400 if description.eq_ignore_ascii_case(CHAT_NOT_FOUND) => Error::Unreachable,
         400 if method == "deleteMessage" && description.contains(CANNOT_DELETE) => {
             Error::Unsupported(Capability::DeleteMessage)
         }
@@ -230,6 +239,17 @@ mod tests {
         ));
         assert!(matches!(
             error_for("sendMessage", 400, &old),
+            Error::Platform(_)
+        ));
+        let gone =
+            json!({"ok": false, "error_code": 400, "description": "Bad Request: chat not found"});
+        assert!(matches!(
+            error_for("setMyCommands", 400, &gone),
+            Error::Unreachable
+        ));
+        let other = json!({"ok": false, "error_code": 400, "description": "Bad Request: chat not found in the list"});
+        assert!(matches!(
+            error_for("setMyCommands", 400, &other),
             Error::Platform(_)
         ));
         assert!(matches!(
