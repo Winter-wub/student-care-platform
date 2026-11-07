@@ -363,6 +363,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Must be a date YYYY-MM-DD"
     ),
     (
+        "kernel.roster.reason_out_of_range",
+        "ค่าอยู่นอกช่วงที่กำหนด",
+        "Outside the allowed range"
+    ),
+    (
         "kernel.roster.reason_not_in_list",
         "ไม่อยู่ในค่าที่อนุญาต",
         "Not one of the allowed values"

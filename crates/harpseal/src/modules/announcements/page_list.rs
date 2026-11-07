@@ -50,7 +50,15 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
     let mut parts: Vec<String> = a
         .attributes
         .iter()
-        .map(|(k, vals)| format!("{k}: {}", vals.join(" / ")))
+        .map(|(k, vals)| {
+            let (locale, default) = (&v.staff.locale, &v.s.config.default_locale);
+            let spec = v.s.config.roster.attributes.get(k);
+            let shown: Vec<&str> = vals
+                .iter()
+                .map(|x| spec.map_or(x.as_str(), |s| s.value_label(x, locale, default)))
+                .collect();
+            format!("{k}: {}", shown.join(" / "))
+        })
         .collect();
     if !a.tags.is_empty() {
         parts.push(format!(

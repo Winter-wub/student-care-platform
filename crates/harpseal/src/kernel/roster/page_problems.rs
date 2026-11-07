@@ -40,6 +40,29 @@ fn column(p: &Problem) -> String {
     }
 }
 
+/// What the cell of an out-of-range attribute, or an off-list one with
+/// labels, may hold: the range, or each value with its label (#81). Read from the current
+/// config by column, so it is the same in the page and in `report.csv`.
+fn what_fits(v: &View<'_>, p: &Problem) -> Option<String> {
+    let roster = &v.s.config.roster;
+    let spec = roster.attributes.values().find(|a| a.column == p.column)?;
+    match p.reason.as_str() {
+        "out_of_range" => spec.range_text(),
+        // Without labels the report reads as it always did.
+        "not_in_list" if !spec.value_labels.is_empty() => {
+            // The default Locale's labels: the ones the import reads.
+            let default = &v.s.config.default_locale;
+            let all: Vec<String> = spec
+                .values
+                .iter()
+                .map(|x| spec.labelled(x, default, default))
+                .collect();
+            Some(all.join(", "))
+        }
+        _ => None,
+    }
+}
+
 /// The problems of `imp` the report keeps and how many there were: the
 /// blocking problems of a refused file, then its warnings (or those of a
 /// file that imports).
@@ -59,6 +82,10 @@ fn listed(imp: &Import) -> (Vec<&Problem>, u64) {
 /// cells says how many and which rows come first.
 fn reason(v: &View<'_>, p: &Problem) -> String {
     let text = v.t(&format!("kernel.roster.reason_{}", p.reason));
+    let text = match what_fits(v, p) {
+        Some(fits) => format!("{text}: {fits}"),
+        None => text,
+    };
     if p.count < 2 {
         return text;
     }

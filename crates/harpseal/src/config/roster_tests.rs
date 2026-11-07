@@ -6,6 +6,9 @@ fn spec(kind: AttributeType, values: &[&str], optional: bool) -> AttributeSpec {
         kind,
         values: values.iter().map(|v| v.to_string()).collect(),
         label: BTreeMap::new(),
+        min: None,
+        max: None,
+        value_labels: BTreeMap::new(),
         optional,
         shown_in_list: false,
         student_visible: false,
@@ -132,9 +135,12 @@ fn a_config_changed_in_code_is_checked_too() {
         modes: vec!["upsert".into()],
         ..RosterConfig::default()
     };
-    assert!(r.check().is_err(), "default_mode full is not in modes");
+    assert!(
+        r.check(&Locale::th(), &Default::default()).is_err(),
+        "default_mode full is not in modes"
+    );
     r.default_mode = "upsert".into();
-    assert!(r.check().is_ok());
+    assert!(r.check(&Locale::th(), &Default::default()).is_ok());
 }
 
 #[test]
@@ -158,4 +164,173 @@ fn blocking_defaults_to_none_and_names_warning_classes() {
     ] {
         assert!(ok(bad).is_err(), "accepted: {bad}");
     }
+}
+
+fn toml(attribute: &str) -> crate::Result<crate::DeploymentConfig> {
+    crate::DeploymentConfig::from_toml(&format!(
+        "name = \"X\"\ndefault_locale = \"th\"\n[roster.attributes.a]\ncolumn = \"c\"\n{attribute}"
+    ))
+}
+
+#[test]
+fn min_and_max_bound_integers_and_numbers_inclusively() {
+    let c = toml("type = \"integer\"\nmin = 1\nmax = 6").unwrap();
+    let year = &c.roster.attributes["a"];
+    assert_eq!(year.range_text().as_deref(), Some("1–6"));
+    for ok in ["1", "6", " 3 ", "+2"] {
+        assert!(year.parse(ok).is_ok(), "{ok}");
+    }
+    for bad in ["0", "7", "-1", "600"] {
+        assert_eq!(year.parse(bad), Err(AttrError::OutOfRange), "{bad}");
+    }
+    assert_eq!(year.parse("x"), Err(AttrError::NotInteger), "type first");
+    assert_eq!(AttrError::OutOfRange.key(), "kernel.students.err_range");
+    let gpa = toml("type = \"number\"\nmin = 0\nmax = 4.0\noptional = true").unwrap();
+    let gpa = &gpa.roster.attributes["a"];
+    assert_eq!(gpa.range_text().as_deref(), Some("0–4.0"));
+    assert!(gpa.parse("4").is_ok() && gpa.parse("0").is_ok() && gpa.parse("3.99").is_ok());
+    assert_eq!(gpa.parse("4.01"), Err(AttrError::OutOfRange));
+    assert_eq!(gpa.parse("-0.5"), Err(AttrError::OutOfRange));
+    assert_eq!(gpa.parse(""), Ok(None), "empty is not out of range");
+    let open = toml("type = \"integer\"\nmin = 1").unwrap();
+    let open = &open.roster.attributes["a"];
+    assert_eq!(open.range_text().as_deref(), Some("≥ 1"));
+    assert!(open.parse("900000").is_ok() && open.parse("0").is_err());
+    let none = toml("type = \"integer\"").unwrap();
+    assert_eq!(none.roster.attributes["a"].range_text(), None);
+    assert!(
+        none.roster.attributes["a"].parse("-5").is_ok(),
+        "no rule, no check"
+    );
+}
+
+#[test]
+fn a_bad_range_or_label_stops_the_build() {
+    let labels = "type = \"enum\"\nvalues = [\"x\", \"y\"]\n";
+    for bad in [
+        "type = \"integer\"\nmin = 6\nmax = 1",
+        "type = \"integer\"\nmin = 1.5",
+        "type = \"integer\"\nmax = \"6\"",
+        "type = \"text\"\nmin = 1",
+        "type = \"date\"\nmax = 3",
+        &format!("{labels}min = 1"),
+        "type = \"integer\"\nvalue_labels = { x = { th = \"x\" } }",
+        &format!("{labels}value_labels = {{ z = {{ th = \"Z\" }} }}"),
+        &format!("{labels}value_labels = {{ x = {{ th = \" \" }} }}"),
+        // Two values share a label in one Locale (case-insensitively).
+        &format!("{labels}value_labels = {{ x = {{ en = \"Open\" }}, y = {{ en = \"open\" }} }}"),
+        // A default-Locale label is another value, so a cell could mean either.
+        &format!("{labels}value_labels = {{ x = {{ th = \"y\" }} }}"),
+        &format!("{labels}value_labels = {{ x = {{ th = \"Y\" }} }}"),
+        // Unknown keys are still refused.
+        &format!("{labels}labels = {{ x = {{ th = \"X\" }} }}"),
+        "type = \"integer\"\nminimum = 1",
+    ] {
+        assert!(toml(bad).is_err(), "accepted: {bad}");
+    }
+    // The same label in two Locales, or one value labelled in one Locale only.
+    let ok = format!(
+        "{labels}value_labels = {{ x = {{ th = \"เปิด\", en = \"Open\" }}, y = {{ th = \"ปิด\", en = \"Open2\" }} }}"
+    );
+    assert!(toml(&ok).is_ok());
+    // A label equal to its own value is fine.
+    assert!(
+        toml(&format!(
+            "{labels}value_labels = {{ x = {{ th = \"x\" }} }}"
+        ))
+        .is_ok()
+    );
+    // What a value SHOWS decides: an English label that is another value's
+    // text clashes while that value has no English label (it shows its value)…
+    let clash = format!("{labels}value_labels = {{ x = {{ th = \"x\", en = \"y\" }} }}");
+    let err = toml(&clash).unwrap_err().to_string();
+    assert!(err.contains("`x` and `y` both show `y` in en"), "{err}");
+    // …and a label in one Locale can clash through the default Locale's.
+    let via_default =
+        format!("{labels}value_labels = {{ x = {{ th = \"เปิด\" }}, y = {{ th = \"เปิด\" }} }}");
+    assert!(toml(&via_default).is_err());
+    let via_fallback =
+        format!("{labels}value_labels = {{ x = {{ th = \"เปิด\" }}, y = {{ en = \"เปิด\" }} }}");
+    assert!(toml(&via_fallback).is_err(), "y shows x's Thai label in en");
+    // Both labelled, the English labels may be each other's values.
+    let swapped = format!(
+        "{labels}value_labels = {{ x = {{ th = \"x\", en = \"y\" }}, y = {{ en = \"x\" }} }}"
+    );
+    assert!(toml(&swapped).is_ok());
+    // Labels in one Locale only, the rest falling back, are fine when distinct.
+    let one = format!("{labels}value_labels = {{ x = {{ en = \"Open\" }} }}");
+    assert!(toml(&one).is_ok());
+}
+
+#[test]
+fn a_label_locale_must_be_a_configured_one() {
+    let attr = "[roster.attributes.a]\ncolumn = \"c\"\ntype = \"enum\"\nvalues = [\"x\"]\n";
+    let src = |labels: &str, texts: &str| {
+        crate::DeploymentConfig::from_toml(&format!(
+            "name = \"X\"\ndefault_locale = \"th\"\n{texts}{attr}value_labels = {labels}"
+        ))
+    };
+    assert!(src("{ x = { th = \"เอ็กซ์\", en = \"X\" } }", "").is_ok());
+    for typo in ["TH", "fr", "th-TH", "en "] {
+        let err = src(&format!("{{ x = {{ \"{typo}\" = \"X\" }} }}"), "").unwrap_err();
+        assert!(err.to_string().contains("not configured"), "{typo}: {err}");
+    }
+    // A Locale with a `[texts]` table is configured.
+    let fr = "[texts.fr]\n\"fees.title\" = \"Frais\"\n";
+    assert!(src("{ x = { fr = \"X\" } }", fr).is_ok());
+}
+
+#[test]
+fn labels_fall_back_to_the_default_locale_then_the_value() {
+    let src = "type = \"enum\"\nvalues = [\"current\", \"left\", \"new\"]\n\
+               value_labels = { current = { th = \"กำลังศึกษา\", en = \"Studying\" }, left = { th = \"พ้นสภาพ\" } }";
+    let c = toml(src).unwrap();
+    let a = &c.roster.attributes["a"];
+    let (th, en, fr) = (Locale::th(), Locale::en(), Locale("fr".into()));
+    assert_eq!(a.value_label("current", &en, &th), "Studying");
+    assert_eq!(a.value_label("left", &en, &th), "พ้นสภาพ", "default Locale");
+    assert_eq!(a.value_label("current", &fr, &th), "กำลังศึกษา");
+    assert_eq!(a.value_label("new", &en, &th), "new", "the value itself");
+    assert_eq!(a.labelled("current", &en, &th), "Studying (current)");
+    assert_eq!(a.labelled("new", &en, &th), "new");
+    let stored = Json::from("current");
+    assert_eq!(a.shown(Some(&stored), &en, &th), "Studying");
+    assert_eq!(a.shown(Some(&Json::from("gone")), &en, &th), "gone");
+    assert_eq!(a.shown(None, &en, &th), "");
+    // Without labels a value shows as it is.
+    let plain = toml("type = \"enum\"\nvalues = [\"x\"]").unwrap();
+    assert_eq!(
+        plain.roster.attributes["a"].shown(Some(&Json::from("x")), &en, &th),
+        "x"
+    );
+}
+
+#[test]
+fn the_import_reads_a_value_or_its_default_locale_label() {
+    let src = "type = \"enum\"\nvalues = [\"current\", \"Alumni\"]\n\
+               value_labels = { current = { th = \"กำลังศึกษา\", en = \"Studying\" }, Alumni = { th = \"ศิษย์เก่า Bay\" } }";
+    let c = toml(src).unwrap();
+    let a = &c.roster.attributes["a"];
+    let th = Locale::th();
+    let value = |v: &str| Ok(Some(Json::from(v)));
+    assert_eq!(a.parse_import("current", &th), value("current"));
+    assert_eq!(
+        a.parse_import(" กำลังศึกษา ", &th),
+        value("current"),
+        "trimmed"
+    );
+    assert_eq!(
+        a.parse_import("ศิษย์เก่า bay", &th),
+        value("Alumni"),
+        "ASCII in either case"
+    );
+    assert_eq!(a.parse_import("ศิษย์เก่า BAY", &th), value("Alumni"));
+    // Not the English label, not a value in the wrong case, not a lookalike.
+    for bad in ["Studying", "CURRENT", "alumni", "กำลังศึกษาอยู่", ""] {
+        assert!(a.parse_import(bad, &th).is_err(), "{bad}");
+    }
+    // `parse` (the edit form, a Module) still reads the value only.
+    assert_eq!(a.parse("กำลังศึกษา"), Err(AttrError::NotInList));
+    // The label is read in the Locale it is given, not a fixed one.
+    assert_eq!(a.parse_import("Studying", &Locale::en()), value("current"));
 }

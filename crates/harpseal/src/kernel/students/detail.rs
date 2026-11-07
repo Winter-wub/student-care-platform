@@ -12,7 +12,6 @@ use maud::{Markup, html};
 use super::read::{self, LinkRow, StudentRow};
 use super::view::{View, channel_label};
 use super::{attribute_field, service};
-use crate::config::AttributeSpec;
 use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result};
 
@@ -75,7 +74,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
                         dd { (row.fields.locale.0) }
                         @for (key, spec) in v.s.config.roster.attributes_in_order() {
                             dt { (v.label(key, spec)) (badge(&attribute_field(key))) }
-                            dd { (shown(AttributeSpec::display(row.fields.attributes.get(key)))) }
+                            dd { (shown(v.shown(spec, row.fields.attributes.get(key)))) }
                         }
                     }
                     @if can_edit {

@@ -35,6 +35,16 @@ impl<'a> View<'a> {
         spec.label_in(key, &self.staff.locale, &self.s.config.default_locale)
     }
 
+    /// A stored attribute value as Staff read it: an enum's label.
+    pub(super) fn shown(&self, spec: &AttributeSpec, value: Option<&serde_json::Value>) -> String {
+        spec.shown(value, &self.staff.locale, &self.s.config.default_locale)
+    }
+
+    /// The label of the enum value `value` in the Staff member's Locale.
+    pub(super) fn value_label<'s>(&self, spec: &'s AttributeSpec, value: &'s str) -> &'s str {
+        spec.value_label(value, &self.staff.locale, &self.s.config.default_locale)
+    }
+
     /// A whole back-office page.
     pub(super) fn page(&self, status: StatusCode, title: &str, body: Markup) -> Response {
         let page = crate::ui::back_office(self.s, self.staff, title, body);

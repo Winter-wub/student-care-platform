@@ -119,7 +119,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                                 td class="code" data-label=(v.t("kernel.students.code")) { (r.code) }
                                 @for (k, a) in &attrs {
                                     td data-label=(v.label(k, a)) {
-                                        (AttributeSpec::display(r.attributes.get(*k)))
+                                        (v.shown(a, r.attributes.get(*k)))
                                     }
                                 }
                                 td class="icons" data-label=(v.t("kernel.students.links")) {
