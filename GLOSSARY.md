@@ -132,6 +132,10 @@ A message Staff write once, in one or more Locales, and send to an Audience; it 
 **Edit notice** (แจ้งการแก้ไข):
 One short Push per recipient of an edited Announcement, on a Channel that cannot edit a sent message (LINE), linking to the updated Announcement. Staff choose it when they save an edit that changes a text; only recipients whose text changed get it, including those who already acknowledged (their Acknowledgement stands). Each edit notifies again; metered like any Push.
 
+**Notice** (การแจ้งเตือนรายบุคคล):
+A message a Module sends to Students it chose: by chat on each live Link (as a Push), else by email. Named by its Module and a key; a Student never gets the same Notice twice.
+_Avoid_: notification (that word means nothing here; say Push when it goes by chat)
+
 **Acknowledgement** (การรับทราบ):
 A Student's one-time confirmation that they have read an Announcement, counted per Student regardless of how many Channels received it.
 

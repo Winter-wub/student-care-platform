@@ -1,11 +1,14 @@
-//! A probe Module whose Job notifies the Students in its payload (#73),
-//! and Seal Bay University Students to notify.
+//! A probe Module that sends a Notice (#73) from a Job (payload: module,
+//! key, codes, budget) and from a public page (`/probe/notify`, the same
+//! as a query string), and Seal Bay University Students to notify.
 
 use std::sync::{Arc, Mutex};
 
+use axum::extract::{Query, State};
+use axum::routing::get;
 use harpseal::{
-    Job, JobContext, JobSpec, Locale, Message, Module, ModuleRegistrar, Notice, NotifyReport,
-    NotifyTo, Statement, Timestamp,
+    AppState, Job, JobContext, JobSpec, Locale, Message, Module, ModuleRegistrar, Notice,
+    NotifyReport, NotifyTo, Statement, Timestamp,
 };
 use harpseal_channel_fake::{FakeChannel, FakeProfile};
 use harpseal_testing::{Harness, TestApp};
@@ -14,19 +17,19 @@ use serde_json::{Value as Json, json};
 /// The probe's Job kind.
 pub const KIND: &str = "probe.notify";
 
-/// Every report the probe's Job got, in order.
+/// Every report the probe got, in order.
 pub type Reports = Arc<Mutex<Vec<NotifyReport>>>;
 
 /// The probe Module.
 pub struct Probe(pub Reports);
 
-/// The notice: two Messages in Thai (one LINE request), one in English.
-pub fn notice(key: &str) -> Notice {
+/// The Notice: two Messages in Thai (one LINE request), one in English.
+pub fn notice(module: &str, key: &str) -> Notice {
     let th = vec![
         Message::text("แจ้งเตือน: ชำระค่าธรรมเนียมภายในวันศุกร์"),
         Message::text("สอบถามได้ที่กองคลัง"),
     ];
-    Notice::new("probe", key)
+    Notice::new(module, key)
         .locale(Locale::th(), th, "แจ้งเตือนค่าธรรมเนียม", "ชำระภายในวันศุกร์")
         .locale(
             Locale::en(),
@@ -34,6 +37,22 @@ pub fn notice(key: &str) -> Notice {
             "Fee reminder",
             "Fees are due Friday",
         )
+}
+
+/// The Notice and recipients a payload asks for.
+fn request(p: &Json) -> (Notice, Vec<NotifyTo>) {
+    let module = p["module"].as_str().unwrap_or("probe");
+    let mut n = notice(module, p["key"].as_str().unwrap_or_default());
+    if let Some(b) = p["budget"].as_u64() {
+        n = n.budget(usize::try_from(b).unwrap());
+    }
+    let codes = p["codes"].as_str().unwrap_or_default();
+    let to = codes
+        .split(',')
+        .filter(|c| !c.is_empty())
+        .map(NotifyTo::code)
+        .collect();
+    (n, to)
 }
 
 impl Module for Probe {
@@ -47,18 +66,26 @@ impl Module for Probe {
             let reports = reports.clone();
             async move {
                 let p: Json = serde_json::from_str(&job.payload).unwrap();
-                let key = p["key"].as_str().unwrap();
-                let to: Vec<NotifyTo> = p["codes"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|c| NotifyTo::code(c.as_str().unwrap()))
-                    .collect();
-                let report = cx.notify(&notice(key), &to).await?;
+                let (n, to) = request(&p);
+                let report = cx.notify(&n, &to).await?;
                 reports.lock().unwrap().push(report);
                 Ok(())
             }
         });
+        let reports = self.0.clone();
+        let page = move |State(s): State<AppState>, Query(q): Query<Json>| {
+            let reports = reports.clone();
+            async move {
+                let (n, to) = request(&q);
+                let r = s.notify(&n, &to).await;
+                let text = format!("{r:?}");
+                if let Ok(r) = r {
+                    reports.lock().unwrap().push(r);
+                }
+                text
+            }
+        };
+        r.public("/probe/notify", get(page));
     }
 }
 
@@ -113,13 +140,17 @@ impl Setup {
         .await;
     }
 
-    /// Enqueues the probe's Job and ticks once.
-    pub async fn notify(&self, key: &str, codes: &[&str]) -> harpseal::TickReport {
+    /// Enqueues the probe's Job for `payload` and ticks once.
+    pub async fn job(&self, payload: Json) -> harpseal::TickReport {
         let d = self.app.deployment();
-        d.enqueue(KIND, json!({ "key": key, "codes": codes }), None)
-            .await
-            .unwrap();
+        d.enqueue(KIND, payload, None).await.unwrap();
         self.tick().await
+    }
+
+    /// [`Setup::job`] by the probe Module with `key` to `codes`.
+    pub async fn notify(&self, key: &str, codes: &[&str]) -> harpseal::TickReport {
+        self.job(json!({ "key": key, "codes": codes.join(",") }))
+            .await
     }
 
     /// Ticks at the clock's time.

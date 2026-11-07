@@ -4,7 +4,7 @@
 
 mod notify_support;
 
-use harpseal::{NotifyOutcome, NotifySkip, StudentId};
+use harpseal::{NotifyFailure, NotifyOutcome, NotifySkip, StudentId};
 use harpseal_channel_fake::{FakeChannel, FakeProfile};
 use notify_support::Setup;
 
@@ -90,7 +90,10 @@ async fn linked_students_get_chat_others_email_or_nothing() {
         let text = |c: &str| rows.get(i, c).and_then(|v| v.as_text()).map(str::to_string);
         let int = |c: &str| rows.get(i, c).and_then(|v| v.as_i64());
         assert_eq!(text("module").as_deref(), Some("probe"));
-        assert_eq!(text("batch_key").as_deref(), Some("notify:fees:w45:s1"));
+        assert_eq!(
+            text("batch_key").as_deref(),
+            Some("notify:probe:fees:w45:s1")
+        );
         assert_eq!(int("msg_index"), Some(i as i64));
         assert_eq!(int("push"), Some(1));
         assert_eq!(text("kind").as_deref(), Some("text"));
@@ -173,7 +176,11 @@ async fn a_failed_email_is_retried_and_then_never_sent_again() {
     s.notify("fees:w45", &["68010002"]).await;
     assert_eq!(
         outcomes(&s),
-        vec![(Some("s2".into()), NotifyOutcome::Failed("email"), false)]
+        vec![(
+            Some("s2".into()),
+            NotifyOutcome::Failed(NotifyFailure::Email),
+            false
+        )]
     );
     assert_eq!(s.last().failed, 1);
 
@@ -195,7 +202,7 @@ async fn a_platform_failure_is_reported_and_retried_by_key() {
     s.notify("fees:w45", &["68010001"]).await;
     assert_eq!(
         s.last().students[0].outcome,
-        NotifyOutcome::Failed("platform")
+        NotifyOutcome::Failed(NotifyFailure::Platform)
     );
     assert!(
         s.h.emails().is_empty(),

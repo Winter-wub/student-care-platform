@@ -34,10 +34,11 @@ impl Failure {
     /// The Core error. `to_user`: the call sent messages to one account.
     /// A 403 is `Error::Platform` (channel-wide, so the Kernel keeps the
     /// Link) unless [`Failure::blocked`] matches, which is
-    /// `Error::Unreachable`.
+    /// `Error::Unreachable`. A 429 for the used-up monthly message quota is
+    /// `Error::QuotaExhausted`, any other 429 `Error::RateLimited`.
     pub(crate) fn into_error(self, to_user: bool) -> Error {
         match self.status {
-            429 if self.monthly_limit() => Error::Platform(format!(
+            429 if self.monthly_limit() => Error::QuotaExhausted(format!(
                 "LINE monthly message quota used up (429): {}",
                 self.message
             )),

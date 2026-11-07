@@ -1,18 +1,27 @@
-//! One notify call (#73): load the Students, their live Links and what
-//! earlier calls with the key did, then per Student chat or email.
+//! One notify call (#73): load the Students and their live Links, then per
+//! Student claim the (key, Student) row and chat or email.
 //!
-//! Idempotency, per Student:
-//! - a `notify_delivery` row `done` (or an email row left `sending`):
-//!   reported again, nothing sent (email at most once);
-//! - chat: each Link's batch key is `notify:<key>:<student id>`; the
+//! Idempotency, per Student (the key is `<module>:<key>`):
+//! - a `done` row: reported again, nothing sent; a row another call holds:
+//!   [`NotifyDefer::InProgress`] (the claim, `claim.rs`);
+//! - chat: each Link's batch key is `notify:<module>:<key>:<student id>`.
 //!   Messages its `outbound_message` rows record as wholly sent are not
-//!   sent again (`Deployment::sent_prefix`), the rest go keyed (LINE
-//!   de-duplicates a request whose answer was lost).
+//!   sent again on Channels without retry keys (`Deployment::sent_prefix`);
+//!   on one with them (LINE) the whole batch goes again with the same key
+//!   and the platform drops what it already has (ADR-0010);
+//! - email: `via = 'email'` is written before the send, which carries the
+//!   idempotency key `notify:<module>:<key>:<student id>`. A retaken row
+//!   with an email in flight resends it when the sender de-duplicates
+//!   (Resend), else counts it as sent (SMTP: at most once).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::{Notice, Notified, NotifyOutcome, NotifyReport, NotifySkip, NotifyTo, Version};
-use crate::delivery::{ChannelAccountId, StudentId};
+use super::claim::{self, Claim, Claimed};
+use super::{
+    Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome, NotifyReport, NotifySkip,
+    NotifyTo, Version,
+};
+use crate::delivery::{ChannelAccountId, ChannelKind, StudentId};
 use crate::message::Locale;
 use crate::port_types::{Email, Rows, Statement};
 use crate::{Deployment, Error, Result};
@@ -36,17 +45,41 @@ fn marks(n: usize) -> String {
     vec!["?"; n].join(", ")
 }
 
+fn earlier(via: &str) -> NotifyOutcome {
+    if via == "email" {
+        NotifyOutcome::Emailed
+    } else {
+        NotifyOutcome::Sent
+    }
+}
+
+/// One Student's send: the Notice, their version and what it may use.
+struct Send<'a> {
+    d: &'a Deployment,
+    n: &'a Notice,
+    s: &'a Student,
+    locale: &'a Locale,
+    v: &'a Version,
+    links: Vec<ChannelAccountId>,
+    /// `notify:<module>:<key>:<student id>`.
+    key: String,
+}
+
 pub(super) async fn notify(d: &Deployment, n: &Notice, to: &[NotifyTo]) -> Result<NotifyReport> {
     n.check(to.len())?;
     let mut report = NotifyReport::default();
     if to.is_empty() {
         return Ok(report);
     }
+    claim::prune(d).await?;
+    let scoped = n.scoped();
     let students = load(d, to).await?;
     let ids: Vec<&str> = students.iter().map(|s| s.id.as_str()).collect();
     let links = links(d, &ids).await?;
-    let mut done = recorded(d, n, &ids).await?;
+    let done = claim::done(d, &scoped, &ids).await?;
     let default = d.config().default_locale.clone();
+    let mut exhausted = HashSet::new();
+    let (mut used, mut over) = (0usize, false);
     for r in to {
         let found = students.iter().find(|s| match r {
             NotifyTo::Id(id) => s.id == id.0,
@@ -66,173 +99,182 @@ pub(super) async fn notify(d: &Deployment, n: &Notice, to: &[NotifyTo]) -> Resul
             ));
             continue;
         };
-        if let Some(outcome) = done.get(&s.id).and_then(Row::finished) {
-            report.push(line(Some(s), outcome, true));
+        if let Some(via) = done.get(&s.id) {
+            report.push(line(Some(s), earlier(via), true));
             continue;
         }
-        let outcome = if s.left {
-            NotifyOutcome::Skipped(NotifySkip::Left)
-        } else if let Some((locale, v)) = n.version(&s.locale, &default) {
-            let mine = links.get(&s.id).map_or(&[][..], Vec::as_slice);
-            one(d, n, s, locale, v, mine).await?
-        } else {
-            NotifyOutcome::Skipped(NotifySkip::NoText)
-        };
-        if matches!(outcome, NotifyOutcome::Sent | NotifyOutcome::Emailed) {
-            // A duplicate of this Student later in `to` reports it again.
-            let via = if outcome == NotifyOutcome::Sent {
-                "chat"
-            } else {
-                "email"
-            };
-            done.insert(s.id.clone(), Row::done(via));
+        let skip = |why| line(Some(s), NotifyOutcome::Skipped(why), false);
+        if s.left {
+            report.push(skip(NotifySkip::Left));
+            continue;
         }
+        let Some((locale, v)) = n.version(&s.locale, &default) else {
+            report.push(skip(NotifySkip::NoText));
+            continue;
+        };
+        let mine: Vec<ChannelAccountId> = links
+            .get(&s.id)
+            .map(|l| {
+                l.iter()
+                    .filter(|a| !exhausted.contains(&a.channel))
+                    .cloned()
+            })
+            .into_iter()
+            .flatten()
+            .collect();
+        let cost = mine.len() * v.requests() + usize::from(s.email.is_some());
+        over = over || (used > 0 && used + cost > n.budget);
+        if over {
+            let deferred = NotifyOutcome::Deferred(NotifyDefer::Budget);
+            report.push(line(Some(s), deferred, false));
+            continue;
+        }
+        let (claim, email_out) = match claim::claim(d, &scoped, &n.module, &s.id).await? {
+            Claimed::Mine(c, email) => (c, email),
+            Claimed::Done(via) => {
+                report.push(line(Some(s), earlier(&via), true));
+                continue;
+            }
+            Claimed::Busy => {
+                let busy = NotifyOutcome::Deferred(NotifyDefer::InProgress);
+                report.push(line(Some(s), busy, false));
+                continue;
+            }
+        };
+        used += cost;
+        let one = Send {
+            d,
+            n,
+            s,
+            locale,
+            v,
+            links: mine,
+            key: format!("notify:{scoped}:{}", s.id),
+        };
+        let outcome = match one.run(&claim, email_out, &mut exhausted).await {
+            Ok(o) => o,
+            Err(e) => {
+                // What went out is recorded; free the row for the retry
+                // (if this write fails too, the lease frees it).
+                let _ = claim.release(d).await;
+                return Err(e);
+            }
+        };
         report.push(line(Some(s), outcome, false));
     }
+    let mut exhausted: Vec<ChannelKind> = exhausted.into_iter().collect();
+    exhausted.sort();
+    report.exhausted = exhausted;
     Ok(report)
 }
 
-/// Chat on every live Link, else email.
-async fn one(
-    d: &Deployment,
-    n: &Notice,
-    s: &Student,
-    locale: &Locale,
-    v: &Version,
-    links: &[ChannelAccountId],
-) -> Result<NotifyOutcome> {
-    let db = &d.services().db;
-    let mut failed = None;
-    if !links.is_empty() {
-        db.execute(upsert(d, n, s, "chat", false)?).await?;
-        let key = format!("notify:{}:{}", n.key, s.id);
-        let mut sent = false;
-        for to in links {
-            let first = d.sent_prefix(to, &key, &v.chat).await?;
-            let module = Some(n.module.as_str());
-            match d
-                .deliver_from(to, &v.chat, locale, module, &key, first)
-                .await
-            {
-                Ok(_) => sent = true,
-                // What went out is recorded: the retry sends the rest.
-                Err(e @ Error::PartialSend { .. }) => return Err(e),
-                Err(Error::Unreachable | Error::Unsupported(_)) => {}
-                Err(e @ (Error::RateLimited { .. } | Error::Db(_))) => return Err(e),
-                Err(_) => failed = Some("platform"),
+impl Send<'_> {
+    /// Chat on every usable Link, else email.
+    async fn run(
+        &self,
+        claim: &Claim,
+        email_out: bool,
+        exhausted: &mut HashSet<ChannelKind>,
+    ) -> Result<NotifyOutcome> {
+        let d = self.d;
+        if email_out {
+            return self.email(claim, true).await;
+        }
+        let mut failed = false;
+        if !self.links.is_empty() {
+            if !claim.start(d, "chat").await? {
+                return Ok(NotifyOutcome::Deferred(NotifyDefer::InProgress));
+            }
+            let mut sent = false;
+            for to in &self.links {
+                if exhausted.contains(&to.channel) {
+                    continue;
+                }
+                match self.chat(to).await {
+                    Ok(()) => sent = true,
+                    // What went out is recorded: the retry sends the rest.
+                    Err(e @ Error::PartialSend { .. }) => return Err(e),
+                    Err(Error::Unreachable | Error::Unsupported(_)) => {}
+                    // The platform refuses Pushes until its quota period
+                    // resets: email instead, and leave it alone this call.
+                    Err(Error::QuotaExhausted(_)) => {
+                        exhausted.insert(to.channel);
+                    }
+                    Err(e @ (Error::RateLimited { .. } | Error::Db(_))) => return Err(e),
+                    Err(_) => failed = true,
+                }
+            }
+            if sent {
+                claim.finish(d, "chat").await?;
+                return Ok(NotifyOutcome::Sent);
             }
         }
-        if sent {
-            db.execute(finish(n, s, "chat")).await?;
+        // A cut-off run may have sent the whole chat on a Link that is
+        // gone now: that Student has it, so no email on top.
+        if claim::chat_on_record(d, &self.key, self.v.chat.len()).await? {
+            claim.finish(d, "chat").await?;
             return Ok(NotifyOutcome::Sent);
         }
-        if let Some(why) = failed {
-            return Ok(NotifyOutcome::Failed(why));
+        if failed {
+            claim.release(d).await?;
+            return Ok(NotifyOutcome::Failed(NotifyFailure::Platform));
         }
+        self.email(claim, false).await
     }
-    let Some(address) = s.email.clone().filter(|e| !e.trim().is_empty()) else {
-        return Ok(NotifyOutcome::Skipped(NotifySkip::NoAddress));
-    };
-    // Claimed before the send: a run cut off after it never emails twice.
-    db.execute(upsert(d, n, s, "email", true)?).await?;
-    let email = Email {
-        to: address,
-        subject: v.subject.clone(),
-        text: v.text.clone(),
-        html: None,
-    };
-    if d.services().email.send(email).await.is_err() {
-        let forget = Statement::new(
-            "DELETE FROM notify_delivery WHERE notify_key = ? AND student_id = ? \
-             AND status = 'sending'",
-        )
-        .bind(n.key.as_str())
-        .bind(s.id.as_str());
-        let _ = db.execute(forget).await;
-        return Ok(NotifyOutcome::Failed("email"));
-    }
-    db.execute(finish(n, s, "email")).await?;
-    Ok(NotifyOutcome::Emailed)
-}
 
-/// The `sending` row: inserted, or (`replace`) turned to `via`.
-fn upsert(d: &Deployment, n: &Notice, s: &Student, via: &str, replace: bool) -> Result<Statement> {
-    let now = d.services().now_ms();
-    let on_conflict = if replace {
-        "DO UPDATE SET via = excluded.via, status = 'sending', updated_at = excluded.updated_at"
-    } else {
-        "DO NOTHING"
-    };
-    Ok(Statement::new(format!(
-        "INSERT INTO notify_delivery (notify_key, student_id, module, via, status, \
-         created_at, updated_at) VALUES (?, ?, ?, ?, 'sending', ?, ?) \
-         ON CONFLICT (notify_key, student_id) {on_conflict}"
-    ))
-    .bind(n.key.as_str())
-    .bind(s.id.as_str())
-    .bind(n.module.as_str())
-    .bind(via)
-    .bind(now)
-    .bind(now))
-}
-
-fn finish(n: &Notice, s: &Student, via: &str) -> Statement {
-    Statement::new(
-        "UPDATE notify_delivery SET via = ?, status = 'done' WHERE notify_key = ? \
-         AND student_id = ?",
-    )
-    .bind(via)
-    .bind(n.key.as_str())
-    .bind(s.id.as_str())
-}
-
-/// A `notify_delivery` row.
-struct Row {
-    via: String,
-    done: bool,
-}
-
-impl Row {
-    fn done(via: &str) -> Self {
-        Row {
-            via: via.into(),
-            done: true,
+    /// The batch on one Link, from where its rows say (Channels without
+    /// retry keys) or whole with the same key (LINE).
+    async fn chat(&self, to: &ChannelAccountId) -> Result<()> {
+        let d = self.d;
+        let msgs = &self.v.chat;
+        let prefix = d.sent_prefix(to, &self.key, msgs).await?;
+        if prefix == msgs.len() {
+            return Ok(());
         }
+        let dedupes = d
+            .channel(to.channel.as_str())
+            .is_some_and(|c| c.dedupes_keyed_sends());
+        let first = if dedupes { 0 } else { prefix };
+        let module = Some(self.n.module.as_str());
+        d.deliver_from(to, msgs, self.locale, module, &self.key, first)
+            .await
+            .map(|_| ())
     }
 
-    /// What an earlier call finished: done, or an email it claimed.
-    fn finished(&self) -> Option<NotifyOutcome> {
-        match (self.via.as_str(), self.done) {
-            ("chat", true) => Some(NotifyOutcome::Sent),
-            ("email", _) => Some(NotifyOutcome::Emailed),
-            _ => None,
-        }
-    }
-}
-
-async fn recorded(d: &Deployment, n: &Notice, ids: &[&str]) -> Result<HashMap<String, Row>> {
-    let mut out = HashMap::new();
-    if ids.is_empty() {
-        return Ok(out);
-    }
-    let mut stmt = Statement::new(format!(
-        "SELECT student_id, via, status FROM notify_delivery WHERE notify_key = ? \
-         AND student_id IN ({})",
-        marks(ids.len())
-    ))
-    .bind(n.key.as_str());
-    for id in ids {
-        stmt = stmt.bind(*id);
-    }
-    let rows = d.services().db.query(stmt).await?;
-    for i in 0..rows.len() {
-        let row = Row {
-            via: text(&rows, i, "via").unwrap_or_default(),
-            done: text(&rows, i, "status").as_deref() == Some("done"),
+    /// The email, keyed. `again`: a cut-off run may have handed it over.
+    async fn email(&self, claim: &Claim, again: bool) -> Result<NotifyOutcome> {
+        let d = self.d;
+        let sender = &d.services().email;
+        let address = self.s.email.clone().filter(|e| !e.trim().is_empty());
+        let Some(address) = address else {
+            if again {
+                claim.finish(d, "email").await?;
+                return Ok(NotifyOutcome::Emailed);
+            }
+            claim.release(d).await?;
+            return Ok(NotifyOutcome::Skipped(NotifySkip::NoAddress));
         };
-        out.insert(text(&rows, i, "student_id").unwrap_or_default(), row);
+        if again && !sender.dedupes() {
+            // At most once: the provider may have it, and cannot say.
+            claim.finish(d, "email").await?;
+            return Ok(NotifyOutcome::Emailed);
+        }
+        if !claim.start(d, "email").await? {
+            return Ok(NotifyOutcome::Deferred(NotifyDefer::InProgress));
+        }
+        let email = Email {
+            to: address,
+            subject: self.v.subject.clone(),
+            text: self.v.text.clone(),
+            html: None,
+        };
+        if sender.send_keyed(email, &self.key).await.is_err() {
+            claim.release(d).await?;
+            return Ok(NotifyOutcome::Failed(NotifyFailure::Email));
+        }
+        claim.finish(d, "email").await?;
+        Ok(NotifyOutcome::Emailed)
     }
-    Ok(out)
 }
 
 async fn load(d: &Deployment, to: &[NotifyTo]) -> Result<Vec<Student>> {

@@ -83,16 +83,37 @@ fn json_str(out: &mut String, s: &str) {
     out.push('"');
 }
 
+/// Resend's idempotency header (<https://resend.com/docs/dashboard/emails/idempotency-keys>).
+pub const IDEMPOTENCY_HEADER: &str = "Idempotency-Key";
+
 #[async_trait]
 impl EmailSender for ResendEmail {
     async fn send(&self, email: Email) -> Result<()> {
-        let req = http::Request::post(&self.endpoint)
+        self.post(&email, None).await
+    }
+
+    async fn send_keyed(&self, email: Email, key: &str) -> Result<()> {
+        self.post(&email, Some(key)).await
+    }
+
+    fn dedupes(&self) -> bool {
+        true
+    }
+}
+
+impl ResendEmail {
+    async fn post(&self, email: &Email, key: Option<&str>) -> Result<()> {
+        let mut req = http::Request::post(&self.endpoint)
             .header(
                 http::header::AUTHORIZATION,
                 format!("Bearer {}", self.api_key),
             )
-            .header(http::header::CONTENT_TYPE, "application/json")
-            .body(self.body(&email).into_bytes())
+            .header(http::header::CONTENT_TYPE, "application/json");
+        if let Some(k) = key {
+            req = req.header(IDEMPOTENCY_HEADER, k);
+        }
+        let req = req
+            .body(self.body(email).into_bytes())
             .map_err(|e| Error::Platform(e.to_string()))?;
         let resp = self.http.send(req).await?;
         if resp.status().is_success() {

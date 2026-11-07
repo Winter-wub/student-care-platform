@@ -22,7 +22,10 @@ mod upload;
 pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
 pub(crate) use kept::{RouteModule, sweep_uploads};
 pub(crate) use mini_app::AppLinkSpec;
-pub use notify::{MAX_NOTIFY, Notice, Notified, NotifyOutcome, NotifyReport, NotifySkip, NotifyTo};
+pub use notify::{
+    DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,
+    NotifyReport, NotifySkip, NotifyTo,
+};
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
 
 /// A switchable part of the Core or customer code.

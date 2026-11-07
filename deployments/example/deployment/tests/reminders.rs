@@ -154,6 +154,11 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     }
     assert_eq!(chats(&h, "s3"), 1);
 
+    // A form without its key is refused, never sent under a shared one.
+    let r = b.post("/admin/reminders", "key=&ids=68010003").await;
+    assert_eq!(r.status, 400);
+    assert_eq!(chats(&h, "s3"), 1);
+
     // The same form posted again (a double click, a reload).
     b.post("/admin/reminders", &post).await;
     assert_eq!(chats(&h, "s3"), 1);

@@ -11,13 +11,14 @@
 
 use axum::Form;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use harpseal::audience::parse_student_ids;
 use harpseal::{
     AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY,
-    Message, Module, ModuleRegistrar, Notice, NotifyOutcome, NotifyTo, Permission, Result,
-    Statement, Value, ui,
+    Message, Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission,
+    Result, Statement, Value, ui,
 };
 use maud::html;
 
@@ -83,8 +84,11 @@ impl Module for Reminders {
 /// `reminders.weekly`: the tagged Students, one `reminders.send` per chunk.
 async fn weekly(cx: JobContext, _job: Job) -> Result<()> {
     let offset = i64::from(cx.config.utc_offset_minutes()?) * 60_000;
+    // Weeks counted from the epoch, which was a Thursday: each runs
+    // Thursday to Wednesday (local), so every Monday run has its own week.
     let week = (cx.services.now_ms() + offset) / DAY_MS / 7;
-    let key = format!("reminders:{TAG}:w{week}");
+    // The Kernel scopes the key by the Module (`reminders:`).
+    let key = format!("{TAG}:w{week}");
     let rows = cx
         .services
         .db
@@ -115,8 +119,11 @@ async fn weekly(cx: JobContext, _job: Job) -> Result<()> {
     Ok(())
 }
 
-/// `reminders.send`: one chunk. Failed Students make the run fail, so the
-/// Job's retry tries them again; the key keeps the others from a repeat.
+/// `reminders.send`: one chunk. Students over the call's request budget
+/// go to a follow-up Job at once; failed ones, or ones another run is
+/// still sending to, make this run fail, so the Job's retry (1, 5, then
+/// 30 minutes later) tries them again. The key keeps everyone else from a
+/// repeat.
 async fn send(cx: JobContext, job: Job) -> Result<()> {
     let p: serde_json::Value = serde_json::from_str(&job.payload)
         .map_err(|_| Error::Invalid("job payload is not JSON".into()))?;
@@ -132,19 +139,35 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
         .unwrap_or_default();
     let r = cx.notify(&notice(key), &to).await?;
     let note = format!(
-        "chat {}, email {}, skipped {}, failed {}",
-        r.sent, r.emailed, r.skipped, r.failed
+        "chat {}, email {}, skipped {}, deferred {}, failed {}",
+        r.sent, r.emailed, r.skipped, r.deferred, r.failed
     );
     cx.progress(&note).await?;
-    if r.failed > 0 {
+    let over: Vec<&str> = r
+        .students
+        .iter()
+        .filter(|n| n.outcome == NotifyOutcome::Deferred(NotifyDefer::Budget))
+        .map(|n| code(&n.to))
+        .collect();
+    if !over.is_empty() {
+        let payload = serde_json::json!({ "key": key, "codes": over });
+        let rest = format!("{}:rest", job.id);
+        let (_, stmt) = cx.jobs.insert_unique(&rest, SEND, &payload, None)?;
+        cx.services.db.execute(stmt).await?;
+    }
+    if r.failed > 0 || r.deferred > over.len() {
         return Err(Error::Platform(note));
     }
     Ok(())
 }
 
-/// The form; its `key` makes a second click of the same form a no-op.
+/// The form; its `key` makes a second post of the same form (a double
+/// click, a reload) send nobody the reminder twice, even while the first
+/// is still sending.
 async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
-    let key = s.services.new_id().unwrap_or_default();
+    let Ok(key) = s.services.new_id() else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let body = html! {
         section class="card" {
@@ -174,19 +197,21 @@ async fn send_now(
             .find(|(n, _)| n == k)
             .map_or("", |(_, v)| v.as_str())
     };
+    // The form's own id (a UUID): never empty, so no two forms share one.
     let key = field("key");
+    let fits = |c: char| c.is_ascii_hexdigit() || c == '-';
+    if key.len() != 36 || !key.chars().all(fits) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let ids = parse_student_ids(field("ids"));
     let to: Vec<NotifyTo> = ids.iter().map(NotifyTo::code).collect();
     let title = s.catalog.t(&staff.locale, "reminders.title");
-    let body = match s
-        .notify(&notice(&format!("reminders:page:{key}")), &to)
-        .await
-    {
+    let body = match s.notify(&notice(&format!("page:{key}")), &to).await {
         Ok(r) => html! {
             section class="card" {
                 h1 { (title) }
                 p { "chat " (r.sent) ", email " (r.emailed) ", skipped " (r.skipped)
-                    ", failed " (r.failed) }
+                    ", deferred " (r.deferred) ", failed " (r.failed) }
                 ul class="list" {
                     @for n in &r.students {
                         li { (code(&n.to)) ": " (outcome(n.outcome)) }
@@ -199,10 +224,10 @@ async fn send_now(
     Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
 }
 
-fn code(to: &NotifyTo) -> String {
+fn code(to: &NotifyTo) -> &str {
     match to {
-        NotifyTo::Code(c) => c.clone(),
-        other => format!("{other:?}"),
+        NotifyTo::Code(c) => c,
+        _ => "?",
     }
 }
 
@@ -211,6 +236,7 @@ fn outcome(o: NotifyOutcome) -> &'static str {
         NotifyOutcome::Sent => "chat",
         NotifyOutcome::Emailed => "email",
         NotifyOutcome::Skipped(_) => "skipped",
+        NotifyOutcome::Deferred(_) => "not yet: send again",
         NotifyOutcome::Failed(_) => "failed",
         _ => "?",
     }

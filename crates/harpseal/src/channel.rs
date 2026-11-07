@@ -98,6 +98,16 @@ pub trait Channel: Send + Sync {
         self.send_batch(to, delivery, msgs, locale).await
     }
 
+    /// Whether the platform de-duplicates a keyed request it already
+    /// accepted (LINE `X-Line-Retry-Key`, 24 hours): a resend of the whole
+    /// batch with the same key then delivers nothing twice, so a notice
+    /// (#73) retried in a later run resends the whole batch instead of
+    /// resuming after the Messages on record. Default `false` (Telegram,
+    /// the Fake Channel: one part per request, no retry keys).
+    fn dedupes_keyed_sends(&self) -> bool {
+        false
+    }
+
     /// [`Channel::send_batch_keyed`] resuming a batch that stopped part-way
     /// with `resume`, the token this adapter put in that attempt's
     /// [`BatchReceipt::resume`]. `msgs` are the Messages from the one the

@@ -1,26 +1,29 @@
-//! A Module notifies Students it chose (#73): by chat on every live Link,
-//! metered and recorded like any Kernel Push, else by email. The Module
-//! picks the Students (no Audience here) and passes at most
-//! [`MAX_NOTIFY`] per call; a caller-supplied key makes a retry send
-//! nothing twice. The run itself is in `notify/run.rs`.
+//! A Module sends a Notice to Students it chose (#73): by chat on every
+//! live Link, metered and recorded like any Kernel Push, else by email.
+//! The Module picks the Students (no Audience here) and passes at most
+//! [`MAX_NOTIFY`] per call; its Module name and key make a retry, or a
+//! second call at the same time, send nothing twice. The run is in
+//! `notify/run.rs`, the per-Student claim in `notify/claim.rs`.
 
 use std::collections::BTreeMap;
 
 use super::{JobContext, PageState};
-use crate::delivery::StudentId;
+use crate::delivery::{ChannelKind, StudentId};
 use crate::message::{Locale, Message};
 use crate::{Error, Result};
 
+mod claim;
 mod run;
 
 /// Most Students in one [`JobContext::notify`] / [`PageState::notify`]
-/// call. Each Student costs one outgoing request per Push request on each
-/// live Link (LINE packs up to 5 Messages in one; Telegram sends one per
-/// Message) or one email request, so 40 Students with a one-request batch
-/// and one Link each stay under the 50 subrequests of a Cloudflare Workers
-/// free-plan invocation. Page through a longer list over several Job
-/// runs (one child Job per chunk).
+/// call (each one is a bound parameter of a few queries; D1 allows 100).
+/// What one call may spend on outgoing requests is [`Notice::budget`].
 pub const MAX_NOTIFY: usize = 40;
+/// The default [`Notice::budget`]: outgoing requests (Workers
+/// subrequests) one call may make. 40 leaves room under the 50 of a
+/// Cloudflare Workers free-plan invocation for the run's other calls; a
+/// paid plan allows 10,000 per invocation.
+pub const DEFAULT_BUDGET: usize = 40;
 /// Longest [`Notice`] key, in bytes.
 pub const MAX_KEY: usize = 100;
 
@@ -33,34 +36,53 @@ struct Version {
     text: String,
 }
 
-/// A message batch for chosen Students, one version per Locale, under an
-/// idempotency key.
+impl Version {
+    /// Outgoing requests one Link may cost in the worst case: one per
+    /// Message, one per Card of a Card List, one per 4096 characters of a
+    /// text (Telegram; LINE packs up to 5 objects per request, so it
+    /// spends less).
+    fn requests(&self) -> usize {
+        self.chat
+            .iter()
+            .map(|m| match m {
+                Message::CardList(l) => l.0.len().max(1),
+                Message::Text(t) => t.chars().count().div_ceil(4096).max(1),
+                _ => 1,
+            })
+            .sum()
+    }
+}
+
+/// A message batch for chosen Students, one version per Locale, under a
+/// Module's idempotency key.
 ///
 /// ```
 /// # use harpseal::{Locale, Message, Notice};
-/// let n = Notice::new("fees", "fees:2026-11-09")
+/// let n = Notice::new("fees", "2026-11-09")
 ///     .locale(Locale::th(), vec![Message::text("ชำระค่าธรรมเนียม")], "เตือน", "ชำระค่าธรรมเนียม")
 ///     .locale(Locale::en(), vec![Message::text("Fees are due")], "Reminder", "Fees are due");
-/// assert_eq!(n.key(), "fees:2026-11-09");
+/// assert_eq!(n.key(), "2026-11-09");
 /// ```
 #[derive(Debug, Clone)]
 pub struct Notice {
     module: String,
     key: String,
     versions: BTreeMap<Locale, Version>,
+    budget: usize,
 }
 
 impl Notice {
-    /// A notice from `module` (stored on its Outbound Message rows) with
-    /// idempotency `key`: one key names one notice. Calls with the same key
-    /// never send a Student the notice twice, so a retried Job (or a
-    /// second click) reuses it; a new notice needs a new key (e.g. the
-    /// Module name and the week it is for).
+    /// A Notice from `module` (stored on its Outbound Message rows; no
+    /// `:`) with idempotency `key`. The Kernel scopes the key by `module`:
+    /// one (module, key) names one Notice, and calls with it never send a
+    /// Student the Notice twice, so a retried Job or a second click
+    /// reuses it; a new Notice needs a new key (e.g. the week it is for).
     pub fn new(module: impl Into<String>, key: impl Into<String>) -> Self {
         Self {
             module: module.into(),
             key: key.into(),
             versions: BTreeMap::new(),
+            budget: DEFAULT_BUDGET,
         }
     }
 
@@ -83,9 +105,25 @@ impl Notice {
         self
     }
 
-    /// The idempotency key.
+    /// The outgoing requests one call may make (default
+    /// [`DEFAULT_BUDGET`]). Before each Student the Kernel adds their
+    /// worst case (every live Link's requests for the batch, plus one
+    /// email when they have an address); a Student who would go over is
+    /// [`NotifyDefer::Budget`], as is everyone after: call again with them.
+    /// The first Student always goes, whatever their cost.
+    pub fn budget(mut self, requests: usize) -> Self {
+        self.budget = requests;
+        self
+    }
+
+    /// The idempotency key, as given.
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    /// The key as stored: `<module>:<key>`.
+    fn scoped(&self) -> String {
+        format!("{}:{}", self.module, self.key)
     }
 
     fn check(&self, to: usize) -> Result<()> {
@@ -93,8 +131,9 @@ impl Notice {
         if self.key.trim().is_empty() || self.key.len() > MAX_KEY {
             return bad("the key must have 1 to 100 bytes");
         }
-        if self.module.trim().is_empty() {
-            return bad("no module");
+        let m = &self.module;
+        if m.trim().is_empty() || m.len() > 64 || m.contains(':') {
+            return bad("the module must have 1 to 64 bytes and no `:`");
         }
         if self.versions.is_empty() {
             return bad("no Locale version");
@@ -102,6 +141,9 @@ impl Notice {
         let empty = |v: &Version| v.chat.is_empty() || v.subject.trim().is_empty();
         if self.versions.values().any(empty) {
             return bad("a version has no chat Message or no email subject");
+        }
+        if self.budget == 0 {
+            return bad("a budget of 0 requests");
         }
         if to > MAX_NOTIFY {
             return bad("more than MAX_NOTIFY Students");
@@ -141,7 +183,7 @@ impl NotifyTo {
     }
 }
 
-/// Why a Student got nothing.
+/// Why a Student got nothing, for good.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NotifySkip {
@@ -155,20 +197,43 @@ pub enum NotifySkip {
     NoAddress,
 }
 
+/// Why a Student was not tried in this call: call again with the key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NotifyDefer {
+    /// Over the call's [`Notice::budget`].
+    Budget,
+    /// Another call with the key is sending to this Student now (or was
+    /// cut off less than 15 minutes ago).
+    InProgress,
+}
+
+/// Why a send failed. Nothing is recorded as done: a later call with the
+/// key tries the Student again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NotifyFailure {
+    /// A Channel refused the Push (not unreachable, not a rate limit).
+    Platform,
+    /// The email port refused the email.
+    Email,
+}
+
 /// What happened to one Student.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NotifyOutcome {
     /// The chat batch went out on at least one live Link.
     Sent,
-    /// Emailed (no live Link, or every one unreachable).
+    /// Emailed (no live Link, every one unreachable, or its Channel's
+    /// platform quota used up).
     Emailed,
-    /// Nothing sent.
+    /// Nothing sent, and nothing will be.
     Skipped(NotifySkip),
-    /// The send failed (`platform`: the Channel refused it; `email`: the
-    /// email port did). Nothing is recorded as done: a later call with the
-    /// same key tries this Student again.
-    Failed(&'static str),
+    /// Not tried in this call.
+    Deferred(NotifyDefer),
+    /// The send failed.
+    Failed(NotifyFailure),
 }
 
 /// One Student's line in a [`NotifyReport`].
@@ -196,10 +261,15 @@ pub struct NotifyReport {
     pub sent: usize,
     /// Students emailed (now or earlier with the key).
     pub emailed: usize,
-    /// Students skipped.
+    /// Students skipped for good.
     pub skipped: usize,
-    /// Students whose send failed: retry them with the same key.
+    /// Students not tried: call again with them and the key.
+    pub deferred: usize,
+    /// Students whose send failed: call again with them and the key.
     pub failed: usize,
+    /// Channels whose platform refused a Push because its own quota is
+    /// used up ([`Error::QuotaExhausted`]); not called again in this call.
+    pub exhausted: Vec<ChannelKind>,
 }
 
 impl NotifyReport {
@@ -208,6 +278,7 @@ impl NotifyReport {
             NotifyOutcome::Sent => self.sent += 1,
             NotifyOutcome::Emailed => self.emailed += 1,
             NotifyOutcome::Skipped(_) => self.skipped += 1,
+            NotifyOutcome::Deferred(_) => self.deferred += 1,
             NotifyOutcome::Failed(_) => self.failed += 1,
         }
         self.students.push(n);
@@ -217,14 +288,14 @@ impl NotifyReport {
 impl JobContext {
     /// Sends `notice` to the Students `to` (at most [`MAX_NOTIFY`]): the
     /// chat batch on every live Link (a keyed Push per Link, metered and
-    /// recorded like a Kernel send, `module` on the rows), else the email
-    /// when the Student has an address. See `docs/guide/deployment.md`
-    /// ("Notifying chosen Students").
+    /// recorded like a Kernel send, the Module on the rows), else the
+    /// email when the Student has an address. See
+    /// `docs/guide/deployment.md` ("Notifying chosen Students").
     ///
     /// `Err` when the notice or the list is invalid (`Error::Invalid`,
     /// nothing sent) or a send must wait (a rate limit, a partial send, a
-    /// database error): what went out is recorded, so the Job's retry
-    /// with the same notice sends only the rest.
+    /// database error): what went out is recorded, so a retry with the
+    /// same notice sends only the rest.
     pub async fn notify(&self, notice: &Notice, to: &[NotifyTo]) -> Result<NotifyReport> {
         run::notify(&self.deployment, notice, to).await
     }
