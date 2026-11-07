@@ -11,6 +11,8 @@ We rejected integer auto-increment keys (D1 returns integers beyond ±2^53 inexa
 
 Amended 2026-11-06 (#14 review): join tables (`student_tag`, `role_permission`, `staff_role`), aggregate tables (`usage_daily` by channel and day) and keyed tables (`setting` by key and Locale, `migration` by Module and name) use their natural composite key as primary key, and session tables (`staff_session`, `app_session`) use the SHA-256 hash of the token as `id`; every other table keeps a UUIDv7. UUIDv7 ids sort by creation time only to the millisecond (on Workers, to the request, since the clock is frozen within one), so lists order by `(at, id)`, never by `id` alone.
 
+Amended 2026-11-07 by ADR-0008: `restore --force` is the one deleting path; it replaces the audit log with the backup's and records what it deleted in its `backup.restore` audit row.
+
 ## Consequences
 
 - Ids are opaque and sortable by creation time; URLs and logs show UUIDs, not sequence numbers.

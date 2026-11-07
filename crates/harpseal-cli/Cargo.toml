@@ -13,6 +13,7 @@ categories = ["development-tools"]
 
 [dependencies]
 harpseal.workspace = true
+async-trait.workspace = true
 
 [dev-dependencies]
 harpseal-testing.workspace = true

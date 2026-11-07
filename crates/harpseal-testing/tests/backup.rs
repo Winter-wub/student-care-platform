@@ -70,8 +70,9 @@ async fn a_backup_restores_into_a_fresh_database_and_filestore() {
     assert_eq!(after["rows"], r.rows);
 
     // The password hash came along: the Officer still signs in.
-    // The fresh harness replays the same seeded Random from the same
-    // START_MS, so its next UUIDv7s would repeat the restored ids: move on.
+    // Test-only: the fresh harness replays the same seeded Random from the
+    // same START_MS, so its next UUIDv7s would repeat the restored ids. The
+    // production Random is OS-seeded and cannot collide like this.
     fresh.clock().advance_minutes(24 * 60);
     let app = fresh.boot(d).await;
     let r = app.browser().login(OFFICER, PASSWORD).await;
@@ -84,6 +85,11 @@ async fn a_non_empty_database_is_refused_unless_forced() {
     let mut b = MemoryBackup::new();
     let dumped = backup::dump(app.deployment(), &mut b).await.unwrap();
     let before = counts(h.db().as_ref()).await;
+    let newest = query(
+        h.db().as_ref(),
+        "SELECT id, at FROM audit_log ORDER BY at DESC, id DESC LIMIT 1",
+    )
+    .await;
     let triggers_before = triggers(h.db().as_ref()).await;
     assert!(
         triggers_before
@@ -123,6 +129,31 @@ async fn a_non_empty_database_is_refused_unless_forced() {
         audit.rows[0][1].as_text(),
         Some(dumped.manifest_sha256.as_str())
     );
+
+    // What the wipe deleted is on record.
+    let after: serde_json::Value = serde_json::from_str(
+        &text(
+            &h,
+            "SELECT after FROM audit_log WHERE action = 'backup.restore'",
+        )
+        .await,
+    )
+    .unwrap();
+    for (table, n) in &before {
+        if *n > 0 {
+            assert_eq!(after["deleted"][table], *n, "{table}");
+            assert_eq!(r.deleted[table], *n as u64, "{table}");
+        }
+    }
+    assert_eq!(
+        after["newest_deleted_audit"]["id"].as_str(),
+        newest.rows[0][0].as_text()
+    );
+    assert_eq!(
+        after["newest_deleted_audit"]["at"].as_i64(),
+        newest.rows[0][1].as_i64()
+    );
+    assert_eq!(after["dropped_sessions"], false);
 }
 
 #[tokio::test]
@@ -167,7 +198,7 @@ async fn a_backup_with_a_foreign_migration_is_refused() {
             "{what}: nothing written"
         );
     }
-    assert!(Manifest::read(&b).is_ok());
+    assert!(Manifest::read(&b).await.is_ok());
 }
 
 #[tokio::test]

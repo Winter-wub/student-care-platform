@@ -8,7 +8,7 @@
 //!                       [--password PW | --password-stdin] [--force]
 //! harpseal staff create --email officer@sealbay.example --role Officer [--role ..]
 //! harpseal backup ./backups/2026-11-07
-//! harpseal restore ./backups/2026-11-07 [--force]
+//! harpseal restore ./backups/2026-11-07 [--force] [--drop-sessions]
 //! ```
 //!
 //! `staff create` migrates first. Without `--password` or
@@ -27,9 +27,10 @@
 //! is not one transaction. The directory holds password hashes and session
 //! ids, so keep it as safe as the database. `restore DIR` loads it into an
 //! empty database (fresh, not even `migrate`d: `migrate` seeds `[roles]`),
-//! applying the migrations first; `--force` deletes the rows of every table
-//! in the backup first and keeps the schema and any table not in the
-//! backup. Both print one line per table. D1 Deployments: this binary runs
+//! applying the backup's migrations first and the newer ones after the
+//! rows; `--force` deletes the rows of every table in the backup first and
+//! keeps the schema and any table not in the backup; `--drop-sessions`
+//! ends every restored Staff and App Session. Stop the server for both. Both print one line per table. D1 Deployments: this binary runs
 //! natively with no D1 adapter, so use `wrangler d1 export` for now.
 
 #![warn(missing_docs)]
@@ -49,7 +50,7 @@ pub const USAGE: &str = "usage:
   harpseal staff create --email EMAIL [--admin] [--role ROLE]... [--name NAME]
                         [--password PW | --password-stdin] [--force]
   harpseal backup DIR
-  harpseal restore DIR [--force]";
+  harpseal restore DIR [--force] [--drop-sessions]";
 
 /// A parsed command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,12 +62,14 @@ pub enum Command {
     CreateStaff(StaffArgs),
     /// `backup DIR`.
     Backup(PathBuf),
-    /// `restore DIR [--force]`.
+    /// `restore DIR [--force] [--drop-sessions]`.
     Restore {
         /// The backup directory.
         dir: PathBuf,
         /// Delete the rows of every table in the backup first.
         force: bool,
+        /// End every restored Staff and App Session.
+        drop_sessions: bool,
     },
     /// `help`, `-h`, `--help`.
     Help,
@@ -164,19 +167,33 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         ["migrate"] => Ok(Command::Migrate),
         ["staff", "create", rest @ ..] => parse_staff(rest).map(Command::CreateStaff),
         ["backup", dir] if !dir.starts_with('-') => Ok(Command::Backup(dir.into())),
-        ["restore", dir] | ["restore", dir, "--force"] | ["restore", "--force", dir]
-            if !dir.starts_with('-') =>
-        {
-            Ok(Command::Restore {
-                dir: dir.into(),
-                force: words.contains(&"--force"),
-            })
-        }
+        ["restore", rest @ ..] => parse_restore(rest),
         _ => Err(CliError::Usage(format!(
             "unknown command `{}`",
             args.join(" ")
         ))),
     }
+}
+
+fn parse_restore(rest: &[&str]) -> Result<Command, CliError> {
+    let (mut dir, mut force, mut drop_sessions) = (None, false, false);
+    for w in rest {
+        match *w {
+            "--force" => force = true,
+            "--drop-sessions" => drop_sessions = true,
+            flag if flag.starts_with('-') => {
+                return Err(CliError::Usage(format!("unknown option `{flag}`")));
+            }
+            d if dir.is_none() => dir = Some(PathBuf::from(d)),
+            _ => return Err(CliError::Usage("restore takes one directory".into())),
+        }
+    }
+    let dir = dir.ok_or_else(|| CliError::Usage("restore needs a directory".into()))?;
+    Ok(Command::Restore {
+        dir,
+        force,
+        drop_sessions,
+    })
 }
 
 fn parse_staff(rest: &[&str]) -> Result<StaffArgs, CliError> {
@@ -317,7 +334,11 @@ pub async fn run(
         Command::Help => writeln!(out, "{USAGE}").map_err(io),
         Command::Migrate => writeln!(out, "{}", migrate(d).await?).map_err(io),
         Command::Backup(dir) => backup(d, &dir, out).await,
-        Command::Restore { dir, force } => restore(d, &dir, force, out).await,
+        Command::Restore {
+            dir,
+            force,
+            drop_sessions,
+        } => restore(d, &dir, force, drop_sessions, out).await,
         Command::CreateStaff(a) => {
             let password = match &a.password {
                 PasswordSource::Given(p) => Some(p.clone()),

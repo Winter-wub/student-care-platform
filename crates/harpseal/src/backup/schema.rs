@@ -9,9 +9,11 @@ use crate::{Db, Result};
 
 /// Every user table: SQLite's own (`sqlite_%`), D1's (`_cf_%`, `d1_%`)
 /// and the `migration` table (restored by re-running migrations) left out.
+/// `substr`, not `LIKE`: `_` is a `LIKE` wildcard, so `'_cf_%'` would also
+/// skip a table named `acf_x`.
 const TABLES: &str = "SELECT name, sql FROM sqlite_master WHERE type = 'table' \
-     AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' \
-     AND name <> 'migration' ORDER BY name";
+     AND substr(name, 1, 7) <> 'sqlite_' AND substr(name, 1, 4) <> '_cf_' \
+     AND substr(name, 1, 3) <> 'd1_' AND name <> 'migration' ORDER BY name";
 
 /// One table as the database describes it.
 #[derive(Debug, Clone)]
@@ -172,6 +174,31 @@ pub(crate) async fn delete_triggers(
         .collect())
 }
 
+/// Names of the triggers on `tables` that fire on `INSERT` (`BEFORE`,
+/// `AFTER` or `INSTEAD OF INSERT ON ...`): a restore's inserts would set
+/// them off.
+pub(crate) async fn insert_triggers(db: &dyn Db, tables: &[String]) -> Result<Vec<String>> {
+    let rows = db
+        .query(Statement::new(
+            "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name",
+        ))
+        .await?;
+    Ok((0..rows.len())
+        .filter(|&i| tables.contains(&text(rows.get(i, "tbl_name"))))
+        .filter(|&i| fires_on_insert(&text(rows.get(i, "sql"))))
+        .map(|i| text(rows.get(i, "name")))
+        .collect())
+}
+
+/// Whether a `CREATE TRIGGER` statement's event is `INSERT`: the words
+/// `INSERT ON` appear only in the event clause (`INSERT INTO` in a body
+/// does not match).
+fn fires_on_insert(sql: &str) -> bool {
+    let sql = sql.to_ascii_uppercase();
+    let words: Vec<&str> = sql.split_whitespace().collect();
+    words.windows(2).any(|w| w == ["INSERT", "ON"])
+}
+
 /// Rows in `table`.
 pub(crate) async fn count(db: &dyn Db, table: &str) -> Result<u64> {
     let rows = db
@@ -227,6 +254,23 @@ mod tests {
         );
         assert!(!table("t", &[], "CREATE TABLE t (k TEXT PRIMARY KEY)").without_rowid());
         assert!(!table("t", &[], "CREATE TABLE t (without_rowid TEXT)").without_rowid());
+    }
+
+    #[test]
+    fn insert_triggers_are_told_apart_from_bodies_that_insert() {
+        assert!(fires_on_insert(
+            "CREATE TRIGGER t AFTER INSERT ON tag BEGIN SELECT 1; END"
+        ));
+        assert!(fires_on_insert(
+            "create trigger t before insert\non tag begin select 1; end"
+        ));
+        assert!(!fires_on_insert(
+            "CREATE TRIGGER t AFTER UPDATE ON tag BEGIN INSERT INTO log VALUES (1); END"
+        ));
+        assert!(!fires_on_insert(
+            "CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN \
+             SELECT RAISE(ABORT, 'x'); END"
+        ));
     }
 
     #[test]

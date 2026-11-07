@@ -3,12 +3,15 @@
 //!
 //! A backup is written to `DIR.partial` and renamed to `DIR` once
 //! `manifest.json` is in it, so `DIR` only ever holds a finished backup.
-//! `DIR` must not exist yet, or be empty.
+//! `DIR` must not exist yet, or be empty. `DIR/` (as tab completion
+//! writes it) is the same directory: the temporary one is `DIR.partial`
+//! next to it, never inside it.
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+use async_trait::async_trait;
 use harpseal::backup::{self, BackupSink, BackupSource, LoadOptions};
 use harpseal::{Deployment, Error};
 
@@ -44,8 +47,9 @@ impl DirBackup {
     }
 }
 
+#[async_trait]
 impl BackupSink for DirBackup {
-    fn write(&mut self, name: &str, bytes: &[u8]) -> harpseal::Result<()> {
+    async fn write(&mut self, name: &str, bytes: &[u8]) -> harpseal::Result<()> {
         let path = self.path(name)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
@@ -54,8 +58,9 @@ impl BackupSink for DirBackup {
     }
 }
 
+#[async_trait]
 impl BackupSource for DirBackup {
-    fn read(&self, name: &str) -> harpseal::Result<Vec<u8>> {
+    async fn read(&self, name: &str) -> harpseal::Result<Vec<u8>> {
         let path = self.path(name)?;
         fs::read(&path).map_err(|e| io(&path, e))
     }
@@ -69,15 +74,30 @@ fn out_err(e: std::io::Error) -> CliError {
     CliError::Refused(format!("output: {e}"))
 }
 
-/// `DIR.partial`.
-fn partial(dir: &Path) -> PathBuf {
-    let mut p = dir.as_os_str().to_owned();
-    p.push(".partial");
-    PathBuf::from(p)
+/// `(DIR, DIR.partial)` from the components of `dir`, so a trailing `/`
+/// is dropped; `.`, `..`, `/` and an empty path are refused, since the
+/// backup must be a named directory of its own.
+fn target(dir: &Path) -> Result<(PathBuf, PathBuf), CliError> {
+    let mut parts: Vec<Component> = dir.components().collect();
+    let refuse = || {
+        CliError::Refused(format!(
+            "back up into a named directory, not {:?}",
+            dir.display().to_string()
+        ))
+    };
+    let Some(Component::Normal(name)) = parts.pop() else {
+        return Err(refuse());
+    };
+    let parent: PathBuf = parts.iter().collect();
+    let mut tmp = name.to_owned();
+    tmp.push(".partial");
+    Ok((parent.join(name), parent.join(tmp)))
 }
 
 /// `backup DIR`: dumps `d` into `dir`, printing one line per table.
 pub async fn backup(d: &Deployment, dir: &Path, out: &mut dyn Write) -> Result<(), CliError> {
+    let (dir, tmp) = target(dir)?;
+    let dir = dir.as_path();
     if dir.exists() {
         let empty = fs::read_dir(dir)
             .map_err(|e| CliError::Refused(format!("{}: {e}", dir.display())))?
@@ -90,14 +110,13 @@ pub async fn backup(d: &Deployment, dir: &Path, out: &mut dyn Write) -> Result<(
             )));
         }
     }
-    let tmp = partial(dir);
     if tmp.exists() {
         return Err(CliError::Refused(format!(
             "{} exists (an unfinished backup?); remove it first",
             tmp.display()
         )));
     }
-    let mut sink = DirBackup::new(&tmp);
+    let mut sink = DirBackup::new(tmp.clone());
     let report = match backup::dump(d, &mut sink).await {
         Ok(r) => r,
         Err(e) => {
@@ -140,19 +159,24 @@ pub async fn backup(d: &Deployment, dir: &Path, out: &mut dyn Write) -> Result<(
     .map_err(out_err)
 }
 
-/// `restore DIR [--force]`: loads the backup in `dir` into `d`.
+/// `restore DIR [--force] [--drop-sessions]`: loads the backup in `dir`
+/// into `d`.
 pub async fn restore(
     d: &Deployment,
     dir: &Path,
     force: bool,
+    drop_sessions: bool,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
     let source = DirBackup::new(dir);
-    let r = backup::load(d, &source, &LoadOptions::new().force(force)).await?;
+    let opts = LoadOptions::new().force(force).drop_sessions(drop_sessions);
+    let r = backup::load(d, &source, &opts).await?;
     if r.wiped {
+        let deleted: Vec<String> = r.deleted.iter().map(|(t, n)| format!("{t} {n}")).collect();
         writeln!(
             out,
-            "--force: deleted the rows of every table in the backup (schema kept)"
+            "--force: deleted the rows of every table in the backup (schema kept): {}",
+            deleted.join(", ")
         )
         .map_err(out_err)?;
     }
@@ -163,6 +187,13 @@ pub async fn restore(
         writeln!(
             out,
             "warning: FileStore object {key} was missing when the backup was taken; not restored"
+        )
+        .map_err(out_err)?;
+    }
+    if r.dropped_sessions {
+        writeln!(
+            out,
+            "--drop-sessions: every Staff and App Session ended; everyone signs in again"
         )
         .map_err(out_err)?;
     }

@@ -55,7 +55,11 @@ pub fn deployment(h: &Harness) -> Deployment {
 
 /// A Deployment full of data, and the Officer who made it.
 pub async fn populated() -> (Harness, TestApp) {
-    let h = Harness::new();
+    populated_on(Harness::new()).await
+}
+
+/// [`populated`] on `h`, whose database may already hold migrations.
+pub async fn populated_on(h: Harness) -> (Harness, TestApp) {
     let app = h.boot(deployment(&h)).await;
     let d = app.deployment();
     let ctx = RequestCtx::cli();

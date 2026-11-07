@@ -29,7 +29,7 @@ pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpRepor
     let mut keys = BTreeSet::new();
     for t in &tables {
         let (bytes, rows) = dump_table(db, t).await?;
-        sink.write(&table_entry(&t.name), &bytes)?;
+        sink.write(&table_entry(&t.name), &bytes).await?;
         for col in t.file_key_columns() {
             let found = db
                 .query(Statement::new(format!(
@@ -46,6 +46,7 @@ pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpRepor
         manifest_tables.push(ManifestTable {
             name: t.name.clone(),
             rows,
+            sha256: sha256_hex(&bytes),
             columns: t.columns.iter().map(|c| c.name.clone()).collect(),
             sql: t.sql.clone(),
         });
@@ -56,7 +57,7 @@ pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpRepor
         let entry = file_entry(&key);
         match s.files.get(&key).await? {
             Some(bytes) => {
-                sink.write(&entry, &bytes)?;
+                sink.write(&entry, &bytes).await?;
                 files.push(ManifestFile {
                     key,
                     entry,
@@ -88,7 +89,7 @@ pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpRepor
     };
     let raw = serde_json::to_vec_pretty(&manifest)
         .map_err(|e| Error::Invalid(format!("backup manifest: {e}")))?;
-    sink.write(MANIFEST, &raw)?;
+    sink.write(MANIFEST, &raw).await?;
     Ok(DumpReport {
         manifest,
         manifest_sha256: sha256_hex(&raw),
@@ -147,18 +148,18 @@ async fn dump_table(db: &dyn Db, t: &Table) -> Result<(Vec<u8>, u64)> {
             offset += PAGE as i64;
         }
     } else {
-        let mut after = i64::MIN;
+        // The first page has no lower bound (a rowid can be i64::MIN).
+        let mut after: Option<i64> = None;
         loop {
-            let page = db
-                .query(
-                    Statement::new(format!(
-                        "SELECT rowid AS {ROWID}, * FROM {} WHERE rowid > ? \
-                         ORDER BY rowid LIMIT {PAGE}",
-                        quote(&t.name)
-                    ))
-                    .bind(after),
-                )
-                .await?;
+            let head = format!("SELECT rowid AS {ROWID}, * FROM {}", quote(&t.name));
+            let stmt = match after {
+                None => Statement::new(format!("{head} ORDER BY rowid LIMIT {PAGE}")),
+                Some(a) => Statement::new(format!(
+                    "{head} WHERE rowid > ? ORDER BY rowid LIMIT {PAGE}"
+                ))
+                .bind(a),
+            };
+            let page = db.query(stmt).await?;
             count += write_rows(&mut out, &page, 1)?;
             match page
                 .rows
@@ -166,7 +167,7 @@ async fn dump_table(db: &dyn Db, t: &Table) -> Result<(Vec<u8>, u64)> {
                 .and_then(|r| r.first())
                 .and_then(Value::as_i64)
             {
-                Some(last) if page.len() == PAGE => after = last,
+                Some(last) if page.len() == PAGE => after = Some(last),
                 _ => break,
             }
         }

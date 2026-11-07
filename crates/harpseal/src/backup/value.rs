@@ -36,10 +36,16 @@ pub(crate) fn encode(v: &Value) -> Json {
 pub(crate) fn decode(j: &Json) -> Result<Value> {
     Ok(match j {
         Json::Null => Value::Null,
-        Json::Number(n) => match (n.as_i64(), n.as_f64()) {
-            (Some(i), _) if !n.is_f64() => Value::Integer(i),
-            (_, Some(f)) => Value::Real(f),
-            _ => return Err(bad(&format!("number out of range: {n}"))),
+        // An integer literal is an INTEGER or refused: one beyond i64 is
+        // not silently read as a REAL. Reals parse exactly (serde_json's
+        // `float_roundtrip`).
+        Json::Number(n) if !n.is_f64() => match n.as_i64() {
+            Some(i) => Value::Integer(i),
+            None => return Err(bad(&format!("integer out of range: {n}"))),
+        },
+        Json::Number(n) => match n.as_f64() {
+            Some(f) => Value::Real(f),
+            None => return Err(bad(&format!("number out of range: {n}"))),
         },
         Json::String(s) => Value::Text(s.clone()),
         Json::Object(m) if m.len() == 1 => match m.iter().next() {
@@ -150,6 +156,33 @@ mod tests {
             round_trip(Value::Real(f64::NEG_INFINITY)),
             Value::Real(f64::NEG_INFINITY)
         );
+    }
+
+    #[test]
+    fn reals_round_trip_bit_for_bit() {
+        for f in [
+            0.1 + 0.2,
+            1.234_567_890_123_456_7e-300,
+            f64::MIN_POSITIVE,
+            f64::MAX,
+            -0.0,
+            5e-324,
+        ] {
+            let Value::Real(back) = round_trip(Value::Real(f)) else {
+                panic!("{f} came back as another type")
+            };
+            assert_eq!(back.to_bits(), f.to_bits(), "{f}");
+        }
+    }
+
+    #[test]
+    fn an_integer_beyond_i64_is_refused_not_read_as_a_real() {
+        // i64::MAX + 1 and u64::MAX. (serde_json itself reads integers
+        // beyond u64 or below i64::MIN as floats; the dump never writes them.)
+        for text in ["9223372036854775808", "18446744073709551615"] {
+            let j: Json = serde_json::from_str(text).unwrap();
+            assert!(decode(&j).is_err(), "{text}");
+        }
     }
 
     #[test]

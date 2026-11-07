@@ -64,11 +64,11 @@ seed *args:
 
 # Back up the database and its files into a new directory (stop `just run` first).
 backup dir:
-    cargo run -q -p harpseal-example-native --bin harpseal -- backup {{dir}}
+    cargo run -q -p harpseal-example-native --bin harpseal -- backup {{quote(dir)}}
 
-# Restore a backup into an empty database (`--force` deletes the rows of the backed-up tables first).
+# Restore a backup into an empty database, server stopped (`--force` deletes the backed-up tables' rows first; `--drop-sessions` ends restored sessions).
 restore dir *args:
-    cargo run -q -p harpseal-example-native --bin harpseal -- restore {{dir}} {{args}}
+    cargo run -q -p harpseal-example-native --bin harpseal -- restore {{quote(dir)}} {{args}}
 
 # Boot the example on a free port and walk the first slice over HTTP (not in CI).
 e2e:

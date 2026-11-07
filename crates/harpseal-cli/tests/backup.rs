@@ -31,8 +31,12 @@ async fn backup_and_restore_round_trip_through_a_directory() {
     let line = "staff create --admin --email root@sealbay.example --password kelp-forest-at-dawn";
     cli(&d, line).await.unwrap();
 
+    // A trailing slash, as tab completion writes it: still DIR, with
+    // DIR.partial next to it (not inside).
     let dir = temp_dir("roundtrip");
-    let text = cli(&d, &format!("backup {}", dir.display())).await.unwrap();
+    let text = cli(&d, &format!("backup {}/", dir.display()))
+        .await
+        .unwrap();
     assert!(text.contains("table staff: 1 rows"), "{text}");
     assert!(text.contains("backup written to"), "{text}");
     assert!(dir.join("manifest.json").is_file());
@@ -48,7 +52,7 @@ async fn backup_and_restore_round_trip_through_a_directory() {
         matches!(&refused, Err(CliError::Core(harpseal::Error::Conflict(_)))),
         "{refused:?}"
     );
-    let forced = cli(&d, &format!("restore {} --force", dir.display()))
+    let forced = cli(&d, &format!("restore {}/ --force", dir.display()))
         .await
         .unwrap();
     assert!(forced.contains("--force: deleted the rows"), "{forced}");
@@ -70,6 +74,20 @@ async fn backup_and_restore_round_trip_through_a_directory() {
         .await;
     assert_eq!(r.status, 303, "{}", r.body);
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn backup_refuses_a_path_without_a_directory_name() {
+    let h = Harness::new();
+    let d = h.builder().build().unwrap();
+    d.migrate().await.unwrap();
+    for dir in [".", "..", "/", "a/..", "./"] {
+        let r = cli(&d, &format!("backup {dir}")).await;
+        assert!(
+            matches!(&r, Err(CliError::Refused(m)) if m.contains("named directory")),
+            "{dir}: {r:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -112,7 +130,8 @@ fn backup_and_restore_command_lines() {
             parse(&args(line)).unwrap(),
             Command::Restore {
                 dir: "/srv/b".into(),
-                force: true
+                force: true,
+                drop_sessions: false,
             },
             "{line}"
         );
@@ -121,7 +140,16 @@ fn backup_and_restore_command_lines() {
         parse(&args("restore /srv/b")).unwrap(),
         Command::Restore {
             dir: "/srv/b".into(),
-            force: false
+            force: false,
+            drop_sessions: false,
+        }
+    );
+    assert_eq!(
+        parse(&args("restore --drop-sessions /srv/b --force")).unwrap(),
+        Command::Restore {
+            dir: "/srv/b".into(),
+            force: true,
+            drop_sessions: true,
         }
     );
     for line in [
@@ -129,6 +157,7 @@ fn backup_and_restore_command_lines() {
         "restore",
         "backup a b",
         "restore a --wipe",
+        "restore a b",
         "backup --force",
     ] {
         assert!(

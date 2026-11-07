@@ -10,6 +10,8 @@
 //!   taken, the applied migrations in order, each table's columns, row
 //!   count and `CREATE` SQL, and each FileStore object's key, size and
 //!   SHA-256.
+//!   Each table's entry is pinned by its SHA-256 too, so the manifest's
+//!   own hash (recorded by the restore's audit row) pins the whole backup.
 //! - `tables/<table>.ndjson`: one JSON object per row, every column, in
 //!   `rowid` order (primary-key order for `WITHOUT ROWID` tables). Values
 //!   keep their SQLite type: `null`, integers as `42`, reals as `3.0`, text
@@ -31,12 +33,13 @@
 //! the backup is as sensitive as the database itself.
 //!
 //! **Restore.** [`load`] refuses unless every table is empty, or
-//! [`LoadOptions::force`] is set; it checks that the backup's migrations
-//! are a prefix of the Deployment's, applies the Deployment's migrations,
-//! checks the columns still fit, wipes (when forced) and inserts the rows
-//! parents-first, puts the objects back, and writes the audit row
-//! `backup.restore`. See [`load`] for the details.
+//! [`LoadOptions::force`] is set; it checks that each Module's migrations
+//! in the backup are a prefix of that Module's in the Deployment, applies
+//! just those, verifies every entry, puts the objects back, wipes (when
+//! forced) and inserts the rows parents-first, then applies the newer
+//! migrations so they run over the restored rows. See [`load`].
 
+mod check;
 mod dump;
 mod load;
 mod schema;
@@ -44,6 +47,7 @@ mod value;
 
 use std::collections::BTreeMap;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::audit::RequestCtx;
@@ -59,17 +63,20 @@ pub const MANIFEST: &str = "manifest.json";
 /// Rows read per query, and statements per insert batch.
 pub const PAGE: usize = 500;
 
-/// Where [`dump`] writes its entries (a directory, memory, an archive).
-pub trait BackupSink {
+/// Where [`dump`] writes its entries (a directory, memory, an object
+/// store).
+#[async_trait]
+pub trait BackupSink: Send {
     /// Stores entry `name` (`manifest.json`, `tables/<t>.ndjson`,
     /// `files/<hex>`). Each name is written once.
-    fn write(&mut self, name: &str, bytes: &[u8]) -> Result<()>;
+    async fn write(&mut self, name: &str, bytes: &[u8]) -> Result<()>;
 }
 
 /// Where [`load`] reads the entries [`dump`] wrote.
-pub trait BackupSource {
+#[async_trait]
+pub trait BackupSource: Send + Sync {
     /// The bytes of entry `name`; an error when it is missing.
-    fn read(&self, name: &str) -> Result<Vec<u8>>;
+    async fn read(&self, name: &str) -> Result<Vec<u8>>;
 }
 
 /// A backup held in memory, by entry name: both a sink and a source.
@@ -87,15 +94,17 @@ impl MemoryBackup {
     }
 }
 
+#[async_trait]
 impl BackupSink for MemoryBackup {
-    fn write(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
+    async fn write(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
         self.entries.insert(name.to_string(), bytes.to_vec());
         Ok(())
     }
 }
 
+#[async_trait]
 impl BackupSource for MemoryBackup {
-    fn read(&self, name: &str) -> Result<Vec<u8>> {
+    async fn read(&self, name: &str) -> Result<Vec<u8>> {
         self.entries
             .get(name)
             .cloned()
@@ -125,8 +134,8 @@ pub struct Manifest {
 
 impl Manifest {
     /// Reads and parses `manifest.json`; refuses another format.
-    pub fn read(source: &dyn BackupSource) -> Result<(Manifest, Vec<u8>)> {
-        let raw = source.read(MANIFEST)?;
+    pub async fn read(source: &dyn BackupSource) -> Result<(Manifest, Vec<u8>)> {
+        let raw = source.read(MANIFEST).await?;
         let m: Manifest = serde_json::from_slice(&raw)
             .map_err(|e| Error::Invalid(format!("backup {MANIFEST}: {e}")))?;
         if m.format != FORMAT {
@@ -159,6 +168,8 @@ pub struct ManifestTable {
     pub name: String,
     /// Rows dumped.
     pub rows: u64,
+    /// SHA-256 of the entry's exact bytes.
+    pub sha256: String,
     /// Every column, in table order.
     pub columns: Vec<String>,
     /// `sqlite_master.sql` when the dump was taken.
@@ -202,6 +213,10 @@ pub struct DumpReport {
 pub struct LoadOptions {
     /// Restore into a database that has rows: they are deleted first.
     pub force: bool,
+    /// Delete every Staff and App Session after the inserts (in the same
+    /// batch as the last rows): restored sessions stop working, and
+    /// everyone signs in again. Advised after an incident.
+    pub drop_sessions: bool,
     /// Context of the `backup.restore` audit row ([`RequestCtx::cli`]).
     pub ctx: RequestCtx,
 }
@@ -210,6 +225,7 @@ impl Default for LoadOptions {
     fn default() -> Self {
         Self {
             force: false,
+            drop_sessions: false,
             ctx: RequestCtx::cli(),
         }
     }
@@ -223,6 +239,11 @@ impl LoadOptions {
     /// Sets [`LoadOptions::force`].
     pub fn force(mut self, force: bool) -> Self {
         self.force = force;
+        self
+    }
+    /// Sets [`LoadOptions::drop_sessions`].
+    pub fn drop_sessions(mut self, drop: bool) -> Self {
+        self.drop_sessions = drop;
         self
     }
 }
@@ -239,13 +260,18 @@ pub struct LoadReport {
     pub files: usize,
     /// Keys the backup listed as missing (not restored).
     pub missing_files: Vec<String>,
-    /// Whether the database had rows that were deleted first.
+    /// Whether the forced wipe deleted any row.
     pub wiped: bool,
+    /// Rows the forced wipe deleted, per table (tables that had rows).
+    pub deleted: BTreeMap<String, u64>,
+    /// Whether the session tables were emptied.
+    pub dropped_sessions: bool,
     /// `force` as given.
     pub forced: bool,
     /// Tables of the Deployment absent from the backup: left as they were.
     pub untouched: Vec<String>,
-    /// Migrations this restore applied before inserting.
+    /// Migrations this restore applied: those the backup had, before the
+    /// inserts, plus the newer ones after.
     pub migrations_applied: usize,
     /// SHA-256 of `manifest.json`, also in the audit row.
     pub manifest_sha256: String,
