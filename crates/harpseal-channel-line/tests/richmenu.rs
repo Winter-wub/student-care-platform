@@ -59,9 +59,11 @@ async fn the_first_set_menu_creates_uploads_and_links() {
                 "POST https://api.line.me/v2/bot/user/{}/richmenu/{id}",
                 to(1).external_id
             ),
+            // After a create: look for a twin and old versions to delete.
+            "GET https://api.line.me/v2/bot/richmenu/list".into(),
         ]
     );
-    let (_, want) = rich_menu(&menu, &png(2500, 1686)).unwrap();
+    let (_, want) = rich_menu(None, &menu, &png(2500, 1686)).unwrap();
     assert_eq!(json(&reqs[1].body), want, "the rich menu object");
     assert_eq!(want["areas"][0]["action"]["data"], "news.latest");
     assert_eq!(want["size"]["height"], 1686, "sized to the unlocked image");
@@ -90,8 +92,8 @@ async fn two_set_menu_calls_with_the_same_menu_create_one_rich_menu() {
     assert_eq!(links, 2);
     assert_eq!(
         got.iter().filter(|c| c.ends_with("/list")).count(),
-        1,
-        "cache hit"
+        2,
+        "before and after the create; none on the cache hit"
     );
 }
 
@@ -99,7 +101,7 @@ async fn two_set_menu_calls_with_the_same_menu_create_one_rich_menu() {
 async fn a_fresh_isolate_finds_the_rich_menu_through_the_list() {
     let api = LineApi::default();
     let menu = harpseal::fixtures::menu_unlocked();
-    let (_, obj) = rich_menu(&menu, &png(2500, 1686)).unwrap();
+    let (_, obj) = rich_menu(None, &menu, &png(2500, 1686)).unwrap();
     api.preexisting("richmenu-0000000000000000000000000000beef", obj);
     let ch = channel(&api, locked());
     ch.set_menu(&to(1), Some(&menu)).await.unwrap();

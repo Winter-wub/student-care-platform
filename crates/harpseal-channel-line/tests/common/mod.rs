@@ -17,7 +17,9 @@ pub const USER: &str = "U5ea1ba7000000000000000000000c0de";
 /// Records every request in a [`RecordingHttp`] (which also answers any
 /// queued response) and replaces the answer of a 200 with what LINE would
 /// send: ids for sent messages, a new `richMenuId`, the rich menus created
-/// so far. Queue a non-200 with `http().respond_with` to fail a call.
+/// so far (less the deleted ones). Deleting or linking a rich menu that does
+/// not exist answers 404, as LINE does. Queue a non-200 with
+/// `http().respond_with` to fail a call.
 #[derive(Clone, Default)]
 pub struct LineApi {
     rec: RecordingHttp,
@@ -27,8 +29,17 @@ pub struct LineApi {
 #[derive(Default)]
 struct ApiState {
     next: u64,
-    /// (richMenuId, created object)
+    /// (richMenuId, created object), deleted ones included
     menus: Vec<(String, Value)>,
+    deleted: Vec<String>,
+    /// (userId, linked richMenuId)
+    links: Vec<(String, String)>,
+}
+
+impl ApiState {
+    fn live(&self, id: &str) -> bool {
+        self.menus.iter().any(|(i, _)| i == id) && !self.deleted.iter().any(|d| d == id)
+    }
 }
 
 impl LineApi {
@@ -48,6 +59,28 @@ impl LineApi {
             .iter()
             .find(|(i, _)| i == id)
             .map(|(_, v)| v.clone())
+    }
+    /// Names of the rich menus that exist now, in creation order.
+    pub fn live_names(&self) -> Vec<String> {
+        let s = self.state.lock().unwrap();
+        s.menus
+            .iter()
+            .filter(|(i, _)| s.live(i))
+            .map(|(_, m)| m["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+    /// The rich menu last linked to `user`.
+    pub fn linked(&self, user: &str) -> Option<String> {
+        let s = self.state.lock().unwrap();
+        s.links
+            .iter()
+            .rev()
+            .find(|(u, _)| u == user)
+            .map(|(_, id)| id.clone())
+    }
+    /// Deletes rich menu `id` as someone in the LINE console would.
+    pub fn delete_in_console(&self, id: &str) {
+        self.state.lock().unwrap().deleted.push(id.into());
     }
     /// Pretends `obj` already exists on the account under `id`.
     pub fn preexisting(&self, id: &str, obj: Value) {
@@ -88,9 +121,33 @@ impl HttpClient for LineApi {
             let list: Vec<Value> = s
                 .menus
                 .iter()
+                .filter(|(id, _)| s.live(id))
                 .map(|(id, m)| json!({ "richMenuId": id, "name": m["name"], "size": m["size"] }))
                 .collect();
             json!({ "richmenus": list })
+        } else if let Some(rest) = uri.strip_prefix("https://api.line.me/v2/bot/") {
+            let parts: Vec<&str> = rest.split('/').collect();
+            let target = match (method.as_str(), parts.as_slice()) {
+                ("DELETE", ["richmenu", id]) => Some((None, id.to_string())),
+                ("POST", ["user", user, "richmenu", id]) => {
+                    Some((Some(user.to_string()), id.to_string()))
+                }
+                _ => None,
+            };
+            let Some((user, id)) = target else {
+                return Ok(resp);
+            };
+            if !s.live(&id) {
+                return Ok(http::Response::builder()
+                    .status(404)
+                    .body(br#"{"message":"Not found"}"#.to_vec())
+                    .unwrap());
+            }
+            match user {
+                Some(u) => s.links.push((u, id)),
+                None => s.deleted.push(id),
+            }
+            return Ok(resp);
         } else {
             return Ok(resp);
         };
