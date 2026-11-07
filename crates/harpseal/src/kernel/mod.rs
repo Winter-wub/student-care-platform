@@ -114,6 +114,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0013_backup_run",
         include_str!("../../migrations/0013_backup_run.sql"),
     ),
+    (
+        "0014_module_upload",
+        include_str!("../../migrations/0014_module_upload.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

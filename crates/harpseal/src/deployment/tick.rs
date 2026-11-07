@@ -58,6 +58,9 @@ pub struct TickReport {
     /// Roster imports whose stored file (and parsed rows) were deleted a
     /// year after upload, at most 20 per tick (#46).
     pub roster_files_pruned: u64,
+    /// Module uploads (#74) deleted after their expiry, at most 50 per
+    /// tick.
+    pub module_uploads_swept: u64,
 }
 
 impl core::fmt::Display for TickReport {
@@ -274,6 +277,13 @@ impl Deployment {
                     .extend(failed.map(|e| format!("roster file prune: {e}")));
             }
             Err(e) => report.errors.push(format!("roster file prune: {e}")),
+        }
+        match crate::module::sweep_uploads(&self.services, now.ms()).await {
+            Ok((n, failed)) => {
+                report.module_uploads_swept = n;
+                report.errors.extend(failed);
+            }
+            Err(e) => report.errors.push(format!("module upload sweep: {e}")),
         }
         Ok(report)
     }

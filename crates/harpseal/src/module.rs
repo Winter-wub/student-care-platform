@@ -15,8 +15,13 @@ use crate::message::{ActionId, Locale, Message};
 use crate::port_types::Statement;
 use crate::{Result, Services};
 
+mod kept;
 mod mini_app;
+mod upload;
+pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
+pub(crate) use kept::{RouteModule, sweep_uploads};
 pub(crate) use mini_app::AppLinkSpec;
+pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
 
 /// A switchable part of the Core or customer code.
 pub trait Module: Send + Sync + 'static {
@@ -183,10 +188,9 @@ pub struct ModuleRegistrar {
 pub(crate) struct UploadSpec {
     pub(crate) path: &'static str,
     pub(crate) max_body: usize,
-    /// The page a body over `max_body` is sent back to.
-    pub(crate) back: &'static str,
-    /// The catalog key of that error flash.
-    pub(crate) too_large: &'static str,
+    /// The page a body over `max_body` is sent back to and the catalog key
+    /// of that error flash; `None` answers the 413 page instead (#74).
+    pub(crate) too_large: Option<(&'static str, &'static str)>,
 }
 
 /// A back-office page listed in the navigation and on `/admin`.
@@ -287,8 +291,9 @@ impl ModuleRegistrar {
     /// `multipart/form-data` upload of up to `spec.max_body` bytes: the
     /// route gets that `DefaultBodyLimit` (for axum's `Multipart`), and the
     /// guard reads its body (for the `_csrf` part) up to that size, after
-    /// the Permission check. A larger body is sent back to `spec.back`
-    /// with the error flash `spec.too_large`. Every other back-office
+    /// the Permission check. A larger body is sent back to the page of
+    /// `spec.too_large` with its error flash, or answered with the 413
+    /// page when that is `None`. Every other back-office
     /// route gets the small `auth::MULTIPART_LIMIT` and a 413 page.
     pub(crate) fn back_office_upload(
         &mut self,
