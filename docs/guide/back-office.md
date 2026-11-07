@@ -41,14 +41,22 @@ on a Module's Mini App page only when `true`) and `order` (see
 lists them and offers `template.csv`), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert`. Any row error refuses the
 whole file with a CSV report, including data in a column without a header.
-An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; empty sheets
-are skipped, and a non-empty sheet without the header refuses the file by
-name). In each sheet the header row is found among its first 10 non-empty
-rows, so title rows above it are fine; totals and notes rows below the data
-(at most two cells and no student id) are skipped. Numbers may be stored as
-text (`12,500`, `12,500.00`; a lone `-` counts as empty), and an Excel error
-cell (`#REF!`, `#N/A`) is refused as unreadable. The report names the sheet,
-row and cell of each problem; a student id repeated in two sheets is a
+An `.xlsx` is read sheet by sheet (one sheet per cohort is fine; at most 50
+sheets). **Every visible sheet with content must hold the header**: a
+workbook with an extra notes or lookup sheet that imported before #70 is now
+refused, naming that sheet; delete or hide it. Hidden sheets and empty
+sheets are skipped (hidden ones are listed). In each sheet the header row is
+found among its first 10 non-empty rows, so title rows above it are fine.
+Totals and notes rows below the data are skipped when their student id cell
+is empty or a label (text with letters, such as `รวม` or a note) and they
+hold nothing under the other required columns except the `integer` and
+`number` attributes; a row with a name but no id, an id like `6801 0002`,
+or an Excel error stays data and is reported. Skipped rows and sheets are
+listed on the preview and in `report.csv`, with sheet, row and text.
+Numbers may be stored as text (`12,500`, `12,500.00`; a lone `-` counts as
+empty; exponents such as `1e3` are refused), and an Excel error cell
+(`#REF!`, `#N/A`) is refused as unreadable. The report names the sheet, row
+and cell of each problem; a student id repeated in two sheets is a
 duplicate.
 Emails must be ASCII (letters, digits and symbols; an address with Thai
 characters is refused). Otherwise a preview shows new / updated / unchanged /

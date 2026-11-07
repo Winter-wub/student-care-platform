@@ -106,6 +106,7 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
     let full = imp.mode == "full";
     html! {
         @if p.warning { div class="warn" role="alert" { (v.t("kernel.roster.warning")) } }
+        (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             dl class="facts counts" {
                 dt { (v.t("kernel.roster.total")) } dd { (imp.total_rows) }
@@ -181,6 +182,7 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
     let sheets = has_sheets(&f.problems);
     html! {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
+        (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             p { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (f.total) } }
             table class="rows" {
@@ -298,7 +300,8 @@ pub(super) async fn report(
     };
     let failure = imp.failure.unwrap_or_default();
     let problems = &failure.problems;
-    let sheets = has_sheets(problems);
+    let skipped = &imp.counts.skipped;
+    let sheets = has_sheets(problems) || skipped.iter().any(|s| !s.sheet.is_empty());
     let mut head = vec![
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
@@ -318,6 +321,11 @@ pub(super) async fn report(
             fields.insert(0, &p.sheet);
         }
         lines.push(super::csv::line(&fields));
+    }
+    for f in super::skipped::report_fields(&v, skipped, sheets) {
+        lines.push(super::csv::line(
+            &f.iter().map(String::as_str).collect::<Vec<_>>(),
+        ));
     }
     if (problems.len() as u64) < failure.total {
         let note = v

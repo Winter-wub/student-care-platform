@@ -230,6 +230,26 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     // Report
     ("kernel.roster.report_sheet", "ชีต", "Sheet"),
+    (
+        "kernel.roster.skipped",
+        "ข้ามไม่นำเข้า",
+        "Skipped, not imported"
+    ),
+    (
+        "kernel.roster.skip_footer",
+        "ข้ามแถวรวม/หมายเหตุใต้ข้อมูล",
+        "Totals or notes row below the data, skipped"
+    ),
+    (
+        "kernel.roster.skip_hidden_sheet",
+        "ข้ามชีตที่ซ่อนอยู่",
+        "Hidden sheet, skipped"
+    ),
+    (
+        "kernel.roster.reason_too_many_sheets",
+        "มีชีตเกิน 50 ชีต",
+        "More than 50 sheets"
+    ),
     ("kernel.roster.report_row", "แถว", "Row"),
     ("kernel.roster.report_column", "คอลัมน์", "Column"),
     ("kernel.roster.report_reason", "ปัญหา", "Problem"),

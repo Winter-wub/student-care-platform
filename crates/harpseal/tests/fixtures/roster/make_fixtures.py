@@ -78,14 +78,15 @@ write_xlsx(f"{out}/formula_error.xlsx", sheet_of(
 
 # --- #70: workbooks with several sheets -----------------------------------
 def write_book(path, sheets):
-    """sheets: [(name, rows_xml)]; every sheet a worksheet."""
+    """sheets: [(name, rows_xml[, hidden])]; every sheet a worksheet."""
     n = len(sheets)
     types = "".join(
         f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
         for i in range(1, n + 1))
     book = "".join(
-        f'<sheet name="{escape(name)}" sheetId="{i}" r:id="rId{i}"/>'
-        for i, (name, _) in enumerate(sheets, start=1))
+        f'<sheet name="{escape(sh[0])}" sheetId="{i}"'
+        + (' state="hidden"' if len(sh) > 2 and sh[2] else "") + f' r:id="rId{i}"/>'
+        for i, sh in enumerate(sheets, start=1))
     rels = "".join(
         f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>'
         for i in range(1, n + 1))
@@ -95,8 +96,8 @@ def write_book(path, sheets):
         "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' + book + '</sheets></workbook>',
         "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + rels + '</Relationships>',
     }
-    for i, (_, rows_xml) in enumerate(sheets, start=1):
-        files[f"xl/worksheets/sheet{i}.xml"] = sheet_of(rows_xml)
+    for i, sh in enumerate(sheets, start=1):
+        files[f"xl/worksheets/sheet{i}.xml"] = sheet_of(sh[1])
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for name, data in files.items():
             zi = zipfile.ZipInfo(name, date_time=(2026, 11, 1, 0, 0, 0))
@@ -122,14 +123,15 @@ def xrow(r, values):
 def student(code, name, year, gpa=None, prog="MSC"):
     return [code, name, f"s{code}@student.sealbay.example", "th", f"ปี{year}", prog, year, gpa]
 
-# Three cohorts: "ปี 1" has two title rows and a totals row, "ปี 2" a notes
+# Three cohorts: "ปี 1" has two title rows and a totals row (a count
+# under the integer column ชั้นปี), "ปี 2" a notes
 # row and numbers stored as text, then an empty sheet.
 y1 = (xrow(1, ["รายชื่อนักศึกษา มหาวิทยาลัยซีลเบย์"]) + xrow(2, ["ปีการศึกษา 2569"])
     + xrow(4, H)
     + xrow(5, student(68010001, "นกน้อย ทะเลใส", 1, 3.25))
     + xrow(6, student(68010002, "ปลาทอง อ่าวคราม", 1))
     + xrow(7, student(68010003, "หอยมุก หาดทราย", 1, 2.5, "MSC-Intl"))
-    + xrow(8, ["รวม", "3 คน"]))
+    + xrow(8, ["รวม", None, None, None, None, None, 3]))
 y2 = (xrow(1, H)
     + xrow(2, student(67010001, "กุ้งนาง คลื่นลม", " 2 ", "3.50"))
     + xrow(3, student(67010002, "ปูม้า ฟองคลื่น", "2", " 2.75 "))
@@ -163,3 +165,16 @@ fees = (xrow(1, ["ค่าธรรมเนียมการศึกษา �
     + xrow(12, ["รวม", None, 50000])
     + xrow(13, ["หมายเหตุ: ยอด ณ วันที่ 1 พฤศจิกายน 2569"]))
 write_book(f"{out}/fees.xlsx", [("ภาคเรียน 2", fees)])
+
+# Below the data of "ปี 1": a student without an id and a row whose id is
+# an error cell (both data, reported), then the totals row (skipped).
+trailing = (xrow(4, H)
+    + xrow(5, student(68010001, "นกน้อย ทะเลใส", 1, 3.25))
+    + xrow(6, [None, "ม้าน้ำ ทะเลใส", "s@student.sealbay.example", "th", "ปี1", "MSC", 1])
+    + xrow(7, [("e", "#REF!"), None, None, None, None, None, 2])
+    + xrow(8, ["รวม", None, None, None, None, None, 3]))
+write_book(f"{out}/cohorts_trailing.xlsx", [("ปี 1", trailing)])
+
+# A hidden lookup sheet beside a cohort sheet.
+lookup = xrow(1, ["หลักสูตร"]) + xrow(2, ["MSC"]) + xrow(3, ["MSC-Intl"])
+write_book(f"{out}/cohorts_hidden.xlsx", [("ปี 2", y2), ("lists", lookup, True)])

@@ -89,6 +89,7 @@ pub(crate) fn file_problems(e: &FileError) -> Vec<Problem> {
         FileError::Empty => whole("empty"),
         FileError::TooManyRows => whole("too_many_rows"),
         FileError::TooManyColumns => whole("too_many_columns"),
+        FileError::TooManySheets => whole("too_many_sheets"),
         FileError::Headers(sheets) => sheets.iter().flat_map(header_problems).collect(),
     }
 }

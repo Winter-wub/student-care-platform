@@ -5,11 +5,16 @@
 //! the header row is found among the first rows (title rows above it are
 //! skipped) and must match the `[roster]` columns exactly (trimmed); a
 //! sheet without it is refused by name. Totals and notes rows below the
-//! data are skipped, empty sheets and rows too; cells are trimmed and an
-//! empty cell is absent. Pure: no I/O.
+//! data (the reader's footer rule, with the `integer` and `number`
+//! attribute columns as numeric) and hidden sheets are skipped and listed
+//! ([`Skipped`]) for the preview and the report; empty sheets and rows are
+//! skipped silently. Cells are trimmed and an empty cell is absent. Pure:
+//! no I/O.
 
-use crate::config::RosterConfig;
-use crate::sheet::{HeaderNotFound, Limits, SheetError, TableSpec, Workbook};
+use serde::{Deserialize, Serialize};
+
+use crate::config::{AttributeType, RosterConfig};
+use crate::sheet::{HeaderError, Limits, SheetError, TableSpec, Workbook};
 
 pub(crate) use crate::sheet::{Row, is_xlsx};
 #[cfg(test)]
@@ -37,6 +42,8 @@ pub(crate) enum FileError {
     TooManyRows,
     /// An XLSX cell right of column [`MAX_COLUMNS`].
     TooManyColumns,
+    /// More than 50 worksheets.
+    TooManySheets,
     /// Sheets whose headers differ from the `[roster]` columns.
     Headers(Vec<HeaderMismatch>),
 }
@@ -52,6 +59,26 @@ pub(crate) struct HeaderMismatch {
     pub(crate) unexpected: Vec<String>,
     /// No row holds any of the columns: one problem, not one per column.
     pub(crate) no_header: bool,
+}
+
+/// A row or sheet the import left out, shown on the preview and in the
+/// report. `reason`: `footer` (a totals or notes row below the data) or
+/// `hidden_sheet` (`row` 0, no text).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Skipped {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) sheet: String,
+    pub(crate) row: usize,
+    pub(crate) reason: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) text: String,
+}
+
+/// A read file: its data rows and what was left out.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct Read {
+    pub(crate) rows: Vec<Row>,
+    pub(crate) skipped: Vec<Skipped>,
 }
 
 /// The headers a file must have, in template order: student id, name,
@@ -75,22 +102,47 @@ pub(crate) fn expected_headers(roster: &RosterConfig) -> Vec<String> {
 }
 
 /// Reads every sheet into data rows, checking the headers against
-/// `roster`. Student ids are keys when they look like one
-/// ([`crate::sheet::looks_like_key`]): a mistyped id is still data (and reported),
-/// a `รวม` or a note in the id column is a footer.
+/// `roster`; see [`read`].
 pub(crate) fn parse(
     bytes: &[u8],
     file_name: &str,
     roster: &RosterConfig,
 ) -> Result<Vec<Row>, FileError> {
+    read(bytes, file_name, roster).map(|r| r.rows)
+}
+
+/// The data rows of every visible sheet, and the skipped footer rows and
+/// hidden sheets. Student ids are keys when they look like one
+/// ([`crate::sheet::looks_like_key`]); a mistyped id is still data (and
+/// reported).
+pub(crate) fn read(
+    bytes: &[u8],
+    file_name: &str,
+    roster: &RosterConfig,
+) -> Result<Read, FileError> {
     let book = Workbook::open_with(bytes, file_name, Limits::new(MAX_ROWS, MAX_COLUMNS))
         .map_err(sheet_error)?;
     let expected = expected_headers(roster);
-    let spec = TableSpec::new(expected.clone()).key(roster.student_code.clone());
-    let mut out = Vec::new();
+    let numeric = roster
+        .attributes
+        .values()
+        .filter(|a| matches!(a.kind, AttributeType::Integer | AttributeType::Number));
+    let spec = TableSpec::new(expected.clone())
+        .key(roster.student_code.clone())
+        .skip_footer(numeric.map(|a| a.column.clone()));
+    let mut out = Read::default();
     let mut mismatches = Vec::new();
     let mut any = false;
     for s in book.sheets().iter().filter(|s| !s.is_empty()) {
+        if s.is_hidden() {
+            out.skipped.push(Skipped {
+                sheet: s.name().to_string(),
+                row: 0,
+                reason: "hidden_sheet".into(),
+                text: String::new(),
+            });
+            continue;
+        }
         any = true;
         match s.table(&spec) {
             Ok(table) => {
@@ -105,8 +157,15 @@ pub(crate) fn parse(
                     });
                     continue;
                 }
-                out.extend(table.into_rows());
-                if out.len() > MAX_ROWS {
+                let (rows, footer) = table.into_parts();
+                out.rows.extend(rows);
+                out.skipped.extend(footer.into_iter().map(|f| Skipped {
+                    sheet: f.sheet,
+                    row: f.row,
+                    reason: "footer".into(),
+                    text: f.text,
+                }));
+                if out.rows.len() > MAX_ROWS {
                     return Err(FileError::TooManyRows);
                 }
             }
@@ -129,13 +188,14 @@ fn sheet_error(e: SheetError) -> FileError {
         SheetError::Csv { row } => FileError::Csv(row),
         SheetError::TooManyRows => FileError::TooManyRows,
         SheetError::TooManyColumns => FileError::TooManyColumns,
+        SheetError::TooManySheets => FileError::TooManySheets,
         _ => FileError::Xlsx,
     }
 }
 
-/// The closest row's mismatch; when it holds none of the columns, one
-/// "no header row" problem for the sheet.
-fn not_found(e: HeaderNotFound, expected: &[String]) -> HeaderMismatch {
+/// The closest row's mismatch (a repeated column is unexpected); when it
+/// holds none of the columns, one "no header row" problem for the sheet.
+fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
     let no_header = e.missing.len() == expected.len();
     HeaderMismatch {
         unexpected: if no_header {

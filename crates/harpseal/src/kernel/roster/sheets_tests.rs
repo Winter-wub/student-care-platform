@@ -112,3 +112,64 @@ fn problems_stored_before_sheets_read_back() {
         "a CSV's problems store as before"
     );
 }
+
+const TRAILING: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_trailing.xlsx");
+const HIDDEN: &[u8] = include_bytes!("../../../tests/fixtures/roster/cohorts_hidden.xlsx");
+
+#[test]
+fn skipped_footer_rows_and_hidden_sheets_are_listed() {
+    let c = test_config();
+    let r = read(COHORTS, "cohorts.xlsx", &c.roster).unwrap();
+    let got: Vec<_> = r
+        .skipped
+        .iter()
+        .map(|s| (s.sheet.as_str(), s.row, s.reason.as_str(), s.text.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("ปี 1", 8, "footer", "รวม | 3"),
+            ("ปี 2", 5, "footer", "หมายเหตุ: ข้อมูล ณ วันที่ 1 พฤศจิกายน 2569"),
+        ]
+    );
+    let h = read(HIDDEN, "h.xlsx", &c.roster).unwrap();
+    assert_eq!(h.rows.len(), 2, "the visible sheet only");
+    assert_eq!(
+        (
+            h.skipped[1].sheet.as_str(),
+            h.skipped[1].row,
+            h.skipped[1].reason.as_str()
+        ),
+        ("lists", 0, "hidden_sheet")
+    );
+}
+
+#[test]
+fn an_id_less_student_and_an_unreadable_id_below_the_data_are_reported() {
+    let c = test_config();
+    let r = read(TRAILING, "t.xlsx", &c.roster).unwrap();
+    assert_eq!(r.skipped.len(), 1, "only the totals row");
+    let problems = validate(&r.rows, &c).unwrap_err();
+    let got: Vec<_> = problems.iter().map(at).collect();
+    assert!(
+        got.contains(&("ปี 1", 6, "รหัสนักศึกษา", "required")),
+        "{got:?}"
+    );
+    assert!(
+        got.contains(&("ปี 1", 7, "รหัสนักศึกษา", "unreadable")),
+        "{got:?}"
+    );
+    assert!(!got.iter().any(|p| p.1 == 8), "{got:?}");
+}
+
+#[test]
+fn a_repeated_roster_header_is_reported_not_overwritten() {
+    let c = test_config();
+    let text = format!("{},อีเมล\n", expected_headers(&c.roster).join(","));
+    let e = parse(text.as_bytes(), "a.csv", &c.roster).unwrap_err();
+    let problems = crate::kernel::roster::validate::file_problems(&e);
+    assert_eq!(
+        problems.iter().map(at).collect::<Vec<_>>(),
+        vec![("", 1, "อีเมล", "unexpected_header")]
+    );
+}

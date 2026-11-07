@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use calamine::{Data, Reader, SheetType, Xlsx};
+use calamine::{Data, Reader, SheetType, SheetVisible, Xlsx};
 
 use super::{Cell, Limits, RawRow, Sheet, SheetError, column_name, csv};
 
@@ -33,6 +33,7 @@ pub(super) fn csv(bytes: &[u8], limits: Limits) -> Result<Sheet, SheetError> {
     Ok(Sheet {
         name: String::new(),
         rows,
+        hidden: false,
     })
 }
 
@@ -40,24 +41,29 @@ pub(super) fn csv(bytes: &[u8], limits: Limits) -> Result<Sheet, SheetError> {
 pub(super) fn xlsx(bytes: &[u8], limits: Limits) -> Result<Vec<Sheet>, SheetError> {
     let mut book: Xlsx<_> =
         calamine::open_workbook_from_rs(Cursor::new(bytes)).map_err(|_| SheetError::Xlsx)?;
-    let names: Vec<String> = book
+    let names: Vec<(String, bool)> = book
         .sheets_metadata()
         .iter()
         .filter(|s| s.typ == SheetType::WorkSheet)
-        .map(|s| s.name.clone())
+        .map(|s| (s.name.clone(), s.visible != SheetVisible::Visible))
         .collect();
     if names.is_empty() {
         return Err(SheetError::Xlsx);
     }
+    // Before reading any: 5 000 small sheets would pass the row checks.
+    if names.len() > limits.max_sheets {
+        return Err(SheetError::TooManySheets);
+    }
     let mut total = 0usize;
     let mut sheets = Vec::with_capacity(names.len());
-    for (n, name) in names.into_iter().enumerate() {
+    for (n, (name, hidden)) in names.into_iter().enumerate() {
         let rows = xlsx_rows(&mut book, &name, limits)?;
         total += rows.len();
+        // SLACK per sheet, so at most SLACK × max_sheets in all.
         if total > limits.max_rows + Limits::SLACK * (n + 1) {
             return Err(SheetError::TooManyRows);
         }
-        sheets.push(Sheet { name, rows });
+        sheets.push(Sheet { name, rows, hidden });
     }
     Ok(sheets)
 }

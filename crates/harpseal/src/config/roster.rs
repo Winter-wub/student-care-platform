@@ -231,32 +231,23 @@ impl AttributeSpec {
         Ok(Some(v))
     }
 
-    /// An `integer` or `number` value read with [`crate::sheet::number`]
-    /// (`12,500`, `12,500.00`); a lone `-` is no value. An integer must be
-    /// whole and fit 64 bits.
+    /// An `integer` or `number` value read with [`crate::sheet`]
+    /// (`12,500`, `12,500.00`); a lone `-` is no value. An integer is
+    /// read exactly ([`crate::sheet::number_scaled`] at scale 0: whole,
+    /// within `i64`, never through `f64`); a number as an `f64` of at most
+    /// 15 significant digits.
     fn number(&self, raw: &str) -> Result<Option<Json>, AttrError> {
-        let integer = self.kind == AttributeType::Integer;
-        let err = if integer {
-            AttrError::NotInteger
-        } else {
-            AttrError::NotNumber
-        };
-        let Some(n) = crate::sheet::number(raw, crate::sheet::Blank::Missing).map_err(|_| err)?
-        else {
-            return Ok(None);
-        };
-        if !integer {
-            return Ok(Some(
-                serde_json::Number::from_f64(n)
-                    .map(Json::Number)
-                    .ok_or(err)?,
-            ));
+        use crate::sheet::{Blank, number, number_scaled};
+        if self.kind == AttributeType::Integer {
+            let n = number_scaled(raw, 0, Blank::Missing).map_err(|_| AttrError::NotInteger)?;
+            return Ok(n.map(Json::from));
         }
-        // Whole and within ±2^53, where f64 holds every integer exactly.
-        if n.fract() != 0.0 || n.abs() > 9_007_199_254_740_992.0 {
-            return Err(err);
+        match number(raw, Blank::Missing).map_err(|_| AttrError::NotNumber)? {
+            None => Ok(None),
+            Some(n) => serde_json::Number::from_f64(n)
+                .map(|n| Some(Json::Number(n)))
+                .ok_or(AttrError::NotNumber),
         }
-        Ok(Some(Json::from(n as i64)))
     }
 
     /// A stored value as form / cell text (`""` for none).
@@ -334,83 +325,5 @@ impl RosterConfig {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn spec(kind: AttributeType, values: &[&str], optional: bool) -> AttributeSpec {
-        AttributeSpec {
-            column: "c".into(),
-            kind,
-            values: values.iter().map(|v| v.to_string()).collect(),
-            label: BTreeMap::new(),
-            optional,
-            shown_in_list: false,
-            student_visible: false,
-            order: 0,
-        }
-    }
-
-    #[test]
-    fn values_are_parsed_by_type() {
-        let int = spec(AttributeType::Integer, &[], false);
-        assert_eq!(int.parse(" 3 "), Ok(Some(Json::from(3))));
-        assert_eq!(int.parse("3.5"), Err(AttrError::NotInteger));
-        assert_eq!(int.parse(""), Err(AttrError::Required));
-        let num = spec(AttributeType::Number, &[], true);
-        assert_eq!(num.parse("3.5"), Ok(Some(Json::from(3.5))));
-        assert_eq!(num.parse("x"), Err(AttrError::NotNumber));
-        assert_eq!(num.parse("NaN"), Err(AttrError::NotNumber));
-        assert_eq!(num.parse(""), Ok(None));
-        // #70: numbers stored as text, the same reader as a Module's.
-        assert_eq!(int.parse("1,000"), Ok(Some(Json::from(1000))));
-        assert_eq!(int.parse("12,500.00"), Ok(Some(Json::from(12500))));
-        assert_eq!(int.parse("12.500"), Err(AttrError::NotInteger));
-        assert_eq!(int.parse("-"), Err(AttrError::Required));
-        assert_eq!(num.parse(" 12,500.50 "), Ok(Some(Json::from(12500.5))));
-        assert_eq!(num.parse("-"), Ok(None), "a lone dash is no value");
-        assert_eq!(num.parse("-2.5"), Ok(Some(Json::from(-2.5))));
-        assert_eq!(num.parse("12,5"), Err(AttrError::NotNumber));
-        let en = spec(AttributeType::Enum, &["MSC", "MSC-Intl"], false);
-        assert_eq!(en.parse("MSC-Intl"), Ok(Some(Json::from("MSC-Intl"))));
-        assert_eq!(en.parse("msc"), Err(AttrError::NotInList));
-        let date = spec(AttributeType::Date, &[], false);
-        assert_eq!(date.parse("2028-02-29"), Ok(Some(Json::from("2028-02-29"))));
-        for bad in [
-            "2027-02-29",
-            "2026-13-01",
-            "2026-1-01",
-            "26-01-01x",
-            "2026/01/01",
-        ] {
-            assert_eq!(date.parse(bad), Err(AttrError::NotDate), "{bad}");
-        }
-    }
-
-    #[test]
-    fn schema_errors_are_refused() {
-        let base = "name = \"X\"\ndefault_locale = \"th\"\n";
-        let ok = "[roster.attributes.year]\ncolumn = \"ชั้นปี\"\ntype = \"integer\"\n\
-                  label = { th = \"ชั้นปี\", en = \"Year\" }";
-        let c = crate::DeploymentConfig::from_toml(&format!("{base}{ok}")).unwrap();
-        let year = &c.roster.attributes["year"];
-        assert_eq!(year.label_in("year", &Locale::en(), &Locale::th()), "Year");
-        assert_eq!(
-            year.label_in("year", &Locale("fr".into()), &Locale::th()),
-            "ชั้นปี"
-        );
-        for extra in [
-            "[roster.attributes.Year]\ncolumn = \"a\"\ntype = \"text\"",
-            "[roster.attributes.p]\ncolumn = \"a\"\ntype = \"enum\"",
-            "[roster.attributes.p]\ncolumn = \"a\"\ntype = \"text\"\nvalues = [\"x\"]",
-            "[roster.attributes.p]\ncolumn = \"a\"\ntype = \"enum\"\nvalues = [\"x\", \"x\"]",
-            "[roster.attributes.p]\ncolumn = \"email\"\ntype = \"text\"",
-            "[roster.attributes.p]\ncolumn = \"a\"\ntype = \"bool\"",
-            "[roster]\ntags = { column = \"g\", separator = \"\" }",
-        ] {
-            assert!(
-                crate::DeploymentConfig::from_toml(&format!("{base}{extra}")).is_err(),
-                "accepted: {extra}"
-            );
-        }
-    }
-}
+#[path = "roster_tests.rs"]
+mod tests;

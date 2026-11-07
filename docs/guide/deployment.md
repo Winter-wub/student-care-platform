@@ -294,12 +294,24 @@ the Job `kernel.roster.import` on the next ticks.
 `harpseal::sheet` is the reader the roster import uses, public so a
 Module parses its own uploads (fees, grades) with the same rules:
 `Workbook::open(bytes, file_name)` reads a `.csv` (one unnamed sheet) or
-every worksheet of an `.xlsx`; `sheet.table(&TableSpec::new([...]))`
-finds the header row among the first 10 non-empty rows (title rows above
-are skipped), skips totals and notes rows below the data (at most two
-cells and no key, by default the first column), and yields `Row`s with
-their sheet name and 1-based row number. An Excel error cell is
-`Cell::Unreadable` with its code and cell (`#REF!`, `C10`), never text.
-`harpseal::sheet::number(text, Blank::Zero | Blank::Missing)` reads
-`12,500`, ` 12500 ` and `12,500.00` as the same number; `.` is always the
-decimal point. The rustdoc of `harpseal::sheet` has a worked example.
+every worksheet of an `.xlsx` (at most 50; `Sheet::is_hidden` marks hidden
+ones, skip and list them). `sheet.table(&TableSpec::new([...]))` finds the
+header row among the first 10 non-empty rows (title rows above are
+skipped; a required column repeated in the header is an error) and yields
+`Row`s with their sheet name and 1-based row number. By default every row
+under the header is data. `.skip_footer(["Amount"])` skips totals and notes
+rows at the bottom whose key cell is empty or a label and that hold values
+only under the numeric columns you name; show `Table::footer()` (sheet,
+row, text) to Staff, never drop it silently. Keyed by names or letter
+codes? Pass `.is_key(|s| ...)` (a closure, e.g. over the codes you know)
+before turning the footer on. An Excel error cell is `Cell::Unreadable`
+with its code and cell (`#REF!`, `C10`), never text.
+
+Numbers: `sheet::number_scaled(text, 2, Blank::Zero)` reads money exactly
+in satang (`12,500.50` is `1_250_050`; more decimals than the scale, or a
+value beyond `i64`, is refused, never rounded). `sheet::number` gives an
+`f64` of at most 15 significant digits. Both accept `12,500`, ` 12500 `,
+`12,500.00`, `+5`, `.5`; `.` is always the decimal point. They refuse
+`(500)`, `฿`, Thai digits, spaces or no-break spaces inside the number, the
+minus sign U+2212 and exponents: normalise those first. The rustdoc of
+`harpseal::sheet` has a worked example.

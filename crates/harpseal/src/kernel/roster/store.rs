@@ -74,6 +74,10 @@ pub(crate) struct Counts {
     /// upload, `prune.rs`).
     pub(crate) keep_file_until: i64,
     pub(crate) preview: Preview,
+    /// Rows and sheets the file left out (#70): footer rows and hidden
+    /// sheets, shown on the preview and in the report.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) skipped: Vec<super::file::Skipped>,
     /// What the chunks applied so far.
     pub(crate) result: Tally,
     /// Students the last chunk marked left, Links it revoked, revoked

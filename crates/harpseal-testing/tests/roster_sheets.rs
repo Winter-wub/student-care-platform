@@ -65,3 +65,47 @@ async fn a_sheet_without_the_header_refuses_the_workbook_by_name() {
     assert_eq!(report.lines().count(), 2, "one clear problem: {report}");
     assert!(report.contains("สรุป,0,,ไม่พบแถวหัวคอลัมน์"), "{report}");
 }
+
+const TRAILING: &[u8] =
+    include_bytes!("../../harpseal/tests/fixtures/roster/cohorts_trailing.xlsx");
+
+#[tokio::test]
+async fn skipped_rows_are_shown_on_the_preview_and_in_the_report() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(page.contains("data-skipped=\"2\""), "{page}");
+    assert!(
+        page.contains("ข้ามแถวรวม/หมายเหตุใต้ข้อมูล (ปี 1) แถว 8"),
+        "{page}"
+    );
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(
+        report.contains("ปี 1,8,รวม | 3,ข้ามแถวรวม/หมายเหตุใต้ข้อมูล"),
+        "{report}"
+    );
+}
+
+#[tokio::test]
+async fn a_full_import_never_drops_a_trailing_student_into_left() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    let active = "SELECT count(*) FROM student WHERE status = 'active'";
+    assert_eq!(int(&h, active, &[]).await, 5);
+    // The next file lists one Student, then one without an id and one
+    // whose id is #REF!: refused, so nobody becomes left.
+    let r = upload(&b, "t.xlsx", TRAILING, "full").await;
+    let id = import_id(&r);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("ปี 1,6,รหัสนักศึกษา,"), "{report}");
+    assert!(
+        report.contains("ปี 1,7,รหัสนักศึกษา (A7),อ่านค่าไม่ได้"),
+        "{report}"
+    );
+    assert_eq!(int(&h, active, &[]).await, 5);
+}

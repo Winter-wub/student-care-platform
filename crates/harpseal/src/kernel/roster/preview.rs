@@ -65,13 +65,17 @@ pub(crate) async fn upload(
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
+    let mut skipped = Vec::new();
     let read = if bytes.len() > MAX_FILE_BYTES {
         Err(vec![problem("too_large")])
     } else {
         let config = d.config();
-        file::parse(&bytes, &name, &config.roster)
+        file::read(&bytes, &name, &config.roster)
             .map_err(|e: FileError| validate::file_problems(&e))
-            .and_then(|rows| validate::validate(&rows, config))
+            .and_then(|r| {
+                skipped = r.skipped;
+                validate::validate(&r.rows, config)
+            })
             .and_then(|v| {
                 // A full file with no rows would mark everyone left.
                 if mode == "full" && v.records.is_empty() {
@@ -89,6 +93,7 @@ pub(crate) async fn upload(
     s.files.put(&key, bytes, content_type).await?;
     let counts = Counts {
         sha256,
+        skipped,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
     };

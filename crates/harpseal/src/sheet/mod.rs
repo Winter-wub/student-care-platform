@@ -4,51 +4,63 @@
 //! [`Workbook::open`] reads CSV (UTF-8, BOM tolerated, `,` or `;`, named
 //! `.csv`) or XLSX (named `.xlsx`; told by the name only, any other name
 //! is refused). A CSV is one [`Sheet`] with an empty name; an XLSX has one
-//! per worksheet, hidden ones included (chart and macro sheets hold no
-//! cells and are left out). Cells are trimmed; empty rows are dropped.
+//! per worksheet, hidden ones included and marked ([`Sheet::is_hidden`];
+//! chart and macro sheets hold no cells and are left out). Cells are
+//! trimmed; empty rows are dropped.
 //!
 //! [`Sheet::table`] then finds the header row and the data under it:
 //!
 //! - **Header**: the first of the first [`HEADER_SEARCH_ROWS`] non-empty
 //!   rows that holds every column the [`TableSpec`] names (trimmed, exact).
-//!   Title rows above it are skipped. When no row qualifies,
-//!   [`HeaderNotFound`] names the closest row (the one holding the most of
-//!   the columns, else the first) and what it lacks.
-//! - **Data**: every non-empty row under the header, less the **footer**.
-//! - **Footer** (totals and notes): read from the bottom up, a row whose
-//!   key cell holds no key ([`TableSpec::key`], by default the first
-//!   column; [`looks_like_key`] by default), that has at most two
-//!   non-empty cells, all under a header, is a footer row and is skipped;
-//!   the first row from the bottom that is not ends the footer. So a
-//!   `Total | 45` row or a single note below the data is skipped, while a
-//!   data row missing only its id (it has more cells) stays data and a cell
-//!   right of the header is never dropped unseen.
+//!   Title rows above it are skipped. When no row qualifies, or the one
+//!   that does holds a column twice, [`HeaderError`] names the row (else
+//!   the closest: the one holding the most columns, else the first) and
+//!   what it lacks or repeats. A repeated header outside the spec keeps
+//!   its first column; the cells of the others are [`Row::unheaded`].
+//! - **Data**: every non-empty row under the header. Nothing is dropped
+//!   unless the spec turns the footer on.
+//! - **Footer** ([`TableSpec::skip_footer`], opt-in): read from the
+//!   bottom up, a row is a footer row (totals, notes) when its key cell
+//!   ([`TableSpec::key`], by default the first column) is empty or a
+//!   label, and no required column other than the key and the numeric
+//!   columns holds a value. A label is text that is not a key
+//!   ([`TableSpec::is_key`], [`looks_like_key`] by default) and is not
+//!   digits without letters: `6801 0002` is a malformed id, so data. A row
+//!   with an unreadable cell or a cell outside the header is always data.
+//!   The first row from the bottom that is not a footer row ends the
+//!   footer. So with `Student id, Name, Amount` (Amount numeric),
+//!   `Total,,22 500` and a note in column A are skipped, while `,Pla,500`
+//!   (an id missing) stays data. Skipped rows come back in
+//!   [`Table::footer`], to be shown, never silently lost. A table keyed
+//!   by names or letter codes needs its own `is_key` before the footer is
+//!   turned on.
 //!
 //! Cell values: XLSX numbers as written without a trailing `.0`, dates as
 //! `YYYY-MM-DD` (with ` HH:MM:SS` when they hold a time), booleans as
 //! `TRUE` / `FALSE`, a formula as its cached value. An Excel error cell
 //! (`#REF!`, `#N/A`, `#DIV/0!`, …) is [`Cell::Unreadable`] with its code
 //! and cell reference, never text. Numbers stored as text go through
-//! [`number`].
+//! [`number`] or, exactly (money), [`number_scaled`].
 //!
 //! ```
 //! use harpseal::sheet::{self, Blank, TableSpec, Workbook};
 //!
 //! let csv = "Seal Bay University fees 2569\n\
 //!            Student id,Name,Amount\n\
-//!            68010001,Nok Talay,\"12,500.00\"\n\
+//!            68010001,Nok Talay,\"12,500.50\"\n\
 //!            68010002,Pla Thong,-\n\
-//!            Total,,\"12,500\"\n";
+//!            Total,,\"12,500.50\"\n";
 //! let book = Workbook::open(csv.as_bytes(), "fees.csv").unwrap();
-//! let spec = TableSpec::new(["Student id", "Name", "Amount"]);
+//! let spec = TableSpec::new(["Student id", "Name", "Amount"]).skip_footer(["Amount"]);
 //! for s in book.sheets() {
 //!     let table = s.table(&spec).unwrap();
 //!     assert_eq!(table.header_row(), 2);
-//!     assert_eq!(table.rows().len(), 2, "the totals row is skipped");
+//!     assert_eq!(table.rows().len(), 2, "the totals row is skipped…");
+//!     assert_eq!(table.footer()[0].row, 5, "…and reported");
 //!     let first = &table.rows()[0];
 //!     assert_eq!((first.sheet(), first.number()), ("", 3));
-//!     let amount = sheet::number(first.get("Amount").unwrap_or(""), Blank::Missing);
-//!     assert_eq!(amount, Ok(Some(12500.0)));
+//!     let satang = sheet::number_scaled(first.get("Amount").unwrap_or(""), 2, Blank::Missing);
+//!     assert_eq!(satang, Ok(Some(1_250_050)));
 //!     let dash = sheet::number(table.rows()[1].get("Amount").unwrap_or(""), Blank::Zero);
 //!     assert_eq!(dash, Ok(Some(0.0)));
 //! }
@@ -63,8 +75,8 @@ mod table;
 
 use std::collections::BTreeMap;
 
-pub use number::{Blank, NotANumber, number};
-pub use table::{HeaderNotFound, Table, TableSpec, looks_like_key};
+pub use number::{Blank, MAX_F64_DIGITS, NotANumber, number, number_scaled};
+pub use table::{HeaderError, KeyTest, SkippedRow, Table, TableSpec, looks_like_key};
 
 /// Rows searched for the header, counting only non-empty ones.
 pub const HEADER_SEARCH_ROWS: usize = 10;
@@ -88,6 +100,8 @@ pub enum SheetError {
     TooManyRows,
     /// A cell right of column [`Limits::max_columns`].
     TooManyColumns,
+    /// More worksheets than [`Limits::max_sheets`].
+    TooManySheets,
 }
 
 impl std::fmt::Display for SheetError {
@@ -99,6 +113,7 @@ impl std::fmt::Display for SheetError {
             Self::Xlsx => f.write_str("the XLSX cannot be opened"),
             Self::TooManyRows => f.write_str("too many rows"),
             Self::TooManyColumns => f.write_str("too many columns"),
+            Self::TooManySheets => f.write_str("too many sheets"),
         }
     }
 }
@@ -116,23 +131,33 @@ pub struct Limits {
     pub max_rows: usize,
     /// Most columns (cells further right are refused).
     pub max_columns: usize,
+    /// Most worksheets, counted before any is read (default 50).
+    pub max_sheets: usize,
 }
 
 impl Limits {
     /// Rows a sheet may hold beyond `max_rows`.
     pub const SLACK: usize = HEADER_SEARCH_ROWS + 10;
 
-    /// Limits of `max_rows` data rows and `max_columns` columns.
+    /// Limits of `max_rows` data rows and `max_columns` columns, and the
+    /// default 50 sheets.
     pub fn new(max_rows: usize, max_columns: usize) -> Self {
         Self {
             max_rows,
             max_columns,
+            max_sheets: 50,
         }
+    }
+
+    /// The same limits with at most `n` worksheets.
+    pub fn max_sheets(mut self, n: usize) -> Self {
+        self.max_sheets = n;
+        self
     }
 }
 
 impl Default for Limits {
-    /// The roster's: 20 000 rows, 64 columns.
+    /// The roster's: 20 000 rows, 64 columns, 50 sheets.
     fn default() -> Self {
         Self::new(20_000, 64)
     }
@@ -178,6 +203,7 @@ impl Workbook {
 pub struct Sheet {
     name: String,
     rows: Vec<RawRow>,
+    hidden: bool,
 }
 
 /// A non-empty row as read: its 1-based number and its cells by column.
@@ -191,6 +217,12 @@ impl Sheet {
     /// The sheet's name; empty for a CSV.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether the XLSX hides the sheet (hidden or very hidden). Staff do
+    /// not see it in Excel: callers usually skip it and say so.
+    pub fn is_hidden(&self) -> bool {
+        self.hidden
     }
 
     /// Whether the sheet has no non-empty cell.
