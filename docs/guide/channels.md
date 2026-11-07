@@ -47,8 +47,73 @@ the home: see "A Module's Mini App page" in [deployment.md](deployment.md).
 Create a LINE Official Account with a Messaging API channel (channel
 secret and a long-lived access token) and a LIFF app. Set the webhook URL to
 `https://<host>/webhook/line`. Secrets: `LINE_CHANNEL_SECRET`,
-`LINE_ACCESS_TOKEN`, `LINE_LIFF_ID`. Rich menu images are uploaded by the
-adapter when it sets a Menu.
+`LINE_ACCESS_TOKEN`, `LINE_LIFF_ID`. The adapter uploads the rich menu images
+when it sets a Menu; you draw them (next section).
+
+### Rich menu images
+
+LINE shows a rich menu as a picture with invisible tap areas on top. The
+adapter makes the tap areas from the Menu (one postback per entry) and uploads
+your picture under them; it never draws one. A LINE Channel needs two images:
+the unlocked Menu's (`LineConfig::unlocked_menu_image`, shown after a Link) and
+the locked Menu's (`locked_menu_image`, shown before it, with
+`LineConfig::with_locked_menu`: the spec asks for one "เริ่มใช้งาน" entry whose
+Action is `kernel.link.start`). Without the locked Menu `set_menu(None)` only
+unlinks the account's rich menu. `LineConfig::with_menu_images(locked,
+unlocked)` sets both.
+
+An image is a PNG, 2500 x 843 px (one row of cells) or 2500 x 1686 px (more),
+at most 1 MB. The adapter splits the image into the Core's grid, the same
+one it uses for the tap areas, so a cell of the picture must sit exactly under
+its entry:
+
+| Entries | Grid (columns x rows) | Image | One cell |
+| ------- | --------------------- | ----- | -------- |
+| 1 | 1 x 1 | 2500 x 843 | 2500 x 843 |
+| 2 | 2 x 1 | 2500 x 843 | 1250 x 843 |
+| 3 | 3 x 1 | 2500 x 843 | 833 x 843 |
+| 4 | 2 x 2 | 2500 x 1686 | 1250 x 843 |
+| 5, 6 | 3 x 2 | 2500 x 1686 | 833 x 843 |
+| 7, 8 | 4 x 2 | 2500 x 1686 | 625 x 843 |
+| 9 to 12 | 4 x 3 | 2500 x 1686 | 625 x 562 |
+
+Entries fill the grid left to right, then top to bottom, in Menu order. Cell
+width is the image width divided by the columns, rounded down (833 x 3 leaves
+the last pixel column outside every area). More entries keep 4 columns and add
+rows; a rich menu holds 20 areas at most, and a Menu of more than 20 shows 19
+and a "เพิ่มเติม" area. Draw the label of each entry large and centred, with
+the other Locale small under it: the rich menu is one picture for every
+Student, so text in a Locale cannot follow the Student. A Module that adds a
+Menu entry changes the count: redraw the image. An image whose cells do not match the Menu still uploads and links; the
+Student taps the wrong thing. Keep a test that counts the cells against
+the Menu, as the example does.
+
+The example Deployment draws its images with a script and bundles them:
+
+- `deployments/example/assets/richmenu/make.sh` writes `locked.png` (1 cell)
+  and `unlocked.png` (3 cells: latest news, contact Staff, unlink) in
+  fictional Seal Bay University blue, Thai large with English small. It
+  needs `rsvg-convert` (librsvg) and ImageMagick 7: ImageMagick's own text
+  does no complex text layout, so Thai vowels and tone marks come out
+  detached, while librsvg lays the text out with Pango. Change the labels or
+  cells in the script, run it, set `LOCKED_CELLS` or `UNLOCKED_CELLS` in
+  `src/menu_images.rs`, and commit the PNGs. A test fails while the cell
+  counts and the Menus' entries differ, so a new Module entry cannot ship
+  with the old picture.
+- Both binaries compile the PNGs in (`include_bytes!`, about 116 KB), so the
+  example on real LINE shows its rich menus with no setting.
+- Native: `LINE_MENU_IMAGE_LOCKED` and `LINE_MENU_IMAGE_UNLOCKED` name PNG
+  files to use instead (`Secrets::with_menu_image_files`). Unset or empty is
+  the bundled image; an unreadable file stops the start, naming the variable
+  and the path. Workers have no files: a customer's Deployment bundles its
+  own bytes (`include_bytes!`) or reads them from an asset binding and passes
+  them to `LineConfig::with_menu_images`.
+- With a non-empty `LINE_ACCESS_TOKEN` the Deployment checks both images
+  before it serves (`LineConfig::check_menu_images`: a PNG of 2500 x 843 or
+  2500 x 1686 px under 1 MB) and refuses to start otherwise, with a message
+  that names `LINE_MENU_IMAGE_LOCKED` and `LINE_MENU_IMAGE_UNLOCKED`, instead
+  of failing on the first Inbound. An empty token (the Fake Channel, demos,
+  `just e2e`) skips the check.
 
 Each Menu becomes one rich menu, created on first use and reused by name:
 `harpseal-<key>-<generation>-<hash>`. `<hash>` covers the rendered rich menu
