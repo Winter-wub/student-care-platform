@@ -34,12 +34,14 @@ Administrator = [
     "kernel.backup.download",
     "announcements.view", "announcements.send", "announcements.retract",
     "fees.import",
+    "reminders.send",
 ]
 Officer = [
     "kernel.student.view", "kernel.student.edit",
     "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.import", "kernel.usage.view",
     "announcements.view", "announcements.send", "announcements.retract",
+    "reminders.send",
 ]
 Viewer = ["kernel.student.view", "kernel.usage.view", "announcements.view"]
 

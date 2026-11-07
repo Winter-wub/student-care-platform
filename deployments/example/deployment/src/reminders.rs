@@ -1,0 +1,217 @@
+//! A customer Module that reminds chosen Students (#73): every Monday at
+//! 09:00 the Students tagged `fee_due` get a fee reminder, by chat when
+//! linked, by email otherwise ([`harpseal::JobContext::notify`]); Staff
+//! can also send it now to a pasted list from `/admin/reminders`
+//! ([`harpseal::PageState::notify`]).
+//!
+//! The weekly Job picks the Students and enqueues one `reminders.send` Job
+//! per [`MAX_NOTIFY`] of them, so each run stays within the Workers
+//! subrequest budget. The notice key names the week: a retried run, or the
+//! Job enqueued twice, sends nobody the reminder twice.
+
+use axum::Form;
+use axum::extract::State;
+use axum::response::{Html, IntoResponse, Response};
+use axum::routing::get;
+use harpseal::audience::parse_student_ids;
+use harpseal::{
+    AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY,
+    Message, Module, ModuleRegistrar, Notice, NotifyOutcome, NotifyTo, Permission, Result,
+    Statement, Value, ui,
+};
+use maud::html;
+
+/// The weekly Job.
+pub const WEEKLY: &str = "reminders.weekly";
+/// One chunk of the weekly reminder.
+pub const SEND: &str = "reminders.send";
+/// The Tag that selects the Students.
+pub const TAG: &str = "fee_due";
+/// The back-office page.
+pub const PATH: &str = "/reminders";
+/// Who may send the reminder from the page.
+pub const PERMISSION: Permission = Permission::new("reminders.send", "Send the fee reminder");
+
+const DAY_MS: i64 = 86_400_000;
+
+/// The Module.
+pub struct Reminders;
+
+const TEXTS: &[CatalogEntry] = &[
+    CatalogEntry::new("reminders.title", "th", "เตือนชำระค่าธรรมเนียม"),
+    CatalogEntry::new("reminders.title", "en", "Fee reminder"),
+    CatalogEntry::new("reminders.ids", "th", "รหัสนักศึกษา (สูงสุด 40 คน)"),
+    CatalogEntry::new("reminders.ids", "en", "Student IDs (up to 40)"),
+    CatalogEntry::new("reminders.send", "th", "ส่งเตือนตอนนี้"),
+    CatalogEntry::new("reminders.send", "en", "Send now"),
+];
+
+/// The reminder, in Thai and English, under `key`.
+pub fn notice(key: &str) -> Notice {
+    let th = "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้";
+    let en = "Seal Bay University: please pay your tuition fee by this Friday.";
+    Notice::new("reminders", key)
+        .locale(
+            Locale::th(),
+            vec![Message::text(th)],
+            "เตือนชำระค่าธรรมเนียม",
+            th,
+        )
+        .locale(Locale::en(), vec![Message::text(en)], "Fee reminder", en)
+}
+
+impl Module for Reminders {
+    fn name(&self) -> &'static str {
+        "reminders"
+    }
+
+    fn register(&self, r: &mut ModuleRegistrar) {
+        r.permission(PERMISSION)
+            .messages(TEXTS)
+            .job(JobSpec::scheduled(WEEKLY, "0 9 * * 1"), weekly)
+            .job(JobSpec::new(SEND), send)
+            .back_office_page(
+                PERMISSION.id,
+                PATH,
+                "reminders.title",
+                60,
+                get(page).post(send_now),
+            );
+    }
+}
+
+/// `reminders.weekly`: the tagged Students, one `reminders.send` per chunk.
+async fn weekly(cx: JobContext, _job: Job) -> Result<()> {
+    let offset = i64::from(cx.config.utc_offset_minutes()?) * 60_000;
+    let week = (cx.services.now_ms() + offset) / DAY_MS / 7;
+    let key = format!("reminders:{TAG}:w{week}");
+    let rows = cx
+        .services
+        .db
+        .query(
+            Statement::new(
+                "SELECT DISTINCT s.student_code FROM student s JOIN student_tag st \
+                 ON st.student_id = s.id JOIN tag t ON t.id = st.tag_id \
+                 WHERE t.name = ? AND s.status = 'active' ORDER BY s.student_code",
+            )
+            .bind(TAG),
+        )
+        .await?;
+    let codes: Vec<String> = (0..rows.len())
+        .filter_map(|i| rows.get(i, "student_code").and_then(Value::as_text))
+        .map(str::to_string)
+        .collect();
+    let mut stmts = Vec::new();
+    for (n, chunk) in codes.chunks(MAX_NOTIFY).enumerate() {
+        let payload = serde_json::json!({ "key": key, "codes": chunk });
+        let (_, stmt) = cx
+            .jobs
+            .insert_unique(&format!("{key}:{n}"), SEND, &payload, None)?;
+        stmts.push(stmt);
+    }
+    if !stmts.is_empty() {
+        cx.services.db.batch(stmts).await?;
+    }
+    Ok(())
+}
+
+/// `reminders.send`: one chunk. Failed Students make the run fail, so the
+/// Job's retry tries them again; the key keeps the others from a repeat.
+async fn send(cx: JobContext, job: Job) -> Result<()> {
+    let p: serde_json::Value = serde_json::from_str(&job.payload)
+        .map_err(|_| Error::Invalid("job payload is not JSON".into()))?;
+    let key = p["key"].as_str().unwrap_or_default();
+    let to: Vec<NotifyTo> = p["codes"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str())
+                .map(NotifyTo::code)
+                .collect()
+        })
+        .unwrap_or_default();
+    let r = cx.notify(&notice(key), &to).await?;
+    let note = format!(
+        "chat {}, email {}, skipped {}, failed {}",
+        r.sent, r.emailed, r.skipped, r.failed
+    );
+    cx.progress(&note).await?;
+    if r.failed > 0 {
+        return Err(Error::Platform(note));
+    }
+    Ok(())
+}
+
+/// The form; its `key` makes a second click of the same form a no-op.
+async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
+    let key = s.services.new_id().unwrap_or_default();
+    let t = |k: &str| s.catalog.t(&staff.locale, k);
+    let body = html! {
+        section class="card" {
+            h1 { (t("reminders.title")) }
+            form method="post" action={ "/admin" (PATH) } {
+                (staff.csrf_field())
+                input type="hidden" name="key" value=(key);
+                div class="field" {
+                    label for="ids" { (t("reminders.ids")) }
+                    textarea id="ids" name="ids" rows="6" {}
+                }
+                button type="submit" { (t("reminders.send")) }
+            }
+        }
+    };
+    Html(ui::back_office(&s, &staff, &t("reminders.title"), body).into_string()).into_response()
+}
+
+/// Sends the reminder to the pasted student IDs and lists the outcome.
+async fn send_now(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    Form(form): Form<Vec<(String, String)>>,
+) -> Response {
+    let field = |k: &str| {
+        form.iter()
+            .find(|(n, _)| n == k)
+            .map_or("", |(_, v)| v.as_str())
+    };
+    let key = field("key");
+    let ids = parse_student_ids(field("ids"));
+    let to: Vec<NotifyTo> = ids.iter().map(NotifyTo::code).collect();
+    let title = s.catalog.t(&staff.locale, "reminders.title");
+    let body = match s
+        .notify(&notice(&format!("reminders:page:{key}")), &to)
+        .await
+    {
+        Ok(r) => html! {
+            section class="card" {
+                h1 { (title) }
+                p { "chat " (r.sent) ", email " (r.emailed) ", skipped " (r.skipped)
+                    ", failed " (r.failed) }
+                ul class="list" {
+                    @for n in &r.students {
+                        li { (code(&n.to)) ": " (outcome(n.outcome)) }
+                    }
+                }
+            }
+        },
+        Err(e) => html! { section class="card" { h1 { (title) } p { (e.to_string()) } } },
+    };
+    Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
+}
+
+fn code(to: &NotifyTo) -> String {
+    match to {
+        NotifyTo::Code(c) => c.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn outcome(o: NotifyOutcome) -> &'static str {
+    match o {
+        NotifyOutcome::Sent => "chat",
+        NotifyOutcome::Emailed => "email",
+        NotifyOutcome::Skipped(_) => "skipped",
+        NotifyOutcome::Failed(_) => "failed",
+        _ => "?",
+    }
+}

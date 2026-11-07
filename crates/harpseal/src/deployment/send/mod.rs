@@ -165,6 +165,23 @@ impl Deployment {
             .await
     }
 
+    /// A keyed Push on behalf of `module` that starts at Message `first`
+    /// of the batch, without a resume token: a notice (#73) resent after
+    /// the Messages its rows record as wholly sent ([`Deployment::sent_prefix`]).
+    pub(crate) async fn deliver_from(
+        &self,
+        to: &ChannelAccountId,
+        msgs: &[Message],
+        locale: &Locale,
+        module: Option<&str>,
+        key: &str,
+        first: usize,
+    ) -> Result<Vec<SendReceipt>> {
+        let opts = SendOptions::new().key(key).from_message(first);
+        self.deliver_keyed(to, None, msgs, locale, module, &opts)
+            .await
+    }
+
     async fn deliver_keyed(
         &self,
         to: &ChannelAccountId,

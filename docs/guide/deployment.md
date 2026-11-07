@@ -122,6 +122,59 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   signs in on the Fake Channel. See `deployments/example` (`my_info.rs`)
   and `crates/harpseal-testing/tests/app_module*.rs` for LINE and Telegram.
 
+#### Notifying chosen Students
+
+A Module tells Students it chose (a fee reminder, a grade notice) from a
+Job or a back-office action with `JobContext::notify` or
+`PageState::notify`. It picks the Students itself (no Audience here):
+
+```rust
+let notice = Notice::new("reminders", format!("reminders:fee_due:w{week}"))
+    .locale(Locale::th(), vec![Message::text(th)], "เตือนชำระค่าธรรมเนียม", th)
+    .locale(Locale::en(), vec![Message::text(en)], "Fee reminder", en);
+let report = cx.notify(&notice, &[NotifyTo::code("68010001")]).await?;
+// report.students[i].outcome: Sent | Emailed | Skipped(NotifySkip) | Failed(..)
+```
+
+- **Per Student**, in the order given (`NotifyTo::Id` or
+  `NotifyTo::code`): the version for the Student's Locale (else the
+  default Locale's; else `Skipped(NoText)`) goes as one keyed Push on
+  every `active` Link, recorded and metered exactly like a Kernel send
+  (`outbound_message` rows with the Module's name and batch key
+  `notify:<key>:<student id>`, `usage_daily`, a refused Push marks the
+  Link `unreachable`). With no `active` Link, or when every Link turns
+  out unreachable, the Student gets the email (subject and plain text of
+  that version) if they have an address, else `Skipped(NoAddress)`. An
+  unknown id or code is `Skipped(Unknown)`, a Student who `left` is
+  `Skipped(Left)`. `NotifyReport` also counts `sent`, `emailed`,
+  `skipped` and `failed`.
+- **The key.** One key names one notice. A later call with the same key
+  sends no Student anything twice: a Student done before is reported
+  again (`again: true`) without a send. That is what makes a retried Job
+  or a second click safe; a new notice needs a new key (the example
+  names the week). The Kernel keeps one `notify_delivery` row per key and
+  Student (migration 0014). Chat is resent only past what its
+  `outbound_message` rows record as wholly sent, so even Telegram (no
+  retry keys) gets no Message twice after a partial send. An email is
+  claimed before it is sent and never sent twice: an email cut off by a
+  crash between the send and the write is not retried (at most once).
+- **Failures.** A rate limit, a partial send or a database error ends the
+  call with `Err` (what went out is recorded): let the Job retry with the
+  same notice. A Channel's other refusal is `Failed("platform")` and a
+  failed email `Failed("email")`; the call goes on with the next Student,
+  and a later call with the key tries those again. The example's chunk
+  Job returns an error when `failed > 0`, so its retry does that.
+- **Size.** At most `MAX_NOTIFY` (40) Students per call (`Error::Invalid`
+  beyond, nothing sent). Each costs one outgoing request per Push request
+  on each Link (LINE packs up to 5 Messages into one; Telegram sends one
+  per Message) or one email request, so 40 one-request notices stay
+  under the 50 subrequests of a Workers free-plan invocation. A longer
+  list goes over several Job runs: the example's weekly Job enqueues one
+  `reminders.send` Job per 40 Students. A page should notify a handful
+  only: the Staff member waits for every send.
+- See `deployments/example` (`reminders.rs`: the weekly Job and the
+  `/admin/reminders` page) and `crates/harpseal-testing/tests/module_notify.rs`.
+
 #### Jobs
 
 A Module registers Job kinds (`r.job(JobSpec::new("news.send"), handler)`, or

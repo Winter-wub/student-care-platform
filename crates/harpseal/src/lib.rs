@@ -101,6 +101,7 @@ pub use module::{
     MAX_UPLOAD_BYTES, Module, ModuleRegistrar, PageState, SheetKind, SheetUpload, UPLOAD_KEEP_MS,
     UploadRejection, Uploads,
 };
+pub use module::{MAX_NOTIFY, Notice, Notified, NotifyOutcome, NotifyReport, NotifySkip, NotifyTo};
 pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};
 pub use render::RenderCx;
