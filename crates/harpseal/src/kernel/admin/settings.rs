@@ -87,7 +87,11 @@ pub(super) fn locales(catalog: &Catalog, config: &DeploymentConfig) -> Vec<Strin
     rest.extend(config.texts.keys().cloned());
     let default = config.default_locale.0.clone();
     rest.remove(&default);
-    std::iter::once(default).chain(rest).collect()
+    // `''` holds the Consent version and Module settings, never texts.
+    std::iter::once(default)
+        .chain(rest)
+        .filter(|l| !l.trim().is_empty())
+        .collect()
 }
 
 /// Prefixes of texts the back office reads from the build-time catalog

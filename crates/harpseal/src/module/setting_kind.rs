@@ -19,6 +19,35 @@ pub enum SettingKind {
     Date,
     /// An `https://` URL with a host, up to 500 characters.
     Url,
+    /// A bank or account number as Students copy it: ASCII digits, `-`
+    /// and spaces only, at least one digit, up to 64 characters.
+    AccountNumber,
+}
+
+/// Longest [`SettingKind::AccountNumber`], in characters.
+const MAX_ACCOUNT_CHARS: usize = 64;
+
+/// Code points that change how text is shown without being seen: bidi
+/// embeddings, overrides and isolates (U+202A-202E, U+2066-2069), the
+/// direction marks (U+200E, U+200F, U+061C), zero-width characters
+/// (U+200B-200D, U+2060, U+FEFF) and the line and paragraph separators
+/// (U+2028, U+2029). A value holding one could read differently from what
+/// a Student copies (an account number reversed by U+202E), so every kind
+/// refuses them.
+pub(crate) fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{202A}'..='\u{202E}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{200E}'
+            | '\u{200F}'
+            | '\u{061C}'
+            | '\u{200B}'..='\u{200D}'
+            | '\u{2060}'
+            | '\u{FEFF}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
 }
 
 impl SettingKind {
@@ -34,6 +63,7 @@ impl SettingKind {
         }
         let max = match self {
             SettingKind::MultilineText => MAX_MULTILINE_CHARS,
+            SettingKind::AccountNumber => MAX_ACCOUNT_CHARS,
             _ => MAX_LINE_CHARS,
         };
         if v.chars().count() > max {
@@ -44,6 +74,9 @@ impl SettingKind {
         if !v.chars().all(allowed) {
             return Err("kernel.admin.module_settings.err_text");
         }
+        if v.chars().any(invisible) {
+            return Err("kernel.admin.module_settings.err_invisible");
+        }
         match self {
             SettingKind::Text | SettingKind::MultilineText => Ok(v),
             SettingKind::Number => number(&v)
@@ -53,6 +86,8 @@ impl SettingKind {
             SettingKind::Date => Err("kernel.admin.module_settings.err_date"),
             SettingKind::Url if https_url(&v) => Ok(v),
             SettingKind::Url => Err("kernel.admin.module_settings.err_url"),
+            SettingKind::AccountNumber if account(&v) => Ok(v),
+            SettingKind::AccountNumber => Err("kernel.admin.module_settings.err_account"),
         }
     }
 
@@ -64,8 +99,16 @@ impl SettingKind {
             SettingKind::Number => "kernel.admin.module_settings.kind_number",
             SettingKind::Date => "kernel.admin.module_settings.kind_date",
             SettingKind::Url => "kernel.admin.module_settings.kind_url",
+            SettingKind::AccountNumber => "kernel.admin.module_settings.kind_account",
         }
     }
+}
+
+/// ASCII digits, `-` and spaces, with at least one digit.
+fn account(v: &str) -> bool {
+    v.bytes().any(|b| b.is_ascii_digit())
+        && v.bytes()
+            .all(|b| b.is_ascii_digit() || b == b'-' || b == b' ')
 }
 
 pub(super) fn number(v: &str) -> Option<i64> {
@@ -145,6 +188,20 @@ mod tests {
                 .is_ok()
         );
         assert!(Url.check("https://pay.seal-bay.invalid:8443").is_ok());
+        assert_eq!(
+            AccountNumber.check(" 000-0-00000-0 "),
+            Ok("000-0-00000-0".into())
+        );
+        assert!(AccountNumber.check("123 456 7890").is_ok());
+        for bad in [
+            "--",
+            "๐๑๒-๓",
+            "000-0-0000O-0",
+            "000\u{202E}0",
+            &"1".repeat(65),
+        ] {
+            assert!(AccountNumber.check(bad).is_err(), "{bad}");
+        }
         for bad in [
             "http://pay.seal-bay.invalid",
             "javascript:alert(1)",
@@ -155,5 +212,30 @@ mod tests {
         ] {
             assert!(Url.check(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn invisible_and_direction_characters_are_refused_by_every_kind() {
+        let sneaky = [
+            '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}',
+            '\u{2068}', '\u{2069}', '\u{200E}', '\u{200F}', '\u{061C}', '\u{200B}', '\u{200C}',
+            '\u{200D}', '\u{2060}', '\u{FEFF}', '\u{2028}', '\u{2029}',
+        ];
+        for c in sneaky {
+            for (kind, value) in [
+                (Text, format!("บัญชี {c}0-54321-0-000")),
+                (MultilineText, format!("ธนาคาร\nเลขที่ {c}0-54321-0-000")),
+                (Url, format!("https://pay.seal-bay.invalid/{c}x")),
+            ] {
+                assert_eq!(
+                    kind.check(&value),
+                    Err("kernel.admin.module_settings.err_invisible"),
+                    "{kind:?} U+{:04X}",
+                    c as u32
+                );
+            }
+        }
+        // Thai combining marks are not invisible characters.
+        assert!(Text.check("ค่าธรรมเนียมภาคเรียนที่ ๒").is_ok());
     }
 }

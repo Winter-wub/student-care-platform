@@ -41,8 +41,10 @@ impl ModuleRegistrar {
     /// `build()` refuses ([`crate::BuildError::InvalidSetting`]) a key
     /// that does not start with the Module's name and `.`, holds anything
     /// but `a-z`, `0-9`, `_` and `.`, is longer than 64 bytes or declared
-    /// twice; a `default` its `kind` refuses; an undeclared `permission`;
-    /// and a label or help key without a text in the default Locale.
+    /// twice, starts with `kernel.` (outside the Kernel) or is also a
+    /// catalog text key; a `default` its `kind` refuses; an undeclared
+    /// `permission`; and a label or help key without a text in the default
+    /// Locale. See `docs/guide/settings.md`.
     pub fn setting(
         &mut self,
         key: &'static str,
@@ -69,7 +71,8 @@ impl ModuleRegistrar {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SettingValue {
-    /// [`SettingKind::Text`] or [`SettingKind::MultilineText`].
+    /// [`SettingKind::Text`], [`SettingKind::MultilineText`] or
+    /// [`SettingKind::AccountNumber`].
     Text(String),
     /// [`SettingKind::Number`].
     Number(i64),
@@ -85,7 +88,9 @@ impl SettingValue {
             SettingKind::Number => SettingValue::Number(number(&v).unwrap_or_default()),
             SettingKind::Date => SettingValue::Date(v),
             SettingKind::Url => SettingValue::Url(v),
-            SettingKind::Text | SettingKind::MultilineText => SettingValue::Text(v),
+            SettingKind::Text | SettingKind::MultilineText | SettingKind::AccountNumber => {
+                SettingValue::Text(v)
+            }
         }
     }
 
@@ -150,17 +155,28 @@ impl Settings {
     }
 
     /// The value of `key`: the saved one, or the default when none is
-    /// saved (or the saved one no longer passes its kind's check, after a
-    /// Module changed the kind). An undeclared key is an
-    /// [`Error::Invalid`].
+    /// saved. An undeclared key is an [`Error::Invalid`], and so is a
+    /// saved value that no longer passes its kind's check (a restored row,
+    /// a Module that changed the kind or a check tightened since): never
+    /// the default in its place, which could show Students an outdated
+    /// value such as the built-in bank account. Answer such an error with
+    /// "not set"; `/admin/settings` flags the value for Staff to save
+    /// again.
     pub async fn get(&self, key: &str) -> Result<SettingValue> {
         let spec = self
             .spec(key)
             .ok_or_else(|| Error::Invalid(format!("no Module declares setting `{key}`")))?;
-        let stored = self.stored(key).await?;
-        let value = stored
-            .and_then(|(v, _, _)| spec.kind.check(&v).ok())
-            .unwrap_or_else(|| spec.default.to_string());
+        let value = match self.stored(key).await? {
+            None => spec.default.to_string(),
+            Some((v, _, _)) => match spec.kind.check(&v) {
+                Ok(ok) if ok == v => v,
+                _ => {
+                    return Err(Error::Invalid(format!(
+                        "the saved value of setting `{key}` fails its check; save it again"
+                    )));
+                }
+            },
+        };
         Ok(SettingValue::of(spec.kind, value))
     }
 
@@ -213,6 +229,14 @@ pub(crate) fn check(
         if !permissions.iter().any(|p| p.id == s.permission) {
             return Err(refuse(s, format!("unknown permission `{}`", s.permission)));
         }
+        // The Texts page edits catalog keys: a setting key that is also
+        // one would put two editors on related names.
+        if catalog.knows(s.key) {
+            return Err(refuse(
+                s,
+                "the key is also a text key; give the label its own key".into(),
+            ));
+        }
         if let Some(k) = [s.label_key, s.help_key]
             .into_iter()
             .find(|k| !catalog.has(&locale, k))
@@ -238,6 +262,11 @@ fn invalid(spec: &SettingSpec, others: &[SettingSpec]) -> Option<String> {
     let chars = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.';
     if !k.bytes().all(chars) {
         return Some("the key may hold only a-z, 0-9, `_` and `.`".into());
+    }
+    // A Module named `kernel.x` must not reach the Kernel's own rows
+    // (the Consent version, `kernel.backup.notified`, …).
+    if spec.module != crate::kernel::NAME && k.starts_with("kernel.") {
+        return Some("only the Kernel declares `kernel.` keys".into());
     }
     if k == crate::kernel::text::CONSENT_VERSION_KEY {
         return Some("the Consent version is not a Module setting".into());

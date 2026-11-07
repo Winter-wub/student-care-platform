@@ -142,6 +142,8 @@ only in the environment or Worker secrets, never in TOML.
   `build()` refuses, Jobs, sends, retries, webhook duplicates, writing from code
 - [Notifying chosen Students](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/notify.md): a Module's Notice,
   chat when linked, email otherwise, never twice
+- [A Module's settings](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/settings.md): typed values
+  Staff change on `/admin/settings`, each only with its own Permission
 - [Self-hosting](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/self-hosting.md): settings, the CLI, the demo
   seed, dev mode, reverse proxies, backup and restore
 - [The back office](https://github.com/Winter-wub/student-care-platform/blob/main/docs/guide/back-office.md): every page and its Permission

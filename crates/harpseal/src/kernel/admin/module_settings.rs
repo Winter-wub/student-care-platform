@@ -110,6 +110,11 @@ fn card(
     let current = stored.as_ref().map_or(spec.default, |(v, _, _)| v.as_str());
     let shown = err.map_or(current, |(_, value, _)| value);
     let can = v.staff.can(spec.permission);
+    // A saved value its kind now refuses (a restored row, a tightened
+    // check): Students get "not set" until it is saved again.
+    let broken = stored
+        .as_ref()
+        .is_some_and(|(s, _, _)| spec.kind.check(s).as_deref() != Ok(s.as_str()));
     html! {
         section class="card" id=(id) {
             h3 { (v.t(spec.label_key)) " "
@@ -118,6 +123,9 @@ fn card(
                 } @else {
                     span class="chip" { (v.t("kernel.admin.module_settings.default_value")) }
                 }
+            }
+            @if broken {
+                div class="flash err" role="status" { (v.t("kernel.admin.module_settings.broken")) }
             }
             p class="muted" { (v.t(spec.help_key)) }
             p class="muted" { code { (key) } " · " (v.t(spec.kind.label_key())) }
@@ -131,7 +139,7 @@ fn card(
                     input type="hidden" name="version" value=(settings::version(stored.as_ref().map(|(v, _, _)| v.as_str())));
                     div class="field" {
                         label for=(format!("{id}-value")) { (v.t("kernel.admin.module_settings.value")) }
-                        (input(spec.kind, &format!("{id}-value"), shown, err.is_some()))
+                        (input(spec.kind, &format!("{id}-value"), shown, err.is_some() || broken))
                         @if let Some((_, _, why)) = err {
                             p class="field-error" { (v.t(why)) }
                         }
@@ -155,7 +163,12 @@ fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {
     let max = crate::module::MAX_LINE_CHARS.to_string();
     match kind {
         SettingKind::MultilineText => html! {
-            textarea id=(id) name="value" required rows="5" aria-invalid=[bad] { (value) }
+            textarea id=(id) name="value" required rows="5"
+                maxlength=(crate::module::MAX_MULTILINE_CHARS) aria-invalid=[bad] { (value) }
+        },
+        SettingKind::AccountNumber => html! {
+            input id=(id) name="value" type="text" inputmode="numeric" required maxlength="64"
+                pattern="[0-9 \\-]+" autocomplete="off" value=(value) aria-invalid=[bad];
         },
         SettingKind::Number => html! {
             input id=(id) name="value" type="number" step="1" required value=(value) aria-invalid=[bad];

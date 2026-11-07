@@ -57,6 +57,26 @@ pub(super) const TEXTS: &[E] = th_en![
         "https link"
     ),
     (
+        "kernel.admin.module_settings.kind_account",
+        "เลขที่บัญชี",
+        "Account number"
+    ),
+    (
+        "kernel.admin.module_settings.err_invisible",
+        "มีอักขระที่มองไม่เห็นหรือสลับทิศทางข้อความ ลบออกแล้วพิมพ์ใหม่",
+        "Contains invisible or text-direction characters; remove them and type it again"
+    ),
+    (
+        "kernel.admin.module_settings.err_account",
+        "ใช้ได้เฉพาะตัวเลข 0-9 ขีด (-) และช่องว่าง",
+        "Use only digits 0-9, hyphens (-) and spaces"
+    ),
+    (
+        "kernel.admin.module_settings.broken",
+        "ค่าที่บันทึกไว้ไม่ผ่านการตรวจแล้ว นักศึกษาจะเห็นว่ายังไม่ได้ตั้งค่า กรุณาบันทึกใหม่",
+        "The saved value no longer passes its check; Students see it as not set. Save it again."
+    ),
+    (
         "kernel.admin.module_settings.err_empty",
         "กรุณากรอกค่า",
         "Enter a value"

@@ -1,8 +1,9 @@
 //! The Student's side of Fees (#75): a Mini App page, linked from the
 //! Mini App home, with the Student's own outstanding balance and the
-//! bank account to pay into, the Module setting
+//! bank account to pay into, the Module settings [`super::BANK_NAME`] and
 //! [`super::BANK_ACCOUNT`] read fresh on every view, so a change on
-//! `/admin/settings` shows on the next open.
+//! `/admin/settings` shows on the next open. A saved value that fails its
+//! check shows "not set", never a default account.
 //!
 //! Like "My info", the handler takes [`AppStudent`] and nothing else from
 //! the request: no URL or form value can show another Student's balance.
@@ -28,17 +29,35 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("fees.nothing", "en", "Nothing outstanding"),
     CatalogEntry::new("fees.pay_to", "th", "ชำระเข้าบัญชี"),
     CatalogEntry::new("fees.pay_to", "en", "Pay into"),
-    CatalogEntry::new("fees.bank_account", "th", "บัญชีรับชำระค่าธรรมเนียม"),
-    CatalogEntry::new("fees.bank_account", "en", "Bank account for fees"),
+    CatalogEntry::new("fees.not_set", "th", "ยังไม่ได้ตั้งค่า ติดต่อกองคลัง"),
+    CatalogEntry::new("fees.not_set", "en", "Not set yet; ask the finance office"),
+    CatalogEntry::new("fees.bank_name_label", "th", "ธนาคารและชื่อบัญชีรับชำระ"),
     CatalogEntry::new(
-        "fees.bank_account_help",
+        "fees.bank_name_label",
+        "en",
+        "Bank and account name for fees",
+    ),
+    CatalogEntry::new(
+        "fees.bank_name_help",
         "th",
         "แสดงให้นักศึกษาเห็นในหน้า ค่าธรรมเนียมของฉัน ทันทีที่บันทึก",
     ),
     CatalogEntry::new(
-        "fees.bank_account_help",
+        "fees.bank_name_help",
         "en",
         "Shown to Students on My fees as soon as it is saved.",
+    ),
+    CatalogEntry::new("fees.bank_account_label", "th", "เลขที่บัญชีรับชำระ"),
+    CatalogEntry::new("fees.bank_account_label", "en", "Account number for fees"),
+    CatalogEntry::new(
+        "fees.bank_account_help",
+        "th",
+        "เฉพาะตัวเลข ขีด และช่องว่าง นักศึกษาคัดลอกไปโอนได้ตรงตัว",
+    ),
+    CatalogEntry::new(
+        "fees.bank_account_help",
+        "en",
+        "Digits, hyphens and spaces only, so Students copy it exactly.",
     ),
     CatalogEntry::new("fees.back", "th", "กลับหน้าของฉัน"),
     CatalogEntry::new("fees.back", "en", "Back to my page"),
@@ -51,9 +70,10 @@ pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response 
         Ok(rows) => rows.get(0, "amount_satang").and_then(|v| v.as_i64()),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let Ok(account) = s.settings().text(super::BANK_ACCOUNT).await else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    };
+    // An Err (a saved value failing its check) shows "not set".
+    let settings = s.settings();
+    let bank = settings.text(super::BANK_NAME).await.ok();
+    let account = settings.text(super::BANK_ACCOUNT).await.ok();
     let title = me.t("fees.mine");
     let body = html! {
         section class="card" {
@@ -70,9 +90,13 @@ pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response 
         }
         section class="card" id="bank-account" {
             h2 { (me.t("fees.pay_to")) }
-            p { @for (i, line) in account.lines().enumerate() {
-                @if i > 0 { br; } (line)
-            } }
+            @match (bank, account) {
+                (Some(bank), Some(account)) => {
+                    p id="bank-name" { (bank) }
+                    p { strong id="account-number" class="code" { (account) } }
+                }
+                _ => { p id="not-set" { (me.t("fees.not_set")) } }
+            }
         }
         p { a class="btn secondary" href="/app" { (me.t("fees.back")) } }
     };

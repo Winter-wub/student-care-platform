@@ -19,9 +19,11 @@
 //!    finds no upload succeeds only if `fees_balance` holds its rows.
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
 //!
-//! The bank account Students pay into is a Module setting (#75),
-//! [`BANK_ACCOUNT`], edited on `/admin/settings` only with
-//! [`BANK_ACCOUNT_EDIT`] (not with `kernel.setting.edit` alone) and shown
+//! Where Students pay is two Module settings (#75), the bank and branch
+//! [`BANK_NAME`] and the account number [`BANK_ACCOUNT`] (digits, `-` and
+//! spaces only, so no hidden character can change what Students copy),
+//! edited on `/admin/settings` only with [`BANK_ACCOUNT_EDIT`] (not with
+//! `kernel.setting.edit` alone) and shown
 //! on the Student's Mini App page [`student::PATH`].
 
 pub mod read;
@@ -47,7 +49,9 @@ pub const NAME: &str = "fees";
 pub const IMPORT: &str = "fees.import";
 /// The Job that imports a confirmed file.
 pub const JOB: &str = "fees.import";
-/// The setting: where Students pay (fictional default).
+/// The setting: the bank and branch Students pay at (fictional default).
+pub const BANK_NAME: &str = "fees.bank_name";
+/// The setting: the account number Students pay into (fictional default).
 pub const BANK_ACCOUNT: &str = "fees.bank_account";
 /// The only Permission that edits [`BANK_ACCOUNT`].
 pub const BANK_ACCOUNT_EDIT: &str = "fees.bank_account.edit";
@@ -74,11 +78,19 @@ impl Module for Fees {
         .messages(texts::TEXTS)
         .messages(student::TEXTS)
         .setting(
-            BANK_ACCOUNT,
-            SettingKind::MultilineText,
-            "ธนาคารทะเลใส สาขาอ่าวแมวน้ำ\nเลขที่บัญชี 000-0-00000-0\nชื่อบัญชี มหาวิทยาลัยซีลเบย์",
+            BANK_NAME,
+            SettingKind::Text,
+            "ธนาคารทะเลใส สาขาอ่าวแมวน้ำ บัญชี มหาวิทยาลัยซีลเบย์",
             BANK_ACCOUNT_EDIT,
-            "fees.bank_account",
+            "fees.bank_name_label",
+            "fees.bank_name_help",
+        )
+        .setting(
+            BANK_ACCOUNT,
+            SettingKind::AccountNumber,
+            "000-0-00000-0",
+            BANK_ACCOUNT_EDIT,
+            "fees.bank_account_label",
             "fees.bank_account_help",
         )
         .public(student::PATH, get(student::page))

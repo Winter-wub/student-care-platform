@@ -24,7 +24,14 @@ impl Module for Bad {
 #[test]
 fn build_refuses_a_wrong_declaration() {
     use SettingKind::*;
-    let cases: [(Declare, &str); 6] = [
+    let cases: [(Declare, &str); 7] = [
+        (
+            |r| {
+                r.messages(&[CatalogEntry::new("bad.n", "th", "ข้อความ")]);
+                r.setting("bad.n", Text, "x", "bad.edit", "bad.label", "bad.label");
+            },
+            "text key",
+        ),
         (
             |r| {
                 r.setting("other.key", Text, "x", "bad.edit", "bad.label", "bad.label");
@@ -74,4 +81,34 @@ fn build_refuses_a_wrong_declaration() {
             "{err}"
         );
     }
+}
+
+/// A Module whose name starts like a Kernel key.
+struct KernelLike;
+
+impl Module for KernelLike {
+    fn name(&self) -> &'static str {
+        "kernel.backup"
+    }
+    fn register(&self, r: &mut ModuleRegistrar) {
+        r.permission(Permission::new("kernel.backup.x", "Edit"))
+            .messages(&[CatalogEntry::new("kernel.backup.label", "th", "ป้าย")])
+            .setting(
+                "kernel.backup.notified",
+                SettingKind::Text,
+                "x",
+                "kernel.backup.x",
+                "kernel.backup.label",
+                "kernel.backup.label",
+            );
+    }
+}
+
+#[test]
+fn only_the_kernel_declares_kernel_keys() {
+    let h = Harness::new();
+    let Err(err) = h.builder().module(KernelLike).build() else {
+        panic!("a Module reached the Kernel's `kernel.backup.notified` row");
+    };
+    assert!(err.to_string().contains("only the Kernel"), "{err}");
 }

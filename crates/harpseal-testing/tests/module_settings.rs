@@ -17,7 +17,7 @@ const DEFAULT_ACCOUNT: &str = "ธนาคารทะเลใส\nเลข�
 const EDIT: &str = "dues.account.edit";
 
 const TEXTS: &[CatalogEntry] = &[
-    CatalogEntry::new("dues.account", "th", "บัญชีรับชำระ"),
+    CatalogEntry::new("dues.account_label", "th", "บัญชีรับชำระ"),
     CatalogEntry::new("dues.account_help", "th", "แสดงในหน้าค่าธรรมเนียม"),
     CatalogEntry::new("dues.other", "th", "ค่าอื่น"),
 ];
@@ -53,7 +53,7 @@ impl Module for Dues {
                 SettingKind::MultilineText,
                 DEFAULT_ACCOUNT,
                 EDIT,
-                "dues.account",
+                "dues.account_label",
                 "dues.account_help",
             )
             .job(JobSpec::new("dues.report"), report);
@@ -251,6 +251,13 @@ async fn every_kind_is_checked_on_the_server() {
         ("dues.due", "2027-02-30", "ปปปป-ดด-วว"),
         ("dues.pay_url", "http://pay.seal-bay.invalid", "https://"),
         ("dues.pay_url", "javascript:alert(1)", "https://"),
+        // A right-to-left override makes the digits read reversed.
+        ("dues.title", "บัญชี \u{202E}0-54321-0-000", "มองไม่เห็น"),
+        (
+            "dues.pay_url",
+            "https://pay.seal-bay.invalid/\u{200B}x",
+            "มองไม่เห็น",
+        ),
     ] {
         let r = save(&b, key, bad).await;
         assert_eq!(r.status, 422, "{key} {bad}");
@@ -342,4 +349,21 @@ async fn a_backup_restores_the_settings() {
     backup::load(&d, &sink, &LoadOptions::new()).await.unwrap();
     assert_eq!(d.settings().text(ACCOUNT).await.unwrap(), "บัญชีที่สำรองไว้");
     assert_eq!(d.settings().text("dues.title").await.unwrap(), "ค่าธรรมเนียม");
+}
+
+#[tokio::test]
+async fn a_saved_value_failing_its_check_is_an_error_never_the_default() {
+    let (h, app) = boot().await;
+    // A restored row, or one saved before a check was tightened.
+    h.db()
+        .execute(Statement::new(
+            "INSERT INTO setting (key, locale, value, updated_at) \
+             VALUES ('dues.title', '', 'ค่าเทอม \u{202E}0-54321', 1)",
+        ))
+        .await
+        .unwrap();
+    let read = app.deployment().settings().text("dues.title").await;
+    assert!(read.is_err(), "{read:?}");
+    let page = signed_in(&h, &app, "Clerk").await.get(PAGE).await.body;
+    assert!(page.contains("ไม่ผ่านการตรวจแล้ว"), "flagged for Staff");
 }

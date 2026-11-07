@@ -60,6 +60,20 @@ fn version(body: &str) -> String {
     body[at..at + body[at..].find('"').unwrap()].to_string()
 }
 
+/// Saves `value` for `key` as `b`, with the token the page showed.
+async fn save(b: &Browser<'_>, key: &str, value: &str) -> harpseal_testing::TestResponse {
+    let form = b.get("/admin/settings").await.body;
+    let at = form
+        .find(&format!("name=\"key\" value=\"{key}\""))
+        .expect("a form for the key");
+    let body = format!(
+        "key={key}&value={}&version={}",
+        urlencode(value),
+        urlencode(&version(&form[at..]))
+    );
+    b.post("/admin/settings", &body).await
+}
+
 #[tokio::test]
 async fn finance_changes_the_bank_account_the_student_sees_next() {
     let h = Harness::new();
@@ -73,25 +87,58 @@ async fn finance_changes_the_bank_account_the_student_sees_next() {
     assert!(home.contains("href=\"/app/fees\""), "{home}");
     let page = student.get(fees::student::PATH).await.body;
     assert!(page.contains("12,500.00 บาท"), "{page}");
-    assert!(page.contains("ธนาคารทะเลใส สาขาอ่าวแมวน้ำ<br>เลขที่บัญชี 000-0-00000-0"));
+    assert!(page.contains("ธนาคารทะเลใส สาขาอ่าวแมวน้ำ"));
+    assert!(page.contains(">000-0-00000-0</strong>"), "{page}");
 
     let finance = signed_in(&h, &app, "Finance").await;
-    let form = finance.get("/admin/settings").await.body;
-    assert!(form.contains("name=\"key\" value=\"fees.bank_account\""));
-    let new = "ธนาคารอ่าวคราม สาขาหาดทราย\r\nเลขที่บัญชี 999-9-99999-9";
-    let body = format!(
-        "key=fees.bank_account&value={}&version={}",
-        urlencode(new),
-        urlencode(&version(&form))
+    assert_eq!(
+        save(&finance, fees::BANK_NAME, "ธนาคารอ่าวคราม สาขาหาดทราย")
+            .await
+            .status,
+        303
     );
-    assert_eq!(finance.post("/admin/settings", &body).await.status, 303);
-
+    assert_eq!(
+        save(&finance, fees::BANK_ACCOUNT, "999-9-99999-9")
+            .await
+            .status,
+        303
+    );
     let page = student.get(fees::student::PATH).await.body;
-    assert!(
-        page.contains("ธนาคารอ่าวคราม สาขาหาดทราย<br>เลขที่บัญชี 999-9-99999-9"),
-        "{page}"
-    );
+    assert!(page.contains("ธนาคารอ่าวคราม สาขาหาดทราย"), "{page}");
+    assert!(page.contains(">999-9-99999-9</strong>"), "{page}");
     assert!(!page.contains("ธนาคารทะเลใส"));
+}
+
+#[tokio::test]
+async fn the_account_number_takes_digits_only_and_a_bad_row_shows_not_set() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let finance = signed_in(&h, &app, "Finance").await;
+    // Reads 000-0-12345-0 on screen, copies as 0-54321-0-000.
+    for bad in ["\u{202E}0-54321-0-000", "000-0-0000O-0", "บัญชี 000"] {
+        let r = save(&finance, fees::BANK_ACCOUNT, bad).await;
+        assert_eq!(r.status, 422, "{bad}");
+    }
+    let r = save(&finance, fees::BANK_NAME, "ธนาคาร\u{2067}ทะเลใส").await;
+    assert_eq!(r.status, 422);
+    // A row that slipped in (a restore) is "not set", never the default.
+    run(
+        &h,
+        "INSERT INTO setting (key, locale, value, updated_at) \
+         VALUES ('fees.bank_account', '', '0-54321-0-000\u{202E}', 1)",
+    )
+    .await;
+    let student = app.browser();
+    student
+        .open_mini_app(&h.fake_channel(), "u-s1", fees::student::PATH)
+        .await;
+    let page = student.get(fees::student::PATH).await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains("ยังไม่ได้ตั้งค่า"), "{}", page.body);
+    assert!(
+        !page.body.contains("000-0-00000-0"),
+        "not the default account"
+    );
 }
 
 #[tokio::test]
@@ -107,7 +154,10 @@ async fn an_administrator_sees_the_bank_account_but_cannot_change_it() {
     );
     assert!(!page.body.contains("name=\"key\""), "no Save button");
     let r = admin
-        .post("/admin/settings", "key=fees.bank_account&value=x&version=-")
+        .post(
+            "/admin/settings",
+            "key=fees.bank_account&value=111&version=-",
+        )
         .await;
     assert_eq!(r.status, 403);
     let account = app
@@ -116,5 +166,5 @@ async fn an_administrator_sees_the_bank_account_but_cannot_change_it() {
         .text(fees::BANK_ACCOUNT)
         .await
         .unwrap();
-    assert!(account.starts_with("ธนาคารทะเลใส"));
+    assert_eq!(account, "000-0-00000-0");
 }
