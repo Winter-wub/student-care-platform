@@ -163,7 +163,7 @@ async fn a_403_on_push_is_unreachable_and_a_429_is_rate_limited() {
 }
 
 #[tokio::test]
-async fn a_429_for_the_monthly_quota_is_a_platform_error() {
+async fn a_429_for_the_monthly_quota_is_quota_exhausted() {
     let (ch, api) = channel();
     api.http()
         .respond_with(429, r#"{"message":"You have reached your monthly limit."}"#);
@@ -171,7 +171,7 @@ async fn a_429_for_the_monthly_quota_is_a_platform_error() {
         .send(&to(), &Delivery::Push, &Message::text("x"), &Locale::th())
         .await;
     assert!(
-        matches!(got, Err(Error::Platform(ref m)) if m.contains("monthly")),
+        matches!(got, Err(Error::QuotaExhausted(ref m)) if m.contains("monthly")),
         "{got:?}"
     );
 }

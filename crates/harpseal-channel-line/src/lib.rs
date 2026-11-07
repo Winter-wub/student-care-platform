@@ -231,6 +231,11 @@ impl Channel for LineChannel {
     fn kind(&self) -> ChannelKind {
         KIND
     }
+    /// LINE answers 409 to a Push whose `X-Line-Retry-Key` it accepted in
+    /// the last 24 hours.
+    fn dedupes_keyed_sends(&self) -> bool {
+        true
+    }
     async fn parse_webhook(&self, req: WebhookRequest) -> Result<Vec<Inbound>> {
         signature::verify(&self.cfg.channel_secret, &req.headers, &req.body)?;
         webhook::parse(&req.body)

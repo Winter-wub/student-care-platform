@@ -101,11 +101,15 @@ pub use module::{
     MAX_UPLOAD_BYTES, Module, ModuleRegistrar, PageState, SheetKind, SheetUpload, UPLOAD_KEEP_MS,
     UploadRejection, Uploads,
 };
+pub use module::{
+    DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,
+    NotifyReport, NotifySkip, NotifyTo,
+};
 pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};
 pub use render::RenderCx;
 pub use report::ErrorReport;
-pub use resend::{RESEND_ENDPOINT, ResendEmail};
+pub use resend::{IDEMPOTENCY_HEADER, RESEND_ENDPOINT, ResendEmail};
 pub use verification::{
     Challenge, EmailOtp, StudentClaim, Verdict, VerificationMethod, VerifyContext,
 };

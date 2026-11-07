@@ -24,6 +24,11 @@ pub enum Error {
     Db(String),
     /// Any other platform / IO failure, with the adapter's message.
     Platform(String),
+    /// The platform refuses Pushes until its own quota period resets (LINE:
+    /// the monthly message limit is used up), with the adapter's message.
+    /// Waiting seconds does not help; the Kernel's Quota never sends this
+    /// (it only warns Staff): the platform does.
+    QuotaExhausted(String),
     /// The acting Staff member is not active or lacks this Permission (the
     /// public write functions, e.g. `harpseal::roster::upload`, check it
     /// as the pages do).
@@ -84,6 +89,7 @@ impl core::fmt::Display for Error {
             Error::Invalid(m) => write!(f, "invalid: {m}"),
             Error::Db(m) => write!(f, "database: {m}"),
             Error::Platform(m) => write!(f, "platform: {m}"),
+            Error::QuotaExhausted(m) => write!(f, "platform quota exhausted: {m}"),
             Error::Conflict(m) => write!(f, "conflict: {m}"),
             Error::Forbidden { permission } => {
                 write!(
@@ -122,6 +128,7 @@ impl Error {
             Error::Invalid(_) => "invalid",
             Error::Db(_) => "db",
             Error::Platform(_) => "platform",
+            Error::QuotaExhausted(_) => "quota_exhausted",
             Error::Forbidden { .. } => "forbidden",
             Error::Conflict(_) => "conflict",
             Error::PartialSend { .. } => "partial_send",
