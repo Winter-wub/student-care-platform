@@ -7,14 +7,14 @@ use serde::Deserialize;
 
 mod announcements;
 mod backup;
+mod locales;
 mod mini_app;
 mod roster;
 
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
 pub use {announcements::AnnouncementsConfig, backup::BackupConfig, mini_app::MiniAppConfig};
 
-use crate::manifest::Catalog;
-use crate::message::Locale;
+use crate::{manifest::Catalog, message::Locale};
 
 /// The whole `deployment.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -299,6 +299,7 @@ impl DeploymentConfig {
                 "[otp] digits must be 4..=9 and max_attempts at least 1".into(),
             ));
         }
+        locales::check(&c)?;
         if c.consent.version.trim().is_empty() {
             return Err(crate::Error::Invalid("[consent] version is empty".into()));
         }

@@ -37,14 +37,14 @@ async fn example_boots_runs_migrations_and_serves_notice() {
 }
 
 #[test]
-fn example_has_three_roles_and_the_contact_menu() {
+fn example_has_four_roles_and_the_contact_menu() {
     let h = Harness::new();
     let d = builder(h.services(), secrets())
         .channel(h.fake_channel())
         .build()
         .unwrap();
     let roles: Vec<&String> = d.config().roles.keys().collect();
-    assert_eq!(roles, ["Administrator", "Officer", "Viewer"]);
+    assert_eq!(roles, ["Administrator", "Finance", "Officer", "Viewer"]);
     let menu = d.menu_for(&harpseal::Locale::th());
     let labels: Vec<&str> = menu.entries.iter().map(|e| e.label.as_str()).collect();
     assert_eq!(labels[..2], ["ข่าวล่าสุด", "ติดต่อเจ้าหน้าที่"]);

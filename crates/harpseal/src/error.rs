@@ -36,6 +36,11 @@ pub enum Error {
         /// The Permission id required.
         permission: String,
     },
+    /// A Module setting's saved value no longer passes its kind's check (a
+    /// restored row, a kind or check changed since): show it as "not set"
+    /// until Staff save it again on `/admin/settings`, never the default.
+    /// Carries the setting key.
+    SettingNotSet(String),
     /// The change clashes with the current state (e.g. a live Link already
     /// exists, or the Link is already revoked).
     Conflict(String),
@@ -91,6 +96,9 @@ impl core::fmt::Display for Error {
             Error::Platform(m) => write!(f, "platform: {m}"),
             Error::QuotaExhausted(m) => write!(f, "platform quota exhausted: {m}"),
             Error::Conflict(m) => write!(f, "conflict: {m}"),
+            Error::SettingNotSet(k) => {
+                write!(f, "setting `{k}` fails its check; save it again")
+            }
             Error::Forbidden { permission } => {
                 write!(
                     f,
@@ -131,6 +139,7 @@ impl Error {
             Error::QuotaExhausted(_) => "quota_exhausted",
             Error::Forbidden { .. } => "forbidden",
             Error::Conflict(_) => "conflict",
+            Error::SettingNotSet(_) => "setting_not_set",
             Error::PartialSend { .. } => "partial_send",
         }
     }
@@ -267,6 +276,16 @@ pub enum BuildError {
         /// The Module that registered the path first.
         first: &'static str,
     },
+    /// A Module setting (`ModuleRegistrar::setting`) is declared wrongly:
+    /// its key, its default, its Permission or its texts.
+    InvalidSetting {
+        /// The Module that declared it.
+        module: &'static str,
+        /// The key as declared.
+        key: String,
+        /// What is wrong with it.
+        reason: String,
+    },
     /// A route path axum cannot mount: it must start with `/`, must not use
     /// the old `:param` / `*rest` syntax, and a public route must not be
     /// under `/admin`.
@@ -300,6 +319,14 @@ impl core::fmt::Display for BuildError {
             BuildError::UnguardedRoute { module, permission } => write!(
                 f,
                 "module `{module}` guards a back-office route with unknown permission `{permission}`"
+            ),
+            BuildError::InvalidSetting {
+                module,
+                key,
+                reason,
+            } => write!(
+                f,
+                "module `{module}` declares setting `{key}` wrongly: {reason}"
             ),
             BuildError::MiniAppUnavailable { module, channel } => write!(
                 f,

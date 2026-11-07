@@ -83,6 +83,16 @@ impl Deployment {
                     any_time,
                 ),
             );
+        if !self.registry.settings.is_empty() {
+            let gate = Gate {
+                module: Some(crate::kernel::NAME),
+                ..signed_in
+            };
+            root = root.route(
+                super::routes::SETTINGS_PATH,
+                guarded(crate::kernel::admin::settings_route(), gate),
+            );
+        }
         for (_module, path, route) in &self.registry.public {
             root = root.route(path, route.clone());
         }

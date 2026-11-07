@@ -2,7 +2,8 @@
 
 How a Deployment is assembled from the Core, what `build()` refuses, how
 Jobs run, and how sends, retries and webhook duplicates behave. A Module's
-Notice to chosen Students (chat or email) is in [its own page](notify.md).
+Notice to chosen Students (chat or email) is in [its own page](notify.md),
+and a Module's settings edited from the back office in [theirs](settings.md).
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ### Public API rules

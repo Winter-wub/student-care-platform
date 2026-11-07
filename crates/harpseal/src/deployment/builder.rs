@@ -112,7 +112,10 @@ impl DeploymentBuilder {
         check_menu_texts(&collected.menu, &catalog)?;
         check_menu_keys(&catalog)?;
         check_nav(&collected.nav, &catalog)?;
-        let nav = nav_items(collected.nav);
+        crate::module::check_settings(&collected.settings, &collected.permissions, &catalog)?;
+        let mut nav = collected.nav;
+        nav.extend(crate::kernel::admin::settings_nav(&collected.settings));
+        let nav = nav_items(nav);
         let public: Vec<_> = collected.public.iter().map(|(m, p, _)| (*m, *p)).collect();
         let app_links = crate::kernel::app::check_links(collected.app_links, &public, &catalog)?;
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
@@ -140,6 +143,7 @@ impl DeploymentBuilder {
                 public: collected.public,
                 nav,
                 app_links,
+                settings: collected.settings.into(),
             }),
         })
     }
@@ -166,6 +170,7 @@ struct Collected {
     catalog: Catalog,
     nav: Vec<(&'static str, NavSpec)>,
     app_links: Vec<(&'static str, crate::module::AppLinkSpec)>,
+    settings: Vec<crate::module::SettingSpec>,
 }
 
 impl Default for Collected {
@@ -186,6 +191,7 @@ impl Default for Collected {
             catalog: Catalog::default(),
             nav: Vec::new(),
             app_links: Vec::new(),
+            settings: Vec::new(),
         }
     }
 }
@@ -239,6 +245,7 @@ impl Collected {
         self.nav.extend(r.nav.into_iter().map(|n| (module, n)));
         self.app_links
             .extend(r.app_links.into_iter().map(|l| (module, l)));
+        crate::module::absorb_settings(&mut self.settings, r.settings)?;
         self.migrations.extend(r.migrations);
         if !r.mini_app_paths.is_empty() {
             self.mini_app_users.push(module);

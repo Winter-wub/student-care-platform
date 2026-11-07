@@ -43,6 +43,7 @@ pub(super) async fn write(
 ) -> Result<Written> {
     let (s, catalog, config) = (d.services(), d.catalog(), d.config());
     if !settings::editable(catalog, key)
+        || locale.trim().is_empty()
         || !settings::locales(catalog, config)
             .iter()
             .any(|l| l == locale)
