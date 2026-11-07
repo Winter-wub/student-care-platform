@@ -15,7 +15,8 @@
 //!   rows and enqueues one `announcements.deliver.channel` Job per Channel
 //!   per multicast group (LINE: 500) or per 25 accounts (paced), which send
 //!   through [`crate::Deployment::send_many_with_key`]. Unreachable Links
-//!   are `skipped`. "ส่งซ้ำ" is a new round with a new Job key.
+//!   are `skipped`. The Audience can name Students by hand (their student
+//!   ids, pasted or picked): ANDed with the other filters. "ส่งซ้ำ" is a new round with a new Job key.
 //! - **Chat**: the Card's "รับทราบ" button is Action `announcements.ack.<id>`
 //!   ([`ack`]); Menu entry `announcements.latest` ("ข่าวล่าสุด", [`latest`]).
 //! - **Edit / retract**: Jobs `announcements.edit` (`EditMessage` where
@@ -37,9 +38,11 @@ mod maint;
 mod maint_chunk;
 mod outcome;
 mod page_actions;
+mod page_count;
 mod page_detail;
 mod page_form;
 mod page_list;
+mod page_pick;
 mod service;
 mod stats;
 mod store;
@@ -147,10 +150,11 @@ fn pages(r: &mut ModuleRegistrar) {
         "/announcements/new",
         get(page_form::new_page).post(page_form::new_post),
     )
+    .back_office(send, "/announcements/audience", post(page_count::fragment))
     .back_office(
         send,
-        "/announcements/audience",
-        post(page_form::audience_fragment),
+        "/announcements/pick",
+        get(page_pick::results).post(page_pick::add),
     )
     .back_office(view, "/announcements/{id}", get(page_detail::page))
     .back_office(

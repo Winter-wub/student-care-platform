@@ -73,6 +73,7 @@ pub(super) async fn page(
                 }
             }
             (summary(&v, &row, &st))
+            (hand_picked(&v, &row))
             (actions(&v, &row))
             (texts_card(&texts))
             (counts(&v, &st))
@@ -120,6 +121,19 @@ fn summary(v: &View<'_>, row: &Row, st: &Stats) -> Markup {
                         " · " (v.t("announcements.page.edit_failed")) " " (r["failed"])
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The ids Staff hand-picked, as saved with the Audience.
+fn hand_picked(v: &View<'_>, row: &Row) -> Markup {
+    let ids = &row.audience.students;
+    html! {
+        @if !ids.is_empty() {
+            details class="card" id="hand-picked-ids" {
+                summary { (v.t("announcements.form.hand_picked")) " (" (ids.len()) ")" }
+                p class="pre" { (ids.join(", ")) }
             }
         }
     }

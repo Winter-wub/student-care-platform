@@ -30,7 +30,7 @@ impl Draft {
     fn summary(&self) -> Json {
         json!({
             "texts": self.texts.iter().map(|(l, t, _)| json!({"locale": l, "title": t})).collect::<Vec<_>>(),
-            "audience": self.audience,
+            "audience": self.audience.audit_json(),
             "require_ack": self.require_ack,
             "expires_at": self.expires_at,
             "send_at": self.send_at,
@@ -228,7 +228,11 @@ pub(crate) async fn confirm(
         None => ("sending", "announcement.send"),
     };
     let job = parent_job(id, row.round, version + 1, later);
-    let after = json!({ "status": status, "send_at": later });
+    let mut after = json!({ "status": status, "send_at": later });
+    if !row.audience.students.is_empty() {
+        // The size of the hand-picked list, never the ids.
+        after["hand_picked"] = row.audience.students.len().into();
+    }
     let set = format!("status = '{status}'");
     let changes = |gate: &str| vec![bump(&set, &row, now, gate)];
     cas(

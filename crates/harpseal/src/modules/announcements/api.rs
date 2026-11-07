@@ -73,6 +73,7 @@ impl NewAnnouncement {
                 .unwrap_or_default(),
             attrs: self.audience.attributes.clone(),
             tags: self.audience.tags.join(","),
+            students: self.audience.students.join("\n"),
             unreachable: self.audience.include_unreachable,
             version: None,
             submit: String::new(),
