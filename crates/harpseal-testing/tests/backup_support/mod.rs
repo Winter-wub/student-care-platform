@@ -45,6 +45,17 @@ pub const ROSTER: &str = "รหัสนักศึกษา,ชื่อ-ส�
     68010002,แมวน้ำ อ่าวซีล,s68010002@student.sealbay.example,2\r\n\
     68010003,ปลาดาว หาดทราย,s68010003@student.sealbay.example,3\r\n";
 
+/// The test Deployment on `services` (wrapping `h`'s), not migrated.
+pub fn deployment_with(h: &Harness, services: harpseal::Services) -> Deployment {
+    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
+    h.builder()
+        .config(config)
+        .runtime(services)
+        .module(Announcements)
+        .build()
+        .unwrap()
+}
+
 /// The test Deployment on `h`'s Services, not migrated.
 pub fn deployment(h: &Harness) -> Deployment {
     let config = DeploymentConfig::from_toml(CONFIG).unwrap();

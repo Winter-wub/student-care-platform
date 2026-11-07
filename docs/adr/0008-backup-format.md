@@ -14,7 +14,17 @@ We rejected copying the SQLite file (native only, no D1, and it ties a backup to
 ## Consequences
 
 - Backups taken by one build restore into the same or a later build of the same Deployment; a migration that drops a column or adds a `NOT NULL` column without a default still applies after the rows go in, but a database already ahead of the backup is checked column by column and may refuse.
-- The dump is not one transaction (the `Db` port has none for reads): the Deployment must be stopped during a backup and a restore.
+- The dump is not one transaction (the `Db` port has none for reads): stop the Deployment for a point-in-time backup and for every restore. Online backups are allowed since #78 (see the amendment below).
 - The backup carries secrets (password hashes, session ids) and personal data: it is as sensitive as the database. `--drop-sessions` ends restored sessions.
 - A backed-up table with an `INSERT` trigger is refused on restore (the trigger would fire per row); a Module that needs one must change this rule first.
 - A format change bumps `format`; `restore` refuses formats it does not know.
+
+## Amendment (#78, 2026-11-07): online, chunked backups
+
+The nightly backup Job dumps format 1, unchanged, while the Deployment runs, over several Job runs (a saved resume point next to the backup). The format is the same; what changed is how a dump reads and what a restore checks:
+
+- **Keyset paging.** A table is read in primary-key order, each page after the last key read (`rowid` only for a table without a primary key, which the Kernel does not have). A row deleted and re-inserted under the same key mid-dump is read at most once, so no entry holds a duplicate key. An entry's rows are therefore in primary-key order, no longer `rowid` order; a restore never relied on the order.
+- **Children-first order.** Tables are dumped children before parents, so a row added mid-dump never references a parent missing from the backup. The Kernel deletes no referenced row except a Role, whose grants cascade.
+- **Pre-write validation.** Before it writes anything, a restore checks that no two rows share a primary or non-partial `UNIQUE` key and that every foreign key resolves among the backup's rows. Rows orphaned through an `ON DELETE CASCADE` key are dropped (the delete would have removed them) and counted in the audit row; any other problem refuses the restore with a report.
+- **Per-table size limit.** A table is one entry built in memory. The Job counts rows and estimates the NDJSON size before reading a table and fails the run, naming it, above `[backup] max_table_rows` (default 200,000) or `max_table_mb` (default 24, for a 128 MB Worker). Such a Deployment backs up natively with `harpseal backup`. **Follow-up:** table parts (a table split over several entries) would lift this; that is a format change (`format: 2`).
+- **Left out.** Live Verification challenges are never dumped, and a restore never writes `backup_run` (the target's own list of backups).

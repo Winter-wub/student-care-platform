@@ -1,0 +1,95 @@
+//! [`read_pages`]: every row of a table, in pages of [`PAGE`], by keyset.
+//!
+//! **Keyset by primary key.** A table with a declared primary key is read
+//! in primary-key order, each page starting after the last key read
+//! (`WHERE (k1, k2) > (?, ?)`), so a row deleted and re-inserted with the
+//! same key while the dump runs (roster Tag replacement, an edited
+//! announcement text) is read at most once: paging by `rowid` would meet it
+//! again under its new `rowid` and dump a duplicate key, which the restore
+//! cannot insert. Only a table without a primary key is read by `rowid`.
+//!
+//! **Transient rows.** Live Verification challenges (`pending` and not yet
+//! expired) are never read: their salted hash of a short code is
+//! crackable offline, and a challenge is worth nothing after a restore.
+
+use super::PAGE;
+use super::schema::{Table, quote};
+use crate::port_types::{Rows, Statement, Value};
+use crate::{Db, Result};
+
+/// Column the rowid is read into, ahead of `*` (tables without a key).
+const ROWID: &str = "__harpseal_rowid";
+
+/// The rows of `table` a dump at `now` leaves out, as a `WHERE` condition
+/// for the rows it keeps.
+pub(crate) fn kept_rows(table: &str, now: i64) -> Option<Statement> {
+    (table == "verification_challenge")
+        .then(|| Statement::new("(state <> 'pending' OR expires_at <= ?)").bind(now))
+}
+
+/// Reads every row of `t` that a dump at `now` keeps, in pages of
+/// [`PAGE`], handing each page to `f` with the number of leading columns
+/// that are not the table's (1 for the rowid of a table without a key, else
+/// 0). `f` returns `false` to stop early.
+pub(crate) async fn read_pages(
+    db: &dyn Db,
+    t: &Table,
+    now: i64,
+    mut f: impl FnMut(&Rows, usize) -> Result<bool>,
+) -> Result<()> {
+    let pk = t.pk_columns();
+    let (head, key, skip): (String, Vec<String>, usize) = if pk.is_empty() {
+        let head = format!("SELECT rowid AS {ROWID}, * FROM {}", quote(&t.name));
+        (head, vec![ROWID.to_string()], 1)
+    } else {
+        let head = format!("SELECT * FROM {}", quote(&t.name));
+        (head, pk.iter().map(|c| c.to_string()).collect(), 0)
+    };
+    let order = if skip == 1 {
+        "rowid".to_string()
+    } else {
+        key.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ")
+    };
+    let filter = kept_rows(&t.name, now);
+    // The first page has no lower bound (a rowid can be i64::MIN).
+    let mut after: Option<Vec<Value>> = None;
+    loop {
+        let mut conds = Vec::new();
+        let mut params = Vec::new();
+        if let Some(fl) = &filter {
+            conds.push(fl.sql.to_string());
+            params.extend(fl.params.iter().cloned());
+        }
+        if let Some(last) = &after {
+            let marks = vec!["?"; last.len()].join(", ");
+            conds.push(format!("({order}) > ({marks})"));
+            params.extend(last.iter().cloned());
+        }
+        let cond = if conds.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", conds.join(" AND "))
+        };
+        let sql = format!("{head}{cond} ORDER BY {order} LIMIT {PAGE}");
+        let page = db
+            .query(Statement {
+                sql: sql.into(),
+                params,
+            })
+            .await?;
+        if !f(&page, skip)? || page.len() < PAGE {
+            return Ok(());
+        }
+        let Some(row) = page.rows.last() else {
+            return Ok(());
+        };
+        let last = key
+            .iter()
+            .map(|k| {
+                let i = page.columns.iter().position(|c| c == k);
+                i.and_then(|i| row.get(i).cloned()).unwrap_or(Value::Null)
+            })
+            .collect();
+        after = Some(last);
+    }
+}

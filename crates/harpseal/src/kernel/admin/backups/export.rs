@@ -12,7 +12,9 @@ use super::stamp;
 use crate::audit::{self, Actor, RequestCtx};
 use crate::backup::xlsx;
 use crate::kernel::admin::view::View;
+use crate::kernel::text::fill;
 use crate::{AppState, CurrentStaff};
+use maud::html;
 
 const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -22,6 +24,20 @@ pub(super) async fn xlsx(
     ctx: RequestCtx,
 ) -> Response {
     let v = View::new(&s, &staff);
+    let limit = s.config.backup.max_export_cells;
+    match xlsx::cells(&s.deployment).await {
+        Ok(n) if n > limit => {
+            let (n, limit) = (n.to_string(), limit.to_string());
+            let text = fill(
+                &v.t("kernel.backup.export_too_big"),
+                &[("cells", &n), ("limit", &limit)],
+            );
+            let body = html! { div class="card" id="export-too-big" { p { (text) } } };
+            return v.page(StatusCode::PAYLOAD_TOO_LARGE, &text, body);
+        }
+        Ok(_) => {}
+        Err(e) => return v.error(&e),
+    }
     let built = async {
         let e = xlsx::export(&s.deployment).await?;
         let after = json!({

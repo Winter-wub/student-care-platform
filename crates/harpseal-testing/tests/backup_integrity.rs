@@ -89,12 +89,24 @@ async fn a_restored_deployment_dumps_the_same_entries() {
         match name.as_str() {
             "manifest.json" => {}
             "tables/audit_log.ndjson" => {
-                // The same rows, then the restore's own.
-                let again = &second.entries[name];
-                assert!(again.starts_with(bytes), "{name}");
-                let extra = String::from_utf8_lossy(&again[bytes.len()..]).to_string();
-                assert_eq!(extra.lines().count(), 1, "{extra}");
-                assert!(extra.contains("backup.restore"), "{extra}");
+                // The same rows plus the restore's own (in key order, so
+                // not necessarily last).
+                let lines = |b: &[u8]| -> Vec<String> {
+                    String::from_utf8_lossy(b)
+                        .lines()
+                        .map(String::from)
+                        .collect()
+                };
+                let (before, mut again) = (lines(bytes), lines(&second.entries[name]));
+                let extra: Vec<String> = again
+                    .iter()
+                    .filter(|l| !before.contains(l))
+                    .cloned()
+                    .collect();
+                assert_eq!(extra.len(), 1, "{extra:?}");
+                assert!(extra[0].contains("backup.restore"), "{extra:?}");
+                again.retain(|l| *l != extra[0]);
+                assert_eq!(again, before, "{name}");
             }
             _ => assert_eq!(&second.entries[name], bytes, "{name}"),
         }

@@ -42,6 +42,24 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "หนึ่งชีตต่อหนึ่งตาราง ไม่รวมรหัสผ่าน โทเคน และค่าลับอื่น ๆ ไม่ใช่ชุดสำรองสำหรับกู้คืน",
         "One sheet per table, without password hashes, tokens and other secrets. Not a backup: it cannot be restored."
     ),
+    // {cells} {limit}
+    (
+        "kernel.backup.export_too_big",
+        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ให้ดาวน์โหลดชุดสำรองแทน หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
+        "The data has {cells} cells, over the Excel download's limit of {limit}. Download a backup instead, or raise [backup] max_export_cells on a native server."
+    ),
+    // {size}
+    (
+        "kernel.backup.total",
+        "พื้นที่ที่ชุดสำรองใช้: {size}",
+        "Storage used by backups: {size}"
+    ),
+    // {error}
+    (
+        "kernel.backup.prune_failed",
+        "ลบชุดสำรองเก่าไม่สำเร็จ: {error}",
+        "Deleting old backups failed: {error}"
+    ),
     ("kernel.backup.started", "เริ่ม", "Started"),
     ("kernel.backup.state", "สถานะ", "Status"),
     ("kernel.backup.size", "ขนาด", "Size"),
@@ -94,6 +112,20 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "การสำรองข้อมูลอัตโนมัติล้มเหลว ระบบยังทำงานตามปกติ แต่ข้อมูลล่าสุดยังไม่ถูกสำรอง\n\n\
          ดูสาเหตุได้ที่หน้าสำรองข้อมูลในระบบหลังบ้าน ({path}) อีเมลนี้ส่งไม่เกินวันละหนึ่งฉบับ",
         "A backup failed. The Deployment keeps working, but its latest data is not backed up.\n\n\
+         See why on the Backups page of the back office ({path}). This email is sent at most once a day."
+    ),
+    // {org} {day}
+    (
+        "kernel.backup.prune_email_subject",
+        "[{org}] ลบชุดสำรองข้อมูลเก่าไม่สำเร็จ ({day})",
+        "[{org}] Deleting old backups failed ({day})"
+    ),
+    // {path}
+    (
+        "kernel.backup.prune_email_body",
+        "สำรองข้อมูลสำเร็จ แต่ลบชุดสำรองที่เก่ากว่ากำหนดไม่สำเร็จ ชุดเก่าจึงยังใช้พื้นที่และยังมีข้อมูลส่วนบุคคลอยู่\n\n\
+         ดูสาเหตุได้ที่หน้าสำรองข้อมูลในระบบหลังบ้าน ({path}) อีเมลนี้ส่งไม่เกินวันละหนึ่งฉบับ",
+        "The backup succeeded, but deleting backups past their retention failed: they still take space and still hold personal data.\n\n\
          See why on the Backups page of the back office ({path}). This email is sent at most once a day."
     ),
 ];

@@ -709,6 +709,7 @@ dependencies = [
  "getrandom 0.4.3",
  "harpseal",
  "http",
+ "rust_xlsxwriter",
  "tower-service",
  "worker",
 ]

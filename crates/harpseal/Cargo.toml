@@ -27,12 +27,6 @@ serde_json.workspace = true
 calamine.workspace = true
 rust_xlsxwriter.workspace = true
 
-# rust_xlsxwriter stamps each workbook with the time; on wasm32 that is
-# `SystemTime::now()`, which panics there, unless its `wasm` feature reads
-# JavaScript's `Date` instead. A target dependency, not a platform flag.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-rust_xlsxwriter = { workspace = true, features = ["wasm"] }
-
 [features]
 # Sample first-slice messages for adapter tests (issue #3). Test-only, not a platform flag.
 fixtures = []

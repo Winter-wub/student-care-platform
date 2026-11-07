@@ -5,7 +5,8 @@ use crate::{Result, Services};
 
 /// Columns every read selects.
 const COLUMNS: &str = "id, prefix, state, origin, requested_by, started_at, updated_at, \
-     finished_at, progress, bytes, table_count, row_count, file_count, manifest_sha256, error";
+     finished_at, progress, bytes, table_count, row_count, file_count, manifest_sha256, error, \
+     prune_error";
 
 /// One `backup_run` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +27,8 @@ pub(super) struct Run {
     pub(super) rows: Option<i64>,
     pub(super) files: Option<i64>,
     pub(super) error: Option<String>,
+    /// Retention after this run failed, and why.
+    pub(super) prune_error: Option<String>,
 }
 
 fn runs(rows: &Rows) -> Vec<Run> {
@@ -47,6 +50,7 @@ fn runs(rows: &Rows) -> Vec<Run> {
                 rows: int("row_count"),
                 files: int("file_count"),
                 error: text("error"),
+                prune_error: text("prune_error"),
             }
         })
         .collect()
@@ -152,4 +156,15 @@ pub(super) async fn note_error(s: &Services, id: &str, error: &str, fail: bool) 
         )
         .await?;
     Ok(r.rows_affected == 1)
+}
+
+/// Records (or, with `None`, clears) the retention error of done run `id`.
+pub(super) async fn note_prune_error(s: &Services, id: &str, error: Option<&str>) -> Result<()> {
+    s.db.execute(
+        Statement::new("UPDATE backup_run SET prune_error = ? WHERE id = ? AND state = 'done'")
+            .bind(error.map(|e| crate::jobs::cut(e, 500)))
+            .bind(id),
+    )
+    .await
+    .map(|_| ())
 }

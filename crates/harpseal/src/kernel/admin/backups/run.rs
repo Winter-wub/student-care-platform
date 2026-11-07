@@ -16,8 +16,9 @@
 
 use serde_json::{Value as Json, json};
 
+use super::notify::{self, Failure};
 use super::store::{self, Run};
-use super::{KIND, PREFIX, notify, progress_key, prune, stamp};
+use super::{KIND, PREFIX, progress_key, prune, stamp};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::backup::FileStoreBackup;
 use crate::backup::progress::{Budget, DumpProgress, Step};
@@ -26,14 +27,20 @@ use crate::manifest::Job;
 use crate::port_types::{Statement, Value};
 use crate::{Deployment, Error, JobContext, Result};
 
-/// What one Job run may dump before it saves and hands over: well inside
-/// a Worker's CPU, memory and subrequest limits.
-const BUDGET: Budget = Budget {
-    rows: 50_000,
-    bytes: 32 * 1024 * 1024,
-    files: 200,
-    pause_before_files: true,
-};
+/// What one Job run may dump before it saves and hands over (well inside
+/// a Worker's CPU, memory and subrequest limits), and the largest table it
+/// accepts (`[backup] max_table_mb`, `max_table_rows`).
+fn budget(d: &Deployment) -> Budget {
+    let b = &d.config().backup;
+    Budget {
+        rows: 50_000,
+        bytes: 32 * 1024 * 1024,
+        files: 200,
+        max_table_rows: b.max_table_rows,
+        max_table_bytes: u64::from(b.max_table_mb) * 1024 * 1024,
+        pause_before_files: true,
+    }
+}
 /// A run that has not moved for this long is failed by its watch.
 pub(super) const STALL_MS: i64 = 2 * 3_600_000;
 
@@ -51,11 +58,26 @@ pub(super) async fn run(cx: JobContext, job: Job) -> Result<()> {
         return Ok(());
     };
     let last = last_attempt(&d, &job).await;
-    // A running run keeps the error (and fails on the last attempt); a
-    // done one whose retention failed is left as it is.
-    let _ = store::note_error(d.services(), &id, &e.to_string(), last).await;
+    let s = d.services();
+    let done = store::get(s, &id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|r| r.state == "done");
+    if done {
+        // The backup is fine; retention after it failed.
+        let _ = store::note_prune_error(s, &id, Some(&e.to_string())).await;
+    } else {
+        // A running run keeps the error, and fails on the last attempt.
+        let _ = store::note_error(s, &id, &e.to_string(), last).await;
+    }
     if last {
-        notify::failure(&d).await;
+        let kind = if done {
+            Failure::Prune
+        } else {
+            Failure::Backup
+        };
+        notify::failure(&d, kind).await;
     }
     Err(e)
 }
@@ -117,7 +139,7 @@ async fn stalled(d: &Deployment, r: &Run) -> Result<bool> {
     }
     let failed = store::note_error(s, &r.id, "stalled: no progress for two hours", true).await?;
     if failed {
-        notify::failure(d).await;
+        notify::failure(d, Failure::Backup).await;
     }
     Ok(true)
 }
@@ -147,7 +169,7 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
     };
     match r.state.as_str() {
         "running" => {}
-        "done" if job.attempt > 1 => return prune::expired(d, job).await.map(|_| ()),
+        "done" if job.attempt > 1 => return prune_after(d, &r, job).await,
         _ => return Ok(()),
     }
     let mut sink = FileStoreBackup::new(s.files.clone(), r.prefix.clone());
@@ -164,7 +186,7 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
         }
         None => return Err(Error::Invalid(format!("backup progress {key} is missing"))),
     };
-    match progress.step(d, &mut sink, BUDGET).await? {
+    match progress.step(d, &mut sink, budget(d)).await? {
         Step::More => {
             save(d, &key, &progress).await?;
             if store::advance(s, id, progress.bytes).await? {
@@ -212,7 +234,7 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
             s.db.batch(vec![done, audit]).await?;
             // Only a hint for a resume that will not come: never fatal.
             let _ = s.files.delete(&key).await;
-            prune::expired(d, job).await.map(|_| ())
+            prune_after(d, &r, job).await
         }
     }
 }
@@ -220,4 +242,14 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
 async fn save(d: &Deployment, key: &str, p: &DumpProgress) -> Result<()> {
     let raw = serde_json::to_vec(p).map_err(|e| Error::Invalid(format!("backup progress: {e}")))?;
     d.services().files.put(key, raw, "application/json").await
+}
+
+/// Retention after done run `r`; a success clears an earlier retention
+/// error on it.
+async fn prune_after(d: &Deployment, r: &Run, job: &Job) -> Result<()> {
+    prune::expired(d, job).await?;
+    if r.prune_error.is_some() {
+        store::note_prune_error(d.services(), &r.id, None).await?;
+    }
+    Ok(())
 }

@@ -43,7 +43,11 @@ pub async fn night(h: &Harness, app: &TestApp, n: i64) {
 /// A signed-in Administrator: Roles granting `kernel.staff.manage` (so
 /// the failure emails reach them) and `kernel.backup.manage`.
 pub async fn admin<'a>(h: &Harness, app: &'a TestApp) -> Browser<'a> {
-    let perms = ["kernel.staff.manage", "kernel.backup.manage"];
+    let perms = [
+        "kernel.staff.manage",
+        "kernel.backup.manage",
+        "kernel.backup.download",
+    ];
     harpseal::ensure_role(
         &h.services(),
         &Actor::System,

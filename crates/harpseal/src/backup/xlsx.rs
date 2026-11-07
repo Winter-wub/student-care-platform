@@ -4,14 +4,14 @@
 //! ([`is_secret`]); everything else is exported as stored.
 //!
 //! The workbook is built in memory in one request (`rust_xlsxwriter` has
-//! no streaming mode on wasm32), then sent: it suits a Deployment whose
-//! data fits the Worker's 128 MB with room to spare (roughly up to a few
-//! hundred thousand rows in all). A table longer than Excel's
-//! 1,048,575 data rows is cut there and named in [`Export::cut`].
+//! no streaming mode on wasm32), at about 200 bytes per cell, so the page
+//! first counts the cells ([`cells`]) and refuses above `[backup]
+//! max_export_cells`. A table longer than Excel's 1,048,575 data rows is
+//! cut there and named in [`Export::cut`].
 
 use rust_xlsxwriter::{Format, Workbook, XlsxError};
 
-use super::dump::read_pages;
+use super::pages::read_pages;
 use super::schema;
 use crate::port_types::Value;
 use crate::{Deployment, Error, Result};
@@ -87,10 +87,27 @@ fn cell_text(s: &str) -> std::borrow::Cow<'_, str> {
     t.into()
 }
 
+/// Cells the workbook of `d` would hold (rows × exported columns, every
+/// table, header rows left out), counted without reading the rows.
+pub(crate) async fn cells(d: &Deployment) -> Result<u64> {
+    let db = d.services().db.as_ref();
+    let mut total = 0u64;
+    for t in schema::tables(db).await? {
+        let kept = t
+            .columns
+            .iter()
+            .filter(|c| !is_secret(&t.name, &c.name))
+            .count();
+        total += schema::count(db, &t.name).await? * kept as u64;
+    }
+    Ok(total)
+}
+
 /// Builds the workbook of every table of `d` (the backup's table list, in
 /// name order), secret columns left out.
 pub(crate) async fn export(d: &Deployment) -> Result<Export> {
     let db = d.services().db.as_ref();
+    let now = d.services().now_ms();
     let tables = schema::tables(db).await?;
     let mut book = Workbook::new();
     let bold = Format::new().set_bold();
@@ -120,7 +137,7 @@ pub(crate) async fn export(d: &Deployment) -> Result<Export> {
         sheet.set_freeze_panes(1, 0).map_err(xlsx)?;
         let mut row = 0u32;
         let mut full = false;
-        read_pages(db, t, |page, skip| {
+        read_pages(db, t, now, |page, skip| {
             for values in &page.rows {
                 if row >= MAX_ROWS {
                     full = true;

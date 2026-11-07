@@ -9,7 +9,7 @@ use maud::{Markup, html};
 use serde_json::json;
 
 use super::store::{self, Run};
-use super::{KIND, human_bytes};
+use super::{DOWNLOAD, KIND, human_bytes};
 use crate::audit::{self, Actor, RequestCtx};
 use crate::kernel::admin::view::View;
 use crate::kernel::text::fill;
@@ -39,6 +39,7 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let days = b.retention_days.to_string();
     let offset = s.config.utc_offset.clone();
     let busy = runs.iter().any(|r| r.state == "running");
+    let total = human_bytes(runs.iter().map(|r| r.bytes).sum());
     let latest_failed = runs
         .iter()
         .find(|r| r.state != "running")
@@ -62,11 +63,14 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
                     (staff.csrf_field())
                     button type="submit" disabled[busy] { (v.t("kernel.backup.now")) }
                 }
-                a class="btn secondary" href="/admin/backups/export.xlsx" download {
-                    (v.t("kernel.backup.export"))
+                @if staff.can(DOWNLOAD) {
+                    a class="btn secondary" href="/admin/backups/export.xlsx" download {
+                        (v.t("kernel.backup.export"))
+                    }
                 }
             }
-            p class="muted" { (v.t("kernel.backup.export_note")) }
+            @if staff.can(DOWNLOAD) { p class="muted" { (v.t("kernel.backup.export_note")) } }
+            p class="muted" id="backups-total" { (fill(&v.t("kernel.backup.total"), &[("size", &total)])) }
             p class="muted" { (v.t("kernel.backup.restore_hint")) }
         }
         (table(&v, &runs))
@@ -104,6 +108,12 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                                 (v.t(&format!("kernel.backup.state_{}", r.state)))
                             }
                             @if let Some(e) = &r.error { br; span class="muted code" { (e) } }
+                            @if let Some(e) = &r.prune_error {
+                                br;
+                                span class="field-error prune-error" {
+                                    (fill(&v.t("kernel.backup.prune_failed"), &[("error", e)]))
+                                }
+                            }
                         }
                         td data-label=(v.t("kernel.backup.size")) { (human_bytes(r.bytes)) }
                         td data-label=(v.t("kernel.backup.contents")) {
@@ -115,7 +125,7 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                             }
                         }
                         td {
-                            @if r.state == "done" {
+                            @if r.state == "done" && v.staff.can(DOWNLOAD) {
                                 a class="btn secondary" download
                                     href=(format!("/admin/backups/{}/download", r.id)) {
                                     (v.t("kernel.backup.download"))

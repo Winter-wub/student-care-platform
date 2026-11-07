@@ -13,7 +13,8 @@
 //!   Each table's entry is pinned by its SHA-256 too, so the manifest's
 //!   own hash (recorded by the restore's audit row) pins the whole backup.
 //! - `tables/<table>.ndjson`: one JSON object per row, every column, in
-//!   `rowid` order (primary-key order for `WITHOUT ROWID` tables). Values
+//!   primary-key order (`rowid` order for a table without a primary key).
+//!   Live Verification challenges are left out (see `pages.rs`). Values
 //!   keep their SQLite type: `null`, integers as `42`, reals as `3.0`, text
 //!   as strings, blobs as `{"$blob": "<base64>"}`.
 //! - `files/<sha256 of the key>`: the bytes of each object named by a
@@ -24,22 +25,29 @@
 //! re-runs the migrations) and SQLite's and D1's internal tables.
 //!
 //! **Consistency.** The `Db` port has no read transaction (D1 has none),
-//! so a dump reads table by table, each in `rowid` pages, while the
-//! Deployment may still be writing. What holds anyway: each table entry is
-//! pinned by its SHA-256 and row count; tables are read children before
-//! parents, and the Kernel never deletes a referenced row (only a Role,
-//! whose grants go with it), so every reference in a backup resolves and
-//! the restore's parents-first inserts succeed; the manifest records when
-//! the dump started and finished. What does not: the tables are not one
-//! point in time (a row written mid-dump may or may not be in it, and a
-//! Role deleted mid-dump can leave its grants behind, which the restore
-//! then refuses: take another backup). The nightly backup Job (#78) runs
-//! the same dump in steps; `harpseal backup` with the
-//! server stopped is the one point-in-time copy.
+//! so a dump reads table by table while the Deployment may still be
+//! writing; the nightly backup Job (#78) runs it in steps over minutes.
+//! What holds anyway (ADR-0008, amended):
+//!
+//! - each table entry is pinned by its SHA-256 and row count, and the
+//!   manifest records when the dump started and finished;
+//! - a table is read by keyset on its primary key, so a row deleted and
+//!   re-inserted under the same key mid-dump is read at most once (no
+//!   duplicate keys);
+//! - tables are read children before parents, and the Kernel deletes no
+//!   referenced row except a Role (whose grants cascade), so a reference
+//!   resolves unless its parent was deleted through a cascading key, and
+//!   such orphans are dropped by the restore ([`load`] checks keys and
+//!   references before it writes anything).
+//!
+//! What does not: the tables are not one point in time (a row written
+//! mid-dump may or may not be in it). `harpseal backup` with the server
+//! stopped is the one point-in-time copy.
 //!
 //! **Secrets.** Password hashes, session ids and Channel tokens stored in
 //! the database are dumped as they are: restored logins keep working, and
-//! the backup is as sensitive as the database itself.
+//! the backup is as sensitive as the database itself. Live Verification
+//! challenges (`pending`, not yet expired) are never dumped.
 //!
 //! **Restore.** [`load`] refuses unless every table is empty, or
 //! [`LoadOptions::force`] is set; it checks that each Module's migrations
@@ -51,10 +59,12 @@
 mod check;
 mod dump;
 mod load;
+mod pages;
 pub(crate) mod progress;
 pub(crate) mod schema;
 mod store;
 mod value;
+mod verify;
 pub(crate) mod xlsx;
 
 use std::collections::BTreeMap;
@@ -281,6 +291,9 @@ pub struct LoadReport {
     pub deleted: BTreeMap<String, u64>,
     /// Whether the session tables were emptied.
     pub dropped_sessions: bool,
+    /// Rows left out per table because their parent was deleted (through
+    /// an `ON DELETE CASCADE` key) while the backup was being taken.
+    pub orphans_dropped: BTreeMap<String, u64>,
     /// `force` as given.
     pub forced: bool,
     /// Tables of the Deployment absent from the backup: left as they were.

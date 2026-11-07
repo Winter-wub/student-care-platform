@@ -9,8 +9,8 @@
 -- why). `progress` counts the Job runs so far; the resume point itself
 -- is a FileStore object next to the backup (`backups/<UTC time>.progress.json`).
 -- `origin`: `schedule` (cron) or `manual` (an Administrator's "back up
--- now", by `requested_by`). A row is deleted with its objects by
--- retention.
+-- now", by `requested_by`). `prune_error`: retention after this (done)
+-- run failed, and why. A row is deleted with its objects by retention.
 CREATE TABLE backup_run (
     id TEXT PRIMARY KEY,
     prefix TEXT NOT NULL UNIQUE,
@@ -26,6 +26,7 @@ CREATE TABLE backup_run (
     row_count INTEGER,
     file_count INTEGER,
     manifest_sha256 TEXT,
-    error TEXT
+    error TEXT,
+    prune_error TEXT
 );
 CREATE INDEX backup_run_started ON backup_run (started_at);

@@ -54,9 +54,10 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
         "kernel.setting.edit",
         "Edit texts and the privacy notice version",
     ),
+    Permission::new("kernel.backup.manage", "See the backups and back up now"),
     Permission::new(
-        "kernel.backup.manage",
-        "See and download backups, back up now, download all data",
+        "kernel.backup.download",
+        "Download a backup or all data (Administrator-equivalent: backups hold password hashes)",
     ),
 ];
 

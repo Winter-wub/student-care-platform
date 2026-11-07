@@ -31,6 +31,7 @@ Administrator = [
     "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
     "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
     "kernel.staff.manage", "kernel.setting.edit", "kernel.backup.manage",
+    "kernel.backup.download",
     "announcements.view", "announcements.send", "announcements.retract",
 ]
 Officer = [
@@ -50,7 +51,8 @@ metered_per_month = 300
 
 # Nightly backup into the FileStore (R2 `FILES` on Workers, HARPSEAL_FILES
 # natively), kept 30 days; failures email every Administrator. The page is
-# /admin/backups (kernel.backup.manage). These are the defaults.
+# /admin/backups (kernel.backup.manage; downloads kernel.backup.download,
+# Administrators only: backups hold password hashes). These are the defaults.
 [backup]
 enabled = true
 schedule = "0 2 * * *"

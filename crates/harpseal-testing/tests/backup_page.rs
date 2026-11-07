@@ -197,3 +197,53 @@ async fn back_up_now_starts_a_manual_run_once() {
     assert_eq!(rows.rows[0][0].as_text(), Some("done"));
     assert_eq!(rows.rows[0][1].as_text(), Some("manual"));
 }
+
+#[tokio::test]
+async fn managing_backups_does_not_grant_downloading_them() {
+    let (h, app) = populated().await;
+    night(&h, &app, 0).await;
+    let id = text(&h, "SELECT id FROM backup_run").await;
+    harpseal::ensure_role(
+        &h.services(),
+        &harpseal::Actor::System,
+        "Backup Operator",
+        &["kernel.backup.manage"],
+        &harpseal::RequestCtx::cli(),
+    )
+    .await
+    .unwrap();
+    h.create_staff("operator@sealbay.example", PASSWORD, &["Backup Operator"])
+        .await;
+    let b = app.browser();
+    assert_eq!(
+        b.login("operator@sealbay.example", PASSWORD).await.status,
+        303
+    );
+    let page = b.get("/admin/backups").await;
+    assert_eq!(page.status, 200, "{}", page.body);
+    assert!(page.body.contains("data-state=\"done\""));
+    assert!(!page.body.contains("/download"), "no download link");
+    assert!(!page.body.contains("export.xlsx"), "no export link");
+    assert!(page.body.contains("id=\"backups-total\""), "storage used");
+    assert_eq!(
+        b.get(&format!("/admin/backups/{id}/download")).await.status,
+        403
+    );
+    assert_eq!(b.get("/admin/backups/export.xlsx").await.status, 403);
+    assert_eq!(b.post("/admin/backups/now", "").await.status, 303);
+}
+
+#[tokio::test]
+async fn an_export_over_the_cell_limit_is_refused_before_it_is_built() {
+    let h = Harness::new();
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                utc_offset = \"+07:00\"\n[backup]\nmax_export_cells = 10\n";
+    let config = harpseal::DeploymentConfig::from_toml(toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    let b = admin(&h, &app).await;
+    let r = b.get("/admin/backups/export.xlsx").await;
+    assert_eq!(r.status, 413, "{}", r.body);
+    assert!(r.body.contains("id=\"export-too-big\""));
+    assert!(r.body.contains("max_export_cells"));
+    assert_eq!(audits(&h, "data.export").await, 0);
+}

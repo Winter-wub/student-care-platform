@@ -16,7 +16,7 @@ const TABLES: &str = "SELECT name, sql FROM sqlite_master WHERE type = 'table' \
      AND substr(name, 1, 3) <> 'd1_' AND name <> 'migration' ORDER BY name";
 
 /// One table as the database describes it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Table {
     pub name: String,
     /// `sqlite_master.sql`.
@@ -27,7 +27,7 @@ pub(crate) struct Table {
 }
 
 /// One column (`PRAGMA table_info`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Column {
     pub name: String,
     pub not_null: bool,
@@ -37,18 +37,6 @@ pub(crate) struct Column {
 }
 
 impl Table {
-    /// `WITHOUT ROWID` tables have no `rowid` to page by.
-    pub fn without_rowid(&self) -> bool {
-        // Table options follow the column list's closing parenthesis.
-        let sql = self.sql.to_ascii_uppercase();
-        let tail = sql.rsplit_once(')').map(|(_, t)| t).unwrap_or("");
-        tail.replace(',', " ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .windows(2)
-            .any(|w| w == ["WITHOUT", "ROWID"])
-    }
-
     /// Primary-key columns in key order.
     pub fn pk_columns(&self) -> Vec<&str> {
         let mut pk: Vec<&Column> = self.columns.iter().filter(|c| c.pk > 0).collect();
@@ -199,6 +187,34 @@ fn fires_on_insert(sql: &str) -> bool {
     words.windows(2).any(|w| w == ["INSERT", "ON"])
 }
 
+/// Rows in `t` and the bytes of its values (text and blobs by length,
+/// numbers by their text), in one scan: what a dump of it will hold.
+pub(crate) async fn size(db: &dyn Db, t: &Table) -> Result<(u64, u64)> {
+    let bytes: Vec<String> = t
+        .columns
+        .iter()
+        .map(|c| format!("total(length(CAST({} AS BLOB)))", quote(&c.name)))
+        .collect();
+    let sum = if bytes.is_empty() {
+        "0".to_string()
+    } else {
+        bytes.join(" + ")
+    };
+    let rows = db
+        .query(Statement::new(format!(
+            "SELECT count(*) AS n, {sum} AS b FROM {}",
+            quote(&t.name)
+        )))
+        .await?;
+    let n = rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0).max(0) as u64;
+    let b = match rows.get(0, "b") {
+        Some(Value::Real(x)) => *x as u64,
+        Some(Value::Integer(i)) => (*i).max(0) as u64,
+        _ => 0,
+    };
+    Ok((n, b))
+}
+
 /// Rows in `table`.
 pub(crate) async fn count(db: &dyn Db, table: &str) -> Result<u64> {
     let rows = db
@@ -237,23 +253,6 @@ mod tests {
         );
         let cycle = [table("a", &["b"], ""), table("b", &["a"], "")];
         assert_eq!(dependency_order(&cycle), ["a", "b"]);
-    }
-
-    #[test]
-    fn without_rowid_is_read_from_the_sql() {
-        assert!(
-            table(
-                "t",
-                &[],
-                "CREATE TABLE t (k TEXT PRIMARY KEY) WITHOUT ROWID"
-            )
-            .without_rowid()
-        );
-        assert!(
-            table("t", &[], "CREATE TABLE t (k TEXT PRIMARY KEY)without rowid").without_rowid()
-        );
-        assert!(!table("t", &[], "CREATE TABLE t (k TEXT PRIMARY KEY)").without_rowid());
-        assert!(!table("t", &[], "CREATE TABLE t (without_rowid TEXT)").without_rowid());
     }
 
     #[test]

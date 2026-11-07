@@ -7,8 +7,8 @@
 //! |---|---|
 //! | Page, `GET /admin/backups` | `kernel.backup.manage`, nav order 90 |
 //! | "Back up now", `POST /admin/backups/now` | same; audited `backup.request` |
-//! | One backup as a `.tar`, `GET /admin/backups/{id}/download` | same; streamed, audited `backup.download` |
-//! | All data as `.xlsx`, `GET /admin/backups/export.xlsx` | same; built in the request, audited `data.export` |
+//! | One backup as a `.tar`, `GET /admin/backups/{id}/download` | `kernel.backup.download`; streamed, audited `backup.download` |
+//! | All data as `.xlsx`, `GET /admin/backups/export.xlsx` | `kernel.backup.download`; built in the request, audited `data.export` |
 //! | Job `kernel.backup.run` | on `[backup] schedule` when `enabled` |
 //!
 //! **Where.** Each backup is the FileStore objects under
@@ -52,8 +52,11 @@ use crate::module::ModuleRegistrar;
 
 /// The Job kind.
 pub(crate) const KIND: &str = "kernel.backup.run";
-/// Permission of the page, the downloads and "back up now".
+/// Permission of the page and "back up now".
 pub(crate) const MANAGE: &str = "kernel.backup.manage";
+/// Permission of the downloads: a backup holds password hashes and every
+/// Student's data, so this is Administrator-equivalent.
+pub(crate) const DOWNLOAD: &str = "kernel.backup.download";
 /// The page, under `/admin`.
 const PATH: &str = "/backups";
 /// The page's full path, linked from the emails.
@@ -67,8 +70,8 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .back_office_page(MANAGE, PATH, "kernel.backup.title", 90, get(page::page))
         .back_office(MANAGE, "/backups/now", post(page::now))
-        .back_office(MANAGE, "/backups/export.xlsx", get(export::xlsx))
-        .back_office(MANAGE, "/backups/{id}/download", get(download::tar))
+        .back_office(DOWNLOAD, "/backups/export.xlsx", get(export::xlsx))
+        .back_office(DOWNLOAD, "/backups/{id}/download", get(download::tar))
         .job(JobSpec::new(KIND), run::run);
 }
 

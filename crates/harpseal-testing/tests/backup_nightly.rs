@@ -151,12 +151,14 @@ async fn the_schedule_backs_up_and_retention_prunes_only_what_expired() {
     for t in ["student", "link", "announcement", "staff", "roster_import"] {
         assert_eq!(after[t], before[t], "{t}");
     }
-    // The run that was writing this very backup is in it as `running`:
-    // the restore marks it failed, so the copy never resumes it.
-    let sql = format!("SELECT state, error FROM backup_run WHERE prefix = '{prefix}'");
-    let restored = query(fresh.db().as_ref(), &sql).await;
-    assert_eq!(restored.rows[0][0].as_text(), Some("failed"));
-    assert!(restored.rows[0][1].as_text().unwrap().contains("restored"));
+    // `backup_run` is never restored: a new Deployment starts with an empty
+    // list (the run writing this very backup is in it, as `running`).
+    assert_eq!(count(fresh.db().as_ref(), "backup_run").await, 0);
+    assert!(
+        r.untouched.contains(&"backup_run".to_string()),
+        "{:?}",
+        r.untouched
+    );
     let app2 = fresh.boot(d2).await;
     let login = app2.browser().login(OFFICER, PASSWORD).await;
     assert_eq!(login.status, 303, "{}", login.body);
@@ -177,4 +179,24 @@ async fn a_disabled_schedule_runs_nothing() {
     night(&h, &app, 0).await;
     assert_eq!(count(h.db().as_ref(), "backup_run").await, 0);
     assert!(h.files().keys().is_empty());
+}
+
+#[tokio::test]
+async fn a_forced_restore_keeps_the_targets_list_of_backups() {
+    let (h, app) = populated().await;
+    night(&h, &app, 0).await;
+    night(&h, &app, 1).await;
+    assert_eq!(runs(&h).await.len(), 2);
+    // Restore the first night's backup over the same Deployment.
+    let files: Arc<dyn FileStore> = Arc::new(h.files().clone());
+    let first = FileStoreBackup::new(files, format!("backups/{}/", stamp_of(NIGHT)));
+    let r = backup::load(app.deployment(), &first, &LoadOptions::new().force(true))
+        .await
+        .unwrap();
+    assert!(r.forced);
+    // Both backups stay listed (and so are pruned in time), done.
+    let after = runs(&h).await;
+    assert_eq!(after.len(), 2, "{after:?}");
+    assert!(after.iter().all(|(s, _)| s == "done"), "{after:?}");
+    assert_eq!(after[1].1, format!("backups/{}/", stamp_of(NIGHT + DAY)));
 }

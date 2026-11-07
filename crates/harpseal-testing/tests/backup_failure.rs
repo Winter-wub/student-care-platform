@@ -135,3 +135,70 @@ async fn a_run_that_stops_moving_is_failed_by_its_watch() {
     assert!(row.rows[0][1].as_text().unwrap().contains("stalled"));
     assert_eq!(h.emails().len(), before + 1);
 }
+
+#[tokio::test]
+async fn a_table_over_the_limit_fails_the_run_naming_it() {
+    let h = Harness::new();
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                utc_offset = \"+07:00\"\n[backup]\nmax_table_rows = 3\n";
+    let config = harpseal::DeploymentConfig::from_toml(toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    admin(&h, &app).await;
+    for i in 0..4 {
+        let email = format!("staff{i}@sealbay.example");
+        h.create_staff(&email, PASSWORD, &[]).await;
+    }
+    through_retries(&h, &app, NIGHT).await;
+    let row = query(h.db().as_ref(), "SELECT state, error FROM backup_run").await;
+    assert_eq!(row.rows[0][0].as_text(), Some("failed"));
+    let error = row.rows[0][1].as_text().unwrap();
+    assert!(error.contains("over the nightly backup's limit"), "{error}");
+    assert!(error.contains("harpseal backup"), "{error}");
+    assert!(error.contains("table "), "{error}");
+}
+
+#[tokio::test]
+async fn a_retention_failure_after_a_good_backup_is_told_apart() {
+    let (h, app) = populated().await;
+    let b = admin(&h, &app).await;
+    let before = h.emails().len();
+    // An expired backup whose manifest cannot be read: retention fails.
+    h.db()
+        .execute(harpseal::Statement::new(
+            "INSERT INTO backup_run (id, prefix, state, origin, started_at, updated_at) \
+             VALUES ('r-old', 'backups/old/', 'done', 'schedule', 0, 0)",
+        ))
+        .await
+        .unwrap();
+    h.files().fail_on("backups/old/manifest.json");
+    through_retries(&h, &app, NIGHT).await;
+    let row = query(
+        h.db().as_ref(),
+        &format!(
+            "SELECT state, prune_error FROM backup_run WHERE prefix = 'backups/{}/'",
+            stamp_of(NIGHT)
+        ),
+    )
+    .await;
+    assert_eq!(row.rows[0][0].as_text(), Some("done"), "the backup is fine");
+    assert!(
+        row.rows[0][1]
+            .as_text()
+            .unwrap()
+            .contains("injected failure")
+    );
+    let mail: Vec<_> = h.emails()[before..].to_vec();
+    assert_eq!(mail.len(), 1, "{mail:?}");
+    assert!(
+        mail[0].subject.contains("ลบชุดสำรองข้อมูลเก่าไม่สำเร็จ"),
+        "{}",
+        mail[0].subject
+    );
+    assert_eq!(b.login(ADMIN, PASSWORD).await.status, 303);
+    let page = b.get("/admin/backups").await;
+    assert!(page.body.contains("prune-error"), "{}", page.body);
+    assert!(
+        !page.body.contains("id=\"backup-failed\""),
+        "no backup failure"
+    );
+}
