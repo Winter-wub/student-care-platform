@@ -176,6 +176,19 @@ impl SendReceipt {
     pub fn add_metered_unit(&mut self) {
         self.set_metered_units(self.metered_units.saturating_add(1));
     }
+
+    /// The same receipt with `units` of its metered units replayed,
+    /// clamped to [`SendReceipt::metered_units`].
+    pub fn with_replayed_units(mut self, units: u32) -> Self {
+        self.replayed_units = units.min(self.metered_units);
+        self
+    }
+
+    /// Marks one more metered unit as replayed (its Push request was
+    /// answered as already accepted), never beyond `metered_units`.
+    pub fn add_replayed_unit(&mut self) {
+        self.replayed_units = (self.replayed_units + 1).min(self.metered_units);
+    }
 }
 
 /// What [`crate::Channel::send_batch`] returns. `receipts[i]` belongs to

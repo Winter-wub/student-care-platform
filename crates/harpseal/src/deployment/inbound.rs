@@ -1,7 +1,8 @@
 //! The webhook path: verify and parse a call, claim each event id in
 //! `inbound_event` before handling it (#35), mark the claim done after,
-//! and log an `inbound.failed` Security Event for a failed event or for a
-//! claim whose handling never finished (#44, ADR-0009).
+//! log an `inbound.failed` Security Event for a failed event, and an
+//! `inbound.lost` one for a claim whose handling never finished, found by
+//! a redelivery or by the tick (#44, ADR-0009).
 
 use super::{Deployment, WebhookReport};
 use crate::delivery::{ChannelAccountId, Inbound, WebhookRequest};
@@ -12,13 +13,17 @@ use crate::{Error, Result, kernel};
 pub(crate) const INBOUND_EVENT_DAYS: i64 = 7;
 /// Most `inbound_event` rows one tick deletes.
 pub(crate) const INBOUND_EVENT_PRUNE_LIMIT: i64 = 500;
-/// How long a claim may stay unfinished before a redelivery of its event
-/// takes it as abandoned (the process handling it died): 60 s, beyond a
-/// platform's webhook timeout and a Worker's default CPU limit.
+/// How long a claim may stay unfinished before it counts as abandoned
+/// (the process handling it died): 60 s, beyond a platform's webhook
+/// timeout and a Worker's default CPU limit (30 s, configurable up to
+/// 5 min). A slow File copy is the expected reason a live handler
+/// exceeds it.
 pub(crate) const INBOUND_CLAIM_LEASE_MS: i64 = 60_000;
+/// Most abandoned claims one tick logs.
+pub(crate) const INBOUND_LOST_SWEEP_LIMIT: i64 = 100;
 /// The error logged for a claim whose handling never finished.
 pub(crate) const ABANDONED: &str =
-    "an earlier delivery's handling never finished (killed?); the redelivery is not answered";
+    "the handling of this event never finished (process killed?); it was not answered";
 
 /// What claiming an event id found.
 enum Claim {
@@ -27,7 +32,7 @@ enum Claim {
     /// Already claimed: skip it.
     Duplicate,
     /// Claimed over [`INBOUND_CLAIM_LEASE_MS`] ago and never finished;
-    /// this call marked it done. Skip it, and log it as failed.
+    /// this call marked it done. Skip it, and log it as lost.
     Abandoned,
 }
 
@@ -45,11 +50,12 @@ impl Deployment {
     /// redelivered event is answered once. The claim stays even when
     /// handling fails: the event was logged, and answering it twice is
     /// worse than once. Once handled (or logged as failed) the claim is
-    /// marked done. A redelivery that finds a claim still not done after
-    /// 60 seconds (the process handling it was killed)
-    /// marks it done, logs `inbound.failed` once, and is still not
-    /// answered (ADR-0009). Claims older than 7 days are deleted by
-    /// [`Deployment::tick`], never on the webhook path.
+    /// marked done. A claim still not done 60 seconds after it was taken
+    /// (the process handling it was killed) is logged once as
+    /// `inbound.lost` and never answered: by the next redelivery of its
+    /// event (counted in [`WebhookReport::failed`] only), else by
+    /// [`Deployment::tick`] (ADR-0009). Claims older than 7 days are
+    /// deleted by the tick, never on the webhook path.
     pub async fn handle_webhook(&self, kind: &str, req: WebhookRequest) -> Result<WebhookReport> {
         let channel = self.channel_or_err(kind)?;
         let channel_kind = channel.kind().as_str();
@@ -64,28 +70,27 @@ impl Deployment {
             let from = ev.from().clone();
             let id = ev.event_id().map(str::to_string);
             if let Some(id) = &id {
-                match self.claim_event(channel_kind, id).await {
+                match self.claim_event(&from, ev_kind, id).await {
                     Ok(Claim::New) => {}
                     Ok(Claim::Duplicate) => {
                         report.duplicates += 1;
                         continue;
                     }
                     Ok(Claim::Abandoned) => {
-                        report.duplicates += 1;
                         let e = Error::Conflict(ABANDONED.into());
-                        self.log_failed_event(&from, ev_kind, Some(id), &e).await;
+                        self.log_event(LOST, &from, ev_kind, Some(id), &e).await;
                         report.failed.push((ev_kind, e));
                         continue;
                     }
                     Err(e) => {
-                        self.log_failed_event(&from, ev_kind, Some(id), &e).await;
+                        self.log_event(FAILED, &from, ev_kind, Some(id), &e).await;
                         report.failed.push((ev_kind, e));
                         continue;
                     }
                 }
             }
             if let Err(e) = self.handle_inbound(ev).await {
-                self.log_failed_event(&from, ev_kind, id.as_deref(), &e)
+                self.log_event(FAILED, &from, ev_kind, id.as_deref(), &e)
                     .await;
                 report.failed.push((ev_kind, e));
             }
@@ -96,22 +101,25 @@ impl Deployment {
         Ok(report)
     }
 
-    /// Claims `(channel, event_id)`. One conditional insert, so two
-    /// deliveries racing each other cannot both win; when the id is taken,
-    /// one conditional update takes over a claim left unfinished past the
-    /// lease, so only one redelivery logs it.
-    async fn claim_event(&self, channel: &str, event_id: &str) -> Result<Claim> {
+    /// Claims `(channel, event_id)` for an event of `kind` from `from`.
+    /// One conditional insert, so two deliveries racing each other cannot
+    /// both win; when the id is taken, one conditional update takes over a
+    /// claim left unfinished past the lease, so only one caller logs it.
+    async fn claim_event(&self, from: &ChannelAccountId, kind: &str, id: &str) -> Result<Claim> {
         let db = &self.services.db;
         let now = self.services.now_ms();
+        let channel = from.channel.as_str();
         let claimed = db
             .execute(
                 Statement::new(
-                    "INSERT INTO inbound_event (channel, event_id, received_at) VALUES (?, ?, ?) \
-                     ON CONFLICT (channel, event_id) DO NOTHING",
+                    "INSERT INTO inbound_event (channel, event_id, received_at, external_id, kind) \
+                     VALUES (?, ?, ?, ?, ?) ON CONFLICT (channel, event_id) DO NOTHING",
                 )
                 .bind(channel)
-                .bind(event_id)
-                .bind(now),
+                .bind(id)
+                .bind(now)
+                .bind(from.external_id.clone())
+                .bind(kind),
             )
             .await?;
         if claimed.rows_affected == 1 {
@@ -125,7 +133,7 @@ impl Deployment {
                 )
                 .bind(now)
                 .bind(channel)
-                .bind(event_id)
+                .bind(id)
                 .bind(now - INBOUND_CLAIM_LEASE_MS),
             )
             .await?;
@@ -136,8 +144,9 @@ impl Deployment {
         })
     }
 
-    /// Marks the claim done. Best effort: if it fails, a redelivery after
-    /// the lease logs a spurious `inbound.failed` but still does not answer.
+    /// Marks the claim done. Best effort: if it fails (or the process dies
+    /// between the reply and this write), the claim is later logged as a
+    /// spurious `inbound.lost` though the event was answered.
     async fn finish_event(&self, channel: &str, event_id: &str) {
         let stmt = Statement::new(
             "UPDATE inbound_event SET done_at = ? WHERE channel = ? AND event_id = ? \
@@ -147,6 +156,51 @@ impl Deployment {
         .bind(channel)
         .bind(event_id);
         let _ = self.services.db.execute(stmt).await;
+    }
+
+    /// Run by [`Deployment::tick`]: claims left unfinished past the lease
+    /// that no redelivery found are marked done and logged as
+    /// `inbound.lost`, at most [`INBOUND_LOST_SWEEP_LIMIT`] per call. One
+    /// `UPDATE … RETURNING`, so a claim is logged once even when a
+    /// redelivery races the tick. Returns the claims logged.
+    pub(crate) async fn sweep_lost_inbound(&self, now_ms: i64) -> Result<u64> {
+        let rows = self
+            .services
+            .db
+            .query(
+                Statement::new(
+                    "UPDATE inbound_event SET done_at = ? WHERE rowid IN (SELECT rowid FROM \
+                     inbound_event WHERE done_at IS NULL AND received_at < ? LIMIT ?) \
+                     RETURNING channel, event_id, external_id, kind",
+                )
+                .bind(now_ms)
+                .bind(now_ms - INBOUND_CLAIM_LEASE_MS)
+                .bind(INBOUND_LOST_SWEEP_LIMIT),
+            )
+            .await?;
+        let text = |i: usize, c: &str| rows.get(i, c).and_then(|v| v.as_text()).map(str::to_string);
+        let error = Error::Conflict(ABANDONED.into());
+        let mut stmts = Vec::with_capacity(rows.len());
+        for i in 0..rows.len() {
+            let channel = text(i, "channel").unwrap_or_default();
+            let account = text(i, "external_id");
+            let kind = text(i, "kind").unwrap_or_else(|| "unknown".into());
+            let id = text(i, "event_id");
+            let row = self.event_row(
+                LOST,
+                &channel,
+                account.as_deref(),
+                &kind,
+                id.as_deref(),
+                &error,
+            );
+            stmts.push(row?);
+        }
+        let n = stmts.len() as u64;
+        if !stmts.is_empty() {
+            self.services.db.batch(stmts).await?;
+        }
+        Ok(n)
     }
 
     /// Deletes claims older than [`INBOUND_EVENT_DAYS`], at most
@@ -164,35 +218,51 @@ impl Deployment {
     }
 
     /// Best effort: if even this write fails there is nowhere left to log.
-    /// The account is linked when its `channel_account` row exists; the
-    /// error text is cut to 200 chars. The details carry the platform's
-    /// event id when there is one, never the event's payload.
-    async fn log_failed_event(
+    async fn log_event(
         &self,
+        kind: &'static str,
         from: &ChannelAccountId,
         event: &str,
         event_id: Option<&str>,
         e: &Error,
     ) {
-        let Ok(id) = self.services.new_id() else {
-            return;
-        };
+        let channel = from.channel.as_str();
+        let account = Some(from.external_id.as_str());
+        if let Ok(stmt) = self.event_row(kind, channel, account, event, event_id, e) {
+            let _ = self.services.db.execute(stmt).await;
+        }
+    }
+
+    /// One Security Event of `kind` about an event: linked to the account
+    /// when its `channel_account` row exists; details name the Channel,
+    /// the sender's external id when known (claims made before migration
+    /// 0009 have none), the event kind and id (never the payload)
+    /// and the error cut to 200 chars.
+    fn event_row(
+        &self,
+        kind: &'static str,
+        channel: &str,
+        external_id: Option<&str>,
+        event: &str,
+        event_id: Option<&str>,
+        e: &Error,
+    ) -> Result<Statement> {
         let error: String = e.to_string().chars().take(200).collect();
-        let stmt = Statement::new(
+        Ok(Statement::new(
             "INSERT INTO security_event (id, at, kind, channel_account_id, details) VALUES \
-             (?, ?, 'inbound.failed', \
-             (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
-             json_object('channel', ?, 'event', ?, 'event_id', ?, 'error', ?))",
+             (?, ?, ?, (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?), \
+             json_object('channel', ?, 'external_id', ?, 'event', ?, 'event_id', ?, 'error', ?))",
         )
-        .bind(id)
+        .bind(self.services.new_id()?)
         .bind(self.services.now_ms())
-        .bind(from.channel.as_str())
-        .bind(from.external_id.clone())
-        .bind(from.channel.as_str())
-        .bind(event)
+        .bind(kind)
+        .bind(channel.to_string())
+        .bind(external_id.map(str::to_string))
+        .bind(channel.to_string())
+        .bind(external_id.map(str::to_string))
+        .bind(event.to_string())
         .bind(event_id.map(str::to_string))
-        .bind(error);
-        let _ = self.services.db.execute(stmt).await;
+        .bind(error))
     }
 
     /// Answers one event: the Kernel's chat flow (`kernel::flow`) handles
@@ -202,3 +272,8 @@ impl Deployment {
         kernel::flow::handle(self, ev).await
     }
 }
+
+/// Security Event kind of an event that failed while handled.
+const FAILED: &str = "inbound.failed";
+/// Security Event kind of a claim whose handling never finished.
+const LOST: &str = "inbound.lost";

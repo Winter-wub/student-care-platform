@@ -67,10 +67,14 @@ impl Deployment {
     /// Message it stopped in gets a row with `error` set when some of its
     /// parts went out) and the result is [`Error::PartialSend`]: resume
     /// with `msgs[sent..]`, ideally through
-    /// [`Deployment::send_batch_with_key`] with the same key. On that
-    /// resume the first Message's requests already accepted (LINE answers
-    /// 409, [`SendReceipt::replayed_units`]) are not metered again, and
-    /// its "partly sent" row is completed rather than a second one written. When nothing
+    /// [`Deployment::send_batch_with_key`] with the same key. When the
+    /// stopped Message opened its own Push requests, the resume rebuilds
+    /// them with the same retry keys: those already accepted (LINE answers
+    /// 409, [`SendReceipt::replayed_units`]) are not delivered or metered
+    /// again, and its "partly sent" row is completed rather than a second
+    /// one written. When the stopped Message shared its first request with
+    /// the Messages before it, the resume builds different requests, LINE
+    /// answers no 409 and those parts reach the Student twice (#62). When nothing
     /// went out the Channel's error is returned as is. If the write fails,
     /// a database error is returned (the Messages did go out); it names the
     /// Channel's error too when there was one.
@@ -167,7 +171,7 @@ impl Deployment {
             _ => 0,
         };
         if batch.anything_sent() {
-            let mut stmts = self.outbound_rows(to, &delivery, msgs, &batch, module)?;
+            let mut stmts = self.outbound_rows(to, &delivery, msgs, &batch, module, &key)?;
             if failed > 0 {
                 stmts.push(self.failed_usage(to.channel.as_str(), failed));
             }
@@ -243,6 +247,7 @@ impl Deployment {
         msgs: &[Message],
         batch: &BatchReceipt,
         module: Option<&str>,
+        key: &str,
     ) -> Result<Vec<Statement>> {
         let now = self.services.now_ms();
         let channel = to.channel.as_str();
@@ -289,19 +294,20 @@ impl Deployment {
             );
             let resumed = is_resumed_part(i, r);
             // On the resume of the Message the last attempt stopped in, its
-            // row (error "partly sent") is completed instead of a second one
-            // inserted; the insert runs only when that row cannot be found.
+            // row of the same batch key (error "partly sent") is completed
+            // instead of a second one inserted; the insert runs only when
+            // that row cannot be found.
             let insert = if resumed {
                 format!(
                     "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
-                     metering, platform_message_id, module, kind, sent_at, error) SELECT ?, ?, \
-                     {ACCOUNT}, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS ({PARTIAL_ROW})"
+                     metering, platform_message_id, module, kind, sent_at, error, batch_key) \
+                     SELECT ?, ?, {ACCOUNT}, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS ({PARTIAL_ROW})"
                 )
             } else {
                 format!(
                     "INSERT INTO outbound_message (id, channel, channel_account_id, push, \
-                     metering, platform_message_id, module, kind, sent_at, error) VALUES (?, ?, \
-                     {ACCOUNT}, ?, ?, ?, ?, ?, ?, ?)"
+                     metering, platform_message_id, module, kind, sent_at, error, batch_key) \
+                     VALUES (?, ?, {ACCOUNT}, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
             };
             let pushed = r.pushed || matches!(delivery, Delivery::Push);
@@ -318,9 +324,11 @@ impl Deployment {
                 .bind(module.map(str::to_string))
                 .bind(msg.kind())
                 .bind(now)
-                .bind(error.clone());
+                .bind(error.clone())
+                .bind(key);
             if resumed {
                 row = row
+                    .bind(key)
                     .bind(channel)
                     .bind(channel)
                     .bind(to.external_id.clone())
@@ -337,6 +345,7 @@ impl Deployment {
                     .bind(pushed)
                     .bind(message_id)
                     .bind(error)
+                    .bind(key)
                     .bind(channel)
                     .bind(channel)
                     .bind(to.external_id.clone())
@@ -356,7 +365,16 @@ impl Deployment {
 /// recorded with it (`unfinished`), so their 409s now must not count again.
 /// A Message replayed whole is metered in full: an earlier attempt sent it
 /// but may have died before recording anything, and the Kernel cannot tell.
+///
+/// The rule is an approximation with two blind spots (#62): it
+/// over-counts when an earlier attempt's whole Message went out and was
+/// recorded but its answer was lost (the retry replays it whole, 409 on
+/// every request, and meters it again), and under-counts when the
+/// `Db::batch` recording a partial send failed (the resume replays part of
+/// the Message, discounts it, though nothing recorded those units). Exact
+/// metering needs the batch key and Message index on each row.
 fn units_to_meter(index: usize, r: &SendReceipt) -> u32 {
+    debug_assert!(r.replayed_units <= r.metered_units, "{r:?}");
     if is_resumed_part(index, r) {
         r.metered_units - r.replayed_units
     } else {
@@ -374,8 +392,8 @@ fn is_resumed_part(index: usize, r: &SendReceipt) -> bool {
 /// The account's `channel_account.id` (binds: channel, external id).
 const ACCOUNT: &str = "(SELECT id FROM channel_account WHERE channel = ? AND external_id = ?)";
 
-/// The newest "partly sent" row of a Message kind to an account (binds:
-/// channel, channel, external id, kind).
-const PARTIAL_ROW: &str = "SELECT id FROM outbound_message WHERE channel = ? AND \
+/// The "partly sent" row a batch with this key wrote for a Message kind to
+/// an account (binds: batch key, channel, channel, external id, kind).
+const PARTIAL_ROW: &str = "SELECT id FROM outbound_message WHERE batch_key = ? AND channel = ? AND \
      channel_account_id = (SELECT id FROM channel_account WHERE channel = ? AND external_id = ?) \
      AND kind = ? AND error LIKE 'partly sent:%' ORDER BY sent_at DESC, id DESC LIMIT 1";

@@ -119,21 +119,32 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   skips an id it has seen (still 200; counted in `WebhookReport::duplicates`),
   so a redelivered LINE event can no longer fall back to a second, metered
   Push. `redelivery` is informational. A claim gets `done_at` once its event
-  was answered or logged; a redelivery that finds a claim unfinished after
-  60 s (the handler was killed) logs one `inbound.failed` Security Event
-  (with the event id) and still does not answer (ADR-0009). `Deployment::tick` deletes claims
-  older than 7 days, at most 500 per tick.
-- **Resuming a partial send.** On a resume with the same key, LINE answers
-  409 to the Push requests of the stopped Message that already went out; the
-  receipt reports them in `SendReceipt::replayed_units` and the Kernel does
-  not meter them again (they were recorded with the partial attempt).
+  was answered or logged. A claim still unfinished 60 s after it was taken
+  (the handler was killed) is logged once as an `inbound.lost` Security
+  Event (Channel, sender, event kind and id; never the payload) and never
+  answered: by the next redelivery of the event, else by the tick (at most
+  100 per tick, `TickReport::events_lost`). A redelivery within the 60 s is
+  answered 200 as a duplicate, so the platform stops retrying; the tick is
+  what catches it then (ADR-0009). `Deployment::tick` deletes claims older
+  than 7 days, at most 500 per tick.
+- **Resuming a partial send.** When the stopped Message opened its own Push
+  requests, a resume with the same key rebuilds them with the same retry
+  keys: LINE answers 409 to those that already went out, the receipt
+  reports them in `SendReceipt::replayed_units`, the Kernel does not meter
+  them again and completes the Message's "partly sent" row (matched by
+  `outbound_message.batch_key`) instead of writing a second one. This is an
+  approximation (#62): it over-counts a Message replayed whole whose first
+  answer was lost, under-counts when recording the partial send failed,
+  and a stopped Message that shared its first request with earlier ones
+  gets those parts delivered twice.
 - **Building `Inbound` events.** Each variant is `#[non_exhaustive]`: build
   events with `Inbound::text`, `Inbound::action`, `Inbound::file`,
   `Inbound::follow`, `Inbound::blocked` and `Inbound::unblocked`, plus
-  `with_event_id`, and match them with `..`.
+  `with_event_id` and `with_redelivery`, and match them with `..`.
 - **Transport errors.** `ReqwestHttp` strips the request URL from every
-  reqwest error (`without_url`), and `WorkerHttp` scrubs URLs from the JS
-  errors of `fetch` (an "Invalid URL" error quotes it), so bot tokens in URLs
+  reqwest error (`without_url`), and `WorkerHttp` scrubs URLs and
+  `bot<digits>:<secret>` tokens from the JS errors of `fetch` (an "Invalid
+  URL" error quotes the URL), so bot tokens
   never reach logs or `security_event`; the Telegram adapter still redacts
   its token too. D1 writes without `meta.changes` fail with `Error::Db`
   instead of reporting 0 rows.

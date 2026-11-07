@@ -265,3 +265,43 @@ async fn a_resume_after_a_partial_send_meters_the_409_push_once_and_keeps_one_ro
         "complete now"
     );
 }
+
+#[tokio::test]
+async fn a_resume_completes_the_row_of_its_own_batch_key_only() {
+    // Two overlapping partial sends of the same kind to one account (an
+    // Announcement and a Module Job): the resume of one must not complete
+    // the other's "partly sent" row.
+    let (h, app) = linked().await;
+    let to = harpseal::ChannelAccountId::new(harpseal_channel_line::KIND, USER);
+    let msgs = [cards61()];
+    let d = app.deployment();
+    let th = harpseal::Locale::th();
+    for key in ["news-1/a1", "job-7/a1"] {
+        h.http().respond_with(200, "{}");
+        h.http().respond_with(500, r#"{"message":"boom"}"#);
+        let err = d.send_batch_with_key(&to, None, &msgs, &th, key).await;
+        assert!(matches!(err, Err(harpseal::Error::PartialSend { .. })));
+    }
+    h.http()
+        .respond_with(409, r#"{"message":"The retry key is already accepted"}"#);
+    h.http().respond_with(200, "{}");
+    d.send_batch_with_key(&to, None, &msgs, &th, "news-1/a1")
+        .await
+        .unwrap();
+    let rows = app
+        .query("SELECT batch_key, error IS NULL AS done FROM outbound_message ORDER BY batch_key")
+        .await;
+    let row = |i: usize| {
+        (
+            rows.get(i, "batch_key")
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .to_string(),
+            rows.get(i, "done").unwrap().clone(),
+        )
+    };
+    assert_eq!(rows.len(), 2);
+    assert_eq!(row(0), ("job-7/a1".into(), harpseal::Value::Integer(0)));
+    assert_eq!(row(1), ("news-1/a1".into(), harpseal::Value::Integer(1)));
+}

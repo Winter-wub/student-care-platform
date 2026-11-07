@@ -173,6 +173,11 @@ impl LineChannel {
             } = match sent {
                 Ok(v) => v,
                 Err(e) => {
+                    // A Message whose parts went out before this request is
+                    // `unfinished`. Only when it opened its own requests does
+                    // a resume from it rebuild them (same retry keys, 409);
+                    // when its first parts shared a request with earlier
+                    // Messages, a resume builds other requests (#62).
                     let first = chunk[0].source;
                     let started = req.parts.start > 0 && parts[req.parts.start - 1].source == first;
                     let unfinished = started.then(|| receipts[first].clone());
@@ -194,7 +199,7 @@ impl LineChannel {
                         // spent on an earlier attempt.
                         r.add_metered_unit();
                         if replayed {
-                            r.replayed_units += 1;
+                            r.add_replayed_unit();
                         }
                     }
                 }
