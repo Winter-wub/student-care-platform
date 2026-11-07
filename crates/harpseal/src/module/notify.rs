@@ -77,6 +77,10 @@ impl Notice {
     /// one (module, key) names one Notice, and calls with it never send a
     /// Student the Notice twice, so a retried Job or a second click
     /// reuses it; a new Notice needs a new key (e.g. the week it is for).
+    /// Keep a key's texts the same: an email retried under the key with
+    /// another body is refused by Resend (409 `invalid_idempotent_request`,
+    /// within its 24 hours), which comes back as
+    /// [`NotifyOutcome::Failed`] (`Email`).
     pub fn new(module: impl Into<String>, key: impl Into<String>) -> Self {
         Self {
             module: module.into(),
@@ -204,8 +208,13 @@ pub enum NotifyDefer {
     /// Over the call's [`Notice::budget`].
     Budget,
     /// Another call with the key is sending to this Student now (or was
-    /// cut off less than 15 minutes ago).
+    /// cut off less than 10 minutes ago).
     InProgress,
+    /// Their only way is a Channel whose platform refuses Pushes until its
+    /// own quota resets ([`Error::QuotaExhausted`]), and they have no
+    /// email address: call again once the quota has reset (LINE: the
+    /// next month).
+    Quota,
 }
 
 /// Why a send failed. Nothing is recorded as done: a later call with the
@@ -226,7 +235,7 @@ pub enum NotifyOutcome {
     /// The chat batch went out on at least one live Link.
     Sent,
     /// Emailed (no live Link, every one unreachable, or its Channel's
-    /// platform quota used up).
+    /// platform quota used up, even part-way through the batch).
     Emailed,
     /// Nothing sent, and nothing will be.
     Skipped(NotifySkip),
@@ -234,6 +243,10 @@ pub enum NotifyOutcome {
     Deferred(NotifyDefer),
     /// The send failed.
     Failed(NotifyFailure),
+    /// Sent, but this call's claim ran out mid-send and another call took
+    /// the Student over: that call's report is the one that counts (it
+    /// finds the chat on record, or resends the email under its key).
+    Overtaken,
 }
 
 /// One Student's line in a [`NotifyReport`].
@@ -267,6 +280,8 @@ pub struct NotifyReport {
     pub deferred: usize,
     /// Students whose send failed: call again with them and the key.
     pub failed: usize,
+    /// Students another call took over mid-send ([`NotifyOutcome::Overtaken`]).
+    pub overtaken: usize,
     /// Channels whose platform refused a Push because its own quota is
     /// used up ([`Error::QuotaExhausted`]); not called again in this call.
     pub exhausted: Vec<ChannelKind>,
@@ -280,6 +295,7 @@ impl NotifyReport {
             NotifyOutcome::Skipped(_) => self.skipped += 1,
             NotifyOutcome::Deferred(_) => self.deferred += 1,
             NotifyOutcome::Failed(_) => self.failed += 1,
+            NotifyOutcome::Overtaken => self.overtaken += 1,
         }
         self.students.push(n);
     }
@@ -290,7 +306,7 @@ impl JobContext {
     /// chat batch on every live Link (a keyed Push per Link, metered and
     /// recorded like a Kernel send, the Module on the rows), else the
     /// email when the Student has an address. See
-    /// `docs/guide/deployment.md` ("Notifying chosen Students").
+    /// `docs/guide/notify.md`.
     ///
     /// `Err` when the notice or the list is invalid (`Error::Invalid`,
     /// nothing sent) or a send must wait (a rate limit, a partial send, a

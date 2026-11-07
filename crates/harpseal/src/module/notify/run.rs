@@ -71,7 +71,8 @@ pub(super) async fn notify(d: &Deployment, n: &Notice, to: &[NotifyTo]) -> Resul
     if to.is_empty() {
         return Ok(report);
     }
-    claim::prune(d).await?;
+    // Best effort: a failed prune leaves rows for the next call.
+    let _ = claim::prune(d).await;
     let scoped = n.scoped();
     let students = load(d, to).await?;
     let ids: Vec<&str> = students.iter().map(|s| s.id.as_str()).collect();
@@ -112,17 +113,9 @@ pub(super) async fn notify(d: &Deployment, n: &Notice, to: &[NotifyTo]) -> Resul
             report.push(skip(NotifySkip::NoText));
             continue;
         };
-        let mine: Vec<ChannelAccountId> = links
-            .get(&s.id)
-            .map(|l| {
-                l.iter()
-                    .filter(|a| !exhausted.contains(&a.channel))
-                    .cloned()
-            })
-            .into_iter()
-            .flatten()
-            .collect();
-        let cost = mine.len() * v.requests() + usize::from(s.email.is_some());
+        let mine: Vec<ChannelAccountId> = links.get(&s.id).cloned().unwrap_or_default();
+        let usable = mine.iter().filter(|a| !exhausted.contains(&a.channel));
+        let cost = usable.count() * v.requests() + usize::from(s.email.is_some());
         over = over || (used > 0 && used + cost > n.budget);
         if over {
             let deferred = NotifyOutcome::Deferred(NotifyDefer::Budget);
@@ -178,9 +171,9 @@ impl Send<'_> {
     ) -> Result<NotifyOutcome> {
         let d = self.d;
         if email_out {
-            return self.email(claim, true).await;
+            return self.email(claim, true, false).await;
         }
-        let mut failed = false;
+        let (mut failed, mut quota) = (false, false);
         if !self.links.is_empty() {
             if !claim.start(d, "chat").await? {
                 return Ok(NotifyOutcome::Deferred(NotifyDefer::InProgress));
@@ -188,38 +181,39 @@ impl Send<'_> {
             let mut sent = false;
             for to in &self.links {
                 if exhausted.contains(&to.channel) {
+                    quota = true;
                     continue;
                 }
                 match self.chat(to).await {
                     Ok(()) => sent = true,
+                    // The platform refuses Pushes until its quota period
+                    // resets, maybe part-way through the batch: email
+                    // instead, and leave that Channel alone this call.
+                    Err(e) if matches!(e.root(), Error::QuotaExhausted(_)) => {
+                        exhausted.insert(to.channel);
+                        quota = true;
+                    }
                     // What went out is recorded: the retry sends the rest.
                     Err(e @ Error::PartialSend { .. }) => return Err(e),
                     Err(Error::Unreachable | Error::Unsupported(_)) => {}
-                    // The platform refuses Pushes until its quota period
-                    // resets: email instead, and leave it alone this call.
-                    Err(Error::QuotaExhausted(_)) => {
-                        exhausted.insert(to.channel);
-                    }
                     Err(e @ (Error::RateLimited { .. } | Error::Db(_))) => return Err(e),
                     Err(_) => failed = true,
                 }
             }
             if sent {
-                claim.finish(d, "chat").await?;
-                return Ok(NotifyOutcome::Sent);
+                return finished(d, claim, "chat").await;
             }
         }
         // A cut-off run may have sent the whole chat on a Link that is
         // gone now: that Student has it, so no email on top.
         if claim::chat_on_record(d, &self.key, self.v.chat.len()).await? {
-            claim.finish(d, "chat").await?;
-            return Ok(NotifyOutcome::Sent);
+            return finished(d, claim, "chat").await;
         }
         if failed {
             claim.release(d).await?;
             return Ok(NotifyOutcome::Failed(NotifyFailure::Platform));
         }
-        self.email(claim, false).await
+        self.email(claim, false, quota).await
     }
 
     /// The batch on one Link, from where its rows say (Channels without
@@ -242,22 +236,25 @@ impl Send<'_> {
     }
 
     /// The email, keyed. `again`: a cut-off run may have handed it over.
-    async fn email(&self, claim: &Claim, again: bool) -> Result<NotifyOutcome> {
+    /// `quota`: a Link was passed over because its platform's quota is used
+    /// up, so without an address the Student waits for the quota to reset.
+    async fn email(&self, claim: &Claim, again: bool, quota: bool) -> Result<NotifyOutcome> {
         let d = self.d;
         let sender = &d.services().email;
         let address = self.s.email.clone().filter(|e| !e.trim().is_empty());
         let Some(address) = address else {
             if again {
-                claim.finish(d, "email").await?;
-                return Ok(NotifyOutcome::Emailed);
+                return finished(d, claim, "email").await;
             }
             claim.release(d).await?;
+            if quota {
+                return Ok(NotifyOutcome::Deferred(NotifyDefer::Quota));
+            }
             return Ok(NotifyOutcome::Skipped(NotifySkip::NoAddress));
         };
         if again && !sender.dedupes() {
             // At most once: the provider may have it, and cannot say.
-            claim.finish(d, "email").await?;
-            return Ok(NotifyOutcome::Emailed);
+            return finished(d, claim, "email").await;
         }
         if !claim.start(d, "email").await? {
             return Ok(NotifyOutcome::Deferred(NotifyDefer::InProgress));
@@ -272,9 +269,18 @@ impl Send<'_> {
             claim.release(d).await?;
             return Ok(NotifyOutcome::Failed(NotifyFailure::Email));
         }
-        claim.finish(d, "email").await?;
-        Ok(NotifyOutcome::Emailed)
+        finished(d, claim, "email").await
     }
+}
+
+/// `done` by `via`: [`NotifyOutcome::Sent`] / `Emailed`, or `Overtaken`
+/// when the claim was lost mid-send (its lease ran out and another call
+/// took the Student over; that call's report counts).
+async fn finished(d: &Deployment, claim: &Claim, via: &str) -> Result<NotifyOutcome> {
+    if !claim.finish(d, via).await? {
+        return Ok(NotifyOutcome::Overtaken);
+    }
+    Ok(earlier(via))
 }
 
 async fn load(d: &Deployment, to: &[NotifyTo]) -> Result<Vec<Student>> {

@@ -18,7 +18,7 @@ use harpseal::audience::parse_student_ids;
 use harpseal::{
     AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY,
     Message, Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission,
-    Result, Statement, Value, ui,
+    Result, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -120,10 +120,11 @@ async fn weekly(cx: JobContext, _job: Job) -> Result<()> {
 }
 
 /// `reminders.send`: one chunk. Students over the call's request budget
-/// go to a follow-up Job at once; failed ones, or ones another run is
-/// still sending to, make this run fail, so the Job's retry (1, 5, then
-/// 30 minutes later) tries them again. The key keeps everyone else from a
-/// repeat.
+/// go to a follow-up Job at once, and Students waiting for a platform
+/// quota to reset (LINE's monthly limit, no email address) to one a day
+/// later; failed ones, or ones another run is still sending to, make this
+/// run fail, so the Job's retry (1, 5, then 30 minutes later) tries them
+/// again. The key keeps everyone else from a repeat.
 async fn send(cx: JobContext, job: Job) -> Result<()> {
     let p: serde_json::Value = serde_json::from_str(&job.payload)
         .map_err(|_| Error::Invalid("job payload is not JSON".into()))?;
@@ -143,19 +144,34 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
         r.sent, r.emailed, r.skipped, r.deferred, r.failed
     );
     cx.progress(&note).await?;
-    let over: Vec<&str> = r
-        .students
-        .iter()
-        .filter(|n| n.outcome == NotifyOutcome::Deferred(NotifyDefer::Budget))
-        .map(|n| code(&n.to))
-        .collect();
-    if !over.is_empty() {
-        let payload = serde_json::json!({ "key": key, "codes": over });
-        let rest = format!("{}:rest", job.id);
-        let (_, stmt) = cx.jobs.insert_unique(&rest, SEND, &payload, None)?;
-        cx.services.db.execute(stmt).await?;
+    // Over the budget: a follow-up Job now. Waiting for a platform quota
+    // to reset (no email address): one tomorrow, until it has.
+    let later = Timestamp(cx.services.now_ms() + DAY_MS);
+    let waits = [
+        (NotifyDefer::Budget, "rest", None),
+        (NotifyDefer::Quota, "quota", Some(later)),
+    ];
+    let mut stmts = Vec::new();
+    for (why, suffix, at) in waits {
+        let codes: Vec<&str> = r
+            .students
+            .iter()
+            .filter(|n| n.outcome == NotifyOutcome::Deferred(why))
+            .map(|n| code(&n.to))
+            .collect();
+        if codes.is_empty() {
+            continue;
+        }
+        let payload = serde_json::json!({ "key": key, "codes": codes });
+        let unique = format!("{}:{suffix}", job.id);
+        stmts.push(cx.jobs.insert_unique(&unique, SEND, &payload, at)?.1);
     }
-    if r.failed > 0 || r.deferred > over.len() {
+    if !stmts.is_empty() {
+        cx.services.db.batch(stmts).await?;
+    }
+    let busy = NotifyOutcome::Deferred(NotifyDefer::InProgress);
+    let retry = r.failed > 0 || r.students.iter().any(|n| n.outcome == busy);
+    if retry {
         return Err(Error::Platform(note));
     }
     Ok(())
@@ -237,6 +253,7 @@ fn outcome(o: NotifyOutcome) -> &'static str {
         NotifyOutcome::Emailed => "email",
         NotifyOutcome::Skipped(_) => "skipped",
         NotifyOutcome::Deferred(_) => "not yet: send again",
+        NotifyOutcome::Overtaken => "sent by another run",
         NotifyOutcome::Failed(_) => "failed",
         _ => "?",
     }

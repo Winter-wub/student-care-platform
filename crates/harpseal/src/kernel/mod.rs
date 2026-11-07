@@ -119,8 +119,8 @@ const MIGRATIONS: &[(&str, &str)] = &[
         include_str!("../../migrations/0014_module_upload.sql"),
     ),
     (
-        "0014_notify_delivery",
-        include_str!("../../migrations/0014_notify_delivery.sql"),
+        "0015_notify_delivery",
+        include_str!("../../migrations/0015_notify_delivery.sql"),
     ),
 ];
 

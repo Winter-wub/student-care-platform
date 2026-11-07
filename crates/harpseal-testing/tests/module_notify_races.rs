@@ -192,3 +192,31 @@ async fn a_restored_backup_keeps_what_was_sent() {
     let n = rows.get(0, "n").and_then(|v| v.as_i64());
     assert_eq!(n, Some(1), "the done row survives the restore");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_call_whose_claim_is_taken_over_mid_send_reports_overtaken() {
+    let s = Setup::new(FakeProfile::LineLike).await;
+    s.student(1, None, Some("active")).await;
+    // While the Push is out, another call retakes the Student (as after a
+    // lease that ran out).
+    let db = s.h.db();
+    s.fake().before_next_send(move || {
+        tokio::task::block_in_place(|| {
+            let stmt =
+                harpseal::Statement::new("UPDATE notify_delivery SET claim_token = 'another-call'");
+            tokio::runtime::Handle::current()
+                .block_on(db.execute(stmt))
+                .unwrap();
+        });
+    });
+    s.notify("w45", &["68010001"]).await;
+    let r = s.last();
+    assert_eq!(r.students[0].outcome, NotifyOutcome::Overtaken, "{r:?}");
+    assert_eq!((r.sent, r.overtaken), (0, 1));
+    let done = "SELECT count(*) FROM notify_delivery WHERE status = 'done'";
+    assert_eq!(
+        s.app.count(done).await,
+        0,
+        "the other call's claim is untouched"
+    );
+}

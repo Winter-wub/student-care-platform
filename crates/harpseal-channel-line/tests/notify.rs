@@ -1,7 +1,8 @@
 //! A Notice (#73) on the real LINE adapter: a run cut off part-way is
 //! retried by the next Job run with the whole batch and the same retry
 //! keys (ADR-0010: LINE drops what it has), and a used-up monthly quota
-//! sends the Students email instead and stops calling LINE.
+//! (also part-way through a batch) sends the Students email instead, stops
+//! calling LINE, and leaves a Student without an address for later.
 
 mod common;
 
@@ -10,7 +11,8 @@ use std::sync::{Arc, Mutex};
 use common::{SECRET, TOKEN, USER, json};
 use harpseal::{
     Card, CardList, ChannelKind, Error, Job, JobContext, JobSpec, Locale, Message, Module,
-    ModuleRegistrar, Notice, NotifyOutcome, NotifyReport, NotifyTo, Statement, Timestamp,
+    ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyReport, NotifyTo, Statement,
+    Timestamp,
 };
 use harpseal_channel_line::{LineChannel, LineConfig, RETRY_KEY_HEADER};
 use harpseal_testing::{Harness, RecordedRequest, TestApp};
@@ -117,6 +119,27 @@ async fn boot(linked: u8) -> (Harness, TestApp, Reports) {
     (h, app, reports)
 }
 
+async fn no_email(h: &Harness, n: u8) {
+    run(
+        h,
+        format!("UPDATE student SET email = NULL WHERE id = 's{n}'"),
+    )
+    .await;
+}
+
+async fn enqueue(app: &TestApp) {
+    app.deployment()
+        .enqueue("probe.notify", serde_json::json!({}), None)
+        .await
+        .unwrap();
+}
+
+fn last(reports: &Reports) -> NotifyReport {
+    reports.lock().unwrap().last().cloned().unwrap()
+}
+
+const USED_UP: &str = r#"{"message":"You have reached your monthly limit."}"#;
+
 async fn tick(h: &Harness, app: &TestApp) -> harpseal::TickReport {
     let now = Timestamp(h.clock().now_ms());
     app.deployment().tick(now).await.unwrap()
@@ -191,4 +214,43 @@ async fn a_used_up_monthly_quota_emails_instead_and_stops_calling_line() {
     assert_eq!(app.count(failed).await, 2);
     let live = "SELECT count(*) FROM link WHERE status = 'active'";
     assert_eq!(app.count(live).await, 2);
+}
+
+#[tokio::test]
+async fn a_quota_used_up_part_way_through_the_batch_still_emails() {
+    let (h, app, reports) = boot(1).await;
+    // Push 1 (X + A1..A4) goes; push 2 meets the used-up quota.
+    h.http().respond_with(200, "{}");
+    h.http().respond_with(429, USED_UP);
+    enqueue(&app).await;
+    let t = tick(&h, &app).await;
+    assert_eq!(t.done, 1, "not retried until it gives up: {:?}", t.errors);
+    let r = last(&reports);
+    assert_eq!(r.students[0].outcome, NotifyOutcome::Emailed, "{r:?}");
+    assert_eq!(r.exhausted, [ChannelKind("line")]);
+    assert_eq!(h.email().to("s1@seal-bay.invalid").len(), 1);
+    assert_eq!(h.http().take_requests().len(), 2);
+}
+
+#[tokio::test]
+async fn a_quota_blocked_student_without_email_waits_and_is_sent_after_the_reset() {
+    let (h, app, reports) = boot(2).await;
+    no_email(&h, 2).await;
+    h.http().respond_with(429, USED_UP);
+    enqueue(&app).await;
+    tick(&h, &app).await;
+    let r = last(&reports);
+    assert_eq!(r.students[0].outcome, NotifyOutcome::Emailed);
+    let waits = NotifyOutcome::Deferred(NotifyDefer::Quota);
+    assert_eq!(r.students[1].outcome, waits, "not Skipped(NoAddress)");
+    assert_eq!(h.http().take_requests().len(), 1, "LINE called once");
+
+    // The quota has reset: the next call with the key sends the chat.
+    h.clock().advance_minutes(60);
+    enqueue(&app).await;
+    tick(&h, &app).await;
+    let r = last(&reports);
+    assert!(r.students[0].again);
+    assert_eq!(r.students[1].outcome, NotifyOutcome::Sent);
+    assert_eq!(h.http().take_requests().len(), 2, "s2's two Push requests");
 }

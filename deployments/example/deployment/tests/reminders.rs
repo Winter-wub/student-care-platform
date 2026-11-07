@@ -172,3 +172,44 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
         .await;
     assert_eq!(v.get("/admin/reminders").await.status, 403);
 }
+
+#[tokio::test]
+async fn a_student_waiting_for_the_line_quota_is_reminded_a_day_later() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    // Ploy (tagged) is on LINE only, with no email address.
+    for sql in [
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s4', '68010004', 'Ploy Heron', 'th', 1, 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, flow_state, \
+         updated_at) VALUES ('a-s4', 'line', 'U00000000000000000000000000000004', 1, \
+         'linked', 1)",
+        "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+         linked_at, updated_at) VALUES ('l-s4', 's4', 'a-s4', 'line', 'active', 'email_otp', 1, 1)",
+        "INSERT INTO student_tag (student_id, tag_id, source, added_at) VALUES ('s4', 't1', \
+         'roster', 1)",
+    ] {
+        run(&h, sql).await;
+    }
+    h.http()
+        .respond_with(429, r#"{"message":"You have reached your monthly limit."}"#);
+    h.clock().set_ms(MONDAY_9AM);
+    let d = app.deployment();
+    d.tick(Timestamp(MONDAY_9AM)).await.unwrap();
+    let t = d.tick(Timestamp(MONDAY_9AM + MIN)).await.unwrap();
+    assert!(t.errors.is_empty(), "{:?}", t.errors);
+    let waiting = "SELECT count(*) FROM job WHERE kind = 'reminders.send' AND state = 'queued' \
+                   AND payload LIKE '%68010004%'";
+    assert_eq!(app.count(waiting).await, 1, "re-queued for tomorrow");
+    let line = |h: &Harness| h.http_requests().len();
+    assert_eq!(line(&h), 1);
+
+    // A day later the quota has reset (LINE answers 200): Ploy gets it.
+    let tomorrow = MONDAY_9AM + MIN + 24 * 60 * MIN;
+    h.clock().set_ms(tomorrow);
+    let t = d.tick(Timestamp(tomorrow)).await.unwrap();
+    assert!(t.errors.is_empty(), "{:?}", t.errors);
+    assert_eq!(line(&h), 2, "one Push to Ploy");
+    assert_eq!(app.count(waiting).await, 0);
+    assert_eq!(chats(&h, "s1"), 1, "Karn was not reminded twice");
+}

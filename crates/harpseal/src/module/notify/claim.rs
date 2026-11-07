@@ -1,4 +1,4 @@
-//! The per-Student claim of a Notice (#73, migration 0014): one call at a
+//! The per-Student claim of a Notice (#73, migration 0015): one call at a
 //! time sends to a (key, Student). A call claims the row with one
 //! conditional upsert and goes on only when the row then carries its own
 //! token; every later write is guarded by that token.
@@ -123,18 +123,20 @@ impl Claim {
         Ok(done.rows_affected == 1)
     }
 
-    /// `done` by `via`.
-    pub(super) async fn finish(&self, d: &Deployment, via: &str) -> Result<()> {
+    /// `done` by `via`; `false` when the claim was lost (another call took
+    /// the Student over after the lease ran out): nothing is written.
+    pub(super) async fn finish(&self, d: &Deployment, via: &str) -> Result<bool> {
         let s = d.services();
         let stmt = self
             .guarded("via = ?, status = 'done', updated_at = ?")
             .bind(via)
             .bind(s.now_ms());
-        s.db.execute(self.bind_key(stmt)).await.map(|_| ())
+        let done = s.db.execute(self.bind_key(stmt)).await?;
+        Ok(done.rows_affected == 1)
     }
 
     /// `open` again with nothing in flight: the next call retakes it at
-    /// once.
+    /// once. A claim already lost is left to the call holding it now.
     pub(super) async fn release(&self, d: &Deployment) -> Result<()> {
         let s = d.services();
         let stmt = self
@@ -176,12 +178,14 @@ pub(super) async fn done(
     Ok(out)
 }
 
-/// Deletes up to 100 rows untouched for [`KEEP_MS`].
+/// Deletes up to 100 rows untouched for [`KEEP_MS`], whatever their
+/// status: a `sending` row that old is a claim nobody came back for
+/// (its lease is 10 minutes).
 pub(super) async fn prune(d: &Deployment) -> Result<()> {
     let s = d.services();
     let stmt = Statement::new(
         "DELETE FROM notify_delivery WHERE rowid IN (SELECT rowid FROM notify_delivery \
-         WHERE updated_at < ? AND status <> 'sending' LIMIT ?)",
+         WHERE updated_at < ? LIMIT ?)",
     )
     .bind(s.now_ms() - KEEP_MS)
     .bind(PRUNE);

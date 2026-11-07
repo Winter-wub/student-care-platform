@@ -1,9 +1,9 @@
--- Kernel migration 0014: what a Module's Notice (#73) did per Student, so
+-- Kernel migration 0015: what a Module's Notice (#73) did per Student, so
 -- the same key never sends a Student anything twice, even from two calls at
 -- once. `notify_key` is `<module>:<key>`: two Modules' keys never meet.
 --
 -- A call claims a row before it sends (insert, or retake an `open` row or a
--- `sending` one whose 15-minute lease ran out) and goes on only when its
+-- `sending` one whose 10-minute lease ran out) and goes on only when its
 -- claim changed one row; it writes `done` (or `open` again, after a failure)
 -- under its `claim_token`. `via` says what may be in flight: 'email' is set
 -- before an email goes out, so a retaken row knows the provider may have
