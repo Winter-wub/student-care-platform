@@ -126,6 +126,7 @@ impl DeploymentBuilder {
             channels: self.channels,
             verification,
             catalog: Arc::new(catalog),
+            inbound_queues: Default::default(),
             registry: Arc::new(Registry {
                 permissions: collected.permissions,
                 menu,

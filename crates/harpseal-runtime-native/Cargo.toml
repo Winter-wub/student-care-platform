@@ -15,7 +15,7 @@ categories = ["web-programming::http-server"]
 harpseal.workspace = true
 async-trait.workspace = true
 axum = { version = "0.8", features = ["tokio", "http1"] }
-tokio = { workspace = true, features = ["fs", "time"] }
+tokio = { workspace = true, features = ["fs", "time", "sync"] }
 rusqlite.workspace = true
 getrandom.workspace = true
 http.workspace = true
@@ -29,4 +29,5 @@ sha2.workspace = true
 
 [dev-dependencies]
 harpseal-testing.workspace = true
+harpseal-channel-fake.workspace = true
 tokio = { workspace = true, features = ["io-util"] }

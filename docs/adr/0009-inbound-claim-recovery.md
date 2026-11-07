@@ -13,10 +13,19 @@ We rejected option (a), letting a redelivery take the claim over and handle the 
 
 The lease is 60 seconds: beyond the platforms' webhook timeouts and a Worker's default CPU limit (30 s; configurable up to 5 minutes, and a Deployment that raises it should expect more spurious logs). A slow File copy (a large file downloaded from the platform and stored) is the expected reason a live handler exceeds it.
 
+## Amendment (#97): handling after the 200
+
+The claim used to run inside the webhook request, so a client closing the connection (LINE, a proxy) dropped the handler half way: claimed, never `done_at`, partly answered. Now the Router verifies the call, claims every event of it, answers 200 and hands the handling to a `Background` the runtime puts on the request: a tokio task on the native runtime, `ctx.wait_until` on Workers (still bounded by the invocation's CPU limit and `waitUntil` window). A bad signature (401), an unparseable body (400) and a duplicate are still decided before the answer. Handling failures are logged as `inbound.failed` as before; a process that dies mid-handling, a panicking handler, or a Worker cut off by a limit leaves the claim unfinished for this ADR's sweep. Without a `Background` (in-process tests, `Deployment::handle_webhook`) the events are handled inside the call, as before.
+
+Events of one chat account are handled one at a time, in claim order, across calls. Each call starts one task per account it carries (on Workers under its own `wait_until`), and that task waits for the account's previous task to end. The native runtime bounds concurrency per event (16 slots), not per task, so a waiting task holds nothing and a busy account cannot hold slots the others need.
+
+Queueing changes what the lease measures. A claim's lease now restarts when its handling starts (`received_at` is rewritten then), so the time an event waits behind its account's earlier events, or for a slot, does not count against the 60 seconds of handling. An event that waits longer than the lease is logged as `inbound.lost` by the tick while still queued; when its turn comes the rewrite finds the claim done and the event is skipped, so `inbound.lost` keeps meaning "not answered". An account whose handling has not started a new event for the lease (a hung handler, or a task the runtime stopped without dropping it) is taken over by its next call, which runs without waiting; the tasks queued before the takeover stop at their next event and leave those claims to the sweep. A handler that is merely slow keeps its account: each event it starts counts as progress, and a task waiting for a native slot (all 16 busy) is throttled, not hung, so it is never taken over. Lane and task numbers come from one process-wide counter, so a task of an account's earlier, taken-over lane never matches a newer lane. The `inbound.lost` error text names both causes: queued too long, or the process killed.
+
 ## Consequences
 
 - Migration 0009 adds `inbound_event.done_at`, `external_id` and `kind`, and a partial index on unfinished claims; claims made before it count as finished.
 - A process that dies after the reply but before `done_at` is written, or a `done_at` write that fails (best effort), makes a claim look abandoned: a spurious `inbound.lost` is logged though the event was answered.
 - A handler that runs longer than 60 seconds is logged as lost by a redelivery or tick even though it may still finish and answer once.
+- An event queued behind its account (or waiting for a native slot) for longer than 60 seconds is logged as lost and never answered (#97).
 - `TickReport::events_lost` counts the claims a tick logged; `WebhookReport` counts one found by a redelivery in `failed`, not in `duplicates`.
 - Option (a) stays possible later with the same columns: it would re-handle where this decision logs.

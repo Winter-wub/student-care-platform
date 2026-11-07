@@ -725,6 +725,7 @@ dependencies = [
  "axum",
  "getrandom 0.4.3",
  "harpseal",
+ "harpseal-channel-fake",
  "harpseal-testing",
  "hmac",
  "http",

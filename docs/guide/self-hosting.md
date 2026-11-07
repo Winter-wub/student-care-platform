@@ -139,6 +139,20 @@ set `[staff] trust_forwarded_for = true`. The Deployment backs itself up
 every night into the FileStore; `harpseal backup` makes a point-in-time
 copy by hand (below).
 
+Webhooks are answered 200 as soon as the call is verified and its events
+are claimed; the handling runs on a background task (`NativeBackground`), so
+LINE or a proxy closing the connection no longer stops it half way (#97).
+Events of one chat account are handled one at a time, in order; at most 16
+events are handled at once across accounts. Time an event waits in that
+queue eats into LINE's reply token (about a minute), so a backlog turns
+Replies into metered Pushes (Quota); an event that waits over 60 seconds is
+logged as `inbound.lost` and not answered. `serve` runs until the process
+is killed; to let handling finish on shutdown, call
+`serve_until(router, addr, shutdown)` with a future that completes on
+SIGTERM: it stops taking connections and waits up to 8 seconds for the
+background tasks. Anything a kill cuts off keeps an unfinished claim, which
+the next process's tick logs as `inbound.lost` (ADR-0009).
+
 ## Backup and restore
 
 ```sh
