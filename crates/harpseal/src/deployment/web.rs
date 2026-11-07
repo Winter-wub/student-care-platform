@@ -86,7 +86,7 @@ impl Deployment {
                 permission: Some(*permission),
                 during_forced_change: false,
                 body_limit: upload.map_or(auth::MULTIPART_LIMIT, |u| u.max_body),
-                too_large: upload.map(|u| (u.back, u.too_large)),
+                too_large: upload.and_then(|u| u.too_large),
             };
             root = root.route(
                 &format!("{}{path}", super::routes::ADMIN),

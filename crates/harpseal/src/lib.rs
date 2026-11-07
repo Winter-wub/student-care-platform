@@ -97,8 +97,8 @@ pub use message::{
 };
 pub use migrate::{MigrationReport, migrate};
 pub use module::{
-    ActionContext, ActionHandler, AppState, JobContext, JobHandler, Module, ModuleRegistrar,
-    PageState,
+    ActionContext, ActionHandler, AppState, JobContext, JobHandler, KeptUpload, MAX_UPLOAD_BYTES,
+    Module, ModuleRegistrar, PageState, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection,
 };
 pub use port_types::{Email, ExecResult, Rows, Statement, Value};
 pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services};

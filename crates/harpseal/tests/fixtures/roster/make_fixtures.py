@@ -217,3 +217,17 @@ write_book(f"{out}/long_numbers.xlsx", [("อ้างอิง", long_ids)])
 old_tab = (xrow(1, H[:-1])
     + xrow(2, student(66010001, "ดาวทะเล ฟองคลื่น", 3)[:-1]))
 write_book(f"{out}/cohorts_hidden_partial.xlsx", [("ปี 1", y1), ("ปี 0", old_tab, True)])
+
+# A Module's multi-sheet upload (#74): one term per sheet. "ภาคเรียน 1" has
+# a title row and a totals row (skipped), "ภาคเรียน 2" an amount that is not
+# a number (a problem), and a hidden lookup sheet that is left out.
+term1 = (xrow(1, ["ค่าธรรมเนียมการศึกษา ภาคเรียนที่ 1/2569"])
+    + xrow(2, FEES)
+    + xrow(3, [68010001, "นกน้อย ทะเลใส", "12,500"])
+    + xrow(4, [68010002, "ปลาทอง อ่าวคราม", 9000])
+    + xrow(5, ["รวม", None, 21500]))
+term2 = (xrow(1, FEES)
+    + xrow(2, [68010003, "หอยมุก หาดทราย", "8,000.50"])
+    + xrow(3, [68010004, "กุ้งนาง คลื่นลม", "12,5"]))
+write_book(f"{out}/fees_terms.xlsx",
+    [("ภาคเรียน 1", term1), ("ภาคเรียน 2", term2), ("lists", xrow(1, ["MSC"]), True)])

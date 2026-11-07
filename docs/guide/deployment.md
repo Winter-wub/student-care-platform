@@ -328,3 +328,48 @@ significant digits. Both accept `12,500`, ` 12500 `,
 `(500)`, `฿`, Thai digits, spaces or no-break spaces inside the number, the
 minus sign U+2212 and exponents: normalise those first. The rustdoc of
 `harpseal::sheet` has a worked example.
+
+## A Module's spreadsheet upload page
+
+A back-office page that takes a file uses `ModuleRegistrar::sheet_upload(
+permission, path, route)` instead of `back_office` for its upload route
+(Core change in #74). The route is guarded like any back-office route
+(only Staff holding `permission`; the Permission is checked before the
+body is read), and the CSRF token must be in the `_csrf` part (put
+`staff.csrf_field()` before the file input) or the `X-CSRF-Token` header.
+The body may be as large as the roster import's: a file of
+`harpseal::MAX_UPLOAD_BYTES` (4 MiB) plus 64 KiB of other fields; above
+that the answer is 413. Other back-office forms stay at 64 KiB.
+
+The handler extracts `SheetUpload` (or `Result<SheetUpload,
+UploadRejection>` to answer refusals with its own page): the `file` part,
+its cleaned `file_name`, its `kind` (`SheetKind::Csv` or `Xlsx`, told by
+the bytes — a ZIP signature or UTF-8 text — and the name must agree, else
+415), and the form's other text parts in `fields`. An empty or missing
+file is 400, a file over 4 MiB 413.
+
+Preview, then confirm, like the roster:
+
+1. Read it: `up.workbook()` is `harpseal::sheet` with the roster's limits.
+2. Keep it: `up.keep(&s.services, "<module name>", &staff, &ctx)` stores
+   the file in the FileStore under `module-upload/<module>/<id>.<kind>`,
+   records its SHA-256 and an expiry 24 hours later (`UPLOAD_KEEP_MS`;
+   Kernel table `module_upload`, migration 0014) and writes the audit row
+   `module.upload`. Redirect to a preview page carrying `kept.id`.
+3. Preview: `KeptUpload::open(&services, "<module name>", &id)` gives the
+   file back (`None` when it is not this Module's, was discarded or
+   expired). Show the rows, the problems with sheet and row, and the
+   skipped footer rows and hidden sheets.
+4. Confirm: `open` again (it refuses, `Error::Invalid`, a file whose hash
+   changed since the upload) and enqueue your import Job with the id in
+   its payload (`enqueue_unique` with a key on the id stops a double
+   click). The Job opens it once more, imports, then calls
+   `KeptUpload::discard`. Treat `None` in the Job as "already done".
+5. Cancel: `KeptUpload::discard(&services, "<module name>", &id)`.
+
+The tick deletes every upload past its expiry (50 per tick,
+`TickReport::module_uploads_swept`), so a preview nobody confirmed leaves
+no file behind. A backup carries kept uploads like any `file_key` row.
+`deployments/example/deployment/src/fees.rs` is a worked example: outstanding
+fees, one term per sheet, imported into the Module's own table by the Job
+`fees.import`.
