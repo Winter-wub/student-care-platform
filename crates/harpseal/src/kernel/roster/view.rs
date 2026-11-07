@@ -5,6 +5,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 
+use super::store::Import;
 use crate::{CurrentStaff, Error, PageState};
 
 /// Where the pages live.
@@ -132,4 +133,62 @@ pub(super) fn csv_body(lines: impl IntoIterator<Item = String>) -> Vec<u8> {
     let mut out = "\u{feff}".to_string();
     out.extend(lines);
     out.into_bytes()
+}
+
+/// The preview's counts next to what the import did (#46): the same
+/// things counted the same way, so a difference is a change made between
+/// the preview and the run.
+pub(super) fn compared(v: &View<'_>, imp: &Import) -> Markup {
+    let (p, r) = (&imp.counts.preview, &imp.counts.result);
+    let mut lines = vec![
+        ("new", "kernel.roster.new", p.tally.new, r.new),
+        (
+            "updated",
+            "kernel.roster.updated",
+            p.tally.updated,
+            r.updated,
+        ),
+        (
+            "unchanged",
+            "kernel.roster.unchanged",
+            p.tally.unchanged,
+            r.unchanged,
+        ),
+        (
+            "returning",
+            "kernel.roster.returning",
+            p.tally.returning,
+            r.returning,
+        ),
+        (
+            "skipped_by_override",
+            "kernel.roster.skipped_by_override",
+            p.tally.skipped_by_override,
+            r.skipped_by_override,
+        ),
+    ];
+    if imp.mode == "full" {
+        let c = &imp.counts;
+        lines.push(("left", "kernel.roster.left", p.will_become_left, c.left));
+        let kept = ("kept_by_status", "kernel.roster.kept_by_status");
+        lines.push((kept.0, kept.1, p.kept_by_status, c.kept_by_status));
+    }
+    let (in_preview, applied) = (
+        v.t("kernel.roster.in_preview"),
+        v.t("kernel.roster.applied"),
+    );
+    html! {
+        table class="rows compared" {
+            thead { tr { th {} th { (in_preview) } th { (applied) } } }
+            tbody {
+                @for (name, key, before, after) in lines {
+                    tr data-count=(name) {
+                        th scope="row" { (v.t(key)) }
+                        td data-label=(in_preview) data-preview { (before) }
+                        td data-label=(applied) data-result { (after) }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -254,9 +254,40 @@ async fn a_status_set_by_hand_is_not_changed_by_a_full_import() {
     let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["will_become_left"], 0);
-    assert_eq!(c["preview"]["skipped_by_override"], 1);
+    // A Student kept active, not a field kept: counted apart (#46).
+    assert_eq!(c["preview"]["skipped_by_override"], 0);
+    assert_eq!(c["preview"]["kept_by_status"], 1);
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
+    let c = counts(&h, &id).await;
+    assert_eq!(
+        (c["kept_by_status"].as_i64(), c["left"].as_i64()),
+        (Some(1), Some(0))
+    );
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    for (count, both) in [("kept_by_status", "1"), ("left", "0"), ("new", "2")] {
+        let row = page
+            .split(&format!("data-count=\"{count}\""))
+            .nth(1)
+            .and_then(|r| r.split("</tr>").next())
+            .unwrap_or_else(|| panic!("no {count} row: {page}"));
+        let shown = |cell: &str| {
+            row.split(cell)
+                .nth(1)
+                .and_then(|c| c.split('<').next())
+                .map(|c| c.trim_start_matches('>').to_string())
+        };
+        assert_eq!(
+            shown("data-preview").as_deref(),
+            Some(both),
+            "{count}: {row}"
+        );
+        assert_eq!(
+            shown("data-result").as_deref(),
+            Some(both),
+            "{count}: {row}"
+        );
+    }
     assert_eq!(int(&h, ACTIVE, &[]).await, 3);
     assert_eq!(
         int(&h, "SELECT count(*) FROM link WHERE status = 'active'", &[]).await,

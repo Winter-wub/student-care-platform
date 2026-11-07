@@ -23,6 +23,9 @@ pub(crate) enum Outcome {
     NotPreviewed(String),
     /// No such import.
     Missing,
+    /// Its file was deleted a year after upload (`prune.rs`): nothing
+    /// left to import.
+    FileDeleted,
 }
 
 /// The unique key of chunk Job `offset` of import `id`: the first chunk
@@ -59,6 +62,9 @@ pub(crate) async fn confirm(
     };
     if imp.state != "previewed" {
         return Ok(Outcome::NotPreviewed(imp.state));
+    }
+    if imp.file_key.is_empty() {
+        return Ok(Outcome::FileDeleted);
     }
     let after = json!({
         "file_name": imp.file_name,

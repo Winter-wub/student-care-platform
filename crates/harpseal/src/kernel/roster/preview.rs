@@ -61,7 +61,7 @@ pub(crate) async fn upload(
         return Ok(Uploaded::Busy(Box::new(b)));
     }
     let id = s.new_id()?;
-    let name = safe_name(file_name);
+    let name = file::safe_name(file_name);
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
@@ -81,13 +81,13 @@ pub(crate) async fn upload(
                 }
             })
     };
-    let content_type = if file::is_xlsx(&bytes, &name) {
+    let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
         "text/csv"
     };
     s.files.put(&key, bytes, content_type).await?;
-    let mut counts = Counts {
+    let counts = Counts {
         sha256,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
@@ -99,6 +99,35 @@ pub(crate) async fn upload(
         key: &key,
         name: &name,
     };
+    let out = record(s, &row, counts, read, mode == "full", ctx).await;
+    if !matches!(out, Ok(Uploaded::Previewed(_) | Uploaded::Refused(_))) && row_absent(s, &id).await
+    {
+        // No row points at the objects (a failed batch, or another upload
+        // took the slot): they would never be pruned. A batch can fail
+        // after it committed (D1), so the row is looked up first, and the
+        // objects stay unless it is surely absent.
+        let _ = s.files.delete(&key).await;
+        let _ = s.files.delete(&super::rows::key(&id)).await;
+    }
+    out
+}
+
+/// Whether import `id` surely has no row (a failed lookup says no).
+async fn row_absent(s: &Services, id: &str) -> bool {
+    let q = Statement::new("SELECT 1 AS x FROM roster_import WHERE id = ?").bind(id);
+    s.db.query(q).await.is_ok_and(|r| r.is_empty())
+}
+
+/// Writes the import row (and, for a valid file, its parsed rows first):
+/// `failed` with the report, or `previewed` while the slot is free.
+async fn record(
+    s: &Services,
+    row: &NewRow<'_>,
+    mut counts: Counts,
+    read: core::result::Result<Valid, Vec<Problem>>,
+    full: bool,
+    ctx: &RequestCtx,
+) -> Result<Uploaded> {
     let valid = match read {
         Ok(v) => v,
         Err(problems) => {
@@ -109,25 +138,29 @@ pub(crate) async fn upload(
             };
             let stmts = row.statements(s, &counts, Some(&failure), 0, ctx, None)?;
             s.db.batch(stmts).await?;
-            return Ok(Uploaded::Refused(id));
+            return Ok(Uploaded::Refused(row.id.to_string()));
         }
     };
-    counts.preview = preview(s, &valid, mode == "full").await?;
+    counts.preview = preview(s, &valid, full).await?;
+    let parsed = super::rows::encode(&valid.records)?;
+    counts.rows_sha256 = crate::auth::sha256_hex(&parsed);
+    s.files
+        .put(&super::rows::key(row.id), parsed, "application/jsonl")
+        .await?;
     let total = valid.records.len() as i64;
-    let stale = now - PREVIEW_HOLD_MS;
+    let stale = s.now_ms() - PREVIEW_HOLD_MS;
     let mut stmts = replace_stale(s, stale).await?;
     stmts.extend(row.statements(s, &counts, None, total, ctx, Some(stale))?);
     let insert_at = stmts.len() - 2;
     let done = s.db.batch(stmts).await?;
     if done.get(insert_at).map(|r| r.rows_affected) != Some(1) {
         // Another upload took the slot between the check and the write.
-        let _ = s.files.delete(&key).await;
         return match store::busy(s, stale).await? {
             Some(b) => Ok(Uploaded::Busy(Box::new(b))),
             None => Err(Error::Conflict("roster import slot".into())),
         };
     }
-    Ok(Uploaded::Previewed(id))
+    Ok(Uploaded::Previewed(row.id.to_string()))
 }
 
 /// Cancels the previews older than `stale` (they give the slot up), each
@@ -281,13 +314,14 @@ async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
         .filter(|(_, e)| e.fields.status == "active")
         .collect();
     let mut leaving: Vec<&str> = Vec::new();
+    let mut kept_by_status = 0;
     if full {
         for (code, e) in &active {
             if listed.contains(code.as_str()) {
                 continue;
             }
             if store::status_held(e) {
-                tally.skipped_by_override += 1;
+                kept_by_status += 1;
             } else {
                 leaving.push(&e.fields.display_name);
             }
@@ -300,6 +334,7 @@ async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
     Ok(Preview {
         tally,
         will_become_left: left,
+        kept_by_status,
         empty_email: valid.empty_email as u64,
         active_before,
         warning: left * 5 > active_before || shrinking,
@@ -310,48 +345,4 @@ async fn preview(s: &Services, valid: &Valid, full: bool) -> Result<Preview> {
             .map(str::to_string)
             .collect(),
     })
-}
-
-/// The base name of an uploaded file, safe as a FileStore key segment:
-/// no directories, no `\ : /` or control characters, at most 100
-/// characters; `roster` when nothing is left.
-pub(crate) fn safe_name(name: &str) -> String {
-    let base = name.rsplit(['/', '\\']).next().unwrap_or_default();
-    let clean: String = base
-        .chars()
-        .map(|c| {
-            if c.is_control() || matches!(c, ':' | '"') {
-                '_'
-            } else {
-                c
-            }
-        })
-        .take(100)
-        .collect();
-    let clean = clean.trim().trim_start_matches('.').to_string();
-    if clean.is_empty() {
-        "roster".into()
-    } else {
-        clean
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::safe_name;
-
-    #[test]
-    fn file_names_are_made_safe() {
-        assert_eq!(
-            safe_name("C:\\Users\\x\\รายชื่อ 2569.xlsx"),
-            "รายชื่อ 2569.xlsx"
-        );
-        assert_eq!(safe_name("../../etc/passwd"), "passwd");
-        assert_eq!(safe_name(".."), "roster");
-        assert_eq!(safe_name("a:b\n.csv"), "a_b_.csv");
-        assert_eq!(safe_name(""), "roster");
-        for n in ["x", "..", "a/b", "ok.csv"] {
-            assert!(crate::check_file_key(&format!("roster/id/{}", safe_name(n))).is_ok());
-        }
-    }
 }

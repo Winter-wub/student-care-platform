@@ -94,3 +94,24 @@ async fn a_file_that_is_neither_csv_nor_xlsx_is_refused() {
         "{report}"
     );
 }
+
+#[tokio::test]
+async fn a_csv_named_txt_is_refused() {
+    let (_, _, report) = refused("roster.txt", &csv(0..2)).await;
+    assert!(
+        report.contains("0,,รองรับเฉพาะไฟล์ .csv และ .xlsx"),
+        "{report}"
+    );
+}
+
+#[tokio::test]
+async fn data_without_a_header_is_reported_not_dropped() {
+    // Column D has no header; column J is right of the last header (I).
+    let file = "รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\r\n\
+                68000001,นก,,ลืมหัว,,,MSC,1,,\r\n\
+                68000002,ปลา,,,,,MSC,1,,เกิน\r\n";
+    let (_, _, report) = refused("a.csv", file.as_bytes()).await;
+    assert!(report.contains("2,D,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
+    assert!(report.contains("3,J,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
+    assert_eq!(report.lines().count(), 3, "{report}");
+}

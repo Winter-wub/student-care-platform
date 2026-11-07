@@ -130,6 +130,18 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.result", "ผลการนำเข้า", "Result"),
     ("kernel.roster.left", "พ้นสภาพ", "Became left"),
     (
+        "kernel.roster.kept_by_status",
+        "ไม่อยู่ในไฟล์แต่ยังศึกษาอยู่ เพราะเจ้าหน้าที่ตั้งสถานะเอง",
+        "Not in the file but kept active: Staff set their status"
+    ),
+    ("kernel.roster.in_preview", "ตอนตรวจไฟล์", "In the preview"),
+    ("kernel.roster.applied", "นำเข้าจริง", "Imported"),
+    (
+        "kernel.roster.file_pruned",
+        "ลบไฟล์แล้ว (เก็บไว้ 1 ปี)",
+        "File deleted (kept for one year)"
+    ),
+    (
         "kernel.roster.links_revoked",
         "ยกเลิกการเชื่อมบัญชี",
         "Links revoked"
@@ -297,8 +309,13 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.reason_bad_email",
-        "อีเมลไม่ถูกรูปแบบ",
-        "Not a valid email address"
+        "อีเมลไม่ถูกรูปแบบ (ใช้ได้เฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และเครื่องหมาย)",
+        "Not a valid email address (Latin letters, digits and symbols only)"
+    ),
+    (
+        "kernel.roster.reason_no_header",
+        "มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์",
+        "Data in a column without a header"
     ),
     (
         "kernel.roster.reason_bad_locale",

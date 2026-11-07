@@ -193,9 +193,10 @@ impl HttpClient for RecordingHttp {
 /// Stored bytes and content type per key.
 type Objects = HashMap<String, (Vec<u8>, String)>;
 
-/// A FileStore in memory.
+/// A FileStore in memory. Like the real stores, it refuses a key that
+/// fails [`harpseal::check_file_key`] (the empty key included).
 #[derive(Debug, Clone, Default)]
-pub struct MemoryFiles(Arc<Mutex<Objects>>);
+pub struct MemoryFiles(Arc<Mutex<Objects>>, Arc<Mutex<Vec<String>>>);
 
 impl MemoryFiles {
     /// Stored keys, sorted.
@@ -204,18 +205,37 @@ impl MemoryFiles {
         k.sort();
         k
     }
+
+    /// Makes every later call on `key` fail (a platform error), as an
+    /// object store that is down for one object.
+    pub fn fail_on(&self, key: &str) {
+        lock(&self.1).push(key.to_string());
+    }
+
+    fn check(&self, key: &str) -> Result<()> {
+        harpseal::check_file_key(key)?;
+        if lock(&self.1).iter().any(|k| k == key) {
+            return Err(harpseal::Error::Platform(format!(
+                "injected failure for {key}"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl FileStore for MemoryFiles {
     async fn put(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<()> {
+        self.check(key)?;
         lock(&self.0).insert(key.into(), (bytes, content_type.into()));
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        self.check(key)?;
         Ok(lock(&self.0).get(key).map(|(b, _)| b.clone()))
     }
     async fn delete(&self, key: &str) -> Result<()> {
+        self.check(key)?;
         lock(&self.0).remove(key);
         Ok(())
     }

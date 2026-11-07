@@ -240,7 +240,8 @@ async fn one_tick_claims_runs_retries_and_prunes() {
     assert!(r.errors.is_empty(), "{:?}", r.errors);
     assert_eq!(
         r.to_string(),
-        "scheduled 0, claimed 3, done 2, retried 1, failed 0, pruned 1 jobs and 0 sessions"
+        "scheduled 0, claimed 3, done 2, retried 1, failed 0, pruned 1 jobs, 0 sessions, \
+         0 webhook events and 0 roster files"
     );
     assert_eq!(s.job("orphan").await.state, "done");
     assert_eq!(s.job("flaky").await.run_at, now + MIN);
