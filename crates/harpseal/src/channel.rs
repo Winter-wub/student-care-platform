@@ -127,6 +127,63 @@ pub trait Channel: Send + Sync {
     /// pre-Link Menu.
     async fn set_menu(&self, to: &ChannelAccountId, menu: Option<&Menu>) -> Result<()>;
 
+    /// Most accounts the Kernel hands [`Channel::relink_menu`] in one Job
+    /// run. The default (20) keeps an adapter with two platform calls per
+    /// account under 50 subrequests per Job run (the Cloudflare Workers
+    /// free plan's per-invocation limit); one with a bulk call (LINE)
+    /// raises it.
+    fn relink_chunk(&self) -> usize {
+        20
+    }
+
+    /// Shows `menu`, a newer revision of its key ([`Menu::revision`]), to
+    /// every account in `to`: the Kernel's Menu-label re-link after a
+    /// back-office save. Accounts are processed in order. An account the
+    /// platform will never reach ([`Error::Unreachable`]: blocked, deleted)
+    /// or whose id it refuses is listed in [`MenuRelinked::skipped`] and
+    /// passed over; any other error stops the call, and
+    /// [`MenuRelinked::done`] says how many from the start are done (the
+    /// Kernel resumes at `to[done..]`). An adapter may also stop early
+    /// without an error (a call budget spent): the Kernel then goes on at
+    /// `to[done..]` in its next run. The default calls
+    /// [`Channel::set_menu`] per account.
+    async fn relink_menu(&self, to: &[ChannelAccountId], menu: &Menu) -> MenuRelinked {
+        let mut got = MenuRelinked::all(to.len());
+        for (i, account) in to.iter().enumerate() {
+            match self.set_menu(account, Some(menu)).await {
+                Ok(()) => {}
+                Err(e) if matches!(e.root(), Error::Unreachable) => got.skip(i, e),
+                Err(e) => {
+                    got.done = i;
+                    got.error = Some(e);
+                    return got;
+                }
+            }
+        }
+        got
+    }
+
+    /// Retires the platform objects of the `previous` revisions of
+    /// `menu`'s key, once every account was re-linked to `menu`. Called
+    /// by the Kernel only after [`Channel::relink_menu`] finished for
+    /// every linked account. An adapter must touch nothing but the
+    /// versions named by `previous` (never another key, another
+    /// Deployment's version or a revision not listed). When the platform
+    /// works asynchronously, the adapter answers [`MenuRetire::Pending`]
+    /// with a token, and the Kernel calls again with it later; a version
+    /// must not be deleted before the platform confirmed nobody is left
+    /// on it. The default retires nothing (an adapter whose Menu is no
+    /// platform object, e.g. per-chat commands).
+    async fn retire_menus(
+        &self,
+        menu: &Menu,
+        previous: &[Menu],
+        pending: Option<&str>,
+    ) -> Result<MenuRetire> {
+        let _ = (menu, previous, pending);
+        Ok(MenuRetire::Done)
+    }
+
     /// Channel Capability: edit a sent message.
     fn editor(&self) -> Option<&dyn EditMessage> {
         None
@@ -252,6 +309,61 @@ pub trait Multicast: Send + Sync {
         locale: &Locale,
         key: &str,
     ) -> BatchReceipt;
+}
+
+/// What [`Channel::relink_menu`] got through.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct MenuRelinked {
+    /// Accounts done, counted from the start of `to` (skipped ones
+    /// included).
+    pub done: usize,
+    /// Why it stopped before the end, if it did.
+    pub error: Option<Error>,
+    /// Accounts among the first `done` that cannot show the Menu for good
+    /// (index in `to`, and why): [`Error::Unreachable`] (the Kernel marks
+    /// the Link unreachable) or an id the platform refuses
+    /// ([`Error::Invalid`]). They do not stop the re-link.
+    pub skipped: Vec<(usize, Error)>,
+}
+
+impl MenuRelinked {
+    /// Every one of `done` accounts.
+    pub fn all(done: usize) -> Self {
+        Self {
+            done,
+            error: None,
+            skipped: Vec::new(),
+        }
+    }
+    /// Stopped by `error` after `done` accounts.
+    pub fn stopped(done: usize, error: Error) -> Self {
+        Self {
+            done,
+            error: Some(error),
+            skipped: Vec::new(),
+        }
+    }
+    /// Records account `index` as skipped for good, because of `error`.
+    pub fn skip(&mut self, index: usize, error: Error) {
+        self.skipped.push((index, error));
+    }
+}
+
+/// What [`Channel::retire_menus`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MenuRetire {
+    /// The previous revisions are gone (or never existed).
+    Done,
+    /// The platform is still moving accounts off them: call again after
+    /// `retry_after_secs` with `token`.
+    Pending {
+        /// The adapter's own encoding of what it is waiting for.
+        token: String,
+        /// Seconds to wait before asking again.
+        retry_after_secs: u32,
+    },
 }
 
 /// Where an adapter can resume a batch that stopped part-way: opaque to

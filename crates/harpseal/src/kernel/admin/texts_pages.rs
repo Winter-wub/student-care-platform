@@ -293,9 +293,7 @@ pub(super) async fn submit(
         return reset(&s, &v, &key, &f, &actor, &ctx).await;
     }
     let written = super::texts_api::write(
-        &s.services,
-        &s.catalog,
-        &s.config,
+        &s.deployment,
         &key,
         &f.locale,
         &f.value,
@@ -345,7 +343,19 @@ async fn reset(
         return v.redirect(&back, false, "kernel.admin.conflict");
     };
     let row = settings::row(&s.catalog, &s.config, &Default::default(), key, &f.locale);
-    match settings::reset(&s.services, actor, key, &f.locale, old, &row.base, ctx).await {
+    let d = &s.deployment;
+    let relink = |gate: &str| crate::kernel::menu::on_save(d, &stored, key, &f.locale, None, gate);
+    let reset = settings::reset(
+        &s.services,
+        actor,
+        key,
+        &f.locale,
+        old,
+        &row.base,
+        ctx,
+        &relink,
+    );
+    match reset.await {
         Ok(true) => v.redirect(&back, true, "kernel.admin.texts.reset_done"),
         Ok(false) => v.redirect(&back, false, "kernel.admin.conflict"),
         Err(e) => v.error(&e),

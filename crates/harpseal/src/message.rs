@@ -214,12 +214,21 @@ pub struct Menu {
     pub entries: Vec<MenuEntry>,
     /// Which Menu this is, independent of its labels (see [`MenuKey`]).
     key: Option<MenuKey>,
+    /// Which edit of its key's labels this is (0: none recorded).
+    revision: u32,
+    /// The Deployment's revision salt, if any.
+    salt: Option<String>,
 }
 
 impl Menu {
     /// A Menu without a key.
     pub fn new(entries: Vec<MenuEntry>) -> Self {
-        Self { entries, key: None }
+        Self {
+            entries,
+            key: None,
+            revision: 0,
+            salt: None,
+        }
     }
     /// A Menu under `key`.
     pub fn keyed(key: MenuKey, entries: Vec<MenuEntry>) -> Self {
@@ -233,6 +242,32 @@ impl Menu {
     /// The Menu key, if any.
     pub fn key(&self) -> Option<&MenuKey> {
         self.key.as_ref()
+    }
+    /// The same Menu at Menu revision `revision`: the Kernel bumps a
+    /// stored revision per key on each back-office save of a Menu label,
+    /// so an adapter can name each version apart and retire the previous
+    /// one after a re-link ([`crate::Channel::retire_menus`]).
+    pub fn with_revision(mut self, revision: u32) -> Self {
+        self.revision = revision;
+        self
+    }
+    /// The Menu revision; 0 when none was recorded (no label edit yet,
+    /// or a Menu built outside the Kernel).
+    pub fn revision(&self) -> u32 {
+        self.revision
+    }
+    /// The same Menu with the Deployment's revision salt: a random tag the
+    /// Kernel stores once per Deployment, so that two Deployments on one
+    /// platform account never give one revision the same name. An adapter
+    /// folds it into the name of a revisioned version and retires only
+    /// versions that carry it.
+    pub fn with_salt(mut self, salt: impl Into<String>) -> Self {
+        self.salt = Some(salt.into());
+        self
+    }
+    /// The revision salt, if any.
+    pub fn salt(&self) -> Option<&str> {
+        self.salt.as_deref()
     }
 }
 
@@ -341,5 +376,8 @@ mod tests {
         assert_eq!(m.key(), None);
         let m = m.with_key(MenuKey::locked());
         assert_eq!(m.key().map(MenuKey::as_str), Some("locked"));
+        assert_eq!((m.revision(), m.salt()), (0, None));
+        let m = m.with_revision(3).with_salt("0a1b2c3d");
+        assert_eq!((m.revision(), m.salt()), (3, Some("0a1b2c3d")));
     }
 }

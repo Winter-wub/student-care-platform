@@ -7,6 +7,7 @@ pub(crate) mod app;
 pub mod audience;
 pub(crate) mod flow;
 pub mod links;
+pub(crate) mod menu;
 pub(crate) mod notice;
 pub(crate) mod rate_limit;
 pub(crate) mod roster;
@@ -90,6 +91,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0010_outbound_message_index",
         include_str!("../../migrations/0010_outbound_message_index.sql"),
     ),
+    (
+        "0011_menu_revision",
+        include_str!("../../migrations/0011_menu_revision.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.
@@ -112,6 +117,7 @@ impl Module for Kernel {
         admin::register(r);
         usage::register(r);
         app::register(r);
+        menu::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))

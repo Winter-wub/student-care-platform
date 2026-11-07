@@ -72,6 +72,16 @@ impl Failure {
         BLOCKED_MESSAGES.contains(&m.as_str())
     }
 
+    /// A failure with `status` and `message`, for unit tests.
+    #[cfg(test)]
+    pub(crate) fn for_test(status: u16, message: &str) -> Self {
+        Self {
+            status,
+            message: message.into(),
+            retry_after: None,
+        }
+    }
+
     /// LINE refused the reply token (expired or already used).
     pub(crate) fn bad_reply_token(&self) -> bool {
         self.status == 400 && self.message.to_ascii_lowercase().contains("reply token")
