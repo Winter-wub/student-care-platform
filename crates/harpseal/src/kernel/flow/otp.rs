@@ -284,6 +284,9 @@ async fn wrong(
 /// `kernel.otp.resend`.
 pub(super) async fn resend(t: &mut Turn<'_>) -> Result<()> {
     match claimed(t).await? {
+        // The address may have changed since the claim (an import, a Staff
+        // edit): a code never goes to one that fails the claim's checks.
+        Some(student) if !claim::email_ok(t, &student).await? => back_to_student_id(t).await,
         Some(student) => start(t, &student).await,
         None => Ok(()),
     }

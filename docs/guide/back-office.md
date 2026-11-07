@@ -16,7 +16,12 @@ form (a Thai or `a@x..example` address is refused there too) and this badge.
 In the chat, a Student cannot start onboarding, and is told to contact Staff for a
 Manual Link, when their email is missing, not valid, or the same (any case) as
 another Student's who is not left; the last is recorded as a Security Event
-`link.shared_email`, since whoever reads that mailbox could link as either. Staff with `kernel.student.edit` edit fields (each
+`link.shared_email` (at most once an hour per chat account and Student; its details
+name the other Students' codes in `shared_with`), since whoever reads that mailbox
+could link as either. A resend runs the same checks again, so a code never goes to
+an address an import or an edit has since made invalid or shared; the waiting claim
+is cancelled. The lookup uses an index on `lower(trim(email))` (migration 0016);
+emails are stored trimmed of every Unicode space so SQL and Rust compare the same. Staff with `kernel.student.edit` edit fields (each
 edited field is kept by roster imports until "ใช้ค่าจากทะเบียน"), manual Tags and
 the status. Staff with `kernel.link.manage` create Manual Links; Staff with
 `kernel.link.revoke` unlink a Student's chat account. The two are separate, so

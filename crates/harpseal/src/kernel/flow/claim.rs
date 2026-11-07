@@ -88,17 +88,7 @@ pub(super) async fn student_id(t: &mut Turn<'_>, typed: &str) -> Result<()> {
         t.say("kernel.link.not_found");
         return Ok(());
     };
-    let Some(address) = student.email.as_deref() else {
-        t.say("kernel.link.no_email");
-        return Ok(());
-    };
-    // The roster only warns about a bad address (#71), so one can be on
-    // file: a code sent there either bounces for ever or goes to a stranger.
-    if !email::is_email(address.trim()) {
-        t.say("kernel.link.bad_email");
-        return Ok(());
-    }
-    if shared_email(t, &student, address).await? {
+    if !email_ok(t, &student).await? {
         return Ok(());
     }
     if duplicate(t, &student).await? {
@@ -115,25 +105,66 @@ pub(super) async fn student_id(t: &mut Turn<'_>, typed: &str) -> Result<()> {
     otp::start(t, &student).await
 }
 
+/// The email checks of a claim, said to the Student when one fails: an
+/// address on file (`no_email`), a valid one (`bad_email`: the roster only
+/// warns about a bad address, #71, and a code sent there bounces for ever
+/// or goes to a stranger) and not shared (`shared_email`). Run when the
+/// claim starts and again on a resend, because an import or a Staff edit
+/// can change the address while the Student waits for the code.
+pub(super) async fn email_ok(t: &mut Turn<'_>, student: &StudentRow) -> Result<bool> {
+    let Some(address) = student.email.as_deref() else {
+        t.say("kernel.link.no_email");
+        return Ok(false);
+    };
+    if !email::is_email(address.trim()) {
+        t.say("kernel.link.bad_email");
+        return Ok(false);
+    }
+    Ok(!shared_email(t, student, address).await?)
+}
+
+/// Security Events `link.shared_email` of one account for one Student are
+/// written at most once an hour.
+const SHARED_EVENT_MS: i64 = 3_600_000;
+
 /// Whether another Student who is not left has the same address (trimmed,
 /// any case): the code would reach whoever reads that mailbox, so either
 /// could link as the other. Refused to Staff (a Manual Link), with a
-/// Security Event `link.shared_email` every time.
+/// Security Event `link.shared_email` naming the other Students' codes.
+/// The lookup uses the index `student_email_key_idx`
+/// (`lower(trim(email))`, migration 0016).
 async fn shared_email(t: &mut Turn<'_>, student: &StudentRow, address: &str) -> Result<bool> {
     let stmt = Statement::new(
-        "SELECT count(*) AS n FROM student \
-         WHERE id <> ? AND status <> 'left' AND lower(trim(email)) = ?",
+        "SELECT student_code FROM student \
+         WHERE lower(trim(email)) = ? AND id <> ? AND status <> 'left' \
+         ORDER BY student_code LIMIT 5",
     )
-    .bind(student.id.clone())
-    .bind(email::key(address));
+    .bind(email::key(address))
+    .bind(student.id.clone());
     let rows = t.s().db.query(stmt).await?;
-    if rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0) == 0 {
+    if rows.is_empty() {
         return Ok(false);
     }
     t.say("kernel.link.shared_email");
+    let recent = Statement::new(
+        "SELECT count(*) AS n FROM security_event WHERE kind = 'link.shared_email' \
+         AND channel_account_id = ? AND student_id = ? AND at > ?",
+    )
+    .bind(t.acct.id.clone())
+    .bind(student.id.clone())
+    .bind(t.s().now_ms() - SHARED_EVENT_MS);
+    let seen = t.s().db.query(recent).await?;
+    if seen.get(0, "n").and_then(Value::as_i64).unwrap_or(0) > 0 {
+        return Ok(true);
+    }
+    let others: Vec<String> = (0..rows.len())
+        .filter_map(|i| rows.get(i, "student_code").and_then(Value::as_text))
+        .map(str::to_string)
+        .collect();
     let details = [
         ("channel", t.from.channel.as_str().to_string()),
         ("student_code", student.code.clone()),
+        ("shared_with", others.join(",")),
     ];
     security::record(
         t.s(),

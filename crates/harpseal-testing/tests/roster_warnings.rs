@@ -303,3 +303,15 @@ async fn a_left_student_or_one_a_full_import_retires_does_not_make_a_duplicate()
     let id = previewed(&b, "f.csv", &file, "full").await;
     assert_eq!(total(&counts(&h, &id).await), 0);
 }
+
+#[tokio::test]
+async fn an_email_is_stored_trimmed_of_every_unicode_space() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let file = csv_lines(&["68000001,นก,\u{a0}nok@student.sealbay.example\t,,,MSC,1,3.0"]);
+    let id = previewed(&b, "n.csv", &file, "full").await;
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    let sql = "SELECT count(*) FROM student WHERE email = 'nok@student.sealbay.example'";
+    assert_eq!(int(&h, sql, &[]).await, 1);
+}

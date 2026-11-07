@@ -37,6 +37,19 @@ pub(crate) fn key(email: &str) -> String {
     email.trim().to_lowercase()
 }
 
+/// The address as it is stored: trimmed of every Unicode space (what the
+/// sheet reader and the edit form already do), `None` when nothing is left.
+/// SQL `trim()` removes only ASCII spaces, so the claim's comparison
+/// (`lower(trim(email))`, indexed) matches [`key`] only because nothing
+/// else is written: both write paths (roster import, Student update) go
+/// through here.
+pub(crate) fn normalise(email: Option<&str>) -> Option<String> {
+    email
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
