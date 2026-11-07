@@ -4,15 +4,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use harpseal::{Background, BackgroundTask, Spawner};
+use harpseal::{Background, BackgroundTask, Slot, SlotFuture, Spawner};
 use tokio::sync::{Notify, Semaphore};
 
-/// Background tasks [`crate::serve`] lets run at once: webhook handling
-/// for 16 chat accounts in parallel; more wait for a slot.
+/// Webhook events [`crate::serve`] lets be handled at once (16, across
+/// chat accounts); more wait for a slot. A slot is held per event, not per
+/// account, so a busy account cannot keep the others waiting.
 pub const BACKGROUND_LIMIT: usize = 16;
 
-/// Runs webhook handling on tokio tasks, at most `limit` at once, and
-/// knows when all of them have finished (for a graceful shutdown).
+/// Runs webhook handling on tokio tasks, at most `limit` events handled
+/// at once, and knows when all tasks have finished (for a graceful
+/// shutdown).
 /// Cheap to clone; clones share the limit and the count.
 #[derive(Clone, Debug)]
 pub struct NativeBackground {
@@ -28,7 +30,7 @@ struct Inner {
 }
 
 impl NativeBackground {
-    /// At most `limit` tasks run at once (at least one).
+    /// At most `limit` events handled at once (at least one).
     pub fn new(limit: usize) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -78,14 +80,21 @@ impl Spawner for NativeBackground {
         let Ok(rt) = tokio::runtime::Handle::try_current() else {
             return;
         };
-        let inner = self.inner.clone();
-        inner.pending.fetch_add(1, Ordering::SeqCst);
-        let done = Finished(inner.clone());
+        self.inner.pending.fetch_add(1, Ordering::SeqCst);
+        let done = Finished(self.inner.clone());
         rt.spawn(async move {
             let _done = done;
-            let _slot = inner.slots.clone().acquire_owned().await;
             task.await;
         });
+    }
+
+    fn slot(&self) -> SlotFuture {
+        let slots = self.inner.slots.clone();
+        Box::pin(async move {
+            // The semaphore is never closed, so acquiring cannot fail.
+            let permit = slots.acquire_owned().await.ok();
+            Box::new(permit) as Slot
+        })
     }
 }
 

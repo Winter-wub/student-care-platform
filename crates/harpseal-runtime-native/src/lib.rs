@@ -99,7 +99,7 @@ pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(8);
 /// fall back to it when there is no `X-Forwarded-For`) and a
 /// [`harpseal::Background`]: a webhook is answered 200 once its events are
 /// claimed, and handled on a [`NativeBackground`] task
-/// ([`BACKGROUND_LIMIT`] at once, one at a time per chat account), so a
+/// ([`BACKGROUND_LIMIT`] events at once, one at a time per chat account), so a
 /// client closing the connection does not stop it. A response carrying a
 /// [`harpseal::ErrorReport`] logs its line and `x-request-id` to stderr
 /// (the area and the error kind, never the message).

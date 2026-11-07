@@ -72,12 +72,12 @@ impl Spawner for WaitUntil {
 /// axum Router, with `ctx` as the request's [`Background`]: a webhook is
 /// answered 200 once its events are claimed and handled under
 /// `ctx.wait_until`. That work still counts against the invocation's CPU
-/// limit and `waitUntil` time (about 30 s after the response), and a
-/// webhook arriving while an earlier one of the same chat account is
-/// still being handled in this isolate queues behind it, under the
-/// earlier request's `wait_until`. Work cut off by a limit leaves its
-/// claim unfinished, logged as `inbound.lost` by the next Cron tick
-/// (ADR-0009). A response carrying a [`harpseal::ErrorReport`] logs its
+/// limit and `waitUntil` time (about 30 s after the response). Each
+/// request's events run under its own `wait_until`; when an earlier event
+/// of the same chat account is still being handled in this isolate, they
+/// wait for it there, and the wait counts against this request's window.
+/// Work cut off by a limit leaves its claim unfinished, logged as
+/// `inbound.lost` by the next Cron tick (ADR-0009). A response carrying a [`harpseal::ErrorReport`] logs its
 /// line with `console.error` (`wrangler tail`; the area and the error
 /// kind, never the message).
 pub async fn fetch(

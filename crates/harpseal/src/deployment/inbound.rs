@@ -141,8 +141,25 @@ impl Deployment {
 
     /// Handles one claimed event, logs `inbound.failed` when it fails, and
     /// marks its claim done either way. Returns the failure, if any.
+    ///
+    /// First the claim's lease restarts (`received_at` = now), so time the
+    /// event spent queued behind its account's earlier events does not
+    /// count against it. When the claim is already done, the tick logged
+    /// it as `inbound.lost` while it waited: it is skipped, so "lost"
+    /// keeps meaning "not answered".
     pub(super) async fn handle_claimed(&self, c: Claimed) -> Option<(&'static str, Error)> {
         let Claimed { ev, kind, from, id } = c;
+        if let Some(id) = &id {
+            match self.renew_claim(from.channel.as_str(), id).await {
+                Ok(true) => {}
+                Ok(false) => return None,
+                Err(e) => {
+                    self.log_event(FAILED, &from, kind, Some(id), &e).await;
+                    self.finish_event(from.channel.as_str(), id).await;
+                    return Some((kind, e));
+                }
+            }
+        }
         let failed = match self.handle_inbound(ev).await {
             Ok(()) => None,
             Err(e) => {
@@ -197,6 +214,19 @@ impl Deployment {
         } else {
             Claim::Duplicate
         })
+    }
+
+    /// Restarts the lease of an unfinished claim. `false` when the claim
+    /// is already done (the tick or a redelivery logged it as lost).
+    async fn renew_claim(&self, channel: &str, event_id: &str) -> Result<bool> {
+        let stmt = Statement::new(
+            "UPDATE inbound_event SET received_at = ? WHERE channel = ? AND event_id = ? \
+             AND done_at IS NULL",
+        )
+        .bind(self.services.now_ms())
+        .bind(channel)
+        .bind(event_id);
+        Ok(self.services.db.execute(stmt).await?.rows_affected == 1)
     }
 
     /// Marks the claim done. Best effort: if it fails (or the process dies

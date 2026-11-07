@@ -29,9 +29,11 @@ claimed; the handling runs after the response under `ctx.wait_until` (#97),
 so pass the `Context` of `#[event(fetch)]` to
 `harpseal_runtime_cloudflare::fetch`. That work still counts against the
 invocation's CPU limit and `waitUntil` window (about 30 seconds after the
-response). A webhook for a chat account whose earlier event this isolate is
-still handling waits behind it. Handling cut off by a limit keeps an
-unfinished claim, which the next Cron tick logs as `inbound.lost`.
+response). An event for a chat account whose earlier event this isolate is
+still handling waits for it, under its own request's `wait_until`. Time
+spent waiting eats into LINE's reply token (about a minute), so a backlog
+turns Replies into metered Pushes (Quota). Handling cut off by a limit
+keeps an unfinished claim, which the next Cron tick logs as `inbound.lost`.
 
 A preview on your own account:
 

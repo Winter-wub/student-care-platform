@@ -14,7 +14,7 @@ mod web;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub use background::{Background, BackgroundTask, Spawner};
+pub use background::{Background, BackgroundTask, Slot, SlotFuture, Spawner};
 pub use builder::DeploymentBuilder;
 pub use send::SendOptions;
 pub use send_many::ManySent;
