@@ -190,6 +190,14 @@ pub async fn restore(
         )
         .map_err(out_err)?;
     }
+    for (t, n) in &r.orphans_dropped {
+        writeln!(
+            out,
+            "table {t}: left out {n} rows whose parent was deleted (ON DELETE CASCADE) while \
+             the backup was taken"
+        )
+        .map_err(out_err)?;
+    }
     if r.dropped_sessions {
         writeln!(
             out,

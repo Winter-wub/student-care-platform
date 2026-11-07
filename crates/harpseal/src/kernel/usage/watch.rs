@@ -58,9 +58,9 @@ const EVERY_MS: i64 = 10 * 60_000;
 pub(super) const KEY_PREFIX: &str = "kernel.usage.notified.";
 
 /// An active Administrator.
-struct Admin {
-    email: String,
-    locale: Locale,
+pub(crate) struct Admin {
+    pub(crate) email: String,
+    pub(crate) locale: Locale,
 }
 
 /// Enqueues the watch for the 10-minute window of `now`, once however
@@ -180,7 +180,10 @@ async fn read(d: &Deployment, key: &str) -> Result<Option<String>> {
         .map(String::from))
 }
 
-async fn administrators(d: &Deployment) -> Result<Vec<Admin>> {
+/// Every active Administrator (Staff whose Roles grant
+/// `kernel.staff.manage`), by email. Also the backup failure email's
+/// recipients (#78).
+pub(crate) async fn administrators(d: &Deployment) -> Result<Vec<Admin>> {
     let rows = d
         .services()
         .db

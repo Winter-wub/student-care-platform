@@ -17,4 +17,6 @@ async-trait.workspace = true
 
 [dev-dependencies]
 harpseal-testing.workspace = true
+# The nightly backup into a local directory, restored with `restore` (#78).
+harpseal-runtime-native.workspace = true
 tokio.workspace = true

@@ -19,3 +19,7 @@ axum.workspace = true
 http.workspace = true
 tower-service = "0.3"
 getrandom = { workspace = true, features = ["wasm_js"] }
+# Not used here: enables the Core's "Download all data" writer to read the
+# time from JavaScript's `Date`. Without it every workbook panics on wasm32
+# (`SystemTime::now()`); Cargo unifies the feature into the Core's copy.
+rust_xlsxwriter = { workspace = true, features = ["wasm"] }

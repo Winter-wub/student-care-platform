@@ -66,6 +66,10 @@ impl DeploymentBuilder {
             .roster
             .check()
             .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
+        config
+            .backup
+            .check()
+            .map_err(|e| BuildError::InvalidConfig(e.to_string()))?;
         let services = self.services.ok_or(BuildError::Missing(Part::Runtime))?;
         let verification = self
             .verification
@@ -94,6 +98,10 @@ impl DeploymentBuilder {
             collected.absorb(r)?;
         }
         collected.check(&config, &self.channels)?;
+        // The nightly backup (#78) runs on the TOML's `[backup] schedule`.
+        if let Some(s) = crate::kernel::admin::backup_schedule(&config)? {
+            collected.schedules.push(s);
+        }
         let mut catalog = collected.catalog;
         check_toml_texts(&config, &catalog)?;
         config.apply_texts(&mut catalog);

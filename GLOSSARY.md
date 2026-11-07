@@ -155,5 +155,9 @@ The times Staff are expected to answer. Conversations opened outside them are ma
 A unit of deferred or scheduled work stored in the database and run by the Kernel when due. Large sends are split into many Jobs.
 _Avoid_: cron, task, queue message
 
+**Backup** (ชุดสำรองข้อมูล):
+A copy of a Deployment's database and files, in backup format 1, that `harpseal restore` loads into an empty Deployment. A Job takes one every night into the Deployment's own file storage and keeps them for a set number of days; `harpseal backup` takes one by hand. "Download all data" (an Excel workbook without secrets) is a data export, not a Backup: it cannot be restored.
+_Avoid_: dump, snapshot, export
+
 **Fake Channel** (ช่องทางจำลอง):
 An in-memory Channel adapter used in tests and demos; it must pass the same contract tests as real Channels.

@@ -6,6 +6,7 @@ use serde_json::json;
 
 use super::check::{backed_migrations, check_columns, decode_table};
 use super::schema::{self, Table, quote};
+use super::verify::{Decoded, verify};
 use super::{
     BackupSource, LoadOptions, LoadReport, Manifest, ManifestFile, PAGE, file_entry, sha256_hex,
     table_entry,
@@ -13,6 +14,10 @@ use super::{
 use crate::audit::{self, Actor};
 use crate::port_types::{Statement, Value};
 use crate::{Deployment, Error, Result};
+
+/// Tables a restore never writes: the target's index of its own backups
+/// (#78), so backups taken after the one restored stay listed and pruned.
+const KEPT_ON_RESTORE: [&str; 1] = ["backup_run"];
 
 /// The session tables `drop_sessions` empties.
 const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
@@ -35,21 +40,30 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 /// 4. reads every table entry and FileStore object, checking each against
 ///    its SHA-256 in the manifest and the row counts; the decoded rows stay
 ///    in memory until they are inserted;
-/// 5. refuses when any table has rows, unless `opts.force`.
+/// 5. checks the rows insert cleanly (`verify.rs`): no repeated primary or
+///    `UNIQUE` key, and every foreign key resolves among the rows; a row
+///    orphaned through an `ON DELETE CASCADE` key (its parent was deleted
+///    while the backup was taken) is dropped and counted, anything else
+///    refuses the restore with a report;
+/// 6. refuses when any table has rows, unless `opts.force`.
+///
+/// `backup_run` (the index of the Deployment's own backups, #78) is never
+/// restored: the target keeps its rows, so backups taken after the one
+/// restored stay listed and pruned.
 ///
 /// **Writes:**
 ///
-/// 6. puts each object back under its key (`application/octet-stream`:
+/// 7. puts each object back under its key (`application/octet-stream`:
 ///    the FileStore port reports no content types); objects go first
 ///    since putting one again is harmless;
-/// 7. with `opts.force`, in one `Db::batch`: drops the triggers on the
+/// 8. with `opts.force`, in one `Db::batch`: drops the triggers on the
 ///    backup's tables that guard `DELETE` (the append-only `audit_log`,
 ///    `security_event`, `consent`), deletes every row of every table in the
 ///    backup (children first) and re-creates those triggers from their
 ///    saved SQL. Tables absent from the backup, and the schema, are left
 ///    as they are. The counts deleted and the newest deleted audit row go
 ///    into the restore's audit row;
-/// 8. inserts the rows parents first (foreign keys hold on rusqlite) in
+/// 9. inserts the rows parents first (foreign keys hold on rusqlite) in
 ///    batches of [`PAGE`] statements. The last batch also writes the audit
 ///    row `backup.restore` (actor System, `after` = `{manifest_sha256,
 ///    tables, rows, files, forced, deleted, newest_deleted_audit,
@@ -58,11 +72,13 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 ///    revision salt (`menu_salt`), so a restored copy on the same LINE
 ///    token never names its rich menus like the original, and forgets the
 ///    original's pending retires (`menu_retire`) and queued re-link Jobs
-///    (marked failed);
-/// 9. applies the Deployment's newer migrations, so data migrations run
-///    over the restored rows.
+///    (marked failed), and marks a backup the target was taking when the
+///    restore ran (`backup_run` still `running`, #78) failed: its dump
+///    straddles the restore;
+/// 10. applies the Deployment's newer migrations, so data migrations run
+///     over the restored rows.
 ///
-/// Steps 7 to 9 are not one transaction: if the inserts fail part-way the
+/// Steps 8 to 10 are not one transaction: if the inserts fail part-way the
 /// database holds part of the backup (and no audit row); run it again with
 /// `force`.
 pub async fn load(
@@ -72,7 +88,11 @@ pub async fn load(
 ) -> Result<LoadReport> {
     let s = d.services();
     let db = s.db.as_ref();
-    let (manifest, raw) = Manifest::read(source).await?;
+    let (mut manifest, raw) = Manifest::read(source).await?;
+    // The target's own backups stay listed (and pruned) as they are.
+    manifest
+        .tables
+        .retain(|t| !KEPT_ON_RESTORE.contains(&t.name.as_str()));
     let manifest_sha256 = sha256_hex(&raw);
     for f in &manifest.files {
         crate::check_file_key(&f.key)?;
@@ -101,18 +121,24 @@ pub async fn load(
             guarded.join(", ")
         )));
     }
-    let mut decoded: BTreeMap<String, Vec<Vec<Value>>> = BTreeMap::new();
+    let mut decoded: BTreeMap<String, Decoded<'_>> = BTreeMap::new();
     for mt in &manifest.tables {
         let bytes = source.read(&table_entry(&mt.name)).await?;
-        decoded.insert(mt.name.clone(), decode_table(mt, &bytes)?);
+        let rows = decode_table(mt, &bytes)?;
+        let columns = &mt.columns;
+        decoded.insert(mt.name.clone(), Decoded { columns, rows });
     }
     for f in manifest.files.iter().filter(|f| !f.missing) {
         verified_object(source, f).await?;
     }
+    let orphans_dropped = verify(db, &current, &mut decoded).await?;
 
     let mut non_empty = Vec::new();
     let mut deleted = BTreeMap::new();
-    for t in &current {
+    for t in current
+        .iter()
+        .filter(|t| !KEPT_ON_RESTORE.contains(&t.name.as_str()))
+    {
         let n = schema::count(db, &t.name).await?;
         if n > 0 {
             non_empty.push(format!("{} ({n} rows)", t.name));
@@ -168,7 +194,7 @@ pub async fn load(
             .iter()
             .find(|m| &m.name == name)
             .expect("ordered from the manifest");
-        let values = decoded.remove(name).unwrap_or_default();
+        let values = decoded.remove(name).map(|d| d.rows).unwrap_or_default();
         let cols: Vec<String> = mt.columns.iter().map(|c| quote(c)).collect();
         let marks = vec!["?"; cols.len()].join(", ");
         let sql = format!(
@@ -202,6 +228,7 @@ pub async fn load(
         "newest_deleted_audit": newest_deleted_audit,
         "dropped_sessions": !drop_sessions.is_empty(),
         "menu_salt_redrawn": redraw_salt,
+        "orphans_dropped": orphans_dropped,
     });
     let mut tail: Vec<Statement> = drop_sessions
         .iter()
@@ -210,6 +237,17 @@ pub async fn load(
     if redraw_salt {
         tail.push(crate::kernel::menu::redraw_salt(s)?);
         tail.extend(crate::kernel::menu::forget_runs(s));
+    }
+    if current.iter().any(|t| t.name == "backup_run") {
+        tail.push(
+            Statement::new(
+                "UPDATE backup_run SET state = 'failed', finished_at = ?, updated_at = ?, \
+                 error = 'interrupted: the database was restored from a backup' \
+                 WHERE state = 'running'",
+            )
+            .bind(s.now_ms())
+            .bind(s.now_ms()),
+        );
     }
     tail.push(audit::entry(
         s,
@@ -250,6 +288,7 @@ pub async fn load(
         wiped: !deleted.is_empty(),
         deleted,
         dropped_sessions: !drop_sessions.is_empty(),
+        orphans_dropped,
         forced: opts.force,
         untouched,
         migrations_applied: first.applied.len() + rest.applied.len(),

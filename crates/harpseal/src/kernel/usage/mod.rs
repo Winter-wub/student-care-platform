@@ -30,7 +30,7 @@ use axum::routing::get;
 
 pub(crate) use banner::banner;
 pub(crate) use quota::Level;
-pub(crate) use watch::enqueue as enqueue_watch;
+pub(crate) use watch::{administrators, enqueue as enqueue_watch};
 
 use crate::manifest::JobSpec;
 use crate::module::ModuleRegistrar;
