@@ -63,9 +63,10 @@ pub(crate) async fn create(
 /// takes everything (a schedule moves its Job); a sent announcement takes
 /// the texts and the expiry, and Job `announcements.edit` replaces the
 /// Cards where the Channel can edit. With [`Draft::notify`], a sent one
-/// also starts the edit notice ([`super::notice`]): `notice_report` reset
-/// to the new version (stopping an older run) and Job
-/// `announcements.notice`. Audit `announcement.update`.
+/// whose text changed and that does not expire with this save also starts
+/// the edit notice ([`super::notice`]): `notice_report` reset to the new
+/// version (stopping an older run) and Job `announcements.notice` for the
+/// changed Locales. Audit `announcement.update`.
 pub(crate) async fn update(
     d: &Deployment,
     id: &str,
@@ -90,24 +91,30 @@ pub(crate) async fn update(
             .filter(|t| *t > now)
             .ok_or_else(|| Error::Invalid("send_at".into()))?;
         jobs.push(parent_job(id, row.round, next, Some(at)));
-    } else if row.status == "sent" {
-        // Only Cards whose visible text changed are edited.
-        let locales = changed_locales(&store::texts(s, id).await?, draft);
-        if !locales.is_empty() {
-            jobs.push(JobReq {
-                key: format!("{NAME}:{id}:edit:v{next}"),
-                kind: EDIT,
-                payload: json!({ "id": id, "version": next, "locales": locales }),
-                run_at: None,
-            });
-        }
     }
-    let notify = row.status == "sent" && draft.notify;
+    // Only Cards whose visible text changed are edited (and notified).
+    let locales = if row.status == "sent" {
+        changed_locales(&store::texts(s, id).await?, draft)
+    } else {
+        Vec::new()
+    };
+    if !locales.is_empty() {
+        jobs.push(JobReq {
+            key: format!("{NAME}:{id}:edit:v{next}"),
+            kind: EDIT,
+            payload: json!({ "id": id, "version": next, "locales": locales }),
+            run_at: None,
+        });
+    }
+    // A notice only for a changed text of an announcement still open
+    // after this save (the page refuses the box otherwise).
+    let open_after = draft.expires_at.is_none_or(|e| e > now);
+    let notify = draft.notify && !locales.is_empty() && open_after;
     if notify {
         jobs.push(JobReq {
             key: notice_key(id, next),
             kind: NOTICE,
-            payload: json!({ "id": id, "version": next }),
+            payload: json!({ "id": id, "version": next, "locales": locales }),
             run_at: None,
         });
     }
@@ -264,7 +271,8 @@ pub(crate) async fn cancel(
 }
 
 /// "ส่งซ้ำ": a new round to the Audience as it is now, with a new Job key.
-/// Audit `announcement.resend`.
+/// An expired announcement is not resent (`Error::Conflict`): Students
+/// could not open it. Audit `announcement.resend`.
 pub(crate) async fn resend(
     d: &Deployment,
     id: &str,
@@ -276,6 +284,9 @@ pub(crate) async fn resend(
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
     let now = s.now_ms();
+    if !super::notice::open(&row, now) {
+        return Err(Error::Conflict("announcement expired".into()));
+    }
     let round = row.round + 1;
     let job = parent_job(id, round, version + 1, None);
     let set = format!("status = 'sending', round = {round}");

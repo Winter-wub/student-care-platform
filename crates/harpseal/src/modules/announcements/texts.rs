@@ -155,6 +155,11 @@ pub(crate) const PAGES: &[E] = th_en![
         "This announcement cannot be changed now."
     ),
     (
+        "announcements.flash.expired",
+        "ข่าวนี้หมดอายุแล้ว ขยายวันหมดอายุก่อนจึงส่งซ้ำได้",
+        "This announcement has expired. Extend its expiry before resending."
+    ),
+    (
         "announcements.flash.conflict",
         "มีคนแก้ประกาศนี้ไปก่อนแล้ว กรุณาลองใหม่",
         "Someone changed this announcement meanwhile. Please try again."
@@ -209,6 +214,23 @@ pub(crate) const FORM: &[E] = th_en![
         "announcements.form.notify_help",
         "LINE แก้ข้อความที่ส่งไปแล้วไม่ได้ จึงส่งข้อความสั้น ๆ พร้อมลิงก์ไปหาผู้รับคนละ 1 ข้อความ (นับโควตา push) ส่วน Telegram แก้ข้อความเดิมให้เลยโดยไม่ส่งเพิ่ม",
         "LINE cannot edit a sent message, so each recipient there gets one short message with a link (counts against the push Quota). Telegram edits the message in place and sends nothing more."
+    ),
+    // {count}
+    (
+        "announcements.form.notify_reach",
+        "แจ้งได้สูงสุด {count} คน (push ไม่เกิน {count} ครั้ง เฉพาะคนที่ข้อความภาษาของตัวเองเปลี่ยน)",
+        "up to {count} recipients (at most {count} pushes: only those whose own language's text changes)"
+    ),
+    // {left}
+    (
+        "announcements.form.notify_over",
+        "เกินโควตาที่เหลือของเดือนนี้ (เหลือ {left} ครั้ง) ยังส่งได้ แต่จะใช้เกินโควตา",
+        "More than this month's remaining Quota ({left} left). It still sends, over the Quota."
+    ),
+    (
+        "announcements.form.notify_unchanged",
+        "ข้อความไม่ได้เปลี่ยน จึงไม่มีอะไรต้องแจ้ง เอาเครื่องหมายออกหรือแก้ข้อความ",
+        "No text changed, so there is nothing to notify: untick the box or change the text."
     ),
     ("announcements.form.when", "เวลาส่ง", "When to send"),
     (

@@ -26,8 +26,9 @@
 //!   into paced chunk Jobs that resume after a rate limit. An edit saved
 //!   with "notify recipients of the edit" also runs `announcements.notice`
 //!   (Module migration `0002_edit_notice`): one metered Push per recipient
-//!   on Channels that cannot edit (LINE), linking to the updated
-//!   announcement.
+//!   whose text changed on Channels that cannot edit (LINE), linking to the
+//!   updated announcement; Students who already acknowledged get it too
+//!   and their acknowledgement stands. Each edit notifies again.
 //! - **Expiry**: past `expires_at` an announcement leaves the Menu and the
 //!   Mini App list, and a Student opening or acknowledging it (chat Action,
 //!   Mini App deep link) is told it is no longer available (#77). Staff
@@ -53,6 +54,7 @@ mod page_count;
 mod page_detail;
 mod page_form;
 mod page_list;
+mod page_notice;
 mod page_pick;
 mod service;
 mod stats;

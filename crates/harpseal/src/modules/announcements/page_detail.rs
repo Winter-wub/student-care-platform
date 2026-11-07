@@ -169,7 +169,10 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
             }
             @if send && st == "draft" { (post_button(v, row, "confirm", "announcements.action.confirm", false)) }
             @if send && st == "scheduled" { (post_button(v, row, "cancel", "announcements.action.cancel", true)) }
-            @if send && st == "sent" { (post_button(v, row, "resend", "announcements.action.resend", true)) }
+            // An expired one is not resent (#77): extend the expiry first.
+            @if send && st == "sent" && super::notice::open(row, v.s.services.now_ms()) {
+                (post_button(v, row, "resend", "announcements.action.resend", true))
+            }
             @if retract && matches!(st, "scheduled" | "sending" | "sent") {
                 (post_button(v, row, "retract", "announcements.action.retract", true))
             }

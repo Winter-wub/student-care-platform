@@ -6,27 +6,37 @@
 //! Channels with `editor()` (Telegram) get nothing extra: the edit Job
 //! replaces their Card in place.
 //!
-//! The save writes `notice_report = {"version": v, …}` and enqueues
-//! `announcements.notice` (key `announcements:<id>:notice:v<v>`), in the
-//! same gated batch. That Job counts the recipients once (audit
-//! `announcement.notice` with the count) and fans out one
-//! `announcements.notice.chunk` per [`CHUNK`] delivery rows per Channel,
-//! [`PER_MINUTE`] a minute, like the edit and retract chunks
+//! The save (only when a text changed and the announcement has not
+//! expired) writes `notice_report = {"version": v, …}` and enqueues
+//! `announcements.notice` (key `announcements:<id>:notice:v<v>`, payload
+//! with the changed Locales), in the same gated batch. That Job counts the
+//! recipients once (audit `announcement.notice` with the count) and fans
+//! out one `announcements.notice.chunk` per [`CHUNK`] delivery rows per
+//! Channel, [`PER_MINUTE`] a minute, like the edit and retract chunks
 //! ([`super::maint`]).
 //!
 //! Recipients are the delivery rows: per Link the newest one `sent`
 //! (hand-picked Students included, a resend not counted twice), while the
-//! Link is still `active` and the account has not blocked the bot. Each
-//! Push is keyed `announcements:<id>:notice:v<v>:<delivery id>` and
-//! metered like any Push; the row's `notice_version` is then set, so a
-//! re-run notifies no one twice. A later save that wants a notice
-//! overwrites `notice_report` and the older run stops before its next
-//! Push; a retract stops it too. A rate limit enqueues the chunk's
+//! Link is still `active` and the account has not blocked the bot, and
+//! only Students whose text (their Locale's, or the Thai it falls back to)
+//! changed. A Student who already acknowledged gets it too; the
+//! acknowledgement stands. Each notice is one keyed Push to one account
+//! (`announcements:<id>:notice:v<v>:<delivery id>`, the Kernel's keyed
+//! send: a retry is de-duplicated by LINE and metered exactly, ADR-0010);
+//! the row's `notice_version` is then raised to `v` (never lowered), so a
+//! re-run notifies no one twice. Every version notifies again: a second
+//! edit with the notice reaches everyone once more.
+//!
+//! A later save that wants a notice overwrites `notice_report`, and the
+//! older run stops before its next Push; a retract or the expiry stops it
+//! too. The check is read before each Push, so one Push already past it
+//! (a retract landing between the check and the send) still goes out, as
+//! with the deliver children (#49, #58). A rate limit enqueues the chunk's
 //! continuation, as the edit chunks do.
 
 use serde_json::{Value as Json, json};
 
-use super::maint::{CHUNK, PER_MINUTE, get_int, get_str, parse};
+use super::maint::{CHUNK, PER_MINUTE, changed, get_int, get_str, parse, wants_edit};
 use super::maint_chunk::MAX_HOPS;
 use super::store::{self, Row};
 use super::{NAME, NOTICE_CHUNK};
@@ -36,7 +46,7 @@ use crate::manifest::Job;
 use crate::message::{Button, Card, Locale, Message};
 use crate::module::JobContext;
 use crate::port_types::Statement;
-use crate::{Error, Result};
+use crate::{Deployment, Error, Result};
 
 /// The notice Job's key for version `version`.
 pub(crate) fn notice_key(id: &str, version: i64) -> String {
@@ -52,17 +62,23 @@ const TARGET: &str = "x.status = 'sent' AND coalesce(x.notice_version, -1) < ? \
     AND c.blocked_at IS NOT NULL)";
 
 /// The Channel gets the notice: it exists and cannot edit.
-fn wants(cx: &JobContext, channel: &str) -> bool {
-    cx.deployment
-        .channel(channel)
-        .is_some_and(|c| c.editor().is_none())
+pub(crate) fn wants(d: &Deployment, channel: &str) -> bool {
+    d.channel(channel).is_some_and(|c| c.editor().is_none())
+}
+
+/// Not expired at `now`.
+pub(crate) fn open(row: &Row, now: i64) -> bool {
+    row.expires_at.is_none_or(|e| e > now)
 }
 
 /// The announcement while notice `version` still applies: `sent` (or
-/// `sending` again, a resend) and `notice_report` still this version's.
+/// `sending` again, a resend), not expired, and `notice_report` still this
+/// version's.
 async fn current(cx: &JobContext, id: &str, version: i64) -> Result<Option<Row>> {
+    let now = cx.services.now_ms();
     Ok(store::load(&cx.services, id).await?.filter(|r| {
         matches!(r.status.as_str(), "sent" | "sending")
+            && open(r, now)
             && r.notice_report
                 .as_ref()
                 .and_then(|n| n.get("version"))
@@ -71,11 +87,46 @@ async fn current(cx: &JobContext, id: &str, version: i64) -> Result<Option<Row>>
     }))
 }
 
+/// Recipients of a notice of `version` per Channel that gets it: only
+/// Students whose text changed when `locales` is given, every one
+/// otherwise (the edit form's upper bound, before the texts are saved).
+pub(crate) async fn reach(
+    d: &Deployment,
+    id: &str,
+    version: i64,
+    locales: Option<&[&str]>,
+) -> Result<Vec<(String, i64)>> {
+    let s = d.services();
+    let sql = format!(
+        "SELECT x.channel, s.locale, count(*) AS n FROM announcement_delivery x \
+         JOIN student s ON s.id = x.student_id WHERE x.announcement_id = ? AND {TARGET} \
+         GROUP BY x.channel, s.locale ORDER BY x.channel"
+    );
+    let rows =
+        s.db.query(Statement::new(sql).bind(id).bind(version))
+            .await?;
+    let texts = store::texts(s, id).await?;
+    let mut out: Vec<(String, i64)> = Vec::new();
+    for i in 0..rows.len() {
+        let channel = store::text(&rows, i, "channel");
+        let own = store::text(&rows, i, "locale");
+        if !wants(d, &channel) || locales.is_some_and(|l| !wants_edit(&texts, l, &own)) {
+            continue;
+        }
+        let n = store::int(&rows, i, "n").unwrap_or(0);
+        match out.last_mut() {
+            Some((c, total)) if *c == channel => *total += n,
+            _ => out.push((channel, n)),
+        }
+    }
+    Ok(out)
+}
+
 /// `announcements.notice`: counts the recipients (the first run only:
 /// `total` is still null; audit `announcement.notice` with the count, as
 /// the Job) and fans out the chunks.
 pub(crate) async fn notice(cx: JobContext, job: Job) -> Result<()> {
-    let (_, id, version) = parse(&job)?;
+    let (p, id, version) = parse(&job)?;
     let s = &cx.services;
     let Some(row) = current(&cx, &id, version).await? else {
         return Ok(());
@@ -87,7 +138,12 @@ pub(crate) async fn notice(cx: JobContext, job: Job) -> Result<()> {
         .and_then(|n| n.get("total"))
         .is_some_and(|t| !t.is_null());
     if !counted {
-        let total = total(&cx, &id, version).await?;
+        let locales = changed(&p);
+        let total: i64 = reach(&cx.deployment, &id, version, Some(&locales))
+            .await?
+            .iter()
+            .map(|(_, n)| n)
+            .sum();
         let first = Statement::new(
             "EXISTS (SELECT 1 FROM announcement WHERE id = ? \
              AND json_extract(notice_report, '$.version') = ? \
@@ -119,32 +175,21 @@ pub(crate) async fn notice(cx: JobContext, job: Job) -> Result<()> {
             .bind(version),
         );
     }
-    stmts.extend(fan_out(&cx, &id, version).await?);
+    let extra = p.get("locales").cloned().unwrap_or(Json::Null);
+    stmts.extend(fan_out(&cx, &id, version, &extra).await?);
     s.db.batch(stmts).await?;
     Ok(())
-}
-
-/// Recipients on Channels that get the notice.
-async fn total(cx: &JobContext, id: &str, version: i64) -> Result<i64> {
-    let sql = format!(
-        "SELECT x.channel, count(*) AS n FROM announcement_delivery x \
-         WHERE x.announcement_id = ? AND {TARGET} GROUP BY x.channel"
-    );
-    let rows = cx
-        .services
-        .db
-        .query(Statement::new(sql).bind(id).bind(version))
-        .await?;
-    Ok((0..rows.len())
-        .filter(|&i| wants(cx, &store::text(&rows, i, "channel")))
-        .map(|i| store::int(&rows, i, "n").unwrap_or(0))
-        .sum())
 }
 
 /// One chunk Job per [`CHUNK`] delivery rows (all rows, in id order) per
 /// Channel that gets the notice, for the chunks with a recipient left;
 /// keys `<notice key>:<channel>:<n>`, so a re-run inserts nothing.
-async fn fan_out(cx: &JobContext, id: &str, version: i64) -> Result<Vec<Statement>> {
+async fn fan_out(
+    cx: &JobContext,
+    id: &str,
+    version: i64,
+    locales: &Json,
+) -> Result<Vec<Statement>> {
     let s = &cx.services;
     let sql = format!(
         "SELECT channel, n FROM (SELECT x.*, (row_number() OVER \
@@ -160,7 +205,7 @@ async fn fan_out(cx: &JobContext, id: &str, version: i64) -> Result<Vec<Statemen
     let (mut stmts, mut paced, mut last) = (Vec::new(), 0usize, String::new());
     for i in 0..rows.len() {
         let channel = store::text(&rows, i, "channel");
-        if !wants(cx, &channel) {
+        if !wants(&cx.deployment, &channel) {
             continue;
         }
         if channel != last {
@@ -172,7 +217,7 @@ async fn fan_out(cx: &JobContext, id: &str, version: i64) -> Result<Vec<Statemen
         let minute = i64::try_from(paced / PER_MINUTE).unwrap_or(0);
         paced += 1;
         let payload = json!({
-            "id": id, "version": version, "channel": channel,
+            "id": id, "version": version, "channel": channel, "locales": locales,
             "offset": n * size, "size": size, "key": key, "hop": 0,
         });
         let at = Timestamp(now + minute * 60_000);
@@ -199,12 +244,13 @@ fn card(cx: &JobContext, locale: &Locale, id: &str, texts: &store::Texts) -> Car
 }
 
 /// `announcements.notice.chunk`: one keyed Push per recipient of the
-/// chunk not yet notified of this version, each followed by its row's
-/// `notice_version` and the report's count in one batch.
+/// chunk not yet notified of this version whose text changed, each
+/// followed by its row's `notice_version` and the report's count in one
+/// batch.
 pub(crate) async fn notice_chunk(cx: JobContext, job: Job) -> Result<()> {
     let (p, id, version) = parse(&job)?;
     let channel = get_str(&p, "channel");
-    if current(&cx, &id, version).await?.is_none() || !wants(&cx, &channel) {
+    if current(&cx, &id, version).await?.is_none() || !wants(&cx.deployment, &channel) {
         return Ok(());
     }
     let s = &cx.services;
@@ -225,26 +271,27 @@ pub(crate) async fn notice_chunk(cx: JobContext, job: Job) -> Result<()> {
         .bind(version);
     let rows = s.db.query(st).await?;
     let texts = store::texts(s, &id).await?;
+    let locales = changed(&p);
     for i in 0..rows.len() {
-        // Re-read before each Push: a later notice or a retract stops it.
+        let own = store::text(&rows, i, "locale");
+        if !wants_edit(&texts, &locales, &own) {
+            continue;
+        }
+        // Re-read before each Push: a later notice, a retract or the
+        // expiry stops it (one already past this check still goes out).
         if current(&cx, &id, version).await?.is_none() {
             return Ok(());
         }
         let delivery = store::text(&rows, i, "id");
         let to = ChannelAccountId::new(kind, store::text(&rows, i, "external_id"));
-        let locale = texts.locale_for(&Locale::new(store::text(&rows, i, "locale")));
+        let locale = texts.locale_for(&Locale::new(own));
         let msgs = [Message::Card(card(&cx, &locale, &id, &texts))];
         let key = format!("{}:{delivery}", notice_key(&id, version));
         let sent = cx
             .deployment
-            .send_many_with_key(&channel, &[to], &msgs, &locale, Some(NAME), &key)
-            .await?;
-        let result = match (sent.results.into_iter().next(), sent.stopped) {
-            (Some(r), _) => r.map(|_| ()),
-            (None, Some(e)) => Err(e),
-            (None, None) => Err(Error::Platform("no result".into())),
-        };
-        let ok = match result {
+            .deliver_with(&to, &msgs, &locale, Some(NAME), &key)
+            .await;
+        let ok = match sent {
             Err(e) if matches!(e.root(), Error::RateLimited { .. }) => {
                 return limited(&cx, &p, &id, version, &rows, i, &e).await;
             }
@@ -259,11 +306,15 @@ pub(crate) async fn notice_chunk(cx: JobContext, job: Job) -> Result<()> {
     Ok(())
 }
 
-/// The row is done with this version.
+/// The row is done with this version; a newer version's mark stays.
 fn mark(delivery: &str, version: i64) -> Statement {
-    Statement::new("UPDATE announcement_delivery SET notice_version = ? WHERE id = ?")
-        .bind(version)
-        .bind(delivery.to_string())
+    Statement::new(
+        "UPDATE announcement_delivery SET notice_version = ? WHERE id = ? \
+         AND coalesce(notice_version, -1) < ?",
+    )
+    .bind(version)
+    .bind(delivery.to_string())
+    .bind(version)
 }
 
 /// Adds `n` to `sent` (`ok`) or `failed` while the report is this version's.

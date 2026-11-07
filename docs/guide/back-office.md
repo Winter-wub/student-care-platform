@@ -109,12 +109,18 @@ The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`. LINE cannot edit a sent
 message: tick "แจ้งผู้รับว่ามีการแก้ไข" when saving the edit of a sent
 announcement and Job `announcements.notice` sends each recipient there (the
-newest delivery per live Link, hand-picked ones included) one short Push
-linking to the updated announcement, metered like any Push and keyed per edit
-version and recipient, so a re-run notifies no one twice. A later save with the
-notice stops a run still going; a retract stops it too. The detail page shows
-sent / recipients and failures, and the audit log `announcement.notice` with
-the count. Past its expiry date an announcement leaves the Menu and the Mini
+newest delivery per live Link, hand-picked ones included, those who already
+acknowledged too: their acknowledgement stands) whose text changed one short
+Push linking to the updated announcement, metered like any Push and keyed per
+edit version and recipient, so a re-run notifies no one twice. The box needs a
+changed text (an expiry-only edit sends nothing) and shows the recipients on
+LINE and this month's Quota use beside it, warning when the notice would go
+over (it still sends). Each edit with the box ticked notifies everyone again:
+the keys are per version. A later save with the notice stops a run still
+going; a retract or the expiry stops it too (a Push already past the check
+still goes out). The detail page shows sent / recipients and failures, and
+the audit log `announcement.notice` with the count. An expired announcement
+cannot be resent ("ส่งซ้ำ" is hidden): extend its expiry first. Past its expiry date an announcement leaves the Menu and the Mini
 App list, and a Student opening it from a Card (the Mini App deep link) or
 pressing "รับทราบ" is told "ข่าวนี้ไม่เปิดให้ดูแล้ว" and nothing is recorded
 (before #77 an expired one still took the acknowledgement); Staff still see it

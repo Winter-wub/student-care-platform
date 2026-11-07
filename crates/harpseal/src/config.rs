@@ -69,7 +69,9 @@ pub struct DeploymentConfig {
     /// The nightly backup ([`BackupConfig`], #78).
     #[serde(default)]
     pub backup: BackupConfig,
-    /// The Announcements Module's settings ([`AnnouncementsConfig`]).
+    /// The Announcements Module's settings ([`AnnouncementsConfig`]). A
+    /// Core section for a built-in Module until Modules can declare their
+    /// own config: a Module-config hook should replace it.
     #[serde(default)]
     pub announcements: AnnouncementsConfig,
 }

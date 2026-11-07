@@ -4,53 +4,13 @@
 mod announcements_support;
 mod app_support;
 
+use announcements_support::notice::*;
 use announcements_support::*;
 use app_support::*;
 use harpseal::modules::announcements::{AckOutcome, LATEST, ack, ack_action};
 use harpseal::{Button, DeploymentConfig, Message};
 
-/// The notice Card's title (Thai).
-const NOTICE: &str = "ข่าวนี้มีการแก้ไข กดดูฉบับล่าสุดได้เลย";
 const GONE: &str = "ข่าวนี้ไม่เปิดให้ดูแล้ว";
-
-/// Notice Cards `student` got on the LINE-like Channel.
-fn notices(w: &World, student: &str) -> Vec<String> {
-    w.line
-        .sent_to(&fake_account("fake", student))
-        .into_iter()
-        .filter_map(|m| match m {
-            Message::Card(c) if c.title == NOTICE => Some(c.body),
-            _ => None,
-        })
-        .collect()
-}
-
-async fn metered(w: &World, channel: &str) -> i64 {
-    count(
-        w,
-        &format!("SELECT coalesce(sum(metered), 0) FROM usage_daily WHERE channel = '{channel}'"),
-    )
-    .await
-}
-
-/// Sends a new announcement to everyone and lets it go out.
-async fn sent(w: &World, b: &harpseal_testing::Browser<'_>) -> String {
-    let id = create(b, &form("เดิม", "ข้อความเดิม", "&do=confirm")).await;
-    drain(w).await;
-    w.line.take_sent();
-    w.tg.take_sent();
-    id
-}
-
-/// Saves the edit form of `id` with `title`, ticking "notify" if `notify`.
-async fn edit(w: &World, b: &harpseal_testing::Browser<'_>, id: &str, title: &str, notify: bool) {
-    let path = format!("/admin/announcements/{id}/edit");
-    assert_eq!(b.get(&path).await.status, 200);
-    let v = version(w, id).await;
-    let extra = format!("&version={v}{}", if notify { "&notify=1" } else { "" });
-    let r = b.post(&path, &form(title, "ข้อความใหม่", &extra)).await;
-    assert_eq!(r.status, 303, "{}", r.body);
-}
 
 #[tokio::test]
 async fn the_edit_notice_goes_once_per_line_recipient_and_telegram_edits_instead() {
