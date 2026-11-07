@@ -4,6 +4,8 @@
 
 #![allow(dead_code)]
 
+pub mod nightly;
+
 use std::collections::BTreeMap;
 
 use harpseal::modules::announcements::{self, Announcements, NewAnnouncement};

@@ -1,104 +1,51 @@
 //! [`dump`]: the database and the FileStore objects it references, to a
 //! [`BackupSink`].
 
-use std::collections::BTreeSet;
-
 use serde_json::{Map, Value as Json};
 
-use super::schema::{self, Table, quote};
+use super::progress::{Budget, DumpProgress, Step};
+use super::schema::{Table, quote};
 use super::value::encode;
-use super::{
-    BackupSink, DumpReport, FORMAT, MANIFEST, Manifest, ManifestFile, ManifestMigration,
-    ManifestTable, PAGE, file_entry, sha256_hex, table_entry,
-};
+use super::{BackupSink, DumpReport, ManifestMigration, PAGE};
 use crate::port_types::{Rows, Statement, Value};
 use crate::{Db, Deployment, Error, Result};
 
-/// Writes a backup of `d` to `sink`: one `tables/<t>.ndjson` per table,
-/// one `files/<hex>` per referenced FileStore object, then
-/// `manifest.json` last (a sink without a manifest holds no finished
-/// backup). Reads in pages of [`PAGE`] rows; each table's entry is built in
-/// memory before it is written. Not one transaction: see the module docs.
+/// Writes a backup of `d` to `sink`: one `tables/<t>.ndjson` per table
+/// (children before parents, see the module docs), one
+/// `files/<hex>` per referenced FileStore object, then `manifest.json`
+/// last (a sink without a manifest holds no finished backup). Reads in
+/// pages of [`PAGE`] rows; each table's entry is built in memory before it
+/// is written. Not one transaction: see the module docs. The nightly
+/// backup Job runs the same dump in budgeted steps.
 pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpReport> {
-    let s = d.services();
-    let db = s.db.as_ref();
-    let taken_at = s.now_ms();
-    let migrations = applied_migrations(db).await?;
-    let tables = schema::tables(db).await?;
-    let mut manifest_tables = Vec::with_capacity(tables.len());
-    let mut keys = BTreeSet::new();
-    for t in &tables {
-        let (bytes, rows) = dump_table(db, t).await?;
-        sink.write(&table_entry(&t.name), &bytes).await?;
-        for col in t.file_key_columns() {
-            let found = db
-                .query(Statement::new(format!(
-                    "SELECT DISTINCT {c} AS k FROM {t} WHERE {c} IS NOT NULL",
-                    c = quote(col),
-                    t = quote(&t.name)
-                )))
-                .await?;
-            keys.extend(found.rows.iter().filter_map(|r| match r.first() {
-                Some(Value::Text(k)) if !k.is_empty() => Some(k.clone()),
-                _ => None,
-            }));
-        }
-        manifest_tables.push(ManifestTable {
-            name: t.name.clone(),
-            rows,
-            sha256: sha256_hex(&bytes),
-            columns: t.columns.iter().map(|c| c.name.clone()).collect(),
-            sql: t.sql.clone(),
-        });
+    let mut progress = DumpProgress::start(d).await?;
+    match progress.step(d, sink, Budget::UNLIMITED).await? {
+        Step::Done(report) => Ok(report),
+        Step::More => Err(Error::Invalid("an unlimited dump stopped early".into())),
     }
-    let mut files = Vec::with_capacity(keys.len());
-    let mut missing_files = Vec::new();
-    for key in keys {
-        let entry = file_entry(&key);
-        match s.files.get(&key).await? {
-            Some(bytes) => {
-                sink.write(&entry, &bytes).await?;
-                files.push(ManifestFile {
-                    key,
-                    entry,
-                    bytes: Some(bytes.len() as u64),
-                    sha256: Some(sha256_hex(&bytes)),
-                    missing: false,
-                });
-            }
-            None => {
-                missing_files.push(key.clone());
-                files.push(ManifestFile {
-                    key,
-                    entry,
-                    bytes: None,
-                    sha256: None,
-                    missing: true,
-                });
-            }
-        }
+}
+
+/// The FileStore keys `t`'s `file_key` / `*_file_key` columns name.
+pub(super) async fn file_keys(db: &dyn Db, t: &Table) -> Result<Vec<String>> {
+    let mut keys = Vec::new();
+    for col in t.file_key_columns() {
+        let found = db
+            .query(Statement::new(format!(
+                "SELECT DISTINCT {c} AS k FROM {t} WHERE {c} IS NOT NULL",
+                c = quote(col),
+                t = quote(&t.name)
+            )))
+            .await?;
+        keys.extend(found.rows.iter().filter_map(|r| match r.first() {
+            Some(Value::Text(k)) if !k.is_empty() => Some(k.clone()),
+            _ => None,
+        }));
     }
-    let manifest = Manifest {
-        format: FORMAT,
-        deployment: d.config().name.clone(),
-        taken_at,
-        finished_at: s.now_ms(),
-        migrations,
-        tables: manifest_tables,
-        files,
-    };
-    let raw = serde_json::to_vec_pretty(&manifest)
-        .map_err(|e| Error::Invalid(format!("backup manifest: {e}")))?;
-    sink.write(MANIFEST, &raw).await?;
-    Ok(DumpReport {
-        manifest,
-        manifest_sha256: sha256_hex(&raw),
-        missing_files,
-    })
+    Ok(keys)
 }
 
 /// The `migration` table in applied (insertion) order.
-async fn applied_migrations(db: &dyn Db) -> Result<Vec<ManifestMigration>> {
+pub(super) async fn applied_migrations(db: &dyn Db) -> Result<Vec<ManifestMigration>> {
     let rows = db
         .query(Statement::new(
             "SELECT module, name, checksum FROM migration ORDER BY rowid",
@@ -124,9 +71,26 @@ async fn applied_migrations(db: &dyn Db) -> Result<Vec<ManifestMigration>> {
 const ROWID: &str = "__harpseal_rowid";
 
 /// Every row of `t` as NDJSON, and how many rows there were.
-async fn dump_table(db: &dyn Db, t: &Table) -> Result<(Vec<u8>, u64)> {
+pub(super) async fn dump_table(db: &dyn Db, t: &Table) -> Result<(Vec<u8>, u64)> {
     let mut out = Vec::new();
     let mut count = 0u64;
+    read_pages(db, t, |page, skip| {
+        count += write_rows(&mut out, page, skip)?;
+        Ok(true)
+    })
+    .await?;
+    Ok((out, count))
+}
+
+/// Reads every row of `t` in pages of [`PAGE`], in `rowid` order (primary
+/// key order for `WITHOUT ROWID` tables), handing each page to `f` with
+/// the number of leading columns that are not the table's (the rowid).
+/// `f` returns `false` to stop early.
+pub(super) async fn read_pages(
+    db: &dyn Db,
+    t: &Table,
+    mut f: impl FnMut(&Rows, usize) -> Result<bool>,
+) -> Result<()> {
     if t.without_rowid() {
         let order: Vec<String> = t.pk_columns().iter().map(|c| quote(c)).collect();
         let mut offset = 0i64;
@@ -141,38 +105,37 @@ async fn dump_table(db: &dyn Db, t: &Table) -> Result<(Vec<u8>, u64)> {
                     .bind(offset),
                 )
                 .await?;
-            count += write_rows(&mut out, &page, 0)?;
-            if page.len() < PAGE {
-                break;
+            if !f(&page, 0)? || page.len() < PAGE {
+                return Ok(());
             }
             offset += PAGE as i64;
         }
-    } else {
-        // The first page has no lower bound (a rowid can be i64::MIN).
-        let mut after: Option<i64> = None;
-        loop {
-            let head = format!("SELECT rowid AS {ROWID}, * FROM {}", quote(&t.name));
-            let stmt = match after {
-                None => Statement::new(format!("{head} ORDER BY rowid LIMIT {PAGE}")),
-                Some(a) => Statement::new(format!(
-                    "{head} WHERE rowid > ? ORDER BY rowid LIMIT {PAGE}"
-                ))
-                .bind(a),
-            };
-            let page = db.query(stmt).await?;
-            count += write_rows(&mut out, &page, 1)?;
-            match page
-                .rows
-                .last()
-                .and_then(|r| r.first())
-                .and_then(Value::as_i64)
-            {
-                Some(last) if page.len() == PAGE => after = Some(last),
-                _ => break,
-            }
+    }
+    // The first page has no lower bound (a rowid can be i64::MIN).
+    let mut after: Option<i64> = None;
+    loop {
+        let head = format!("SELECT rowid AS {ROWID}, * FROM {}", quote(&t.name));
+        let stmt = match after {
+            None => Statement::new(format!("{head} ORDER BY rowid LIMIT {PAGE}")),
+            Some(a) => Statement::new(format!(
+                "{head} WHERE rowid > ? ORDER BY rowid LIMIT {PAGE}"
+            ))
+            .bind(a),
+        };
+        let page = db.query(stmt).await?;
+        if !f(&page, 1)? {
+            return Ok(());
+        }
+        match page
+            .rows
+            .last()
+            .and_then(|r| r.first())
+            .and_then(Value::as_i64)
+        {
+            Some(last) if page.len() == PAGE => after = Some(last),
+            _ => return Ok(()),
         }
     }
-    Ok((out, count))
 }
 
 /// Appends one JSON line per row, skipping the first `skip` columns.

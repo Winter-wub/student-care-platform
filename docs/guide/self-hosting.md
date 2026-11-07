@@ -135,8 +135,9 @@ handing over. Put Students' data mapping in `[roster]`, Roles in `[roles]`,
 texts in `[texts.<locale>]`; secrets only in the environment.
 
 Behind a reverse proxy, terminate TLS there, forward to `HARPSEAL_ADDR` and
-set `[staff] trust_forwarded_for = true`. Back up with `harpseal backup`
-(below).
+set `[staff] trust_forwarded_for = true`. The Deployment backs itself up
+every night into the FileStore; `harpseal backup` makes a point-in-time
+copy by hand (below).
 
 ## Backup and restore
 
@@ -172,10 +173,12 @@ It writes to `DIR.partial` and renames it to `DIR` at the end, so `DIR` only
 ever holds a finished backup (`DIR/` is the same: the temporary
 directory is always next to `DIR`, not in it). `DIR` must be new or empty.
 
-**Stop the server first** (or at least make sure no tick runs): the `Db`
-port has no read transaction, so the backup reads table by table and a write
-in between would make it inconsistent. The manifest records when the dump
-started and finished.
+**Stop the server first** for a point-in-time copy: the `Db` port has no
+read transaction, so the backup reads table by table (children before
+parents) and a write in between may or may not be in it. A backup taken
+while the server runs, as the nightly one is, still restores: see
+[Nightly backups](#nightly-backups-and-the-backups-page). The manifest
+records when the dump started and finished.
 
 **The backup directory is as sensitive as the database.** It holds Staff
 password hashes, session ids, Students' personal data and the roster files,
@@ -246,9 +249,105 @@ run it again with `--force`.
   bulk-links its users. A revision such a Job left `linking` is picked up by
   the next Menu label save.
 
-**D1.** The CLI runs natively and has no D1 adapter yet, so a Worker
-Deployment is backed up with Cloudflare's own export
-(`npx wrangler@4 d1 export <database> --remote --output backup.sql`) and R2's
-tools for the files. The format above is the one `restore` reads; a D1 HTTP
-adapter for the CLI would let `backup`/`restore` run against D1 through the
-same `Db` port.
+**D1.** The CLI runs natively and has no D1 adapter yet. A Worker
+Deployment is backed up by its nightly Job instead (next section): download
+a backup from the Backups page and `restore` it natively. Cloudflare's own
+export (`npx wrangler@4 d1 export <database> --remote --output backup.sql`)
+remains a second, independent copy.
+
+## Nightly backups and the Backups page
+
+Every Deployment backs itself up once a night, on Workers and natively,
+without stopping (#78):
+
+```toml
+[backup]
+enabled = true            # default; false stops the schedule only
+schedule = "0 2 * * *"    # cron, in utc_offset (default 02:00)
+retention_days = 30       # default
+```
+
+The Job `kernel.backup.run` writes the same backup format to the
+FileStore under `backups/<UTC time>/` (`backups/20261107T190000000Z/manifest.json`, …):
+
+- **Workers:** the R2 bucket bound as `FILES` (`[[r2_buckets]]` in
+  `wrangler.toml`). Without that binding every night fails, and the
+  Administrators are emailed.
+- **Native:** the FileStore directory (`HARPSEAL_FILES`), so
+  `HARPSEAL_FILES/backups/20261107T190000000Z` is a backup directory
+  `harpseal restore` reads as it is (with `HARPSEAL_S3_BUCKET` set it goes
+  to the S3 bucket instead). Copy that directory off the server too: a
+  backup on the same disk does not survive the disk.
+
+Backups sit next to the live files, in the same bucket or directory: give
+the bucket the protection the data needs, and copy backups elsewhere when
+the Deployment must survive losing it. Each backup holds a full copy of
+the files, so the storage needed is about `retention_days` times the
+database and files together.
+
+**Steps.** One Job run dumps whole tables until it has read 50,000 rows or
+written 32 MB (or copied 200 files), saves where it stands as
+`backups/<UTC time>.progress.json` and hands over to the next run a minute
+later, so a large Deployment takes a few minutes and no Worker invocation
+hits its CPU, memory or subrequest limits. A single table is never split:
+the largest table must fit in a Worker's memory as NDJSON.
+
+**Consistency while the Deployment runs.** D1 has no transactions, so the
+tables are not one point in time: a row written during the backup may or
+may not be in it. What the backup does promise:
+
+- each table entry is pinned by its SHA-256 and row count in the manifest,
+  and the manifest records `taken_at` and `finished_at`;
+- tables are read children before parents, and the Kernel never deletes a
+  row others reference, so every reference in the backup resolves and
+  `harpseal restore` accepts it unchanged. The one exception is a Role
+  deleted during the backup: its grants may be in it without the Role, and
+  the restore then refuses; take the next night's backup;
+- the run writing the backup is in it as `running`; a restore marks it
+  failed, so a restored copy never resumes it.
+
+**Retention.** After each successful backup, runs started more than
+`retention_days` ago (finished or failed) are deleted with their objects,
+at most 20 per night, each audited `backup.prune`. The newest successful
+backup is never deleted, and nothing is deleted after a failed night. A
+copy restored from production lists the original's backups: give it its own
+bucket or directory, or its retention deletes the original's old backups.
+
+**Failures.** A failed step is retried like any Job (1, 5 and 30 minutes
+later). After the last retry, or when a run makes no progress for two hours
+(a Worker killed mid-step), the run is marked failed, the Backups page
+shows the error, and every active Administrator (Staff whose Roles grant
+`kernel.staff.manage`) gets one email per failure day (audited
+`backup.notify`; needs an email provider).
+
+**The Backups page** (`/admin/backups`, Permission `kernel.backup.manage`,
+which no Role has until you grant it) lists the backups with their time,
+status, size and contents, and offers:
+
+- **Download (.tar)** of one finished backup, streamed object by object
+  (audited `backup.download`). It unpacks to the backup directory:
+  `tar -xf backup-20261107T190000000Z.tar`, then
+  `harpseal restore 20261107T190000000Z`;
+- **Back up now**, refused while a backup runs (audited `backup.request`);
+- **Download all data (Excel)**: one sheet per table, Kernel and Module
+  tables (the backup's table list), with a header row, audited
+  `data.export` with the columns left out. It is for reading, not for
+  restoring. It is built in memory within the request (`rust_xlsxwriter`
+  has no streaming mode on wasm32), which suits a Deployment of up to a
+  few hundred thousand rows in all on Workers; a sheet stops at Excel's
+  1,048,575 rows (the audit row names the tables cut), long texts at
+  32,767 characters, and blobs show as `[N bytes]`.
+
+Columns left out of the Excel export as secrets, by name in every table
+(name a Module's secret columns the same way):
+
+| Rule | Kernel columns it drops today |
+|---|---|
+| starts with `password` | `staff.password_hash` |
+| `hash` or ends with `_hash` | `verification_challenge.secret_hash` |
+| contains `token` | `job.lock_token`, `menu_retire.token` |
+| contains `salt` | `menu_salt.salt` |
+| contains `secret` | (none besides the above) |
+| `id` of a `*_session` table (the hash of the session cookie) | `staff_session.id`, `app_session.id` |
+
+The audit log's `before`/`after` are already redacted when written.

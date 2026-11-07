@@ -58,7 +58,9 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 ///    revision salt (`menu_salt`), so a restored copy on the same LINE
 ///    token never names its rich menus like the original, and forgets the
 ///    original's pending retires (`menu_retire`) and queued re-link Jobs
-///    (marked failed);
+///    (marked failed), and marks a nightly backup the original was taking
+///    (`backup_run` still `running`, #78) failed, so the copy never
+///    resumes writing it;
 /// 9. applies the Deployment's newer migrations, so data migrations run
 ///    over the restored rows.
 ///
@@ -210,6 +212,17 @@ pub async fn load(
     if redraw_salt {
         tail.push(crate::kernel::menu::redraw_salt(s)?);
         tail.extend(crate::kernel::menu::forget_runs(s));
+    }
+    if current.iter().any(|t| t.name == "backup_run") {
+        tail.push(
+            Statement::new(
+                "UPDATE backup_run SET state = 'failed', finished_at = ?, updated_at = ?, \
+                 error = 'interrupted: the database was restored from a backup' \
+                 WHERE state = 'running'",
+            )
+            .bind(s.now_ms())
+            .bind(s.now_ms()),
+        );
     }
     tail.push(audit::entry(
         s,

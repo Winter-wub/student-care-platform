@@ -5,8 +5,10 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+mod backup;
 mod roster;
 
+pub use backup::BackupConfig;
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
 
 use crate::manifest::Catalog;
@@ -62,6 +64,9 @@ pub struct DeploymentConfig {
     /// ([`RosterConfig`]).
     #[serde(default)]
     pub roster: RosterConfig,
+    /// The nightly backup ([`BackupConfig`], #78).
+    #[serde(default)]
+    pub backup: BackupConfig,
 }
 
 fn default_offset() -> String {
@@ -289,6 +294,7 @@ impl DeploymentConfig {
         }
         c.branding.check()?;
         c.roster.check()?;
+        c.backup.check()?;
         Ok(c)
     }
 

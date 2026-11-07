@@ -30,7 +30,7 @@ Administrator = [
     "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
     "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
-    "kernel.staff.manage", "kernel.setting.edit",
+    "kernel.staff.manage", "kernel.setting.edit", "kernel.backup.manage",
     "announcements.view", "announcements.send", "announcements.retract",
 ]
 Officer = [
@@ -47,6 +47,14 @@ Viewer = ["kernel.student.view", "kernel.usage.view", "announcements.view"]
 # without [quotas.<kind>] (or with 0) shows its usage and never warns.
 [quotas.line]
 metered_per_month = 300
+
+# Nightly backup into the FileStore (R2 `FILES` on Workers, HARPSEAL_FILES
+# natively), kept 30 days; failures email every Administrator. The page is
+# /admin/backups (kernel.backup.manage). These are the defaults.
+[backup]
+enabled = true
+schedule = "0 2 * * *"
+retention_days = 30
 
 [otp]
 digits = 6

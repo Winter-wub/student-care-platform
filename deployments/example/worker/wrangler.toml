@@ -38,9 +38,11 @@ binding = "DB"
 database_name = "harpseal-example"
 database_id = "00000000-0000-0000-0000-000000000000"
 
-# FileStore. Uncomment once the bucket exists
+# FileStore, and where the nightly backup goes (`backups/<UTC time>/`,
+# [backup] in deployment.toml). Uncomment once the bucket exists
 # (`npx wrangler@4 r2 bucket create harpseal-example-files`); without it the
-# Worker still boots and file operations answer an error naming the binding.
+# Worker still boots, file operations answer an error naming the binding,
+# and every nightly backup fails (and emails the Administrators).
 # [[r2_buckets]]
 # binding = "FILES"
 # bucket_name = "harpseal-example-files"

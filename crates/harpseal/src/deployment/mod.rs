@@ -1,7 +1,7 @@
 //! A built Deployment: dispatches through the maps the builder validated.
 
 mod builder;
-mod day;
+pub(crate) mod day;
 mod inbound;
 mod routes;
 mod send;

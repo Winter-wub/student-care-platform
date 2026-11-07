@@ -597,9 +597,11 @@ dependencies = [
  "axum",
  "calamine",
  "http",
+ "http-body",
  "http-body-util",
  "maud",
  "pbkdf2",
+ "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sha2",
@@ -654,6 +656,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "harpseal",
+ "harpseal-runtime-native",
  "harpseal-testing",
  "tokio",
 ]
@@ -734,6 +737,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "calamine",
  "harpseal",
  "harpseal-channel-fake",
  "harpseal-channel-line",
@@ -1583,6 +1587,17 @@ dependencies = [
  "libsqlite3-sys",
  "smallvec",
  "sqlite-wasm-rs",
+]
+
+[[package]]
+name = "rust_xlsxwriter"
+version = "0.102.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ca3d0e879a578c1313c2800ab0c6c029d38eed18098675e50341a30d32372ed"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "zip",
 ]
 
 [[package]]

@@ -23,10 +23,19 @@
 //! Every user table is dumped except the `migration` table (a restore
 //! re-runs the migrations) and SQLite's and D1's internal tables.
 //!
-//! **Consistency.** The `Db` port has no read transaction, so a dump reads
-//! table by table while the Deployment may still be writing. Stop the
-//! server (or at least its Job ticker) for the backup; the manifest records
-//! when the dump started and finished.
+//! **Consistency.** The `Db` port has no read transaction (D1 has none),
+//! so a dump reads table by table, each in `rowid` pages, while the
+//! Deployment may still be writing. What holds anyway: each table entry is
+//! pinned by its SHA-256 and row count; tables are read children before
+//! parents, and the Kernel never deletes a referenced row (only a Role,
+//! whose grants go with it), so every reference in a backup resolves and
+//! the restore's parents-first inserts succeed; the manifest records when
+//! the dump started and finished. What does not: the tables are not one
+//! point in time (a row written mid-dump may or may not be in it, and a
+//! Role deleted mid-dump can leave its grants behind, which the restore
+//! then refuses: take another backup). The nightly backup Job (#78) runs
+//! the same dump in steps; `harpseal backup` with the
+//! server stopped is the one point-in-time copy.
 //!
 //! **Secrets.** Password hashes, session ids and Channel tokens stored in
 //! the database are dumped as they are: restored logins keep working, and
@@ -42,8 +51,11 @@
 mod check;
 mod dump;
 mod load;
-mod schema;
+pub(crate) mod progress;
+pub(crate) mod schema;
+mod store;
 mod value;
+pub(crate) mod xlsx;
 
 use std::collections::BTreeMap;
 
@@ -55,6 +67,7 @@ use crate::{Error, Result};
 
 pub use dump::dump;
 pub use load::load;
+pub use store::FileStoreBackup;
 
 /// The backup format this build writes and reads.
 pub const FORMAT: u32 = 1;
@@ -205,6 +218,8 @@ pub struct DumpReport {
     pub manifest_sha256: String,
     /// Keys referenced by a row but absent from the FileStore.
     pub missing_files: Vec<String>,
+    /// Bytes written, every entry and the manifest.
+    pub bytes: u64,
 }
 
 /// How [`load`] runs.
