@@ -7,15 +7,29 @@
 //!
 //! The token says how to rebuild the failed request and those after it:
 //! how many parts of the stopped Message went out (`skip`, with a digest of
-//! their objects so a token used with other Messages is ignored) and the
-//! occurrence count of every (recipients, objects) pair the batch's
-//! accepted Pushes used ([`crate::retry_key::RetryKeys`]). With it the
-//! resume renders the Messages from the stopped one, drops the `skip`
-//! parts and packs the rest from the failed request on: the same objects,
-//! the same retry keys, so LINE answers 409 to a request it took (its
-//! answer was lost) and sends the others once.
+//! the batch key, the recipient and their objects, so a token used for
+//! another batch, another account or other Messages is ignored), the
+//! metered units the stopped Message already opened in those requests
+//! (`carried`), and the occurrence count of every (recipients, objects)
+//! pair the batch's accepted Pushes used
+//! ([`crate::retry_key::RetryKeys`]). With it the resume renders the
+//! Messages from the stopped one, drops the `skip` parts and packs the rest
+//! from the failed request on: the same objects, the same retry keys, so
+//! LINE answers 409 to a request it took (its answer was lost) and sends
+//! the others once.
 //!
-//! Layout: `line-resume/1;<skip>;<hex digest>;<hex pair digest>=<count>,…`.
+//! The receipt of the stopped Message starts with `carried` units, all of
+//! them replayed (they went out, and were paid for, on an earlier attempt;
+//! nothing goes out for them now). Its units then cover every request it
+//! opened, as on a resend of the whole batch, which is what the Kernel's
+//! exact metering compares with the units its row records: a 409 on the
+//! rebuilt failed request counts once when no row recorded it.
+//!
+//! A token that does not fit is ignored without a log (the adapter has no
+//! logging port): the batch then resumes from the first part of its first
+//! Message, which may deliver those parts again but never loses one.
+//!
+//! Layout: `line-resume/2;<skip>;<carried>;<hex digest>;<hex pair digest>=<count>,…`.
 
 use std::collections::HashMap;
 
@@ -24,22 +38,25 @@ use serde_json::Value;
 
 use crate::retry_key::digest;
 
-const PREFIX: &str = "line-resume/1";
+const PREFIX: &str = "line-resume/2";
 
 /// A decoded token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Resume {
     /// Parts of the first Message that already went out.
     pub(crate) skip: usize,
+    /// Metered units Message 0 opened in the requests of those parts.
+    pub(crate) carried: u32,
     /// [`objects_digest`] of those parts.
     pub(crate) skipped: [u8; 32],
     /// Occurrence counts of the accepted Pushes' (recipients, objects).
     pub(crate) seen: HashMap<[u8; 32], u32>,
 }
 
-/// SHA-256 of the objects (no recipients).
-pub(crate) fn objects_digest(objects: &[&Value]) -> [u8; 32] {
-    digest(&[], objects)
+/// SHA-256 of the batch key, the recipient and the objects: a token only
+/// fits the batch and account it was written for.
+pub(crate) fn objects_digest(key: &str, to: &str, objects: &[&Value]) -> [u8; 32] {
+    digest(&[key, to], objects)
 }
 
 impl Resume {
@@ -52,8 +69,9 @@ impl Resume {
             .collect();
         seen.sort();
         ResumeToken::new(format!(
-            "{PREFIX};{};{};{}",
+            "{PREFIX};{};{};{};{}",
             self.skip,
+            self.carried,
             hex(&self.skipped),
             seen.join(",")
         ))
@@ -66,6 +84,7 @@ impl Resume {
             return None;
         }
         let skip = it.next()?.parse().ok()?;
+        let carried = it.next()?.parse().ok()?;
         let skipped = unhex(it.next()?)?;
         let mut seen = HashMap::new();
         for pair in it.next()?.split(',').filter(|p| !p.is_empty()) {
@@ -74,6 +93,7 @@ impl Resume {
         }
         it.next().is_none().then_some(Self {
             skip,
+            carried,
             skipped,
             seen,
         })
@@ -105,17 +125,32 @@ mod tests {
         let a = json!({ "type": "text", "text": "มหาวิทยาลัยอ่าวแมวน้ำ" });
         let r = Resume {
             skip: 4,
-            skipped: objects_digest(&[&a]),
-            seen: HashMap::from([(digest(&["U1"], &[&a]), 2), (objects_digest(&[]), 1)]),
+            carried: 1,
+            skipped: objects_digest("k", "U1", &[&a]),
+            seen: HashMap::from([(digest(&["U1"], &[&a]), 2), (digest(&[], &[]), 1)]),
         };
         let t = r.encode();
-        assert!(t.as_str().starts_with("line-resume/1;4;"));
+        assert!(t.as_str().starts_with("line-resume/2;4;1;"));
+        assert_ne!(
+            r.skipped,
+            objects_digest("k", "U2", &[&a]),
+            "another account"
+        );
+        assert_ne!(
+            r.skipped,
+            objects_digest("k2", "U1", &[&a]),
+            "another batch"
+        );
+        let old = t
+            .as_str()
+            .replacen("line-resume/2;4;1;", "line-resume/1;4;", 1);
         assert_eq!(Resume::decode(&t), Some(r));
         for bad in [
             "",
             "telegram;1",
-            "line-resume/1;x;00;",
-            "line-resume/1;1;zz;",
+            "line-resume/2;x;0;00;",
+            "line-resume/2;1;0;zz;",
+            &old,
         ] {
             assert_eq!(Resume::decode(&ResumeToken::new(bad)), None, "{bad}");
         }

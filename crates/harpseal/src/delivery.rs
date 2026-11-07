@@ -137,8 +137,12 @@ pub struct SendReceipt {
     /// How many of [`SendReceipt::metered_units`] belong to Push requests
     /// the platform answered as already accepted (LINE: 409 for a retry
     /// key it took on an earlier attempt). Those requests went out, and
-    /// were paid for, then; nothing went out now. The Kernel uses it to
-    /// avoid metering the resumed part of a Message twice (#44).
+    /// were paid for, then; nothing went out now. A resume from an
+    /// adapter's token counts the units the stopped Message opened before
+    /// the failure here too (in `metered_units` and `replayed_units`), so a
+    /// receipt covers every request the Message opened, as on a resend of
+    /// the whole batch. The Kernel meters a replayed unit only when no row
+    /// recorded it (#44, #62).
     pub replayed_units: u32,
 }
 
@@ -343,12 +347,7 @@ mod tests {
         );
         assert!(b.anything_sent());
         assert_eq!(b.metered_units(), 3);
-        let partial = crate::Error::PartialSend {
-            sent: 1,
-            total: 3,
-            source: Box::new(crate::Error::Unreachable),
-            resume: None,
-        };
+        let partial = crate::Error::partial_send(1, 3, crate::Error::Unreachable);
         assert!(matches!(partial.root(), crate::Error::Unreachable));
         assert_eq!(
             partial.to_string(),

@@ -305,3 +305,33 @@ async fn a_token_for_other_messages_is_ignored_and_the_resume_starts_at_part_1()
         .collect();
     assert_eq!(sizes, [5, 5, 4], "every part of both");
 }
+
+#[tokio::test]
+async fn a_token_used_for_another_account_is_ignored_and_nothing_is_lost() {
+    let (ch, api) = channel();
+    let th = Locale::th();
+    let msgs = [Message::text("ก่อน"), cards61()];
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(500, r#"{"message":"boom"}"#);
+    let token = ch
+        .send_batch_keyed(&to(), &Delivery::Push, &msgs, &th, "k")
+        .await
+        .resume
+        .unwrap();
+    api.take();
+    // The same batch key and Messages to U2: its first 4 carousels never
+    // went out, so all 6 go.
+    let other = ChannelAccountId::new(KIND, "U0000000000000000000000000000beef");
+    api.http().respond_with(200, "{}");
+    api.http().respond_with(200, "{}");
+    ch.send_batch_resumed(&other, &Delivery::Push, &msgs[1..], &th, "k", Some(&token))
+        .await
+        .into_result()
+        .unwrap();
+    let sizes: Vec<usize> = api
+        .take()
+        .iter()
+        .map(|r| json(&r.body)["messages"].as_array().unwrap().len())
+        .collect();
+    assert_eq!(sizes, [5, 1], "every carousel");
+}

@@ -146,9 +146,16 @@ impl LineChannel {
         } = render_batch(self, msgs, locale);
         let mut receipts = vec![SendReceipt::new(None, Metering::Free, false); messages];
         let token = d.reply_token().map(|t| t.token.as_str());
-        let resume = resume.and_then(|t| applicable(t, &parts));
-        // Parts of Message 0 an earlier attempt sent: not sent again.
+        let bind = (key.unwrap_or_default(), to.external_id.as_str());
+        let resume = resume.and_then(|t| applicable(t, bind, &parts));
+        // Parts of Message 0 an earlier attempt sent: not sent again. The
+        // units it opened then are carried, as replayed ([`crate::resume`]).
         let skip = resume.as_ref().map_or(0, |r| r.skip);
+        if let (Some(r), Some(first)) = (&resume, receipts.first_mut()) {
+            first.pushed = r.carried > 0;
+            first.set_metered_units(r.carried);
+            *first = first.clone().with_replayed_units(r.carried);
+        }
         let mut keys = key.map(|k| match resume {
             Some(r) => RetryKeys::resumed(k, r.seen),
             None => RetryKeys::new(k),
@@ -192,6 +199,9 @@ impl LineChannel {
                     let first = chunk[0].source;
                     let started = range.start > 0 && parts[range.start - 1].source == first;
                     let unfinished = started.then(|| receipts[first].clone());
+                    // Units the stopped Message opened so far (carried ones
+                    // included): the next resume carries them on.
+                    let receipts_units = receipts[first].metered_units;
                     // Messages wholly sent before this request.
                     receipts.truncate(first);
                     let opened = parts.iter().position(|p| p.source == first).unwrap_or(0);
@@ -202,7 +212,8 @@ impl LineChannel {
                     let token = (!done.is_empty() || !seen.is_empty()).then(|| {
                         Resume {
                             skip: done.len(),
-                            skipped: objects_digest(&done),
+                            carried: if started { receipts_units } else { 0 },
+                            skipped: objects_digest(bind.0, bind.1, &done),
                             seen,
                         }
                         .encode()
@@ -277,14 +288,15 @@ impl LineChannel {
 }
 
 /// The token's state when it fits these parts: its `skip` parts all belong
-/// to Message 0 and are the objects it went out with. `None` otherwise (a
-/// token from another batch, or not this adapter's): resume from the first
-/// part, as without a token.
-fn applicable(t: &ResumeToken, parts: &[Part]) -> Option<Resume> {
+/// to Message 0 and are the objects it went out with, in this batch (`key`)
+/// to this account (`to`). `None` otherwise (a token from another batch or
+/// account, or not this adapter's): resume from the first part, as without
+/// a token.
+fn applicable(t: &ResumeToken, (key, to): (&str, &str), parts: &[Part]) -> Option<Resume> {
     let r = Resume::decode(t)?;
     let head = parts.get(..r.skip)?;
     let objects: Vec<&Value> = head.iter().map(|p| &p.object).collect();
-    let fits = head.iter().all(|p| p.source == 0) && objects_digest(&objects) == r.skipped;
+    let fits = head.iter().all(|p| p.source == 0) && objects_digest(key, to, &objects) == r.skipped;
     fits.then_some(r)
 }
 
