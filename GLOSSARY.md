@@ -24,7 +24,7 @@ _Avoid_: tenant, instance, site
 ### People
 
 **Student** (นักศึกษา):
-A person on the roster, identified by student ID. The only kind of person who talks to the bot. A Student is active while on the roster and left once a roster import no longer lists them; a left Student keeps their records but loses every Link.
+A person on the roster, identified by student ID. The only kind of person who talks to the bot. A Student is active while on the roster and left once a `full` roster import no longer lists them (a Deployment may allow `upsert` only, which never marks anyone left); a left Student keeps their records but loses every Link.
 _Avoid_: user, member, end user
 
 **Staff** (เจ้าหน้าที่):

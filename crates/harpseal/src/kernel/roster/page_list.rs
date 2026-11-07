@@ -37,7 +37,13 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     v.page(StatusCode::OK, &title, body)
 }
 
+/// The modes the form offers: the allowed ones, `full` first, the
+/// Deployment's default preselected.
 fn upload_form(v: &View<'_>) -> Markup {
+    let roster = &v.s.config.roster;
+    let offered = ["full", "upsert"]
+        .into_iter()
+        .filter(|m| roster.allows_mode(m));
     html! {
         form class="card" method="post" action=(format!("{BASE}/upload"))
             enctype="multipart/form-data" {
@@ -50,13 +56,12 @@ fn upload_form(v: &View<'_>) -> Markup {
             }
             fieldset class="field" {
                 legend { (v.t("kernel.roster.mode")) }
-                label class="choice" {
-                    input type="radio" name="mode" value="full" checked;
-                    span { (v.t("kernel.roster.mode_full_help")) }
-                }
-                label class="choice" {
-                    input type="radio" name="mode" value="upsert";
-                    span { (v.t("kernel.roster.mode_upsert_help")) }
+                @for mode in offered {
+                    label class="choice" {
+                        input type="radio" name="mode" value=(mode)
+                            checked[mode == roster.default_mode];
+                        span { (v.t(&format!("kernel.roster.mode_{mode}_help"))) }
+                    }
                 }
             }
             button type="submit" { (v.t("kernel.roster.check")) }
@@ -235,13 +240,22 @@ pub(super) async fn upload(
     let Some(bytes) = up.bytes.filter(|b| !b.is_empty()) else {
         return v.redirect(BASE, false, "kernel.roster.no_file");
     };
+    // No mode: the Deployment's default, never `full` implicitly (#79).
+    let roster = &s.config.roster;
     let mode = if up.mode.is_empty() {
-        "full"
+        roster.default_mode.as_str()
     } else {
         up.mode.as_str()
     };
-    if !preview::mode_ok(mode) {
-        return v.redirect(BASE, false, "kernel.roster.bad_upload");
+    if !roster.allows_mode(mode) {
+        let text = v.t("kernel.roster.mode_not_allowed");
+        let body = html! {
+            div class="card" {
+                p { (text) }
+                a class="btn" href=(BASE) { (v.t("kernel.roster.back")) }
+            }
+        };
+        return v.page(StatusCode::BAD_REQUEST, &text, body);
     }
     match preview::upload(&s.deployment, &up.name, bytes, mode, &staff.id, &ctx).await {
         Ok(Uploaded::Previewed(id)) => {

@@ -40,7 +40,9 @@ pub enum Confirmed {
 /// Stores `bytes` as `file_name` (CSV or XLSX, told apart by content and
 /// name), reads it with `[roster]`, validates every row and previews the
 /// change. `mode` is `full` (Students missing from the file become
-/// `left`) or `upsert`. Audit `roster.import.upload`.
+/// `left`) or `upsert`, and must be one of `[roster] modes` (there is no
+/// default here: pass `RosterConfig::default_mode` to follow the
+/// Deployment). Audit `roster.import.upload`.
 pub async fn upload(
     d: &Deployment,
     file_name: &str,

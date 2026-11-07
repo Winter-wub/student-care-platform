@@ -11,6 +11,10 @@
 //! email        = "อีเมล"
 //! locale       = { column = "ภาษา", default = "th" }
 //! tags         = { column = "กลุ่ม", separator = ";" }
+//! # Which import modes Staff may choose, and the one the form preselects
+//! # and a request without a mode uses. Both default to today's behaviour.
+//! modes        = ["full", "upsert"]
+//! default_mode = "full"
 //!
 //! [roster.attributes.year]
 //! column = "ชั้นปี"
@@ -56,6 +60,14 @@ pub struct RosterConfig {
     pub locale: Option<LocaleColumn>,
     /// The roster Tags column, if the file has one.
     pub tags: Option<TagsColumn>,
+    /// The import modes Staff may choose (#79): `full` (Students missing
+    /// from the file become `left`) and/or `upsert` (add and update only).
+    /// A Deployment whose files never list every Student (one file per
+    /// cohort) lists `["upsert"]` only. Default: both.
+    pub modes: Vec<String>,
+    /// The mode the upload form preselects and a request without a mode
+    /// uses; one of [`RosterConfig::modes`]. Default `full`.
+    pub default_mode: String,
     /// The attribute schema of `student.attributes`, keyed by attribute
     /// key (the JSON key and the `manual_overrides` entry
     /// `attributes.<key>`). Shown sorted by [`AttributeSpec::order`],
@@ -79,6 +91,8 @@ impl Default for RosterConfig {
             email: "email".into(),
             locale: None,
             tags: None,
+            modes: vec!["full".into(), "upsert".into()],
+            default_mode: "full".into(),
             attributes: BTreeMap::new(),
             declared: false,
         }
@@ -267,6 +281,11 @@ impl RosterConfig {
         self.declared || *self != Self::default()
     }
 
+    /// Whether `mode` is one of [`RosterConfig::modes`].
+    pub fn allows_mode(&self, mode: &str) -> bool {
+        self.modes.iter().any(|m| m == mode)
+    }
+
     /// The attributes in display order: `(key, spec)`.
     pub fn attributes_in_order(&self) -> Vec<(&str, &AttributeSpec)> {
         let mut v: Vec<(&str, &AttributeSpec)> = self
@@ -280,7 +299,9 @@ impl RosterConfig {
 
     /// Refuses bad keys (not `[a-z][a-z0-9_]*`, at most 40 bytes), empty or
     /// repeated column headers, an `enum` without values (or with empty or
-    /// repeated ones), `values` on a non-`enum`, and an empty separator.
+    /// repeated ones), `values` on a non-`enum`, an empty separator, no
+    /// `modes` (or one that is not `full` / `upsert`, or repeated) and a
+    /// `default_mode` outside `modes`.
     pub(crate) fn check(&self) -> crate::Result<()> {
         let bad = |m: String| Err(crate::Error::Invalid(format!("[roster] {m}")));
         let mut columns = vec![&self.student_code, &self.display_name, &self.email];
@@ -288,6 +309,21 @@ impl RosterConfig {
         columns.extend(self.tags.as_ref().map(|t| &t.column));
         if self.tags.as_ref().is_some_and(|t| t.separator.is_empty()) {
             return bad("tags separator is empty".into());
+        }
+        if self.modes.is_empty() {
+            return bad("modes is empty".into());
+        }
+        for (i, m) in self.modes.iter().enumerate() {
+            if !matches!(m.as_str(), "full" | "upsert") {
+                return bad(format!("mode `{m}` must be `full` or `upsert`"));
+            }
+            if self.modes[..i].contains(m) {
+                return bad(format!("mode `{m}` is listed twice"));
+            }
+        }
+        if !self.allows_mode(&self.default_mode) {
+            let d = &self.default_mode;
+            return bad(format!("default_mode `{d}` is not in modes"));
         }
         for (key, a) in &self.attributes {
             let ok_key = key.len() <= 40
