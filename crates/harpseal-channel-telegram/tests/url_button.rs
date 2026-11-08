@@ -93,7 +93,12 @@ fn a_non_https_url_is_refused_visibly() {
             let out = render::message(&msg, &cx());
             let all: String = out.iter().map(Value::to_string).collect();
             assert!(!all.contains(bad), "{bad} reached the payload");
-            assert!(out[0]["text"].as_str().unwrap().contains("ลิงก์อันตราย"));
+            assert!(
+                out[0]["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("(ลิงก์ “ลิงก์อันตราย” เปิดไม่ได้)")
+            );
             let k = keyboard(&out[0]);
             assert_eq!(k.len(), 1, "only the Action button");
             assert_eq!(k[0]["callback_data"], "news.ack.9");

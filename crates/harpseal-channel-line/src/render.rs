@@ -3,7 +3,8 @@
 //! `docs/prototypes/message-render.md`.
 
 use harpseal::render::{
-    MENU_MORE_ACTION, RenderCx, char_len, file_link, mini_app_unavailable, split_text, truncate,
+    MENU_MORE_ACTION, RenderCx, char_len, file_link, link_unavailable, mini_app_unavailable,
+    split_text, strip_format_chars, truncate,
 };
 use harpseal::{Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
@@ -114,10 +115,18 @@ fn bubble(title: &str, body: &str, buttons: &[Button], cx: &RenderCx) -> Value {
     v
 }
 
-/// A visible line instead of a Mini App button nobody can open.
+/// A visible line instead of a Mini App button nobody can open, or a URL
+/// button refused.
 fn notice(b: &Button, cx: &RenderCx) -> Value {
-    let label = b.label();
-    json!({ "type": "text", "text": mini_app_unavailable(cx, label), "size": "xs", "wrap": true, "color": "#888888" })
+    json!({ "type": "text", "text": unavailable(b, cx), "size": "xs", "wrap": true, "color": "#888888" })
+}
+
+/// The notice text for a button that cannot render.
+fn unavailable(b: &Button, cx: &RenderCx) -> String {
+    match b {
+        Button::Url { .. } => link_unavailable(cx, b.label()),
+        _ => mini_app_unavailable(cx, b.label()),
+    }
 }
 
 /// Postback for Actions, URI to the Mini App or to a URL button's page;
@@ -135,9 +144,10 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
             .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
         // A URI action outside LINE; a URL that is not https is refused
         // and shows as the visible notice instead.
-        Button::Url { label, .. } => b
-            .safe_url()
-            .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
+        Button::Url { label, .. } => b.safe_url().map(|uri| {
+            let label = truncate(&strip_format_chars(label), label_max);
+            json!({ "type": "uri", "label": label, "uri": uri })
+        }),
         // #[non_exhaustive]: an unknown kind renders as the visible notice.
         _ => None,
     }
@@ -220,7 +230,7 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
     for b in &c.options {
         match action_object(b, cx, QUICK_REPLY_LABEL_MAX) {
             Some(action) => items.push(json!({ "type": "action", "action": action })),
-            None => text.push_str(&format!("\n{}", mini_app_unavailable(cx, label_of(b)))),
+            None => text.push_str(&format!("\n{}", unavailable(b, cx))),
         }
     }
     let mut out = texts(&text);
@@ -228,10 +238,6 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
         last["quickReply"] = json!({ "items": items });
     }
     out
-}
-
-fn label_of(b: &Button) -> &str {
-    b.label()
 }
 
 fn attachment(a: &Attachment, cx: &RenderCx) -> Value {

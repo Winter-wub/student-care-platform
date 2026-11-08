@@ -3,16 +3,17 @@
 //!
 //! Grammar, line by line (a construct never spans lines):
 //!
-//! - A line starting `- ` is a bullet item; a line starting with 1 to 9
-//!   digits, `.` and a space is a numbered item. Consecutive items of one
-//!   kind make one list (a numbered list starts at its first number).
-//!   Lists do not nest: an indented marker is text.
+//! - A line starting `- ` is a bullet item; a line starting with a number
+//!   from 1 to 99, `.` and a space is a numbered item, shown with the
+//!   number typed (`2567. ภาคเรียน` stays text). Consecutive items of one
+//!   kind make one list. Lists do not nest: an indented marker is text.
 //! - Any other line is text; line breaks and blank lines are kept as
 //!   typed (the Mini App shows them with `white-space: pre-line`).
 //! - Inside a line: `**bold**`, `*italic*` (the opening marker followed
 //!   and the closing one preceded by a non-space), `[text](https://…)`,
 //!   and a bare `https://…` (ending at a space; trailing `.,;:!?` and an
-//!   unbalanced `)` are left out). Bold may hold italic and the reverse,
+//!   unbalanced `)` are left out). Parentheses inside a bracket link's URL
+//!   must balance. Bold may hold italic and the reverse,
 //!   either may hold a link; a link's text is plain. That bounds nesting
 //!   at three levels whatever the input.
 //! - A link is kept only when its URL passes [`crate::render::link_url`]
@@ -22,11 +23,15 @@
 //! - Anything unmatched (`**` without a partner, a lone `[`) is text. HTML
 //!   is never interpreted: every output escapes it.
 //!
+//! The parse is linear in the body's length, whatever the input
+//! (`scan`).
+//!
 //! A body with none of these renders exactly as before: [`Doc::html`] is
 //! the same `<p class="app-body">` and [`Doc::plain`] the same text.
 
 mod html;
 mod inline;
+mod scan;
 
 #[cfg(test)]
 mod tests;
@@ -42,26 +47,26 @@ pub enum Block {
     Text(Vec<Vec<Inline>>),
     /// A bullet list: each item's raw marker (`- `) and content.
     Bullets(Vec<Item>),
-    /// A numbered list starting at `start`.
-    Numbered {
-        /// The first item's number.
-        start: u32,
-        /// The items.
-        items: Vec<Item>,
-    },
+    /// A numbered list; each item keeps the number typed
+    /// ([`Item::number`]).
+    Numbered(Vec<Item>),
 }
 
 /// One list item: its marker as typed (for the plain text) and content.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Item {
     /// `- ` or `12. ` as typed.
     pub marker: String,
+    /// The number of a numbered item (1 to 99).
+    pub number: Option<u32>,
     /// The content after the marker.
     pub content: Vec<Inline>,
 }
 
 /// A link found in a body, in reading order.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Link {
     /// The text shown (the URL itself for a bare URL).
     pub text: String,
@@ -71,6 +76,7 @@ pub struct Link {
 
 /// A parsed body.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct Doc {
     /// Blocks in order.
     pub blocks: Vec<Block>,
@@ -84,16 +90,14 @@ pub fn parse(body: &str) -> Doc {
             Some((marker, rest, number)) => {
                 let item = Item {
                     marker: marker.to_string(),
+                    number,
                     content: inline::parse(rest),
                 };
                 match (blocks.last_mut(), number) {
-                    (Some(Block::Bullets(items)), None) => items.push(item),
-                    (Some(Block::Numbered { items, .. }), Some(_)) => items.push(item),
+                    (Some(Block::Bullets(items)), None)
+                    | (Some(Block::Numbered(items)), Some(_)) => items.push(item),
                     (_, None) => blocks.push(Block::Bullets(vec![item])),
-                    (_, Some(start)) => blocks.push(Block::Numbered {
-                        start,
-                        items: vec![item],
-                    }),
+                    (_, Some(_)) => blocks.push(Block::Numbered(vec![item])),
                 }
             }
             None => {
@@ -115,9 +119,11 @@ fn list_marker(line: &str) -> Option<(&str, &str, Option<u32>)> {
         return Some((&line[..2], rest, None));
     }
     let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-    if (1..=9).contains(&digits) && line[digits..].starts_with(". ") {
-        let n = line[..digits].parse().ok()?;
-        return Some((&line[..digits + 2], &line[digits + 2..], Some(n)));
+    if (1..=2).contains(&digits) && line[digits..].starts_with(". ") {
+        let n: u32 = line[..digits].parse().ok()?;
+        if (1..=99).contains(&n) {
+            return Some((&line[..digits + 2], &line[digits + 2..], Some(n)));
+        }
     }
     None
 }
@@ -131,7 +137,7 @@ impl Doc {
         for b in &self.blocks {
             match b {
                 Block::Text(ls) => lines.extend(ls.iter().map(|l| inline::plain(l))),
-                Block::Bullets(items) | Block::Numbered { items, .. } => lines.extend(
+                Block::Bullets(items) | Block::Numbered(items) => lines.extend(
                     items
                         .iter()
                         .map(|i| format!("{}{}", i.marker, inline::plain(&i.content))),
@@ -147,7 +153,7 @@ impl Doc {
         for b in &self.blocks {
             match b {
                 Block::Text(ls) => ls.iter().for_each(|l| inline::links(l, &mut out)),
-                Block::Bullets(items) | Block::Numbered { items, .. } => items
+                Block::Bullets(items) | Block::Numbered(items) => items
                     .iter()
                     .for_each(|i| inline::links(&i.content, &mut out)),
             }

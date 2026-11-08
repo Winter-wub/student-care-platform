@@ -174,7 +174,13 @@ fn pages(r: &mut ModuleRegistrar) {
         get(page_form::new_page).post(page_form::new_post),
     )
     .back_office(send, "/announcements/audience", post(page_count::fragment))
-    .back_office(send, "/announcements/preview", post(page_editor::fragment))
+    .back_office(
+        send,
+        "/announcements/preview",
+        post(page_editor::fragment).layer(axum::extract::DefaultBodyLimit::max(
+            page_editor::PREVIEW_MAX_BYTES,
+        )),
+    )
     .back_office(
         send,
         "/announcements/pick",

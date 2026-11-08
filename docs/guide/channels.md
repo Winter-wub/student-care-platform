@@ -28,9 +28,11 @@ carry the Deployment's salt (`Menu::salt`), and answers
 refuses anything but an `https:` URL (`harpseal::render::link_url`). LINE
 renders a `uri` action (Flex button label 40, quick reply 20), Telegram an
 inline keyboard `url` button (label cut to 40), the Fake Channel records it.
-An adapter shown a URL that fails the check (only code inside the Core can
-build one) sends no button and shows the "cannot be opened" line instead;
-the Fake Channel fails the send with `Error::Invalid`. Rules in
+An adapter checks every URL again before rendering (the real guard: a
+test fixture or a `&mut Button` can get past the constructor) and, for one
+that fails, sends no button and shows "(ลิงก์ “label” เปิดไม่ได้)" instead;
+the Fake Channel fails the send with `Error::Invalid`. Labels lose their
+invisible format characters (bidi controls, zero-width). Rules in
 `docs/adr/0003-semantic-message-model.md`.
 
 ## Mini App (LIFF and Telegram Web App)

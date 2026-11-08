@@ -13,6 +13,8 @@ fn url_buttons_take_https_only() {
     assert_eq!(b.label(), "ตารางสอบ");
     assert_eq!(b.safe_url(), Some("https://reg.seal-bay.invalid/exam"));
     assert_eq!(b.action_id(), None);
+    let b = Button::url("\u{202E}gnp.exe\u{200B}", "https://reg.seal-bay.invalid/").unwrap();
+    assert_eq!(b.label(), "gnp.exe");
     for bad in [
         "http://reg.seal-bay.invalid/",
         "javascript:alert(1)",

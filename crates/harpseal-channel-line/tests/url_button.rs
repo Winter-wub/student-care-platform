@@ -87,7 +87,10 @@ fn a_non_https_url_is_refused_visibly() {
         let out = render::message(&msg, &cx());
         let text = out[0].to_string();
         assert!(!text.contains(bad), "{bad} reached the payload");
-        assert!(text.contains("ลิงก์อันตราย"), "a visible line stands in");
+        assert!(
+            text.contains("(ลิงก์ “ลิงก์อันตราย” เปิดไม่ได้)"),
+            "its own visible line stands in"
+        );
         assert_eq!(action_ids(&msg), vec!["news.ack.9".to_string()]);
         assert_eq!(footer(&out[0])[0]["action"]["data"], "news.ack.9");
         let msg = Message::Choices(Choices {
@@ -106,4 +109,16 @@ fn a_non_https_url_is_refused_visibly() {
 /// it (the variant is `#[non_exhaustive]`: no struct syntax out here).
 fn raw_url(label: &str, url: &str) -> Button {
     harpseal::fixtures::raw_url_button(label, url)
+}
+
+#[test]
+fn format_characters_leave_url_labels() {
+    let raw = harpseal::fixtures::raw_url_button("\u{202E}ตาราง\u{200B}สอบ", URL);
+    let msg = Message::Card(Card {
+        title: "t".into(),
+        body: "b".into(),
+        buttons: vec![raw],
+    });
+    let out = render::message(&msg, &cx());
+    assert_eq!(footer(&out[0])[0]["action"]["label"], "ตารางสอบ");
 }

@@ -185,20 +185,27 @@ Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
 The body (up to 2,000 characters, as before) takes a small format (#108):
-`**bold**`, `*italic*`, lines starting `- ` (bullets) or `1. ` (numbered),
-`[text](https://…)` links and bare `https://…` URLs. Only `https:` links
-with a plain host count (no `http:`, `javascript:`, `data:`, user info or
-quotes, at most 1,000 bytes); anything else, and any HTML, stays text as
-typed. Emphasis and links stay on one line; lists do not nest. The form's
+`**bold**`, `*italic*`, lines starting `- ` (bullets) or a number from 1
+to 99 and `. ` (numbered, shown with the number typed; `2567. …` is a
+paragraph), `[text](https://…)` links and bare `https://…` URLs. Only
+`https:` links that LINE and Telegram both accept count: a host of two or
+more labels, no user info, no quotes, brackets or spaces, valid `%XX`
+escapes, one `#` at most, at most 1,000 bytes; parentheses inside a
+`[text](…)` URL must balance. Anything else, `http:`, `javascript:` and
+`data:` included, and any HTML, stays text as typed. Emphasis and links
+stay on one line; lists do not nest. The preview refuses a body over 2,000
+characters (413). The form's
 toolbar (B, I, •, 1., 🔗) inserts the syntax (without script the help line
 shows it), and "ตัวอย่างในมินิแอป" shows the body exactly as the Mini App
 does, refreshed as Staff type (`POST /admin/announcements/preview`). The Mini
 App shows the format; a link opens outside the chat app
-(`liff.openWindow({ external: true })` on LINE, `Telegram.WebApp.openLink`
-on Telegram, else a new window with `rel="noopener noreferrer"`). In chat
+(`liff.openWindow({ external: true })` on LINE once LIFF is ready,
+`Telegram.WebApp.openLink` on Telegram, else the link opens a new window
+itself with `rel="noopener noreferrer"`). In chat
 the Card body is plain text (markup removed, link text kept, list markers
 as typed) and the Card adds a URL button for each of the body's first two
-distinct links, labelled with the link text (cut to 40 characters); the
+distinct links, labelled with the link text (cut to 40 characters,
+invisible format characters removed); the
 "ข่าวล่าสุด" list shows the plain text only. A body without the format looks
 exactly as before; one that happens to contain `*word*`, a `- ` or `1. `
 line, or a link in brackets now shows formatted.

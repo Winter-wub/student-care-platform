@@ -80,9 +80,11 @@ pub enum Button {
         path: String,
     },
     /// Opens a web page outside the chat (#108). Build it with
-    /// [`Button::url`], which refuses anything but an `https:` URL
-    /// ([`crate::render::link_url`]); adapters check again and show a
-    /// visible line instead of a button they refuse.
+    /// [`Button::url`], which refuses a URL that fails
+    /// [`crate::render::link_url`]. The constructor is a convenience, not
+    /// the guard (the `fixtures` feature, or a `&mut Button`, can get past
+    /// it): every adapter checks again ([`Button::safe_url`]) and shows a
+    /// visible line instead of a button it refuses.
     #[non_exhaustive]
     Url {
         /// What the Student sees.
@@ -109,7 +111,9 @@ impl Button {
     }
     /// A URL button; refuses a URL that is not `https:`, has user info,
     /// unsafe characters or more than [`crate::render::URL_MAX`] bytes
-    /// ([`crate::render::link_url`]).
+    /// ([`crate::render::link_url`]). The label loses its invisible
+    /// format characters ([`crate::render::strip_format_chars`]: bidi
+    /// controls, zero-width), which could disguise where it leads.
     pub fn url(label: impl Into<String>, url: impl Into<String>) -> crate::Result<Self> {
         let url = url.into();
         if !crate::render::link_url(&url) {
@@ -117,8 +121,9 @@ impl Button {
                 "a URL button needs an https: URL".into(),
             ));
         }
+        let label: String = label.into();
         Ok(Button::Url {
-            label: label.into(),
+            label: crate::render::strip_format_chars(&label),
             url,
         })
     }

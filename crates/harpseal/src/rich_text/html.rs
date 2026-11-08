@@ -40,16 +40,15 @@ fn blocks(blocks: &[Block]) -> Markup {
                     }
                 }
                 Block::Bullets(items) => { ul { (list(items)) } }
-                Block::Numbered { start, items } => {
-                    @if *start == 1 { ol { (list(items)) } } @else { ol start=(start) { (list(items)) } }
-                }
+                Block::Numbered(items) => { ol { (list(items)) } }
             }
         }
     }
 }
 
 fn list(items: &[Item]) -> Markup {
-    html! { @for i in items { li { (pieces(&i.content)) } } }
+    // A numbered item shows the number typed, as the chat text does.
+    html! { @for i in items { li value=[i.number] { (pieces(&i.content)) } } }
 }
 
 fn pieces(ps: &[Inline]) -> Markup {

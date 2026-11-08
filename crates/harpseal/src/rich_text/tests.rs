@@ -170,7 +170,9 @@ fn lists() {
     let doc = parse(body);
     assert_eq!(doc.blocks.len(), 4);
     assert!(matches!(&doc.blocks[1], Block::Bullets(i) if i.len() == 2));
-    assert!(matches!(&doc.blocks[2], Block::Numbered { start: 3, items } if items.len() == 2));
+    assert!(
+        matches!(&doc.blocks[2], Block::Numbered(items) if items.len() == 2 && items[0].number == Some(3))
+    );
     assert_eq!(
         doc.plain(),
         "ต้องเตรียม\n- บัตรนักศึกษา\n- ปากกา สีน้ำเงิน\n3. ข้อสาม\n4. ข้อสี่\nจบ"
@@ -178,11 +180,20 @@ fn lists() {
     assert_eq!(
         doc.html().into_string(),
         "<div class=\"app-body\">ต้องเตรียม<ul><li>บัตรนักศึกษา</li>\
-         <li>ปากกา <strong>สีน้ำเงิน</strong></li></ul><ol start=\"3\"><li>ข้อสาม</li>\
-         <li>ข้อสี่</li></ol>จบ</div>"
+         <li>ปากกา <strong>สีน้ำเงิน</strong></li></ul><ol><li value=\"3\">ข้อสาม</li>\
+         <li value=\"4\">ข้อสี่</li></ol>จบ</div>"
     );
     // Not a marker: indented, no space, too many digits.
-    for s in [" - x", "-x", "1.x", "1234567890. x", "ก. x"] {
+    for s in [
+        " - x",
+        "-x",
+        "1.x",
+        "1234567890. x",
+        "ก. x",
+        "0. x",
+        "100. x",
+        "2567. ภาคเรียนที่ 2",
+    ] {
         assert!(
             matches!(parse(s).blocks.as_slice(), [Block::Text(_)]),
             "{s}"
@@ -241,4 +252,55 @@ fn long_lines_parse_in_bounds() {
     assert_eq!(plain(&opens), opens);
     let brackets = "[x](".repeat(5_000);
     assert_eq!(plain(&brackets), brackets);
+}
+
+#[test]
+fn bracket_urls_balance_parentheses() {
+    let wiki = "https://seal-bay.invalid/a_(b)";
+    assert_eq!(line(&format!("[วิกิ]({wiki})")), vec![link("วิกิ", wiki)]);
+    let open = "[x](https://seal-bay.invalid/a_(b)";
+    assert_eq!(parse(open).links().len(), 1, "only the bare URL inside");
+    assert_eq!(plain(open), open);
+}
+
+/// Each hostile line at `n` repetitions and at 8 times that: a quadratic
+/// parse would take 64 times as long; a linear one about 8 times. The
+/// bound is generous (debug builds, a busy CI runner), the ratio is not.
+#[test]
+fn hostile_lines_parse_in_linear_time() {
+    use std::time::{Duration, Instant};
+    let patterns = [
+        "**a ",
+        "*a ",
+        "[",
+        "[x](",
+        "[x](a(",
+        "*",
+        "**",
+        "*** ",
+        "https://a,",
+        "https://seal-bay.invalid/)",
+        "]([",
+    ];
+    let time = |s: &str| {
+        let t = Instant::now();
+        let doc = parse(s);
+        assert!(doc.plain().len() <= s.len());
+        t.elapsed()
+    };
+    for p in patterns {
+        let n = 2_000 / p.len() + 1;
+        let small = p.repeat(n * 10);
+        let big = p.repeat(n * 80);
+        let (a, b) = (time(&small), time(&big));
+        assert!(b < Duration::from_secs(2), "{p:?}: {b:?}");
+        // 8x the input may take at most 32x the time (64x is quadratic).
+        assert!(
+            b <= a * 32 + Duration::from_millis(20),
+            "{p:?}: {a:?} -> {b:?}"
+        );
+    }
+    // The 2,000-character body itself.
+    let body = "**a [".repeat(400);
+    assert!(time(&body) < Duration::from_millis(200));
 }

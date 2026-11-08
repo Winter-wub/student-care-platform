@@ -98,10 +98,13 @@ pub fn https_url(v: &str) -> bool {
     host_ok && port_ok && !tail.chars().any(char::is_whitespace)
 }
 
-/// A URL a Student may be sent to (a `Button::Url`, a link in a body):
-/// [`https_url`], at most [`URL_MAX`] bytes, and only printable ASCII
-/// without `"`, `'`, `<`, `>`, `\`, `` ` ``, `^`, `{`, `|`, `}` (a pasted
-/// URL is percent-encoded; anything else stays plain text).
+/// A URL a Student may be sent to (a `Button::Url`, a link in a body),
+/// one LINE and Telegram both accept: [`https_url`], at most [`URL_MAX`]
+/// bytes, only printable ASCII without `"`, `'`, `<`, `>`, `\`, `` ` ``,
+/// `^`, `{`, `|`, `}`, `[`, `]`; every `%` followed by two hex digits; at
+/// most one `#`; a host of two or more non-empty labels, none starting or
+/// ending with `-`. A pasted URL is percent-encoded; anything else stays
+/// plain text (no button), so a Push is never refused for a URL.
 pub fn link_url(v: &str) -> bool {
     v.len() <= URL_MAX
         && https_url(v)
@@ -109,9 +112,80 @@ pub fn link_url(v: &str) -> bool {
             b.is_ascii_graphic()
                 && !matches!(
                     b,
-                    b'"' | b'\'' | b'<' | b'>' | b'\\' | b'`' | b'^' | b'{' | b'|' | b'}'
+                    b'"' | b'\''
+                        | b'<'
+                        | b'>'
+                        | b'\\'
+                        | b'`'
+                        | b'^'
+                        | b'{'
+                        | b'|'
+                        | b'}'
+                        | b'['
+                        | b']'
                 )
         })
+        && v.matches('#').count() <= 1
+        && percent_escapes_ok(v)
+        && host_labels_ok(v)
+}
+
+/// Every `%` starts a `%XX` escape.
+fn percent_escapes_ok(v: &str) -> bool {
+    let b = v.as_bytes();
+    b.iter().enumerate().all(|(i, &c)| {
+        c != b'%'
+            || (b.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+                && b.get(i + 2).is_some_and(u8::is_ascii_hexdigit))
+    })
+}
+
+/// Two or more labels, none empty, none starting or ending with `-`.
+fn host_labels_ok(v: &str) -> bool {
+    let rest = v.strip_prefix("https://").unwrap_or(v);
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    let host = authority.split(':').next().unwrap_or_default();
+    let labels: Vec<&str> = host.split('.').collect();
+    labels.len() >= 2
+        && labels
+            .iter()
+            .all(|l| !l.is_empty() && !l.starts_with('-') && !l.ends_with('-'))
+}
+
+/// Whether `c` is a Unicode format character (general category Cf): the
+/// soft hyphen, Arabic number signs, zero-width and joiner characters,
+/// bidi marks, embeddings, overrides and isolates, invisible operators,
+/// the BOM, interlinear annotation marks, tag characters.
+pub fn is_format_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{0600}'..='\u{0605}'
+            | '\u{061C}'
+            | '\u{06DD}'
+            | '\u{070F}'
+            | '\u{0890}'..='\u{0891}'
+            | '\u{08E2}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{110BD}'
+            | '\u{110CD}'
+            | '\u{13430}'..='\u{1343F}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0001}'
+            | '\u{E0020}'..='\u{E007F}'
+    )
+}
+
+/// `s` without format characters ([`is_format_char`]), for a button label.
+pub fn strip_format_chars(s: &str) -> String {
+    s.chars().filter(|&c| !is_format_char(c)).collect()
 }
 
 /// Every Action id a Message carries, in order. Renderers must emit each
@@ -130,6 +204,16 @@ pub fn mini_app_unavailable(cx: &RenderCx, label: &str) -> String {
         format!("(“{label}” ยังเปิดในช่องทางนี้ไม่ได้ ติดต่อเจ้าหน้าที่หากต้องการข้อมูลนี้)")
     } else {
         format!("(“{label}” cannot be opened on this channel yet; ask Staff for it.)")
+    }
+}
+
+/// The line an adapter shows instead of a URL button it refuses (a URL
+/// that is not https; only code inside the Core can build one).
+pub fn link_unavailable(cx: &RenderCx, label: &str) -> String {
+    if cx.is_thai() {
+        format!("(ลิงก์ “{label}” เปิดไม่ได้)")
+    } else {
+        format!("(The link “{label}” cannot be opened.)")
     }
 }
 
@@ -188,11 +272,27 @@ mod tests {
             "https://seal-bay.invalid/a b",
             "https:///path",
             "https://",
+            "https://localhost/",
+            "https://seal-bay./",
+            "https://a..invalid/",
+            "https://-seal.invalid/",
+            "https://seal-.invalid/",
+            "https://seal-bay.invalid/a%zz",
+            "https://seal-bay.invalid/a%4",
+            "https://seal-bay.invalid/a#b#c",
+            "https://seal-bay.invalid/[x]",
         ] {
             assert!(!link_url(bad), "{bad}");
         }
         let long = format!("https://seal-bay.invalid/{}", "a".repeat(URL_MAX));
         assert!(!link_url(&long));
+    }
+
+    #[test]
+    fn format_chars_leave_labels() {
+        let l = "\u{202E}ตาราง\u{200B}สอบ\u{2066}x\u{FEFF}";
+        assert_eq!(strip_format_chars(l), "ตารางสอบx");
+        assert_eq!(strip_format_chars("ปกติ"), "ปกติ");
     }
 
     #[test]

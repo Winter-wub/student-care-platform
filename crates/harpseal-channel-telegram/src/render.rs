@@ -4,8 +4,8 @@
 //! `chat_id` is added by `send`. Degrade rules: `docs/prototypes/message-render.md`.
 
 use harpseal::render::{
-    MENU_MORE_ACTION, RenderCx, char_len, file_link, mini_app_unavailable, more_label, split_text,
-    truncate,
+    MENU_MORE_ACTION, RenderCx, char_len, file_link, link_unavailable, mini_app_unavailable,
+    more_label, split_text, strip_format_chars, truncate,
 };
 use harpseal::{ActionId, Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
@@ -114,13 +114,17 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
 fn with_notices(text: &str, buttons: &[Button], cx: &RenderCx) -> String {
     let mut out = text.to_string();
     for b in buttons {
-        let missing = match b {
-            Button::MiniApp { .. } => cx.mini_app_base_url.is_none(),
-            Button::Url { .. } => b.safe_url().is_none(),
-            _ => false,
+        let line = match b {
+            Button::MiniApp { label, .. } if cx.mini_app_base_url.is_none() => {
+                Some(mini_app_unavailable(cx, label))
+            }
+            Button::Url { label, .. } if b.safe_url().is_none() => {
+                Some(link_unavailable(cx, label))
+            }
+            _ => None,
         };
-        if missing {
-            out.push_str(&format!("\n\n{}", mini_app_unavailable(cx, b.label())));
+        if let Some(line) = line {
+            out.push_str(&format!("\n\n{line}"));
         }
     }
     out
@@ -139,7 +143,7 @@ fn button(b: &Button, cx: &RenderCx) -> Option<Value> {
         // notice line above stands in for it).
         Button::Url { label, .. } => b
             .safe_url()
-            .map(|url| json!({ "text": truncate(label, URL_LABEL_MAX), "url": url })),
+            .map(|url| json!({ "text": truncate(&strip_format_chars(label), URL_LABEL_MAX), "url": url })),
         // #[non_exhaustive]: a kind this adapter does not know yet.
         _ => None,
     }

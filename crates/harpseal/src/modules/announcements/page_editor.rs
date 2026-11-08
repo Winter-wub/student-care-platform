@@ -12,7 +12,7 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, PreEscaped, html};
 
-use super::form::Fields;
+use super::form::{Fields, MAX_BODY};
 use super::view::View;
 use crate::manifest::CatalogEntry as E;
 use crate::rich_text;
@@ -20,6 +20,10 @@ use crate::{AppState, CurrentStaff};
 
 /// The preview route (Permission `announcements.send`).
 pub(super) const PATH: &str = "/admin/announcements/preview";
+/// Largest preview request: the whole form (two bodies of 2,000 Thai
+/// characters percent-encoded are about 36 KB, a hand-picked list of
+/// 2,000 ids about 20 KB), with room to spare.
+pub(super) const PREVIEW_MAX_BYTES: usize = 128 * 1024;
 
 /// Editor texts, Thai and English.
 pub(crate) const EDITOR: &[E] = &[
@@ -146,13 +150,20 @@ pub(super) fn preview(v: &View<'_>, f: &Fields) -> Markup {
     }
 }
 
-/// `POST /admin/announcements/preview`: [`preview`] of the posted form.
+/// `POST /admin/announcements/preview`: [`preview`] of the posted form;
+/// 413 when a body is over [`MAX_BODY`] characters (the form's limit) or
+/// the request over [`PREVIEW_MAX_BYTES`] (the route's `DefaultBodyLimit`).
 pub(super) async fn fragment(
     State(s): State<AppState>,
     staff: CurrentStaff,
     Form(pairs): Form<Vec<(String, String)>>,
 ) -> Response {
-    let v = View::new(&s, &staff);
     let f = Fields::from_pairs(&pairs);
+    // The form's own limit, checked before anything is parsed.
+    let long = |b: &str| b.chars().count() > MAX_BODY;
+    if long(&f.body_th) || long(&f.body_en) {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
+    let v = View::new(&s, &staff);
     (StatusCode::OK, Html(preview(&v, &f).into_string())).into_response()
 }

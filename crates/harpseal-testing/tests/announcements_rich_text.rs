@@ -90,7 +90,7 @@ async fn the_pushed_card_is_plain_with_the_first_two_links_as_buttons() {
     assert!(page.contains(&format!(
         r#"<a href="{A}" target="_blank" rel="noopener noreferrer" data-ext>ตารางสอบ</a>"#
     )));
-    assert!(page.contains("<ul><li>") && page.contains("<ol><li>"));
+    assert!(page.contains("<ul><li>") && page.contains("<ol><li value=\"1\">"));
     assert!(page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
     assert!(!page.contains("href=\"javascript:") && !page.contains("href=\"http://"));
     assert!(page.contains("a[data-ext]"), "the external-open script");
@@ -134,4 +134,29 @@ async fn a_plain_body_renders_as_before_everywhere() {
     let before = maud::html! { p class="app-body" { (plain) } }.into_string();
     assert!(page.contains(&before), "{page}");
     assert!(!page.contains("a[data-ext]"), "no link, no script");
+}
+
+#[tokio::test]
+async fn the_preview_route_checks_csrf_permission_and_size() {
+    let w = boot().await;
+    roster(&w).await;
+    const PATH: &str = "/admin/announcements/preview";
+    let b = signed_in(&w, "Officer").await;
+    b.get("/admin/announcements/new").await;
+    let ok = form("t", "**ok**", "");
+    assert_eq!(b.post(PATH, &ok).await.status, 200);
+    // No CSRF token: refused before the handler.
+    assert_eq!(b.post_raw(PATH, &ok).await.status, 403);
+    // A body over 2,000 characters: 413, nothing parsed.
+    let long = "**a ".repeat(501);
+    assert_eq!(b.post(PATH, &form("t", &long, "")).await.status, 413);
+    let long_en = format!("{ok}&title_en=t&body_en={}", "ก".repeat(2_001));
+    assert_eq!(b.post(PATH, &long_en).await.status, 413);
+    // A request over the route's limit: 413 from DefaultBodyLimit.
+    let huge = format!("{ok}&students={}", "x".repeat(200 * 1024));
+    assert_eq!(b.post(PATH, &huge).await.status, 413);
+    // Without announcements.send: 403.
+    let viewer = signed_in(&w, "Viewer").await;
+    viewer.get("/admin/announcements").await;
+    assert_eq!(viewer.post(PATH, &ok).await.status, 403);
 }
