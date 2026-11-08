@@ -3,13 +3,12 @@
 //! `usage_daily.day` is already the Deployment's local day (`YYYY-MM-DD`
 //! in `utc_offset`, written by the send path), so a calendar month is the
 //! rows whose `day` starts with `YYYY-MM`. The cap is
-//! `[quotas.<kind>] metered_per_month`; a Channel without one, or with a
-//! cap of 0 (no allowance to measure against), has no Quota: its usage is
-//! shown and it never warns.
+//! `[quotas.<kind>] metered_per_month`, except for LINE once an Administrator
+//! has chosen a package ([`super::package::caps_with`], #115); a Channel without
+//! one, or with a cap of 0 (no allowance to measure against), has no Quota:
+//! its usage is shown and it never warns.
 
 use std::collections::BTreeMap;
-
-use crate::config::QuotaConfig;
 
 /// How close a Channel is to its Quota this month. Ordered: `Ok < Warn <
 /// Over`.
@@ -84,12 +83,9 @@ impl ChannelMonth {
     }
 }
 
-/// The cap of `kind`: `None` without `[quotas.<kind>]` or with 0.
-pub(crate) fn cap_of(quotas: &BTreeMap<String, QuotaConfig>, kind: &str) -> Option<u64> {
-    quotas
-        .get(kind)
-        .map(|q| q.metered_per_month)
-        .filter(|c| *c > 0)
+/// The cap of `kind` among the effective `caps`: `None` without one or with 0.
+pub(crate) fn cap_of(caps: &BTreeMap<String, u64>, kind: &str) -> Option<u64> {
+    caps.get(kind).copied().filter(|c| *c > 0)
 }
 
 /// `Warn` at 80 % of `cap`, `Over` at 100 %, in integers (240 of 300 is
@@ -122,7 +118,7 @@ pub(crate) fn month_at(now_ms: i64, offset_minutes: i32) -> String {
 pub(crate) fn month(
     rows: &[Row],
     kinds: &[String],
-    quotas: &BTreeMap<String, QuotaConfig>,
+    caps: &BTreeMap<String, u64>,
     month: &str,
 ) -> Vec<ChannelMonth> {
     kinds
@@ -132,7 +128,7 @@ pub(crate) fn month(
             rows.iter()
                 .filter(|r| r.channel == *kind && r.day.get(..7) == Some(month))
                 .for_each(|r| totals.add(r));
-            let cap = cap_of(quotas, kind);
+            let cap = cap_of(caps, kind);
             ChannelMonth {
                 kind: kind.clone(),
                 cap,
@@ -209,11 +205,16 @@ mod tests {
         }
     }
 
-    fn quotas(cap: u64) -> BTreeMap<String, QuotaConfig> {
+    fn quotas(cap: u64) -> BTreeMap<String, u64> {
         let toml = format!(
             "name = \"X\"\ndefault_locale = \"th\"\n[quotas.line]\nmetered_per_month = {cap}"
         );
-        crate::DeploymentConfig::from_toml(&toml).unwrap().quotas
+        let config = crate::DeploymentConfig::from_toml(&toml).unwrap();
+        config
+            .quotas
+            .into_iter()
+            .map(|(k, q)| (k, q.metered_per_month))
+            .collect()
     }
 
     #[test]

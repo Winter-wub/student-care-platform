@@ -149,7 +149,7 @@ impl Deployment {
     /// Runs the per-minute work at `now`. First, Staff sessions past their
     /// sliding or absolute limit are deleted, and the scheduled Jobs due in
     /// this minute (or the one before) are enqueued, once per minute
-    /// however many ticks run; with `[quotas]` set, the Quota watch
+    /// however many ticks run; with a Quota in force (`[quotas]` or the LINE package, #115), the Quota watch
     /// `kernel.usage.watch` is enqueued once per 10-minute window (#26). Then `running` Jobs whose lock
     /// expired (their runtime died mid-run) and that have no retries left
     /// are marked `failed` with `last_error = 'lock expired'`. Then one
@@ -178,12 +178,16 @@ impl Deployment {
             Ok(n) => report.scheduled = n,
             Err(e) => report.errors.push(format!("scheduled jobs: {e}")),
         }
-        // Quota emails (#26): one watch per 10 minutes, only with a Quota.
-        if !self.config.quotas.is_empty() {
-            match crate::kernel::usage::enqueue_watch(self, now).await {
+        // Quota emails (#26): one watch per 10 minutes, only with a Quota
+        // in force: `[quotas]`, or the LINE package chosen in the back
+        // office (#115), read only when `[quotas]` is empty.
+        match crate::kernel::usage::quota_in_force(&self.services, &self.config).await {
+            Ok(false) => {}
+            Ok(true) => match crate::kernel::usage::enqueue_watch(self, now).await {
                 Ok(n) => report.scheduled += n,
                 Err(e) => report.errors.push(format!("usage watch: {e}")),
-            }
+            },
+            Err(e) => report.errors.push(format!("usage watch: {e}")),
         }
         let expired = db
             .execute(

@@ -10,6 +10,7 @@ use maud::{Markup, html};
 use super::chart::{Labels, chart};
 use super::quota::{self, ChannelMonth, Level, Row};
 use super::store;
+use super::{package, package_page};
 use crate::kernel::students::view::channel_label;
 use crate::kernel::text::fill;
 use crate::{AppState, CurrentStaff, PageState};
@@ -28,8 +29,8 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let months = quota::last_months(&month, MONTHS);
     let oldest_month = months.last().map_or(month.clone(), |m| format!("{m}-01"));
     let since = days.first().cloned().unwrap_or_default().min(oldest_month);
-    let rows = match store::rows_since(&s.services, &since).await {
-        Ok(rows) => rows,
+    let (rows, cur) = match store::usage_and_package(&s.services, &s.config, &since).await {
+        Ok(read) => read,
         Err(_) => {
             let text = t("kernel.auth.error");
             let body = html! { div class="card" { p { (text) } } };
@@ -37,13 +38,14 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
         }
     };
     let kinds = store::kinds(&s.deployment);
-    let this = quota::month(&rows, &kinds, &s.config.quotas, &month);
+    let caps = package::caps_with(&s.config, &cur);
+    let this = quota::month(&rows, &kinds, &caps, &month);
     let title = t("kernel.usage.title");
     let body = html! {
         h1 { (title) }
         p class="muted" { (t("kernel.usage.intro")) }
         @for m in &this {
-            (card(&s, &staff, m, &month, &rows, &days, &months))
+            (card(&s, &staff, m, &month, &rows, &days, &months, &cur))
         }
     };
     respond(&s, &staff, StatusCode::OK, &title, body)
@@ -60,6 +62,7 @@ fn respond(
     (status, Html(page.into_string())).into_response()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn card(
     s: &PageState,
     staff: &CurrentStaff,
@@ -68,6 +71,7 @@ fn card(
     rows: &[Row],
     days: &[String],
     months: &[String],
+    cur: &package::Current,
 ) -> Markup {
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let used = m.used().to_string();
@@ -108,6 +112,7 @@ fn card(
                     p class="used" { (fill(&t("kernel.usage.no_quota"), &[("used", &used)])) }
                 }
             }
+            @if m.kind == package::KIND { (package_page::section(s, staff, cur)) }
             dl class="kv usage-kv" {
                 dt { (t("kernel.usage.metered")) } dd class="metered" { (m.totals.metered) }
                 dt { (t("kernel.usage.free")) } dd class="free" { (m.totals.free) }

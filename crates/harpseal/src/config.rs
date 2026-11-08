@@ -167,7 +167,8 @@ impl Default for StaffConfig {
     }
 }
 
-/// `[quotas.<channel>]`: warns Staff, never stops sending.
+/// `[quotas.<channel>]`: warns Staff, never stops sending. For LINE it is
+/// the default of the package chosen in the back office (#115).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]

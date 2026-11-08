@@ -238,7 +238,7 @@ fn target(key: &str, locale: &str) -> Target {
 /// row's id (gated on it: the Menu re-link of a Menu label, #66). `false`
 /// when the row changed meanwhile.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn save(
+pub(crate) async fn save(
     s: &Services,
     actor: &Actor,
     key: &str,
@@ -283,16 +283,16 @@ pub(super) async fn save(
 
 /// Deletes the `setting` row `(key, locale)` if it still holds
 /// `expected`, audited as `setting.reset` (after = the text it falls back
-/// to), with the statements `then` builds as in [`save`]. `false` when it
+/// to, `null` when nothing does), with the statements `then` builds as in [`save`]. `false` when it
 /// changed or was already gone.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn reset(
+pub(crate) async fn reset(
     s: &Services,
     actor: &Actor,
     key: &str,
     locale: &str,
     expected: &str,
-    fallback: &str,
+    fallback: Option<&str>,
     ctx: &RequestCtx,
     then: Then<'_>,
 ) -> Result<bool> {

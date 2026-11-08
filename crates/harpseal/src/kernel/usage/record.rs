@@ -1,7 +1,10 @@
 //! The notification record of Job `kernel.usage.watch`: a `setting` row
 //! `kernel.usage.notified.<kind>` (Locale `''`, never shown on the Texts
 //! page) holding
-//! `{"month":"2026-11","level":"warn","pending":[{"email":"…","tries":1}],"sent":2,"dropped":0}`.
+//! `{"month":"2026-11","level":"warn","cap":300,"pending":[{"email":"…","tries":1}],"sent":2,"dropped":0}`.
+//! `cap` is the monthly limit the claim was made under (#115): a record
+//! made under another limit (the LINE package changed, or `[quotas]` did
+//! on a redeploy) is [`stale`](Record::stale) and blocks nothing.
 
 use serde_json::{Value as Json, json};
 
@@ -22,6 +25,9 @@ pub(super) struct Pending {
 pub(super) struct Record {
     pub(super) month: String,
     pub(super) level: Level,
+    /// The limit this claim was made under (`None` in a record written
+    /// before #115, which counts as current).
+    pub(super) cap: Option<u64>,
     /// Addresses to retry on the next run.
     pub(super) pending: Vec<Pending>,
     /// Emails that went out for this claim so far.
@@ -31,11 +37,12 @@ pub(super) struct Record {
 }
 
 impl Record {
-    /// A fresh claim of `level` in `month`: nothing sent yet.
-    pub(super) fn claim(month: &str, level: Level) -> Self {
+    /// A fresh claim of `level` in `month` under `cap`: nothing sent yet.
+    pub(super) fn claim(month: &str, level: Level, cap: Option<u64>) -> Self {
         Self {
             month: month.to_string(),
             level,
+            cap,
             pending: Vec::new(),
             sent: 0,
             dropped: 0,
@@ -67,6 +74,7 @@ impl Record {
         Some(Self {
             month: j.get("month")?.as_str()?.to_string(),
             level,
+            cap: j.get("cap").and_then(Json::as_u64),
             pending,
             sent: count("sent"),
             dropped: count("dropped"),
@@ -80,10 +88,17 @@ impl Record {
             .map(|p| json!({ "email": p.email, "tries": p.tries }))
             .collect();
         json!({
-            "month": self.month, "level": self.level.as_str(), "pending": pending,
-            "sent": self.sent, "dropped": self.dropped,
+            "month": self.month, "level": self.level.as_str(), "cap": self.cap,
+            "pending": pending, "sent": self.sent, "dropped": self.dropped,
         })
         .to_string()
+    }
+
+    /// Made under another limit than `cap`, so the levels it announced say
+    /// nothing about the limit in force now: a new email is due whenever
+    /// that level is reached, and its retries are dropped.
+    pub(super) fn stale(&self, cap: Option<u64>) -> bool {
+        self.cap.is_some_and(|c| Some(c) != cap)
     }
 
     /// The record after a send to addresses tried `before` times each (0
@@ -123,7 +138,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut r = Record::claim("2026-11", Level::Warn);
+        let mut r = Record::claim("2026-11", Level::Warn, Some(300));
         r.pending = vec![p("a@sealbay.example", 2)];
         r.sent = 3;
         r.dropped = 1;
@@ -131,8 +146,20 @@ mod tests {
     }
 
     #[test]
+    fn a_record_is_stale_under_another_limit_only() {
+        let r = Record::claim("2026-11", Level::Over, Some(300));
+        assert!(!r.stale(Some(300)));
+        assert!(r.stale(Some(15_000)) && r.stale(None));
+        // Written before #115: no limit recorded, never stale.
+        let old = r#"{"month":"2026-11","level":"warn","pending":[],"sent":1,"dropped":0}"#;
+        let old = Record::parse(old).unwrap();
+        assert_eq!(old.cap, None);
+        assert!(!old.stale(Some(300)) && !old.stale(None));
+    }
+
+    #[test]
     fn an_address_is_dropped_on_its_third_failure() {
-        let r = Record::claim("2026-11", Level::Over);
+        let r = Record::claim("2026-11", Level::Over, Some(300));
         let r = r.after_send(1, &[p("a@x", 0)]);
         assert_eq!(
             (r.sent, r.dropped, r.pending.clone()),

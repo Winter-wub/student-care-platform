@@ -64,7 +64,7 @@ _Avoid_: target group, segment, recipients
 A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import) or is attached by Staff by hand (kept across imports).
 
 **Quota** (โควตา):
-The limit per period on one metered thing, such as LINE Push messages per month. Reaching it warns Staff; it never stops sending by itself.
+The limit per period on one metered thing, such as LINE Push messages per month. Reaching it warns Staff; it never stops sending by itself. For LINE the limit follows the Official Account package that Staff holding `kernel.setting.edit` pick in the back office (Free, Basic, Pro or a Custom number), with `[quotas.line]` as the default until then.
 
 **Verification** (การยืนยันตัวตน):
 Proving that the person behind a Channel Account is a given Student, using the Deployment's Verification Method.

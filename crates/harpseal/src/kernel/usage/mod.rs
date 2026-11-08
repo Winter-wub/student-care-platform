@@ -1,12 +1,14 @@
 //! Usage and Quotas (#26): metered Pushes per Channel this calendar month
-//! against `[quotas.<kind>] metered_per_month`, all read from
+//! against `[quotas.<kind>] metered_per_month` (for LINE, the package chosen on
+//! the page once there is one, [`package`]), all read from
 //! `usage_daily` (never from a platform API).
 //!
 //! | What | Where |
 //! |---|---|
 //! | Usage page, `GET /admin/usage` | `kernel.usage.view`, nav order 85 |
 //! | Quota banner in the `#usage-banner` slot of every back-office page | any Staff; links to the page only for holders of `kernel.usage.view` |
-//! | Quota emails to every active Administrator | Job `kernel.usage.watch`, every 10 minutes when `[quotas]` is set |
+//! | `POST /admin/usage/package`, the LINE package (#115, [`package`]) | `kernel.setting.edit` |
+//! | Quota emails to every active Administrator | Job `kernel.usage.watch`, every 10 minutes when a Quota is in force |
 //!
 //! Levels ([`quota::Level`]): `Warn` at 80 % of the cap, `Over` at 100 %.
 //! Sending is never blocked. The banner is rendered server-side: the Staff
@@ -19,16 +21,20 @@
 
 mod banner;
 mod chart;
+mod package;
+mod package_page;
 mod page;
 pub(crate) mod quota;
 mod record;
 mod store;
 mod texts;
+mod texts_package;
 mod watch;
 
-use axum::routing::get;
+use axum::routing::{get, post};
 
 pub(crate) use banner::banner;
+pub(crate) use package::in_force as quota_in_force;
 pub(crate) use quota::Level;
 pub(crate) use watch::{administrators, enqueue as enqueue_watch};
 
@@ -46,7 +52,13 @@ pub(crate) const FULL_PATH: &str = "/admin/usage";
 /// Registers the page, its texts and the watch Job on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
+        .messages(texts_package::DEFAULTS)
         .back_office_page(VIEW, PATH, "kernel.usage.title", 85, get(page::page))
+        .back_office(
+            package_page::EDIT,
+            package_page::PATH,
+            post(package_page::submit),
+        )
         .job(JobSpec::new(watch::KIND), watch::run);
 }
 
@@ -55,7 +67,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
 pub(crate) struct MonthSummary {
     /// Metered units so far this local month.
     pub(crate) used: i64,
-    /// `[quotas.<kind>] metered_per_month`; `None` when there is no Quota
+    /// `[quotas.<kind>] metered_per_month` or the LINE package; `None` when there is no Quota
     /// (none configured, or 0).
     pub(crate) cap: Option<u64>,
     /// How close `used` is to `cap`.
