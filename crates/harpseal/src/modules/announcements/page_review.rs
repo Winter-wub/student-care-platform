@@ -142,6 +142,7 @@ fn summary(v: &View<'_>, row: &Row, c: &Counts, used: &[(String, MonthSummary)])
             dd data-count="students" { strong { (n("announcements.review.people", c.students)) } }
             dt { (v.t("announcements.review.channels")) }
             dd {
+                @if c.per_channel.is_empty() { span class="muted" { (v.t("announcements.review.no_links")) } }
                 @for (kind, (active, unreachable)) in &c.per_channel {
                     div data-channel=(kind) {
                         (fill(&v.t("announcements.review.channel"),

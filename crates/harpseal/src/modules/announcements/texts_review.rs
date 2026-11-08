@@ -72,6 +72,11 @@ pub(crate) const REVIEW: &[E] = th_en![
     ("announcements.review.people", "{n} คน", "{n} Students"),
     ("announcements.review.channels", "ช่องทาง", "Channels"),
     (
+        "announcements.review.no_links",
+        "ยังไม่มีบัญชีแชทที่เชื่อม จึงไม่มีใครได้รับ",
+        "No linked chat accounts: nobody receives it"
+    ),
+    (
         "announcements.review.channel",
         "{channel} {n} บัญชี",
         "{channel}: {n} accounts"
