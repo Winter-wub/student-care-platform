@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+pub mod package;
 pub mod spy;
 
 use harpseal::{DeploymentConfig, Job, Statement};

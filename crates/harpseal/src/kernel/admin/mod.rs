@@ -39,6 +39,8 @@ use crate::module::ModuleRegistrar;
 pub(crate) use backups::backup_schedule;
 pub(crate) use module_settings::nav as settings_nav;
 pub(crate) use module_settings::write as write_setting;
+/// The audited `setting` row write the Kernel's own pages share (#115).
+pub(crate) use settings::save as save_setting_row;
 
 /// The Module settings page's handlers, mounted by `Deployment::router`
 /// for any signed-in Staff member (the page checks each setting's

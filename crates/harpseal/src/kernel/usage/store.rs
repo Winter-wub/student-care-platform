@@ -57,6 +57,7 @@ pub(crate) async fn this_month_of(
     let offset = d.config().utc_offset_minutes().unwrap_or(0);
     let month = quota::month_at(d.services().now_ms(), offset);
     let rows = rows_since(d.services(), &format!("{month}-01")).await?;
-    let months = quota::month(&rows, kinds, &d.config().quotas, &month);
+    let caps = super::package::caps(d.services(), d.config()).await?;
+    let months = quota::month(&rows, kinds, &caps, &month);
     Ok((month, months))
 }

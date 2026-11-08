@@ -238,7 +238,7 @@ fn target(key: &str, locale: &str) -> Target {
 /// row's id (gated on it: the Menu re-link of a Menu label, #66). `false`
 /// when the row changed meanwhile.
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn save(
+pub(crate) async fn save(
     s: &Services,
     actor: &Actor,
     key: &str,

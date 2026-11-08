@@ -56,6 +56,9 @@ Finance = ["fees.import", "fees.bank_account.edit"]
 # days in utc_offset): a banner on every back-office page and one email per
 # level per month to every Administrator. Never stops sending. A Channel
 # without [quotas.<kind>] (or with 0) shows its usage and never warns.
+# For LINE this number is only the default: an Administrator picks the
+# Official Account package on /admin/usage and the limit follows it, with
+# this number as the Custom value until then (docs/guide/quotas.md).
 [quotas.line]
 metered_per_month = 300
 

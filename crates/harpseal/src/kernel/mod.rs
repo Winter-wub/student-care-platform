@@ -52,7 +52,7 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
     Permission::new("kernel.staff.manage", "Manage Staff accounts and Roles"),
     Permission::new(
         "kernel.setting.edit",
-        "Edit texts and the privacy notice version",
+        "Edit texts, the privacy notice version and the LINE package",
     ),
     Permission::new("kernel.backup.manage", "See the backups and back up now"),
     Permission::new(

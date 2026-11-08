@@ -179,8 +179,11 @@ counts per state and the 50 newest running and failed Jobs, without payloads.
   the same batch meters each Push request exactly once (below).
 - **Quotas (#26).** `/admin/usage` charts each Channel's month against
   `[quotas.<kind>]`; from 80 % every Staff page shows a banner (red at 100
-  %) and the tick's `kernel.usage.watch` (every 10 minutes, only with
-  `[quotas]`) emails active Administrators once per month per level.
+  %) and the tick's `kernel.usage.watch` (every 10 minutes, only with a
+  Quota in force) emails active Administrators once per month per level.
+  For LINE, an Administrator picks the Official Account package in the back
+  office and the limit follows it, `[quotas.line]` being the default
+  (#115, [quotas.md](quotas.md)).
 - **Partial sends.** When a Channel stops part-way, what went out is
   recorded (`outbound_message` rows and usage; a Message cut off after some
   of its parts gets a row with `error = 'partly sent: …'`) and
