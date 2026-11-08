@@ -16,6 +16,7 @@ colors:
   approved-ink: "#145c36"
   refused-wash: "#fdecec"
   refused-ink: "#8a1c1c"
+  refused-press: "#6f1515"
   caution-wash: "#fff3d6"
   caution-ink: "#6b4a00"
   caution-meter: "#c98a00"
@@ -151,7 +152,7 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 
 ### Status
 - **Approved Wash / Approved Ink** (#e5f5ec / #145c36): success flashes, "done" buttons, active Links, the meter under its limit.
-- **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips.
+- **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips, and the danger button's fill. **Refused Press** (#6f1515) is the danger button's hover.
 - **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
 
 ### Text palette (#113)

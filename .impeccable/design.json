@@ -11,6 +11,7 @@
       "rule-line": { "role": "neutral", "displayName": "Rule Line", "canonical": "#dde3e9" },
       "approved-ink": { "role": "status", "displayName": "Approved Ink", "canonical": "#145c36" },
       "refused-ink": { "role": "status", "displayName": "Refused Ink", "canonical": "#8a1c1c" },
+      "refused-press": { "role": "status", "displayName": "Refused Press", "canonical": "#6f1515" },
       "caution-ink": { "role": "status", "displayName": "Caution Ink", "canonical": "#6b4a00" }
     },
     "typographyMeta": {
