@@ -11,6 +11,9 @@ name = "Seal Bay University"
 default_locale = "th"
 utc_offset = "+07:00"
 
+# The defaults: an Administrator changes the name, colour and logo, and the
+# LINE rich menu images, at /admin/branding (#114) with a preview; until
+# then these values (and the bundled images) apply.
 [branding]
 primary_color = "#0b5cad"
 

@@ -38,6 +38,13 @@ the Deployment must survive losing it. Each backup holds a full copy of
 the files, so the storage needed is about `retention_days` times the
 database and files together; the Backups page shows the total.
 
+The files are those a row names: a `file_key` or `*_file_key` column, and
+(since #114) a `setting` whose key ends in `_file_key`, which is how the
+branding logo and the LINE menu images saved on `/admin/branding` are
+stored. The format is unchanged (still 2): they are `files/<sha256>` entries
+like any other, listed in the manifest, and a restore puts them back. A
+backup taken before #114 restores as before.
+
 **Steps and limits.** One Job run reads tables 500 rows per D1 query
 until it has read 50,000 rows, written 32 MB, copied 200 files or made
 350 database queries and FileStore calls, saves where it stands as

@@ -133,6 +133,7 @@ impl DeploymentBuilder {
             verification,
             catalog: Arc::new(catalog),
             inbound_queues: Default::default(),
+            branding: Default::default(),
             registry: Arc::new(Registry {
                 permissions: collected.permissions,
                 menu,

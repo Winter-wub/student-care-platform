@@ -265,3 +265,48 @@ message: `setting` is read on every Inbound, with no cache.
 `/admin/backups` (`kernel.backup.manage`) lists the nightly backups, downloads
 one as a `.tar`, starts one now, and downloads all data as an Excel workbook
 without secret columns; see [Backups](backups.md).
+
+## Branding
+
+`/admin/branding` (`kernel.setting.edit`, held by the Administrator) sets the
+institution's display name, the primary colour and the logo shown in the back
+office, on the sign-in page and in the Mini App's header, without a deploy.
+Until something is saved, the TOML values apply (`name`, `[branding] name`,
+`primary_color`, `logo`). A value equal to the TOML's is no setting: it follows
+the file. "คืนค่าตามไฟล์ตั้งค่า" deletes all three.
+
+- The colour is `#RRGGBB`, and white text on it must reach a WCAG contrast of
+  4.5:1. The page names the ratio when it refuses one.
+- The logo is a PNG or JPEG told by its bytes (the file name does not count),
+  at most 256 KB and 16 to 1024 px a side. It is served at
+  `/branding/logo?v=<hash>` with its real type and `X-Content-Type-Options:
+  nosniff`. The route is public because the sign-in page and the Mini App show
+  it before any session.
+- "ดูตัวอย่าง" draws the back-office header and the Mini App header with the
+  submitted values and saves nothing. A logo chosen for the preview travels
+  on in the form, so "บันทึก" after it needs no second upload.
+
+Every save is one batch gated on its audit row (`branding.update`, or
+`branding.reset`), with the values before and after. A page in another Worker
+isolate may show the old look for up to 10 seconds.
+
+**LINE menu images.** The same page replaces the images of the locked and
+unlocked rich menus (PNG, 2500 x 843 or 2500 x 1686 px, at most 1 MB). The
+check runs the adapter's rules (the #92 checks: type, size, dimensions) and
+the Core's grid: a Menu with one row of tiles needs 2500 x 843 px.
+"ตรวจรูปและดูตัวอย่าง" draws every Locale's tap areas over the image, so you
+can see that each tile sits under its button. "ใช้รูปนี้กับทุกบัญชี" first
+creates the new rich menus on LINE. If LINE refuses, nothing is saved and
+every account keeps its menu. Then every account is moved to the new menu in
+the background and the old one is retired, as after a Menu label save
+([ADR-0011](../adr/0011-menu-relink-and-retire.md)). The page shows how many
+re-link Jobs are still pending. "คืนรูปตั้งต้น" returns to the bundled or
+`LINE_MENU_IMAGE_*` images the same way. Audit: `branding.menu_images` and
+`branding.menu_images.reset`. A Deployment without LINE says so and offers
+no upload: Telegram has no menu image.
+
+Storage: Kernel settings (`setting`, Locale `''`, keys `kernel.branding.*`)
+and content-addressed FileStore objects (`branding/<sha256>.png|jpg`,
+`branding/menu/<sha256>.png`). A file no setting names any more is deleted
+after the save. Backups carry both (see [Backups](backups.md)). From code:
+`harpseal::branding::set_menu_images` and `reset_menu_images`.

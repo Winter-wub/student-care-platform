@@ -8,7 +8,7 @@ use http::Method;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use super::name::is_salt;
+use super::name::{is_salt, revision_of};
 use super::{fail, keeper, rich_menu};
 use crate::LineChannel;
 use crate::api::{API, answer, parse, path_id};
@@ -72,8 +72,11 @@ impl LineChannel {
     /// the Locale): still `ongoing` waits; `succeeded` deletes the rich
     /// menus it moved users off; `failed` or unknown deletes nothing.
     /// Then moves every account still on a rich menu of `previous` (same
-    /// Menu key, this generation, salted, exactly the name each revision
-    /// had) to `menu`'s with one new batch. Nothing left: `Done`.
+    /// Menu key, this generation, this salt, one of the revisions handed
+    /// over, any hash: #114 changes the image under a revision's name) to
+    /// `menu`'s with one new batch. The locked Menu ([`MenuKey::LOCKED`])
+    /// is retired the same way once its image was replaced, at salted
+    /// revisions. Nothing left: `Done`.
     pub(crate) async fn retire(
         &self,
         menu: &Menu,
@@ -100,32 +103,48 @@ impl LineChannel {
                 _ => {}
             }
         }
-        let Some(key) = menu.key().filter(|k| k.as_str() != MenuKey::LOCKED) else {
+        let Some(key) = menu.key() else {
             return Ok(MenuRetire::Done);
         };
         if !salted(menu) {
             return Ok(MenuRetire::Done);
         }
-        let generation = self.cfg.menu_generation();
-        let image = &self.cfg.unlocked_menu_image;
-        let (name, obj) = rich_menu(Some((key, generation)), menu, image)?;
-        let mut names = Vec::new();
-        for p in previous
-            .iter()
-            .filter(|p| p.key() == Some(key) && salted(p))
-        {
-            let (n, _) = rich_menu(Some((key, generation)), p, image)?;
-            if n != name {
-                names.push(n);
-            }
-        }
-        if names.is_empty() {
+        // The locked Menu is this adapter's own (#114): its entries come
+        // from the configuration, at the revision the Kernel names.
+        let (menu, image) = if key.as_str() == MenuKey::LOCKED {
+            let locked = self.cfg.locked_menu.clone().with_revision(menu.revision());
+            let locked = locked.with_salt(menu.salt().unwrap_or_default());
+            (locked, &self.cfg.locked_menu_image)
+        } else {
+            (menu.clone(), &self.cfg.unlocked_menu_image)
+        };
+        if menu.entries.is_empty() {
             return Ok(MenuRetire::Done);
         }
+        let generation = self.cfg.menu_generation();
+        let (name, obj) = rich_menu(Some((key, generation)), &menu, image)?;
+        let salt = menu.salt().unwrap_or_default();
+        // Every version of a previous revision goes, whatever its image or
+        // labels (its hash): the salt makes it this Deployment's, and only
+        // revisions handed over are named.
+        let revisions: Vec<u32> = previous
+            .iter()
+            .filter(|p| p.key() == Some(key) && salted(p) && p.salt() == Some(salt))
+            .map(Menu::revision)
+            .filter(|r| *r != menu.revision())
+            .collect();
+        if revisions.is_empty() {
+            return Ok(MenuRetire::Done);
+        }
+        let ours = |n: &str| {
+            revision_of(n).is_some_and(|(k, g, r, s)| {
+                k == key.as_str() && g == generation && s == salt && revisions.contains(&r)
+            })
+        };
         let list = self.rich_menu_list().await?;
         let mut from: Vec<String> = list
             .iter()
-            .filter(|m| names.contains(&m.name))
+            .filter(|m| m.name != name && ours(&m.name))
             .map(|m| m.id.clone())
             .collect();
         if from.is_empty() {

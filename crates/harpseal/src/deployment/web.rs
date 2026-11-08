@@ -123,6 +123,10 @@ impl Deployment {
             .route(crate::ui::CSS_PATH, css)
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
+                crate::kernel::branding::refresh,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                state.clone(),
                 auth::request_ctx,
             ))
             .with_state(state)

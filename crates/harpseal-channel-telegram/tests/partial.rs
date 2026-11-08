@@ -87,3 +87,11 @@ async fn a_failure_on_the_first_part_has_nothing_unfinished() {
         .await;
     assert!(matches!(got, Err(Error::RateLimited { .. })));
 }
+
+/// Branding (#114): Telegram's Menu is per-chat commands, drawn on no
+/// image, so `/admin/branding` leaves it alone.
+#[test]
+fn telegram_has_no_menu_images_to_replace() {
+    let (tg, _) = channel();
+    assert!(tg.menu_art().is_none());
+}

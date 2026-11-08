@@ -72,7 +72,15 @@ async fn notify(
     let Ok(channel) = d.channel_or_err(to.channel.as_str()) else {
         return false;
     };
-    let menu_set = channel.set_menu(to, menu.as_ref()).await.is_ok();
+    let menu_set = match crate::kernel::branding::drawn(d, channel).await {
+        Ok(view) => view
+            .as_deref()
+            .unwrap_or(channel)
+            .set_menu(to, menu.as_ref())
+            .await
+            .is_ok(),
+        Err(_) => false,
+    };
     let sent = d
         .deliver(to, None, &msgs, locale, Some(super::NAME))
         .await

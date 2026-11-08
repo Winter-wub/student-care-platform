@@ -21,3 +21,13 @@ We rejected bulk link alone: it answers 202 and works in the background, and the
 - Telegram re-sets the per-chat commands of every linked account (two calls each) and has nothing to retire.
 - A save that changes the default Locale's label also re-links the Locales that fall back to it for that key.
 - A restore draws a new salt (`backup.restore` audit row: `menu_salt_redrawn`), so a copy of production restored into staging on the same token never shares its names. Rich menus named with the old salt are never retired by the restored Deployment: they leak until a generation bump, the safe direction. The restore also clears pending retires (`menu_retire`) and marks queued re-link Jobs failed, so the copy never polls the original's batch nor links its users.
+
+## Amendment (#114): Menu images saved in the back office
+
+`/admin/branding` replaces the image a Menu is drawn on. The image is part of a LINE rich menu (its `<hash>`), not of the Menu's entries, so a new unlocked image is recorded like a label save: the next Menu revision of every Locale, with the same entries, and one re-link Job each. The new rich menus are created on LINE first (`MenuArt::stage`); if LINE refuses a create or an upload, nothing is saved or audited and no account moves. Only then does one batch save the settings, the revisions and the Jobs.
+
+The retire now matches a previous revision by Menu key, generation, `r<revision>` and salt, whatever its hash, instead of recomputing the exact name each revision had: that name depended on the image in use when it was made, which may since have changed. The salt still makes the name this Deployment's, and only revisions handed over are moved and deleted, so the KEEP rule holds.
+
+The locked Menu has no revisions of its own. Once its image changes, it gets one (the setting `kernel.branding.menu_locked_revision`, bumped on each change, a reset included), named `harpseal-locked-<generation>-r<revision>-<salt>-<hash>`. A Job (`kernel.branding.relock`) shows it to every account that is not linked, a page of 20 per run, then retires the older salted locked revisions through the same batch control (`menu_retire` row with Locale `~locked`). The unsalted locked rich menu that came before the first change is revision 0: it is never retired, as before. A restore cancels this Job too.
+
+Consequences: `Channel::menu_art` (default `None`) and `MenuArt`, `MenuImages`, `MenuSlot`, `MenuLayout`, `MenuArea`, `MenuImageProblem` are public API; every Kernel Menu set reads the saved images first, one more query per `set_menu`.

@@ -12,7 +12,9 @@ use crate::message::{Attachment, Locale, Menu, Message};
 use crate::{Error, Result};
 
 mod menu;
+mod menu_art;
 pub use menu::{MenuRelinked, MenuRetire};
+pub use menu_art::{MenuArea, MenuArt, MenuImageProblem, MenuImages, MenuLayout, MenuSlot};
 
 /// A messaging platform adapter. The required minimum: receive text and
 /// files (`parse_webhook` + `download`), send Text/Card/CardList/Choices
@@ -217,6 +219,12 @@ pub trait Channel: Send + Sync {
     /// Channel Capability: one request to many accounts (LINE multicast),
     /// for Announcements. `None` (the default): send to each account.
     fn multicast(&self) -> Option<&dyn Multicast> {
+        None
+    }
+    /// Channel Capability: Menus drawn on images the back office may
+    /// replace (#114, LINE rich menus). `None` (the default): the Menu
+    /// has no image, and `/admin/branding` leaves this Channel alone.
+    fn menu_art(&self) -> Option<&dyn MenuArt> {
         None
     }
 

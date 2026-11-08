@@ -44,6 +44,9 @@ pub struct Deployment {
     registry: Arc<Registry>,
     /// Claimed webhook events waiting per chat account (#97).
     inbound_queues: background::AccountQueues,
+    /// The branding saved on `/admin/branding` as this process last read
+    /// it, and the Menu images it drew (#114).
+    branding: Arc<kernel::branding::Cache>,
 }
 
 /// What the Modules registered, after validation.
@@ -167,6 +170,11 @@ impl Deployment {
             .iter()
             .find(|c| c.kind().as_str() == kind)
             .map(|c| c.as_ref())
+    }
+
+    /// The branding cache (#114).
+    pub(crate) fn branding(&self) -> &kernel::branding::Cache {
+        &self.branding
     }
 
     /// Every Channel, in registration order.

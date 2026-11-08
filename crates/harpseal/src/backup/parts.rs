@@ -240,7 +240,21 @@ impl Writer<'_> {
             .filter_map(|c| page.columns.iter().skip(skip).position(|n| n == c))
             .map(|i| i + skip)
             .collect();
+        // A `setting` whose key ends in `_file_key` names an object too
+        // (#114: the branding logo and Menu images).
+        let col = |c: &str| page.columns.iter().skip(skip).position(|n| n == c);
+        let setting = match (tab.t.name.as_str(), col("key"), col("value")) {
+            ("setting", Some(k), Some(v)) => Some((k + skip, v + skip)),
+            _ => None,
+        };
         for row in &page.rows {
+            if let Some((k, v)) = setting
+                && let (Some(Value::Text(key)), Some(Value::Text(file))) = (row.get(k), row.get(v))
+                && key.ends_with("_file_key")
+                && !file.is_empty()
+            {
+                held.files.insert(file.clone());
+            }
             let mut at = 0;
             for (u, w) in tab.uniq.iter().zip(&tab.widths) {
                 let values = row.get(at..at + w).unwrap_or_default();

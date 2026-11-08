@@ -121,6 +121,7 @@
 //! Images: PNG, 2500 x 1686 or 2500 x 843 px, at most 1 MB
 //! (<https://developers.line.biz/en/reference/messaging-api/#upload-rich-menu-image-requirements>).
 
+mod art;
 mod image;
 mod name;
 mod relink;
@@ -135,6 +136,7 @@ use http::Method;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+pub use image::png_size;
 pub use name::{HASH_LEN, SALT_LEN, name_key};
 pub use relink::{BULK_LINK_MAX, ONE_BY_ONE_MAX, RELINK_CHUNK};
 pub use retire::{BATCH_RETRY_SECS, PROGRESS_FIRST_POLL_SECS, PROGRESS_MAX_POLL_SECS, poll_delay};
@@ -155,7 +157,6 @@ pub const LOCKED_KEY: &str = harpseal::MenuKey::LOCKED;
 pub const MAX_DELETES: usize = 5;
 /// Longest Menu key ([`harpseal::MenuKey::MAX_LEN`]).
 pub const KEY_MAX_LEN: usize = harpseal::MenuKey::MAX_LEN;
-const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 
 /// Rich menu ids by name for this process (or Worker isolate); shared by
 /// clones of the channel.
@@ -175,29 +176,6 @@ impl MenuCache {
     fn forget(&self, name: &str) {
         self.lock().remove(name);
     }
-}
-
-/// Width and height of a PNG within LINE's limits, or why not.
-pub fn png_size(image: &[u8]) -> Result<(usize, usize)> {
-    let bad = |why: &str| Error::Invalid(format!("LINE rich menu image: {why}"));
-    if image.is_empty() {
-        return Err(bad("not configured"));
-    }
-    if image.len() > IMAGE_MAX_BYTES {
-        return Err(bad("over 1 MB"));
-    }
-    if image.len() < 24 || &image[..8] != PNG_MAGIC || &image[12..16] != b"IHDR" {
-        return Err(bad("not a PNG"));
-    }
-    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize;
-    let size = (be(&image[16..20]), be(&image[20..24]));
-    if !IMAGE_SIZES.contains(&size) {
-        return Err(bad(&format!(
-            "{} x {} px, must be 2500 x 1686 or 2500 x 843",
-            size.0, size.1
-        )));
-    }
-    Ok(size)
 }
 
 /// The content hash of `menu` on `image` and its rich menu object (not
@@ -331,6 +309,17 @@ impl LineChannel {
                 created: false,
             });
         }
+        let id = self.create(name, obj, image).await?;
+        Ok(Found {
+            id,
+            list: Some(list),
+            created: true,
+        })
+    }
+
+    /// `POST /v2/bot/richmenu`, then its image; the new id, cached under
+    /// `name`. A rich menu whose image upload failed is deleted again.
+    async fn create(&self, name: &str, obj: &Value, image: &[u8]) -> Result<String> {
         let created = self
             .post_json(&format!("{API}/v2/bot/richmenu"), obj)
             .await?
@@ -347,11 +336,7 @@ impl LineChannel {
             return Err(e);
         }
         self.menus.put(name, &id);
-        Ok(Found {
-            id,
-            list: Some(list),
-            created: true,
-        })
+        Ok(id)
     }
 
     async fn rich_menu_list(&self) -> Result<Vec<Listed>> {

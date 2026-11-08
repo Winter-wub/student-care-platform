@@ -234,4 +234,42 @@ impl World {
         }
         Ok("usage, security, audit: 200".into())
     }
+
+    /// Branding (#114): a too-light colour is refused in Thai; a new name
+    /// and colour are saved, audited and shown in the back office and the
+    /// Mini App, then returned to the TOML.
+    pub async fn branding(&self) -> R<String> {
+        const NAME: &str = "มหาวิทยาลัยหาดแมวน้ำ (e2e)";
+        self.c.get("/admin/branding").await?.expect(200, "page")?;
+        let save = [("op", "save"), ("name", NAME), ("color", "#ffd400")];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &save, "", b"")
+            .await?;
+        let r = r.expect(422, "light colour")?;
+        ensure(r.body.contains("อ่านยาก"), "refusal in Thai")?;
+        let save = [("op", "save"), ("name", NAME), ("color", "#1b4f72")];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &save, "", b"")
+            .await?;
+        r.expect(303, "save")?;
+        let home = self.c.get("/admin").await?.expect(200, "home")?;
+        ensure(home.body.contains("--brand:#1b4f72"), "back office colour")?;
+        let notice = self.c.get("/notice").await?.expect(200, "notice")?;
+        ensure(notice.body.contains(NAME), "Mini App name")?;
+        let n = self.int(
+            "SELECT count(*) FROM audit_log WHERE action = 'branding.update'",
+            &[],
+        )?;
+        ensure(n == 1, format!("{n} audit rows"))?;
+        self.c.get("/admin/branding").await?.expect(200, "page")?;
+        let reset = [("op", "reset")];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &reset, "", b"")
+            .await?;
+        r.expect(303, "reset")?;
+        Ok("refused, saved, shown, reset".into())
+    }
 }
