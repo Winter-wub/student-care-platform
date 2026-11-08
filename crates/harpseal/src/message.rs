@@ -112,8 +112,11 @@ impl Button {
     /// A URL button; refuses a URL that is not `https:`, has user info,
     /// unsafe characters or more than [`crate::render::URL_MAX`] bytes
     /// ([`crate::render::link_url`]). The label loses its invisible
-    /// format characters ([`crate::render::strip_format_chars`]: bidi
-    /// controls, zero-width), which could disguise where it leads.
+    /// characters ([`crate::render::clean_label`]: bidi controls,
+    /// zero-width, blank fillers), which could disguise where it leads; a
+    /// label left blank becomes the URL's host
+    /// ([`crate::render::label_or_host`]), since LINE and Telegram refuse
+    /// a message with an empty button label.
     pub fn url(label: impl Into<String>, url: impl Into<String>) -> crate::Result<Self> {
         let url = url.into();
         if !crate::render::link_url(&url) {
@@ -123,7 +126,7 @@ impl Button {
         }
         let label: String = label.into();
         Ok(Button::Url {
-            label: crate::render::strip_format_chars(&label),
+            label: crate::render::label_or_host(&label, &url),
             url,
         })
     }

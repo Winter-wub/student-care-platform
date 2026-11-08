@@ -32,7 +32,9 @@ An adapter checks every URL again before rendering (the real guard: a
 test fixture or a `&mut Button` can get past the constructor) and, for one
 that fails, sends no button and shows "(ลิงก์ “label” เปิดไม่ได้)" instead;
 the Fake Channel fails the send with `Error::Invalid`. Labels lose their
-invisible format characters (bidi controls, zero-width). Rules in
+invisible characters (bidi controls, zero-width, blank fillers), and a
+label left blank becomes the URL's host, so no message is refused for an
+empty label. Rules in
 `docs/adr/0003-semantic-message-model.md`.
 
 ## Mini App (LIFF and Telegram Web App)

@@ -9,7 +9,23 @@
 //! bracket or space, and a bare URL that failed marks its whole token
 //! dead.
 
-use crate::render::{URL_MAX, link_url};
+use crate::render::{URL_MAX, label_or_host, link_url};
+
+#[cfg(test)]
+thread_local! {
+    /// Steps taken by the parse on this thread: one per character the
+    /// main loop reads plus every byte a helper scans (tests only).
+    pub(super) static STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts `n` steps of work (a no-op outside tests).
+#[inline]
+pub(super) fn step(n: usize) {
+    #[cfg(test)]
+    STEPS.with(|s| s.set(s.get() + n));
+    #[cfg(not(test))]
+    let _ = n;
+}
 
 /// The closers of one line (or one Bold/Italic content).
 pub(super) struct Scan<'a> {
@@ -45,6 +61,7 @@ fn starts_solid(s: &str) -> bool {
 
 /// Emphasis holds something besides stars and spaces.
 fn has_words(s: &str) -> bool {
+    step(s.len());
     s.chars().any(|c| c != '*' && !c.is_whitespace())
 }
 
@@ -135,27 +152,33 @@ impl<'a> Scan<'a> {
             return found;
         }
         let found = s[from..].find(b).map(|k| from + k);
+        step(found.map_or(s.len(), |p| p + 1) - from);
         *cache = Some(found);
         found
     }
 
-    /// `[text](url)` opening at `i`: (text, url, end), when the text is not
-    /// blank and holds no bracket, the URL's parentheses balance, and the
-    /// URL passes [`link_url`].
-    pub(super) fn bracket_link(&mut self, i: usize) -> Option<(&'a str, &'a str, usize)> {
+    /// `[text](url)` opening at `i`: (label, url, end), when the text holds
+    /// no bracket, the URL's parentheses balance, and the URL passes
+    /// [`link_url`]. The label is the text without invisible characters
+    /// ([`label_or_host`]), or the URL's host when nothing visible is
+    /// left: a link, and the URL button made from it, never has an empty
+    /// label.
+    pub(super) fn bracket_link(&mut self, i: usize) -> Option<(String, &'a str, usize)> {
         let s = self.s;
         let close = Self::find_cached(s, &mut self.rb, i + 1, ']')?;
         if Self::find_cached(s, &mut self.lb, i + 1, '[').is_some_and(|p| p < close) {
             return None;
         }
         let text = &s[i + 1..close];
-        if text.trim().is_empty() || !s[close + 1..].starts_with('(') {
+        if !s[close + 1..].starts_with('(') {
             return None;
         }
         let start = close + 2;
         let mut depth = 0usize;
         let mut end = None;
+        let mut scanned = 0;
         for (k, &c) in s.as_bytes()[start..].iter().enumerate() {
+            scanned = k + 1;
             if k > URL_MAX || c.is_ascii_whitespace() || !c.is_ascii() || matches!(c, b'[' | b']') {
                 break;
             }
@@ -169,9 +192,11 @@ impl<'a> Scan<'a> {
                 _ => {}
             }
         }
+        step(scanned);
         let end = end?;
         let url = &s[start..end];
-        link_url(url).then_some((text, url, end + 1))
+        step(url.len() + text.len());
+        link_url(url).then(|| (label_or_host(text, url), url, end + 1))
     }
 
     /// The bare URL at `i`, if one starts a word there and passes
@@ -188,6 +213,7 @@ impl<'a> Scan<'a> {
                 c.is_whitespace() || !c.is_ascii() || matches!(c, '<' | '>' | '"' | '\'')
             })
             .map_or(s.len(), |k| i + k);
+        step(token_end - i);
         let b = &s.as_bytes()[i..token_end];
         let opens = b.iter().filter(|&&c| c == b'(').count();
         let mut closes = b.iter().filter(|&&c| c == b')').count();

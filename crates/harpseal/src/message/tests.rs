@@ -15,6 +15,10 @@ fn url_buttons_take_https_only() {
     assert_eq!(b.action_id(), None);
     let b = Button::url("\u{202E}gnp.exe\u{200B}", "https://reg.seal-bay.invalid/").unwrap();
     assert_eq!(b.label(), "gnp.exe");
+    for blank in ["", " ", "\u{200B}", "\u{3164}\u{2800}"] {
+        let b = Button::url(blank, "https://reg.seal-bay.invalid/exam").unwrap();
+        assert_eq!(b.label(), "reg.seal-bay.invalid", "{blank:?}");
+    }
     for bad in [
         "http://reg.seal-bay.invalid/",
         "javascript:alert(1)",

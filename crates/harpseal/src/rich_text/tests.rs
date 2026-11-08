@@ -263,12 +263,21 @@ fn bracket_urls_balance_parentheses() {
     assert_eq!(plain(open), open);
 }
 
-/// Each hostile line at `n` repetitions and at 8 times that: a quadratic
-/// parse would take 64 times as long; a linear one about 8 times. The
-/// bound is generous (debug builds, a busy CI runner), the ratio is not.
+/// Steps (characters the main loop reads plus bytes every helper scans,
+/// counted by `scan::step` in tests) for `s`.
+fn steps(s: &str) -> usize {
+    scan::STEPS.with(|c| c.set(0));
+    let doc = parse(s);
+    assert!(doc.plain().len() <= s.len() + 64);
+    scan::STEPS.with(std::cell::Cell::get)
+}
+
+/// Every hostile line costs at most 8 steps per byte, at a 2,000-byte size
+/// and at 8 times that: deterministic, whatever the machine's load. A
+/// quadratic parse (say, a `]` search cache that never hits) blows the
+/// bound at once.
 #[test]
-fn hostile_lines_parse_in_linear_time() {
-    use std::time::{Duration, Instant};
+fn hostile_lines_parse_in_linear_steps() {
     let patterns = [
         "**a ",
         "*a ",
@@ -282,25 +291,32 @@ fn hostile_lines_parse_in_linear_time() {
         "https://seal-bay.invalid/)",
         "]([",
     ];
-    let time = |s: &str| {
-        let t = Instant::now();
-        let doc = parse(s);
-        assert!(doc.plain().len() <= s.len());
-        t.elapsed()
-    };
     for p in patterns {
-        let n = 2_000 / p.len() + 1;
-        let small = p.repeat(n * 10);
-        let big = p.repeat(n * 80);
-        let (a, b) = (time(&small), time(&big));
-        assert!(b < Duration::from_secs(2), "{p:?}: {b:?}");
-        // 8x the input may take at most 32x the time (64x is quadratic).
-        assert!(
-            b <= a * 32 + Duration::from_millis(20),
-            "{p:?}: {a:?} -> {b:?}"
+        for size in [2_000, 16_000] {
+            let s = p.repeat(size / p.len() + 1);
+            let n = steps(&s);
+            assert!(n <= 8 * s.len(), "{p:?} x{}: {n} steps", s.len());
+        }
+    }
+    // The 2,000-character body itself, mixed.
+    let body = "**a [".repeat(400);
+    assert!(steps(&body) <= 8 * body.len());
+}
+
+#[test]
+fn a_blank_link_text_falls_back_to_the_host() {
+    let url = "https://reg.seal-bay.invalid/exam";
+    for text in ["", " ", "\u{200B}", "\u{202E}\u{3164}", "\u{2800}"] {
+        let s = format!("[{text}]({url})");
+        assert_eq!(
+            line(&s),
+            vec![link("reg.seal-bay.invalid", url)],
+            "{text:?}"
         );
     }
-    // The 2,000-character body itself.
-    let body = "**a [".repeat(400);
-    assert!(time(&body) < Duration::from_millis(200));
+    // Invisible characters leave a link's text; separators become spaces.
+    let s = format!("[ตาราง\u{200B}สอบ\u{2028}ใหม่]({url})");
+    assert_eq!(line(&s), vec![link("ตารางสอบ ใหม่", url)]);
+    let doc = parse(&format!("[\u{200B}]({url})"));
+    assert_eq!(doc.first_links(2)[0].text, "reg.seal-bay.invalid");
 }

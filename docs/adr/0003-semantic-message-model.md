@@ -14,7 +14,7 @@ The Core must reach students on LINE and Telegram (and later channels) without b
 
 ## Amendment (#108, 2026-11-08): URL buttons
 
-The first slice left out URL buttons; a Deployment now needs links from an Announcement to its own web pages. `Button` gains `Url { label, url }`, built through `Button::url`, which refuses any URL but one LINE and Telegram both accept (`render::link_url`): `https:`, at most 1,000 bytes (LINE's URI action limit), printable ASCII without quotes, angle brackets, square brackets or backslashes, valid `%XX` escapes, at most one `#`, no user info, and a host of two or more labels, none empty or starting or ending with `-`. It also strips Unicode format characters (bidi controls, zero-width) from the label. `Button` was already `#[non_exhaustive]`, so adding the variant breaks no Module, and the variant is `#[non_exhaustive]` too. The constructor is not the guard, though: the `fixtures` feature builds a raw one for tests, and a `&mut Button` lets any code rewrite `url` after construction. The real guard is each adapter's re-check (`Button::safe_url`, the same `link_url`) right before rendering: a refused URL never reaches a payload.
+The first slice left out URL buttons; a Deployment now needs links from an Announcement to its own web pages. `Button` gains `Url { label, url }`, built through `Button::url`, which refuses any URL but one LINE and Telegram both accept (`render::link_url`): `https:`, at most 1,000 bytes (LINE's URI action limit), printable ASCII without quotes, angle brackets, square brackets or backslashes, valid `%XX` escapes, at most one `#`, no user info, and a host of at most 253 bytes and two or more labels, none empty, over 63 bytes, or starting or ending with `-`, the last not all digits. The label loses invisible characters (Unicode format characters such as bidi controls and zero-width, and blank fillers such as U+3164 and U+2800), U+2028 and U+2029 become spaces, and a label left blank becomes the URL's host (`render::label_or_host`): LINE and Telegram refuse a whole message for an empty button label. `Button` was already `#[non_exhaustive]`, so adding the variant breaks no Module, and the variant is `#[non_exhaustive]` too. The constructor is not the guard, though: the `fixtures` feature builds a raw one for tests, and a `&mut Button` lets any code rewrite `url` after construction. The real guard is each adapter's re-check (`Button::safe_url`, the same `link_url`) right before rendering: a refused URL never reaches a payload.
 
 Degrade rules:
 
@@ -26,6 +26,6 @@ Degrade rules:
 
 A URL button carries no Action, so the rule that no Action is dropped is unchanged; Action buttons beside a refused URL stay.
 
-Labels are cut to the limits above and lose their format characters in the adapters as well.
+The adapters clean labels the same way (blank becomes the host) and cut them to the limits above.
 
 An Announcement's body is a small Markdown subset (`harpseal::rich_text`); a Card body stays plain text. A link that fails `link_url` is text, so it never becomes a button, and a Push is never refused because of a URL. The pushed Card shows the body with the markup removed and adds a URL button for each of the body's first two distinct links after the Mini App button. The Mini App shows the format.

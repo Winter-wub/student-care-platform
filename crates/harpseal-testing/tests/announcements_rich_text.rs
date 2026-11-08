@@ -147,12 +147,19 @@ async fn the_preview_route_checks_csrf_permission_and_size() {
     assert_eq!(b.post(PATH, &ok).await.status, 200);
     // No CSRF token: refused before the handler.
     assert_eq!(b.post_raw(PATH, &ok).await.status, 403);
-    // A body over 2,000 characters: 413, nothing parsed.
+    // A body over 2,000 characters: a line instead of the preview (HTMX
+    // drops a 413), nothing parsed.
     let long = "**a ".repeat(501);
-    assert_eq!(b.post(PATH, &form("t", &long, "")).await.status, 413);
-    let long_en = format!("{ok}&title_en=t&body_en={}", "ก".repeat(2_001));
-    assert_eq!(b.post(PATH, &long_en).await.status, 413);
-    // A request over the route's limit: 413 from DefaultBodyLimit.
+    for posted in [
+        form("t", &long, ""),
+        format!("{ok}&title_en=t&body_en={}", "ก".repeat(2_001)),
+    ] {
+        let r = b.post(PATH, &posted).await;
+        assert_eq!(r.status, 200);
+        assert!(r.body.contains("ยาวเกิน 2,000 ตัวอักษร"), "{}", r.body);
+        assert!(!r.body.contains("<strong>"));
+    }
+    // A request over the route's limit: still 413 from DefaultBodyLimit.
     let huge = format!("{ok}&students={}", "x".repeat(200 * 1024));
     assert_eq!(b.post(PATH, &huge).await.status, 413);
     // Without announcements.send: 403.

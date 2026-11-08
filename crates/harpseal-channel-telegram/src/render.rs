@@ -4,8 +4,8 @@
 //! `chat_id` is added by `send`. Degrade rules: `docs/prototypes/message-render.md`.
 
 use harpseal::render::{
-    MENU_MORE_ACTION, RenderCx, char_len, file_link, link_unavailable, mini_app_unavailable,
-    more_label, split_text, strip_format_chars, truncate,
+    MENU_MORE_ACTION, RenderCx, char_len, file_link, label_or_host, link_unavailable,
+    mini_app_unavailable, more_label, split_text, truncate,
 };
 use harpseal::{ActionId, Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
@@ -143,7 +143,7 @@ fn button(b: &Button, cx: &RenderCx) -> Option<Value> {
         // notice line above stands in for it).
         Button::Url { label, .. } => b
             .safe_url()
-            .map(|url| json!({ "text": truncate(&strip_format_chars(label), URL_LABEL_MAX), "url": url })),
+            .map(|url| json!({ "text": truncate(&label_or_host(label, url), URL_LABEL_MAX), "url": url })),
         // #[non_exhaustive]: a kind this adapter does not know yet.
         _ => None,
     }

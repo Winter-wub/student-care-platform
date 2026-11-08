@@ -3,7 +3,7 @@
 //! [`super::scan::Scan`], which never rescans what a failed opener read.
 
 use super::Link;
-use super::scan::Scan;
+use super::scan::{Scan, step};
 
 /// One piece of a line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +53,7 @@ fn parse_with(s: &str, allow: Allow) -> Vec<Inline> {
     let mut text = String::new();
     let mut i = 0;
     while let Some(ch) = s[i..].chars().next() {
+        step(1);
         let rest = &s[i..];
         if rest.starts_with("**") {
             if let Some(end) = allow.bold.then(|| scan.close_bold(i + 2)).flatten() {
@@ -88,7 +89,7 @@ fn parse_with(s: &str, allow: Allow) -> Vec<Inline> {
         {
             flush(&mut text, &mut out);
             out.push(Inline::Link {
-                text: t.to_string(),
+                text: t,
                 url: url.to_string(),
             });
             i = end;

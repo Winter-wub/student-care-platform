@@ -3,8 +3,8 @@
 //! `docs/prototypes/message-render.md`.
 
 use harpseal::render::{
-    MENU_MORE_ACTION, RenderCx, char_len, file_link, link_unavailable, mini_app_unavailable,
-    split_text, strip_format_chars, truncate,
+    MENU_MORE_ACTION, RenderCx, char_len, file_link, label_or_host, link_unavailable,
+    mini_app_unavailable, split_text, truncate,
 };
 use harpseal::{Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
@@ -145,7 +145,7 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
         // A URI action outside LINE; a URL that is not https is refused
         // and shows as the visible notice instead.
         Button::Url { label, .. } => b.safe_url().map(|uri| {
-            let label = truncate(&strip_format_chars(label), label_max);
+            let label = truncate(&label_or_host(label, uri), label_max);
             json!({ "type": "uri", "label": label, "uri": uri })
         }),
         // #[non_exhaustive]: an unknown kind renders as the visible notice.

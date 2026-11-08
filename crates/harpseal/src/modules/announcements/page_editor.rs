@@ -55,6 +55,16 @@ pub(crate) const EDITOR: &[E] = &[
          [text](https://…) is a link. Links must start with https://. \
          The first two links also become buttons in chat.",
     ),
+    E::new(
+        "announcements.editor.too_long",
+        "th",
+        "ยาวเกิน 2,000 ตัวอักษร จึงแสดงตัวอย่างไม่ได้",
+    ),
+    E::new(
+        "announcements.editor.too_long",
+        "en",
+        "Over 2,000 characters: no preview.",
+    ),
     E::new("announcements.editor.preview", "th", "ตัวอย่างในมินิแอป"),
     E::new("announcements.editor.preview", "en", "In the Mini App"),
 ];
@@ -137,33 +147,44 @@ pub(super) fn script() -> Markup {
 /// The Mini App preview of the bodies in `f` (Thai, then English when
 /// written), refreshed on every change of the form.
 pub(super) fn preview(v: &View<'_>, f: &Fields) -> Markup {
+    shell(html! {
+        p class="muted" { (v.t("announcements.editor.preview")) }
+        div class="mini-preview" lang="th" { (rich_text::html(&f.body_th)) }
+        @if !f.body_en.trim().is_empty() {
+            div class="mini-preview" lang="en" { (rich_text::html(&f.body_en)) }
+        }
+    })
+}
+
+/// The preview box around `inner`, refreshed on every change of the form.
+fn shell(inner: Markup) -> Markup {
     html! {
         div id="body-preview" class="card preview" hx-post=(PATH)
             hx-trigger="input changed delay:400ms from:closest form" hx-include="closest form"
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" {
-            p class="muted" { (v.t("announcements.editor.preview")) }
-            div class="mini-preview" lang="th" { (rich_text::html(&f.body_th)) }
-            @if !f.body_en.trim().is_empty() {
-                div class="mini-preview" lang="en" { (rich_text::html(&f.body_en)) }
-            }
-        }
+            hx-target="this" hx-swap="outerHTML" aria-live="polite" { (inner) }
     }
 }
 
-/// `POST /admin/announcements/preview`: [`preview`] of the posted form;
-/// 413 when a body is over [`MAX_BODY`] characters (the form's limit) or
-/// the request over [`PREVIEW_MAX_BYTES`] (the route's `DefaultBodyLimit`).
+/// `POST /admin/announcements/preview`: [`preview`] of the posted form,
+/// or, for a body over [`MAX_BODY`] characters (the form's limit), the
+/// line "ยาวเกิน 2,000 ตัวอักษร" without parsing it. A request over
+/// [`PREVIEW_MAX_BYTES`] gets a 413 from the route's `DefaultBodyLimit`.
 pub(super) async fn fragment(
     State(s): State<AppState>,
     staff: CurrentStaff,
     Form(pairs): Form<Vec<(String, String)>>,
 ) -> Response {
     let f = Fields::from_pairs(&pairs);
-    // The form's own limit, checked before anything is parsed.
+    let v = View::new(&s, &staff);
+    // The form's own limit, checked before anything is parsed. A 200 with
+    // a line, not a 413: HTMX swaps no error status, so Staff would see
+    // the old preview and nothing else.
     let long = |b: &str| b.chars().count() > MAX_BODY;
     if long(&f.body_th) || long(&f.body_en) {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+        let line = shell(html! {
+            p class="field-error" role="alert" { (v.t("announcements.editor.too_long")) }
+        });
+        return (StatusCode::OK, Html(line.into_string())).into_response();
     }
-    let v = View::new(&s, &staff);
     (StatusCode::OK, Html(preview(&v, &f).into_string())).into_response()
 }
