@@ -12,9 +12,10 @@
 //! locale       = { column = "ภาษา", default = "th" }
 //! tags         = { column = "กลุ่ม", separator = ";" }
 //! # Which import modes Staff may choose, and the one the form preselects
-//! # and a request without a mode uses. Both default to today's behaviour.
+//! # and a request without a mode uses. Default: both, `upsert` preselected
+//! # (#120: a full replace is a deliberate choice).
 //! modes        = ["full", "upsert"]
-//! default_mode = "full"
+//! default_mode = "upsert"
 //! # Warning classes that block the file (#71): `missing_email`,
 //! # `invalid_email`, `duplicate_email`, `empty_attribute`. Default: none.
 //! blocking     = ["invalid_email"]
@@ -71,7 +72,8 @@ pub struct RosterConfig {
     /// cohort) lists `["upsert"]` only. Default: both.
     pub modes: Vec<String>,
     /// The mode the upload form preselects and a request without a mode
-    /// uses; one of [`RosterConfig::modes`]. Default `full`.
+    /// uses; one of [`RosterConfig::modes`]. Default `upsert` (#120): a
+    /// full replace, which makes Students left, is a deliberate choice.
     pub default_mode: String,
     /// Warning classes this Deployment makes blocking (#71): `missing_email`,
     /// `invalid_email`, `duplicate_email`, `empty_attribute`. A file with one
@@ -102,7 +104,7 @@ impl Default for RosterConfig {
             locale: None,
             tags: None,
             modes: vec!["full".into(), "upsert".into()],
-            default_mode: "full".into(),
+            default_mode: "upsert".into(),
             blocking: Vec::new(),
             attributes: BTreeMap::new(),
             declared: false,

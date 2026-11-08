@@ -80,6 +80,12 @@ button, .btn {
 }
 button.secondary { background: #fff; color: var(--brand); }
 button.done { background: var(--ok-bg); color: var(--ok-ink); border-color: #9fd6b5; }
+/* Danger (#120): an action in proportion to its reach (sends to everyone,
+   makes many Students left). Refused Ink, never the brand: white on it is
+   9.3:1. Its own solid focus ring, so a red brand cannot hide it. */
+button.danger, .btn.danger { background: var(--err-ink); border-color: var(--err-ink); color: #fff; }
+button.danger:hover, .btn.danger:hover { background: #6f1515; border-color: #6f1515; }
+button.danger:focus-visible, .btn.danger:focus-visible { outline: 3px solid var(--err-ink); outline-offset: 2px; }
 button.link { background: none; border: 0; padding: 0 4px; min-width: 0; text-decoration: underline; font-weight: 400; }
 .wide { width: 100%; }
 .row2 { display: grid; gap: 12px; grid-template-columns: 1fr; }
@@ -188,6 +194,8 @@ label.choice input { width: auto; min-height: 0; margin-top: 4px; flex: none; }
 input[type="file"] { padding: 8px; }
 progress { width: 100%; height: 16px; accent-color: var(--brand); }
 .names { columns: 14rem auto; margin: 0; padding-left: 1.25rem; }
+/* The typed confirmation of a broad full replace (#120), above the buttons. */
+.confirm-reach { max-width: 36rem; }
 
 /* Admin pages (#27) */
 .kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 8px; margin: 0; font-size: .875rem; }

@@ -73,6 +73,12 @@ components:
     rounded: "{rounded.control}"
     padding: "0 20px"
     height: "48px"
+  button-danger:
+    backgroundColor: "{colors.refused-ink}"
+    textColor: "{colors.on-brand}"
+    rounded: "{rounded.control}"
+    padding: "0 20px"
+    height: "48px"
   button-done:
     backgroundColor: "{colors.approved-wash}"
     textColor: "{colors.approved-ink}"
@@ -219,6 +225,7 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Shape:** gently rounded (10px), at least 48 × 48 px, label 600 weight.
 - **Primary:** Harbour Teal (the brand) fill with white text, 0 20px padding.
 - **Secondary:** Paper fill with brand text and a brand border.
+- **Danger:** Refused Ink fill with white text (9.3:1), for an action in proportion to its reach: one that sends to every Student or makes many of them left (#120). The label names the reach ("ยืนยัน: 20 คนจะพ้นสภาพ", "ส่งถึงทุกคน 50 คน"). It never follows the brand, hovers darker (#6f1515) and has its own solid 3px Refused Ink focus ring at a 2px offset, so a red institution colour cannot hide it. Use `ui::danger_button`; a broad action above its threshold also asks Staff to type the reach, checked on the server.
 - **Done:** Approved Wash with Approved Ink, for completed states such as an acknowledgement.
 - **Link button:** text only and underlined, for low-weight actions inside lists.
 - **Focus:** a 3px ring in the brand colour at 35% alpha, 1px offset.

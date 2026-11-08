@@ -141,7 +141,7 @@ pub(crate) struct Failure {
 }
 
 /// One `roster_import` row.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Import {
     pub(crate) id: String,
     pub(crate) staff: String,

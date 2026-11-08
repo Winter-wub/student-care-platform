@@ -6,12 +6,14 @@
 //! Also the POSTs confirm / cancel and the downloads `report.csv` and
 //! `file` (the original, a sensitive read: audit `roster.file.download`).
 
-use axum::extract::{Path, State};
+use axum::Form;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 
 use super::page_problems as problems;
+use super::reach;
 use super::service::{self, Outcome};
 use super::store::{self, Counts, Import, Tally};
 use super::view::{BASE, IMPORT, View, download, is_fragment};
@@ -23,8 +25,11 @@ pub(super) async fn page(
     staff: CurrentStaff,
     headers: HeaderMap,
     Path(id): Path<String>,
+    Query(q): Query<Vec<(String, String)>>,
 ) -> Response {
     let v = View::new(&s, &staff);
+    // `?typed=wrong`: the last confirm's typed text did not match (#120).
+    let wrong = q.iter().any(|(k, val)| k == reach::FIELD && val == "wrong");
     let imp = match store::load(&s.services, &id).await {
         Ok(Some(i)) => i,
         Ok(None) => return v.not_found(),
@@ -43,14 +48,14 @@ pub(super) async fn page(
     let mut resp = if is_fragment(&headers) {
         (StatusCode::OK, Html(progress(&v, &imp).into_string())).into_response()
     } else {
-        full(&v, &imp)
+        full(&v, &imp, wrong)
     };
     resp.headers_mut()
         .insert(header::VARY, HeaderValue::from_static("HX-Request"));
     resp
 }
 
-fn full(v: &View<'_>, imp: &Import) -> Response {
+fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
     let title = v.t("kernel.roster.import");
     let body = html! {
         p { a href=(BASE) { "← " (v.t("kernel.roster.back")) } }
@@ -73,7 +78,7 @@ fn full(v: &View<'_>, imp: &Import) -> Response {
             }
         }
         @match imp.state.as_str() {
-            "previewed" => (preview(v, imp)),
+            "previewed" => (preview(v, imp, wrong)),
             "failed" => (failed(v, imp)),
             _ => { (progress(v, imp)) (problems::warnings_card(v, imp)) }
         }
@@ -98,7 +103,7 @@ fn tally_rows(v: &View<'_>, t: &Tally) -> Markup {
     }
 }
 
-fn preview(v: &View<'_>, imp: &Import) -> Markup {
+fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
     let p = &imp.counts.preview;
     let full = imp.mode == "full";
     html! {
@@ -124,12 +129,12 @@ fn preview(v: &View<'_>, imp: &Import) -> Markup {
             }
         }
         @if v.staff.can(IMPORT) {
+            @if v.s.config.roster.allows_mode(&imp.mode) {
+                (reach::typed_field(v, imp, wrong))
+            }
             div class="actions" {
                 @if v.s.config.roster.allows_mode(&imp.mode) {
-                    form method="post" action=(format!("{BASE}/{}/confirm", imp.id)) {
-                        (v.staff.csrf_field())
-                        button type="submit" { (v.t("kernel.roster.confirm")) }
-                    }
+                    (reach::confirm_form(v, imp))
                 } @else {
                     div class="warn" role="alert" { (v.t("kernel.roster.mode_no_longer")) }
                 }
@@ -200,9 +205,29 @@ pub(super) async fn confirm(
     staff: CurrentStaff,
     ctx: RequestCtx,
     Path(id): Path<String>,
+    Form(form): Form<Vec<(String, String)>>,
 ) -> Response {
     let v = View::new(&s, &staff);
     let back = format!("{BASE}/{id}");
+    // A broad full replace needs the typed reach (#120), checked here and
+    // never trusted from the page: nothing changes when it does not match.
+    let imp = match store::load(&s.services, &id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => return v.not_found(),
+        Err(e) => return v.error(&e),
+    };
+    let typed = form
+        .iter()
+        .find(|(k, _)| k == reach::FIELD)
+        .map(|(_, t)| t.as_str());
+    // Whatever else refuses it (state, deleted file, mode) answers first.
+    let askable = imp.state == "previewed"
+        && !imp.file_key.is_empty()
+        && s.config.roster.allows_mode(&imp.mode);
+    if askable && !reach::typed_ok(&imp, typed) {
+        let again = format!("{back}?{}=wrong#roster-typed", reach::FIELD);
+        return v.redirect(&again, false, "kernel.roster.typed_refused");
+    }
     let actor = Actor::staff(&staff);
     match service::confirm(&s.services, &s.config.roster, &s.jobs, &id, &actor, &ctx).await {
         Ok(Outcome::Done) => v.redirect(&back, true, "kernel.roster.confirmed"),

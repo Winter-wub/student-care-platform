@@ -106,8 +106,12 @@ before, and any other key is refused.
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
 lists them and offers `template.csv`), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert` (add and update only;
-nobody becomes left). The form preselects `[roster] default_mode` (default
-`full`), and a request that sends no mode uses it too. A Deployment whose files
+nobody becomes left). The form lists `upsert` first and preselects `[roster] default_mode`
+(default `upsert`, #120), and a request that sends no mode uses it too. A
+`full` preview's confirm button names how many Students will become left
+("ยืนยัน: N คนจะพ้นสภาพ") in the danger style; when the preview also shows the
+red warning, Staff must type that number or the word "ยืนยัน" first, and a
+confirm without it is refused and changes nothing. A Deployment whose files
 never list every Student (one file per cohort) sets `modes = ["upsert"]` and
 `default_mode = "upsert"`: the form then offers only `upsert`, and a request
 asking for `full` is refused with 400 and imports nothing (`modes` must not be

@@ -10,7 +10,8 @@
 //!
 //! Layout helpers in `ui.css`: `.card`, `.field`, `.row2`, `.cols`,
 //! `.list`, `.chip`, and `table.rows` (stacked cards below 900 px, a table
-//! from 900 px; give each `td` a `data-label`).
+//! from 900 px; give each `td` a `data-label`). Buttons: the default
+//! (brand), `.secondary`, `.done`, `.link`, and [`danger_button`].
 
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
@@ -52,6 +53,15 @@ pub fn flash(f: &Flash<'_>) -> Markup {
     html! {
         div class=(if f.ok { "flash ok" } else { "flash err" }) role="status" { (f.text) }
     }
+}
+
+/// The submit button of an action in proportion to its reach (#120): one
+/// that reaches every Student or makes many of them lose their Links.
+/// Refused Ink with white text (9.3:1), never the brand colour, 48 px
+/// tall, with its own focus ring. Name the reach in `label` ("ยืนยัน: 120
+/// คนจะพ้นสภาพ"), and check any typed confirmation on the server.
+pub fn danger_button(label: &str) -> Markup {
+    html! { button class="danger" type="submit" { (label) } }
 }
 
 /// The look: the values saved on `/admin/branding` (#114) over

@@ -99,10 +99,10 @@ fn schema_errors_are_refused() {
 }
 
 #[test]
-fn modes_default_to_both_with_full_preselected() {
+fn modes_default_to_both_with_upsert_preselected() {
     let c = crate::DeploymentConfig::from_toml("name = \"X\"\ndefault_locale = \"th\"\n").unwrap();
     assert_eq!(c.roster.modes, ["full", "upsert"]);
-    assert_eq!(c.roster.default_mode, "full");
+    assert_eq!(c.roster.default_mode, "upsert", "#120: full is deliberate");
     assert!(c.roster.allows_mode("full") && c.roster.allows_mode("upsert"));
     assert!(!c.roster.allows_mode("") && !c.roster.allows_mode("replace"));
 }
@@ -114,9 +114,10 @@ fn modes_are_chosen_and_checked() {
     let c = ok("modes = [\"upsert\"]\ndefault_mode = \"upsert\"").unwrap();
     assert!(c.roster.allows_mode("upsert") && !c.roster.allows_mode("full"));
     assert!(c.roster.is_mapped());
-    // The default is `full`, so an upsert-only list must name its default.
+    // The default is `upsert` (#120), so a full-only list must name its default.
+    assert!(ok("modes = [\"upsert\"]").is_ok());
     for bad in [
-        "modes = [\"upsert\"]",
+        "modes = [\"full\"]",
         "modes = []",
         "modes = []\ndefault_mode = \"full\"",
         "modes = [\"full\"]\ndefault_mode = \"upsert\"",
@@ -132,14 +133,14 @@ fn modes_are_chosen_and_checked() {
 #[test]
 fn a_config_changed_in_code_is_checked_too() {
     let mut r = RosterConfig {
-        modes: vec!["upsert".into()],
+        modes: vec!["full".into()],
         ..RosterConfig::default()
     };
     assert!(
         r.check(&Locale::th(), &Default::default()).is_err(),
-        "default_mode full is not in modes"
+        "default_mode upsert is not in modes"
     );
-    r.default_mode = "upsert".into();
+    r.default_mode = "full".into();
     assert!(r.check(&Locale::th(), &Default::default()).is_ok());
 }
 
