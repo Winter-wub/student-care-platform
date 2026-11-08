@@ -180,10 +180,10 @@ impl Deployment {
         }
         // Quota emails (#26): one watch per 10 minutes, only with a Quota
         // in force: `[quotas]`, or the LINE package chosen in the back
-        // office (#115), read now.
-        match crate::kernel::usage::effective_caps(&self.services, &self.config).await {
-            Ok(caps) if caps.is_empty() => {}
-            Ok(_) => match crate::kernel::usage::enqueue_watch(self, now).await {
+        // office (#115), read only when `[quotas]` is empty.
+        match crate::kernel::usage::quota_in_force(&self.services, &self.config).await {
+            Ok(false) => {}
+            Ok(true) => match crate::kernel::usage::enqueue_watch(self, now).await {
                 Ok(n) => report.scheduled += n,
                 Err(e) => report.errors.push(format!("usage watch: {e}")),
             },

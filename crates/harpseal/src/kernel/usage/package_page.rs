@@ -17,8 +17,10 @@ use serde::Deserialize;
 
 use super::package::{self, Choice, Current, KEY, MAX_CUSTOM, PACKAGES, SOURCE_DATE, SOURCE_URL};
 use super::store;
+use super::watch::KEY_PREFIX;
 use crate::audit::{Actor, RequestCtx};
 use crate::kernel::text::fill;
+use crate::port_types::Statement;
 use crate::{AppState, CurrentStaff, PageState};
 
 /// Edits the package; also the form's action (under `/admin`).
@@ -26,6 +28,8 @@ pub(crate) const PATH: &str = "/usage/package";
 /// The Permission of the form: the one that edits the Deployment's other
 /// Kernel settings (texts, the privacy notice version).
 pub(crate) const EDIT: &str = "kernel.setting.edit";
+/// The form value of "follow `[quotas.line]`": the saved choice is removed.
+const CONFIG: &str = "config";
 /// Back to the LINE card.
 const BACK: &str = "/admin/usage#usage-line";
 
@@ -78,8 +82,9 @@ fn form(s: &PageState, staff: &CurrentStaff, cur: &Current) -> Markup {
     let chosen = match cur.choice {
         Choice::Package(p) => p.id,
         Choice::Custom(_) => "custom",
-        // Nothing saved: the TOML number is the Custom number.
-        Choice::Config(_) => "custom",
+        // Nothing saved: following `[quotas.line]`. Its number is also what
+        // the Custom field starts from.
+        Choice::Config(_) => CONFIG,
     };
     let custom = cur.choice.limit().map(|n| n.to_string());
     html! {
@@ -89,6 +94,9 @@ fn form(s: &PageState, staff: &CurrentStaff, cur: &Current) -> Markup {
             div class="field" {
                 label for="line-package-choice" { (t("kernel.usage.package.label")) }
                 select id="line-package-choice" name="package" {
+                    option value=(CONFIG) selected[chosen == CONFIG] {
+                        (t("kernel.usage.package.option_config"))
+                    }
                     @for p in PACKAGES {
                         @let limit = p.included.to_string();
                         option value=(p.id) selected[chosen == p.id] {
@@ -164,6 +172,29 @@ pub(super) async fn submit(
     if cur.version() != f.expected {
         return redirect(&s, false, "kernel.admin.conflict");
     }
+    let actor = Actor::staff(&staff);
+    if f.package == CONFIG {
+        let Some(row) = cur.stored.as_deref() else {
+            return redirect(&s, false, "kernel.usage.package.same");
+        };
+        let fallback = Choice::Config(cur.config).encode();
+        let reset = crate::kernel::admin::reset_setting_row(
+            &s.services,
+            &actor,
+            KEY,
+            "",
+            row,
+            fallback.as_deref().unwrap_or("none"),
+            &ctx,
+            &forget_notified,
+        )
+        .await;
+        return match reset {
+            Ok(true) => redirect(&s, true, "kernel.usage.package.reset_done"),
+            Ok(false) => redirect(&s, false, "kernel.admin.conflict"),
+            Err(e) => failed(&s, &staff, &e),
+        };
+    }
     let want = match requested(&f) {
         Ok(c) => c,
         Err(key) => return redirect(&s, false, key),
@@ -177,14 +208,14 @@ pub(super) async fn submit(
     }
     let saved = crate::kernel::admin::save_setting_row(
         &s.services,
-        &Actor::staff(&staff),
+        &actor,
         KEY,
         "",
         &value,
         cur.stored.as_deref(),
         before.as_deref(),
         &ctx,
-        &|_| Ok(Vec::new()),
+        &forget_notified,
     )
     .await;
     match saved {
@@ -192,6 +223,23 @@ pub(super) async fn submit(
         Ok(false) => redirect(&s, false, "kernel.admin.conflict"),
         Err(e) => failed(&s, &staff, &e),
     }
+}
+
+/// A new limit starts the Quota emails over: the watch Job's record of the
+/// levels already announced this month (`kernel.usage.notified.line`) is
+/// deleted in the same batch as the change, gated on its audit row.
+/// Otherwise "Over" under Free would silence the Warn and Over of Basic.
+/// An address still waiting for a retry of the old limit's email is
+/// dropped with it.
+fn forget_notified(audit_id: &str) -> crate::Result<Vec<Statement>> {
+    Ok(vec![
+        Statement::new(
+            "DELETE FROM setting WHERE key = ? AND locale = '' \
+             AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
+        )
+        .bind(format!("{KEY_PREFIX}{}", package::KIND))
+        .bind(audit_id),
+    ])
 }
 
 /// 500 inside the layout; the error text is never shown.

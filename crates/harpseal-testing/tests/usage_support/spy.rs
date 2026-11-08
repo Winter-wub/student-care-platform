@@ -15,6 +15,7 @@ pub type Hook = Pin<Box<dyn Future<Output = ()> + Send>>;
 pub struct SpyDb {
     inner: Arc<dyn Db>,
     usage_reads: AtomicUsize,
+    lone_package_reads: AtomicUsize,
     hook: Mutex<Option<Hook>>,
 }
 
@@ -22,6 +23,12 @@ impl SpyDb {
     /// Queries that read `usage_daily` so far.
     pub fn usage_reads(&self) -> usize {
         self.usage_reads.load(Ordering::SeqCst)
+    }
+
+    /// Queries that read the LINE package row (#115) on their own, not in
+    /// the same query as the `usage_daily` rows.
+    pub fn lone_package_reads(&self) -> usize {
+        self.lone_package_reads.load(Ordering::SeqCst)
     }
 
     /// A hook is still waiting for a claim.
@@ -40,6 +47,12 @@ impl Db for SpyDb {
     async fn query(&self, stmt: Statement) -> Result<Rows> {
         if stmt.sql.contains("FROM usage_daily") {
             self.usage_reads.fetch_add(1, Ordering::SeqCst);
+        } else if stmt
+            .params
+            .iter()
+            .any(|p| p.as_text() == Some("kernel.usage.line_package"))
+        {
+            self.lone_package_reads.fetch_add(1, Ordering::SeqCst);
         }
         self.inner.query(stmt).await
     }
@@ -67,6 +80,7 @@ pub async fn boot_spied() -> (Harness, TestApp, Arc<SpyDb>) {
     let spy = Arc::new(SpyDb {
         inner: h.db(),
         usage_reads: AtomicUsize::new(0),
+        lone_package_reads: AtomicUsize::new(0),
         hook: Mutex::new(None),
     });
     let mut services = h.services();

@@ -4,7 +4,7 @@
 //! in `utc_offset`, written by the send path), so a calendar month is the
 //! rows whose `day` starts with `YYYY-MM`. The cap is
 //! `[quotas.<kind>] metered_per_month`, except for LINE once an Administrator
-//! has chosen a package ([`super::package::caps`], #115); a Channel without
+//! has chosen a package ([`super::package::caps_with`], #115); a Channel without
 //! one, or with a cap of 0 (no allowance to measure against), has no Quota:
 //! its usage is shown and it never warns.
 

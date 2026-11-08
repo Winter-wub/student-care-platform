@@ -34,7 +34,7 @@ mod watch;
 use axum::routing::{get, post};
 
 pub(crate) use banner::banner;
-pub(crate) use package::caps as effective_caps;
+pub(crate) use package::in_force as quota_in_force;
 pub(crate) use quota::Level;
 pub(crate) use watch::{administrators, enqueue as enqueue_watch};
 

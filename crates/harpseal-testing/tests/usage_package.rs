@@ -23,8 +23,8 @@ async fn the_toml_number_is_the_default_and_the_custom_value_until_a_save() {
         c.contains("ยังไม่ได้เลือกแพ็กเกจ ใช้ค่าจากไฟล์ตั้งค่า: 300 ข้อความต่อเดือน"),
         "{c}"
     );
-    // The form starts at Custom with the TOML number.
-    assert!(c.contains("<option value=\"custom\" selected>"), "{c}");
+    // The form starts at "use the configured value", and Custom at the TOML number.
+    assert!(c.contains("<option value=\"config\" selected>"), "{c}");
     assert!(
         c.contains("name=\"custom\"") && c.contains("value=\"300\""),
         "{c}"
@@ -190,4 +190,74 @@ async fn a_package_alone_starts_the_watch_on_a_deployment_without_quotas() {
     choose(&b, "basic", "").await;
     let r = d.tick(Timestamp(START_MS + 13 * 60_000)).await.unwrap();
     assert_eq!((r.scheduled, r.done, r.failed), (1, 1, 0));
+}
+
+#[tokio::test]
+async fn a_package_switch_starts_the_quota_emails_over() {
+    let (h, app) = boot_line(true).await;
+    let b = admin(&h, &app).await; // the only Administrator: one email per level
+    // Over under Free (300 of 300) emails once.
+    choose(&b, "free", "").await;
+    seed(&h, "line", TODAY, 300, 0, 0).await;
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 1);
+    assert!(
+        h.emails()[0].subject.contains("100%"),
+        "{}",
+        h.emails()[0].subject
+    );
+
+    // Upgrade: 300 of 15,000 is fine, and the old Over no longer blocks.
+    choose(&b, "basic", "").await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 1);
+    seed(&h, "line", TODAY, 12_000, 0, 0).await; // 80 % of Basic
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 2, "Warn of Basic");
+    assert!(
+        h.emails()[1].subject.contains("80%"),
+        "{}",
+        h.emails()[1].subject
+    );
+    seed(&h, "line", TODAY, 15_000, 0, 0).await;
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 3, "Over of Basic");
+    assert!(
+        h.emails()[2].subject.contains("100%"),
+        "{}",
+        h.emails()[2].subject
+    );
+
+    // The record went with the switch, in the batch of the audit row.
+    choose(&b, "pro", "").await;
+    assert_eq!(
+        int(
+            &h,
+            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
+        )
+        .await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn the_banner_and_the_tick_do_not_add_package_reads() {
+    let (h, app, spy) = usage_support::spy::boot_spied().await;
+    let b = signed_in(&h, &app, "viewer", "Viewer").await;
+    use_percent(&h, 100).await;
+    let before = spy.usage_reads();
+    let r = b.get("/admin/students").await;
+    assert!(banner(&r.body).contains("usage-line over"));
+    // One query carries the usage rows and the package row (one D1 call).
+    assert_eq!(spy.usage_reads(), before + 1);
+    assert_eq!(spy.lone_package_reads(), 0);
+    // `[quotas]` is set: the tick does not look at the package row.
+    app.deployment()
+        .tick(Timestamp(START_MS + 3 * 60_000))
+        .await
+        .unwrap();
+    assert_eq!(spy.lone_package_reads(), 0);
 }

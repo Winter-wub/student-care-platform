@@ -154,11 +154,15 @@ fn decode(stored: &str) -> Option<Choice> {
 /// The choice in force, and the row behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Current {
-    /// The saved value, if a row exists.
+    /// The saved value as text, if a row exists (a non-text value is read
+    /// as its `hex()`, so a stale form can still be matched).
     pub(crate) stored: Option<String>,
     pub(crate) choice: Choice,
-    /// A row exists but is not a valid choice: `[quotas.line]` applies and
-    /// the page asks Staff to choose again.
+    /// `[quotas.line]`, the default (`None`: no Quota).
+    pub(crate) config: Option<u64>,
+    /// A row exists but is not a valid choice (unknown, malformed or not
+    /// text): `[quotas.line]` applies and the page asks Staff to choose
+    /// again.
     pub(crate) unreadable: bool,
 }
 
@@ -178,41 +182,60 @@ pub(crate) fn version(stored: Option<&str>) -> String {
     }
 }
 
-/// Reads the choice now (one query).
-pub(crate) async fn current(s: &Services, config: &DeploymentConfig) -> Result<Current> {
+/// The choice in force given the row's `value` and `kind` (`None`: no
+/// row). Pure; the readers differ only in how they fetched the row.
+pub(crate) fn current_of(config: &DeploymentConfig, row: Option<(String, String)>) -> Current {
     let toml = config
         .quotas
         .get(KIND)
         .map(|q| q.metered_per_month)
         .filter(|c| *c > 0);
-    let rows = s
-        .db
-        .query(Statement::new("SELECT value FROM setting WHERE key = ? AND locale = ''").bind(KEY))
-        .await?;
-    let stored = rows
-        .get(0, "value")
-        .and_then(Value::as_text)
-        .map(str::to_string);
-    let (choice, unreadable) = match stored.as_deref().map(decode) {
-        Some(Some(choice)) => (choice, false),
-        Some(None) => (Choice::Config(toml), true),
-        None => (Choice::Config(toml), false),
+    let (stored, choice) = match row {
+        Some((value, kind)) => {
+            let choice = (kind == "text").then(|| decode(&value)).flatten();
+            (Some(value), choice)
+        }
+        None => (None, None),
     };
-    Ok(Current {
+    let unreadable = stored.is_some() && choice.is_none();
+    Current {
         stored,
-        choice,
+        choice: choice.unwrap_or(Choice::Config(toml)),
+        config: toml,
         unreadable,
-    })
+    }
 }
 
-/// The monthly cap of each Channel kind that has one, now: `[quotas]` with
-/// the LINE entry replaced by the saved choice. A cap of 0 still means no
+/// Reads the choice now (one query).
+pub(crate) async fn current(s: &Services, config: &DeploymentConfig) -> Result<Current> {
+    let rows =
+        s.db.query(
+            Statement::new(
+                "SELECT CASE WHEN typeof(value) = 'text' THEN value ELSE hex(value) END AS value, \
+                 typeof(value) AS kind FROM setting WHERE key = ? AND locale = ''",
+            )
+            .bind(KEY),
+        )
+        .await?;
+    let row = rows.get(0, "value").and_then(Value::as_text).map(|v| {
+        let kind = rows.get(0, "kind").and_then(Value::as_text);
+        (v.to_string(), kind.unwrap_or("text").to_string())
+    });
+    Ok(current_of(config, row))
+}
+
+/// Whether any Quota is in force: `[quotas]` is not empty, or a package is
+/// chosen. Reads the `setting` row only when `[quotas]` is empty.
+pub(crate) async fn in_force(s: &Services, config: &DeploymentConfig) -> Result<bool> {
+    if !config.quotas.is_empty() {
+        return Ok(true);
+    }
+    Ok(current(s, config).await?.choice.limit().is_some())
+}
+
+/// The monthly cap of each Channel kind that has one: `[quotas]` with the
+/// LINE entry replaced by the saved choice. A cap of 0 still means no
 /// Quota (see `quota::cap_of`).
-pub(crate) async fn caps(s: &Services, config: &DeploymentConfig) -> Result<BTreeMap<String, u64>> {
-    Ok(caps_with(config, &current(s, config).await?))
-}
-
-/// [`caps`] for a choice already read.
 pub(crate) fn caps_with(config: &DeploymentConfig, cur: &Current) -> BTreeMap<String, u64> {
     let mut caps: BTreeMap<String, u64> = config
         .quotas

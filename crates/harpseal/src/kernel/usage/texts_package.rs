@@ -76,6 +76,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     ("kernel.usage.package.option_custom", "กำหนดเอง", "Custom"),
     (
+        "kernel.usage.package.option_config",
+        "ใช้ค่าจากไฟล์ตั้งค่า ([quotas.line])",
+        "Use the configured value ([quotas.line])"
+    ),
+    (
+        "kernel.usage.package.reset_done",
+        "เลิกใช้แพ็กเกจที่เลือก กลับไปใช้ค่าจากไฟล์ตั้งค่าแล้ว",
+        "The chosen package is removed, the configured value applies again"
+    ),
+    (
         "kernel.usage.package.label_custom",
         "จำนวนข้อความต่อเดือน (ใช้เมื่อเลือกกำหนดเอง)",
         "Messages a month (used with Custom)"

@@ -167,3 +167,92 @@ async fn a_backup_carries_the_choice_and_the_restored_deployment_uses_it() {
     assert!(c.contains("แพ็กเกจ Basic: 15000 ข้อความต่อเดือน"), "{c}");
     assert!(c.contains("ใช้ไป 1000 จาก 15000"), "{c}");
 }
+
+#[tokio::test]
+async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again() {
+    let (h, app) = boot_line(true).await;
+    let b = admin(&h, &app).await;
+    // Nothing saved: nothing to remove.
+    assert_eq!(
+        choose(&b, "config", "").await,
+        "err:kernel.usage.package.same"
+    );
+    choose(&b, "pro", "").await;
+    seed(&h, "line", TODAY, 1000, 0, 0).await;
+    watch(&app).await; // Pro: no level reached
+    seed(&h, "line", TODAY, 31_500, 0, 0).await;
+    watch(&app).await; // 90 % of Pro: a record
+    assert_eq!(
+        int(
+            &h,
+            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
+        )
+        .await,
+        1
+    );
+    h.clock().advance_minutes(1);
+
+    assert_eq!(
+        choose(&b, "config", "").await,
+        "ok:kernel.usage.package.reset_done"
+    );
+    assert_eq!(stored(&h).await, None);
+    let body = b.get("/admin/usage").await.body;
+    let c = card(&body, "line");
+    assert!(c.contains("ยังไม่ได้เลือกแพ็กเกจ ใช้ค่าจากไฟล์ตั้งค่า: 300"), "{c}");
+    assert!(c.contains("<option value=\"config\" selected>"), "{c}");
+    assert!(c.contains("ใช้ไป 31500 จาก 300"), "{c}");
+    // Audited as setting.reset (before = the choice, after = what applies),
+    // and the Quota emails start over.
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT before, after FROM audit_log WHERE action = 'setting.reset'",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    let json = |c: &str| {
+        serde_json::from_str::<serde_json::Value>(rows.get(0, c).unwrap().as_text().unwrap())
+            .unwrap()
+    };
+    assert_eq!(json("before")["value"], "pro");
+    assert_eq!(json("after")["value"], "custom:300");
+    assert_eq!(
+        int(
+            &h,
+            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
+        )
+        .await,
+        0
+    );
+    // A stale form cannot remove a newer choice.
+    let page = b.get("/admin/usage").await.body;
+    assert!(page.contains("name=\"expected\" value=\"-\""));
+    choose(&b, "basic", "").await;
+    let r = b.post(PATH, "package=config&custom=&expected=-").await;
+    assert_eq!(r.status, 303);
+    assert_eq!(flash(&b), "err:kernel.admin.conflict");
+    assert_eq!(stored(&h).await.as_deref(), Some("basic"));
+}
+
+#[tokio::test]
+async fn a_value_that_is_not_text_is_flagged_and_can_be_repaired() {
+    let (h, app) = boot_line(true).await;
+    let b = admin(&h, &app).await;
+    run(
+        &h,
+        &format!(
+            "INSERT INTO setting (key, locale, value, updated_at) VALUES ('{KEY}', '', x'ff00', 0)"
+        ),
+    )
+    .await;
+    let body = b.get("/admin/usage").await.body;
+    let c = card(&body, "line");
+    assert!(c.contains("ค่าที่บันทึกไว้อ่านไม่ได้"), "{c}");
+    assert!(c.contains("ใช้ไป 0 จาก 300"), "{c}");
+    assert_eq!(choose(&b, "pro", "").await, "ok:kernel.usage.package.saved");
+    assert_eq!(stored(&h).await.as_deref(), Some("pro"));
+    let body = b.get("/admin/usage").await.body;
+    assert!(!card(&body, "line").contains("ค่าที่บันทึกไว้อ่านไม่ได้"));
+}

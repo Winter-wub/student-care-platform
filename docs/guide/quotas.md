@@ -20,8 +20,9 @@ email or defers ([notify.md](notify.md)), exactly as before.
 
 So the TOML number is the **default** and also the **Custom value** until
 someone saves a choice. A Deployment without `[quotas.line]` has no LINE
-Quota until a package is chosen. Removing the saved choice is not offered:
-choose Custom and type the number.
+Quota until a package is chosen. The first option of the form, "use the
+configured value", removes the saved choice (audited as `setting.reset`)
+and the LINE limit follows `[quotas.line]` again.
 
 ## The package list
 
@@ -74,9 +75,14 @@ Free (300) to Basic (15,000) with 1,000 Pushes already sent shows 1,000
 of 15,000 and clears the banner; the usage page, the banner, the
 "used X/Y" beside the Announcement send estimate, the
 `kernel.usage.watch` emails and the tick that enqueues the watch all agree.
-A level already emailed this month is not emailed again; a level newly
-reached is. A Deployment with no `[quotas]` starts the watch as soon as a
-package is saved (the tick reads one `setting` row per minute for this).
+A change also starts the Quota emails over: the watch Job's record of the
+levels already announced this month (`kernel.usage.notified.line`) is
+deleted in the same batch as the change. So Over under Free, an upgrade to
+Basic, then Warn and Over of Basic each email once. A Deployment with no
+`[quotas]` starts the watch as soon as a package is saved (the tick reads
+one `setting` row per minute, only while `[quotas]` is empty). The usage
+page, the banner and the Quota job each read the usage rows and the
+package in one query.
 
 ## Audit and backup
 
@@ -87,5 +93,6 @@ writes the audit row `setting.update` (target `setting`/
 `kernel.usage.line_package:`) with the value before and after, in the same
 batch as the value. Before the first save the value before is the TOML
 number as `custom:<n>` (`null` without one). A saved value that no longer
-reads (a restored row of another version) falls back to the TOML number
-and the page says so until Staff choose again.
+reads (an unknown package, a malformed number or a value that is not text,
+for instance from a restored row of another version) falls back to the
+TOML number and the page says so until Staff choose again.

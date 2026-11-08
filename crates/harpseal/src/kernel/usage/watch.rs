@@ -5,11 +5,20 @@
 //! only.
 //!
 //! [`Deployment::tick`] enqueues it ([`enqueue`]) on its first tick of
-//! each 10-minute window (UTC-aligned), only when the TOML has
-//! `[quotas]`: a Deployment without a Quota never runs it, so its ticks
-//! stay as they were. It is not a cron `JobSpec::schedule` for that
-//! reason, and because a missed cron minute is skipped while a window is
-//! caught up by any later tick in it.
+//! each 10-minute window (UTC-aligned), only when a Quota is in force:
+//! `[quotas]` in the TOML or, when that is empty, a LINE package chosen in
+//! the back office (#115; the tick reads that `setting` row only then). A
+//! Deployment without a Quota never runs it, so its ticks stay as they
+//! were. It is not a cron `JobSpec::schedule` for that reason, and because
+//! a missed cron minute is skipped while a window is caught up by any later
+//! tick in it.
+//!
+//! The limit is read at each run ([`super::package`]), and changing the
+//! LINE package deletes the Channel's record in the same batch as the
+//! change (`package_page`), so the levels already announced this month
+//! start over: Over under Free, then Basic, still emails at Warn and at
+//! Over of Basic. A run that read the old limit just before the change may
+//! still claim one email of it afterwards; that is the only race left.
 //!
 //! No migration: the record is a `setting` row (see [`super::record`]). A
 //! notification is claimed with one batch: the audit row `usage.notify`

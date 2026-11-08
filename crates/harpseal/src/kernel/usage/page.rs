@@ -29,8 +29,8 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let months = quota::last_months(&month, MONTHS);
     let oldest_month = months.last().map_or(month.clone(), |m| format!("{m}-01"));
     let since = days.first().cloned().unwrap_or_default().min(oldest_month);
-    let rows = match store::rows_since(&s.services, &since).await {
-        Ok(rows) => rows,
+    let (rows, cur) = match store::usage_and_package(&s.services, &s.config, &since).await {
+        Ok(read) => read,
         Err(_) => {
             let text = t("kernel.auth.error");
             let body = html! { div class="card" { p { (text) } } };
@@ -38,14 +38,6 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
         }
     };
     let kinds = store::kinds(&s.deployment);
-    let cur = match package::current(&s.services, &s.config).await {
-        Ok(cur) => cur,
-        Err(_) => {
-            let text = t("kernel.auth.error");
-            let body = html! { div class="card" { p { (text) } } };
-            return respond(&s, &staff, StatusCode::INTERNAL_SERVER_ERROR, &text, body);
-        }
-    };
     let caps = package::caps_with(&s.config, &cur);
     let this = quota::month(&rows, &kinds, &caps, &month);
     let title = t("kernel.usage.title");
