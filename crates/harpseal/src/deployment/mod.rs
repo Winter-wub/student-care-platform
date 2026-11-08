@@ -125,10 +125,12 @@ impl Deployment {
     pub fn settings(&self) -> crate::Settings {
         crate::Settings::new(self.services.clone(), self.registry.settings.clone())
     }
-    /// Saves a Module setting as the system (#103): for the code that holds
-    /// the `Deployment`, a seed or the CLI, never for Module code (pages
-    /// and Jobs only get [`crate::Settings`], whose `save` needs Staff with
-    /// the setting's Permission). The same kind check and `setting.update`
+    /// Saves a Module setting as the system (#103), with no Permission
+    /// check: for the Deployment's own code (a seed, the CLI). A Module page
+    /// or Job can reach it through [`crate::PageState::deployment`], but must
+    /// not use it for a Staff action: save through [`crate::Settings`]
+    /// (`settings().save` with the Staff member's [`crate::Actor`]), which
+    /// needs the setting's Permission and audits that Staff member. The same kind check and `setting.update`
     /// audit row as `/admin/settings`, with actor `system` and the
     /// `ctx` (use `RequestCtx::cli().seeded()` for demo data). The same
     /// value again writes nothing; a row changed meanwhile is

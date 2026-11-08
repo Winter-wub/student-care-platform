@@ -12,9 +12,11 @@
 //! `.list`, `.chip`, and `table.rows` (stacked cards below 900 px, a table
 //! from 900 px; give each `td` a `data-label`).
 
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Response};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
-use crate::{CurrentStaff, PageState};
+use crate::{CurrentStaff, Error, PageState};
 
 /// The stylesheet, served by `Deployment::router` at [`CSS_PATH`].
 pub const CSS: &str = include_str!("ui.css");
@@ -137,6 +139,27 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
         }
     };
     document(&brand, title, "office", Some(staff.csrf_token()), inner)
+}
+
+/// What a back-office handler answers when a Core service it called (e.g.
+/// `modules::announcements::create_draft`) failed, as the Core's pages
+/// answer: [`Error::Forbidden`] gets the same 403 page the back-office
+/// guard shows a Staff member without the route's Permission (naming the
+/// Permission missing); [`Error::Conflict`] (the row changed since the
+/// page showed it, e.g. a stale `version` to `confirm`) a 409 page asking
+/// to reload; anything else a 500 page that never shows the error text (it
+/// may name a column). Check the form yourself first: an
+/// [`Error::Invalid`] here is a 500 too.
+pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response {
+    let (status, key) = match e.root() {
+        Error::Forbidden { permission } => return crate::auth::forbidden(s, staff, permission),
+        Error::Conflict(_) => (StatusCode::CONFLICT, "kernel.auth.conflict"),
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, "kernel.auth.error"),
+    };
+    let text = s.catalog.t(&staff.locale, key);
+    let body = html! { div class="card" { p role="alert" { (text) } } };
+    let page = back_office(s, staff, &text, body);
+    (status, Html(page.into_string())).into_response()
 }
 
 /// A page with the brand bar and no navigation (sign-in, errors).

@@ -64,6 +64,16 @@ pub(crate) const TEXTS: &[E] = &[
         "en",
         "Something went wrong. Please try again.",
     ),
+    E::new(
+        "kernel.auth.conflict",
+        "th",
+        "มีคนแก้รายการนี้ไปก่อนแล้ว กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง",
+    ),
+    E::new(
+        "kernel.auth.conflict",
+        "en",
+        "Someone changed this meanwhile. Please reload the page and try again.",
+    ),
     E::new("kernel.auth.change_title", "th", "เปลี่ยนรหัสผ่าน"),
     E::new("kernel.auth.change_title", "en", "Change password"),
     E::new(

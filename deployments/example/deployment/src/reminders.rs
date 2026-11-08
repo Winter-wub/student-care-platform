@@ -2,7 +2,10 @@
 //! 09:00 the Students tagged `fee_due` get a fee reminder, by chat when
 //! linked, by email otherwise ([`harpseal::JobContext::notify`]); Staff
 //! can also send it now to a pasted list from `/admin/reminders`
-//! ([`harpseal::PageState::notify`]).
+//! ([`harpseal::PageState::notify`]). The same form drafts an
+//! Announcement to the pasted Students ([`ANNOUNCE_PATH`], #106) through
+//! `harpseal::modules::announcements::create_draft`, as the signed-in
+//! Staff member, who must also hold `announcements.send`.
 //!
 //! The weekly Job picks the Students and enqueues one `reminders.send` Job
 //! per [`MAX_NOTIFY`] of them, so each run stays within the Workers
@@ -12,13 +15,14 @@
 use axum::Form;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
-use harpseal::audience::parse_student_ids;
+use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::routing::{get, post};
+use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
+use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
-    AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY,
-    Message, Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission,
-    Result, Statement, Timestamp, Value, ui,
+    Actor, AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale,
+    MAX_NOTIFY, Message, Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo,
+    Permission, RequestCtx, Result, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -30,6 +34,8 @@ pub const SEND: &str = "reminders.send";
 pub const TAG: &str = "fee_due";
 /// The back-office page.
 pub const PATH: &str = "/reminders";
+/// The page action that drafts an Announcement to the pasted Students.
+pub const ANNOUNCE_PATH: &str = "/reminders/announce";
 /// Who may send the reminder from the page.
 pub const PERMISSION: Permission = Permission::new("reminders.send", "Send the fee reminder");
 
@@ -45,6 +51,20 @@ const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("reminders.ids", "en", "Student IDs (up to 40)"),
     CatalogEntry::new("reminders.send", "th", "ส่งเตือนตอนนี้"),
     CatalogEntry::new("reminders.send", "en", "Send now"),
+    CatalogEntry::new("reminders.announce", "th", "ร่างประกาศถึงนักศึกษาเหล่านี้"),
+    CatalogEntry::new("reminders.announce", "en", "Draft an announcement to them"),
+    CatalogEntry::new("reminders.no_ids", "th", "กรุณาใส่รหัสนักศึกษาอย่างน้อยหนึ่งคน"),
+    CatalogEntry::new("reminders.no_ids", "en", "Enter at least one student ID."),
+    CatalogEntry::new(
+        "reminders.too_many_ids",
+        "th",
+        "ร่างประกาศได้ครั้งละไม่เกิน 2,000 คน",
+    ),
+    CatalogEntry::new(
+        "reminders.too_many_ids",
+        "en",
+        "Draft for at most 2,000 Students at a time.",
+    ),
 ];
 
 /// The reminder, in Thai and English, under `key`.
@@ -77,7 +97,8 @@ impl Module for Reminders {
                 "reminders.title",
                 60,
                 get(page).post(send_now),
-            );
+            )
+            .back_office(PERMISSION.id, ANNOUNCE_PATH, post(announce));
     }
 }
 
@@ -196,6 +217,10 @@ async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
                     textarea id="ids" name="ids" rows="6" {}
                 }
                 button type="submit" { (t("reminders.send")) }
+                " "
+                button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
+                    (t("reminders.announce"))
+                }
             }
         }
     };
@@ -238,6 +263,53 @@ async fn send_now(
         Err(e) => html! { section class="card" { h1 { (title) } p { (e.to_string()) } } },
     };
     Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
+}
+
+/// Drafts an Announcement (the reminder's text, acknowledgement asked) to
+/// the pasted student IDs, as the signed-in Staff member, and opens it on
+/// the Core's detail page, where Staff check the Audience and send it.
+/// Staff without `announcements.send` get the Core's 403 page.
+async fn announce(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    ctx: RequestCtx,
+    Form(form): Form<Vec<(String, String)>>,
+) -> Response {
+    let ids = form
+        .iter()
+        .find(|(n, _)| n == "ids")
+        .map(|(_, v)| parse_student_ids(v))
+        .unwrap_or_default();
+    // An empty list would be no filter at all: everyone. Over
+    // MAX_STUDENTS the Core refuses the Audience.
+    let refused = match ids.len() {
+        0 => Some("reminders.no_ids"),
+        n if n > MAX_STUDENTS => Some("reminders.too_many_ids"),
+        _ => None,
+    };
+    if let Some(key) = refused {
+        let title = s.catalog.t(&staff.locale, "reminders.title");
+        let text = s.catalog.t(&staff.locale, key);
+        let body = html! { section class="card" { h1 { (title) } p role="alert" { (text) } } };
+        let page = ui::back_office(&s, &staff, &title, body);
+        return (StatusCode::UNPROCESSABLE_ENTITY, Html(page.into_string())).into_response();
+    }
+    let mut audience = Audience::everyone();
+    audience.students = ids;
+    let mut new = NewAnnouncement::new(
+        "เตือนชำระค่าธรรมเนียม",
+        "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้",
+    );
+    new.en = Some((
+        "Fee reminder".into(),
+        "Seal Bay University: please pay your tuition fee by this Friday.".into(),
+    ));
+    new.audience = audience;
+    new.require_ack = true;
+    match create_draft(s.deployment(), &new, &Actor::staff(&staff), &ctx).await {
+        Ok(id) => Redirect::to(&format!("/admin/announcements/{id}")).into_response(),
+        Err(e) => ui::service_error(&s, &staff, &e),
+    }
 }
 
 fn code(to: &NotifyTo) -> &str {

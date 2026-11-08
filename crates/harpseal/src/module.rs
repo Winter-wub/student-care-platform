@@ -15,6 +15,7 @@ use crate::message::{ActionId, Locale, Message};
 use crate::port_types::Statement;
 use crate::{Result, Services};
 
+mod access;
 mod kept;
 mod mini_app;
 mod notify;
@@ -52,8 +53,9 @@ pub struct PageState {
     pub config: Arc<DeploymentConfig>,
     /// Enqueues Jobs (e.g. a send started from a back-office page).
     pub jobs: Jobs,
-    /// The Deployment itself, for Kernel pages that call its services
-    /// (the Link service needs the Channels and the catalog).
+    /// The Deployment itself, for pages that call its services (the Link
+    /// service needs the Channels and the catalog). Modules borrow it with
+    /// [`PageState::deployment`].
     pub(crate) deployment: Arc<crate::Deployment>,
 }
 
@@ -134,8 +136,9 @@ pub struct JobContext {
     pub jobs: Jobs,
     /// This run's `job.id` and lock token (`None` outside a tick).
     pub(crate) run: Option<(String, String)>,
-    /// The Deployment running the Job (a shallow copy), for Kernel Jobs
-    /// that send through the Channels. Never keep a `JobContext` (or a
+    /// The Deployment running the Job (a shallow copy), for Jobs that
+    /// send through the Channels; Modules borrow it with
+    /// [`JobContext::deployment`]. Never keep a `JobContext` (or a
     /// clone) beyond the run: stored in a handler it would form a cycle
     /// (Deployment → registry → handler → context → Deployment) and leak.
     pub(crate) deployment: Arc<crate::Deployment>,
