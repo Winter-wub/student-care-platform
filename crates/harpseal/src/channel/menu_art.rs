@@ -161,6 +161,17 @@ pub enum MenuImageProblem {
     },
     /// The Menu has no entries, so the image is never shown.
     NoMenu,
+    /// The platform account holds too many Menu objects to stage the new
+    /// ones (LINE: 1000 rich menus a channel); unused ones must be deleted
+    /// first (or a generation bump lets the old ones go).
+    TooManyMenus {
+        /// Objects the account holds now.
+        held: u32,
+        /// Objects the change would add.
+        adding: u32,
+        /// The platform's limit.
+        limit: u32,
+    },
 }
 
 /// Channel Capability: the Menu is drawn on an image the back office may
@@ -194,11 +205,18 @@ pub trait MenuArt: Send + Sync {
     /// Creates, before anything is saved, the platform objects `images`
     /// need: one per Menu of `unlocked` (each at the revision and with the
     /// salt it will be shown with) and, when `locked` is set, the locked
-    /// Menu's. An error leaves nothing new behind that this call made, and
-    /// no account is touched: the Kernel then saves nothing. The default
-    /// stages nothing.
-    async fn stage(&self, images: &MenuImages, unlocked: &[Menu], locked: bool) -> Result<()> {
+    /// Menu's. `Ok(Some(problem))` when the platform cannot take them
+    /// (e.g. [`MenuImageProblem::TooManyMenus`]), checked before anything is
+    /// created. An error or a problem leaves nothing new behind that this
+    /// call made, and no account is touched: the Kernel then saves nothing.
+    /// The default stages nothing (`Ok(None)`).
+    async fn stage(
+        &self,
+        images: &MenuImages,
+        unlocked: &[Menu],
+        locked: bool,
+    ) -> Result<Option<MenuImageProblem>> {
         let _ = (images, unlocked, locked);
-        Ok(())
+        Ok(None)
     }
 }

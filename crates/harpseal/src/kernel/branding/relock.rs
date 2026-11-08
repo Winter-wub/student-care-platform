@@ -6,8 +6,9 @@
 //! Payload `{"revision"}` (the locked revision it works for) from the
 //! save; continuations add `phase` (`relock` or `retire`), `channel`,
 //! `after` (the last `channel_account.id` done), `hop` and `waits`. A run
-//! re-locks a page of [`PAGE`] accounts per Channel (one `set_menu` each,
-//! under the 50 subrequests of a Workers free-plan invocation), then
+//! re-locks a page of [`PAGE`] accounts per Channel (a read and one
+//! `set_menu` each, under the 50 subrequests of a Workers free-plan
+//! invocation), then
 //! continues. Each account's state is read again just before its
 //! `set_menu`: one that linked meanwhile is left alone. An account the
 //! platform will never reach is passed over; any other failure continues at
@@ -37,8 +38,15 @@ use crate::{Channel, Error, MenuRetire, Result};
 pub(crate) const RELOCK: &str = "kernel.branding.relock";
 /// The `menu_retire.locale` of the locked Menu's pending retire.
 pub(crate) const RETIRE_LOCALE: &str = "~locked";
-/// Accounts re-locked per Channel and run.
-pub(crate) const PAGE: usize = 20;
+/// Accounts re-locked per Channel and run. A run's subrequests (each D1
+/// query, FileStore read and HTTP call counts, as for the backup's budget,
+/// ADR-0008): about 8 fixed (the Job's claim and finish, the saved images
+/// twice, their bytes in a cold isolate, the page query, the continuation),
+/// 2 per account (its state read just before the set, and the link), and
+/// at most 9 more for the one cold `set_menu` of the run (list, create,
+/// upload, the tidy's list and up to `MAX_DELETES` = 5 deletes): with 12,
+/// 8 + 24 + 9 = 41, under the 50 of a Workers free-plan invocation.
+pub(crate) const PAGE: usize = 12;
 /// Seconds before a failed account is tried again.
 const RETRY_SECS: i64 = 60;
 /// Waits one change's Job may chain; past it the run fails with an error.

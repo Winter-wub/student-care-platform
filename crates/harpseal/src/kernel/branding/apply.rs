@@ -170,9 +170,21 @@ pub(crate) async fn save(
         Vec::new()
     };
     for art in &arts {
-        if let Err(e) = art.stage(&images, &staged, locked_changed).await {
-            store::forget(s, &written).await;
-            return Err(e);
+        match art.stage(&images, &staged, locked_changed).await {
+            Ok(None) => {}
+            Ok(Some(problem)) => {
+                store::forget(s, &written).await;
+                let slot = if unlocked_changed {
+                    MenuSlot::Unlocked
+                } else {
+                    MenuSlot::Locked
+                };
+                return Ok(MenuImagesSaved::Refused(vec![(slot, problem)]));
+            }
+            Err(e) => {
+                store::forget(s, &written).await;
+                return Err(e);
+            }
         }
     }
     // 4. One batch.

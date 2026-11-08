@@ -92,6 +92,18 @@ impl<'a> View<'a> {
                 "kernel.branding.err_menu_grid",
                 &[("rows", rows.to_string()), ("want", size(*want))],
             ),
+            MenuImageProblem::TooManyMenus {
+                held,
+                adding,
+                limit,
+            } => fill(
+                "kernel.branding.err_menu_full",
+                &[
+                    ("held", held.to_string()),
+                    ("adding", adding.to_string()),
+                    ("limit", limit.to_string()),
+                ],
+            ),
             _ => self.t("kernel.branding.err_menu_unused"),
         }
     }

@@ -227,6 +227,11 @@ pub(super) const TEXTS: &[E] = th_en![
         "This menu has {rows} row(s) of tiles, so the image must be {want} px."
     ),
     (
+        "kernel.branding.err_menu_full",
+        "LINE มีริชเมนูอยู่แล้ว {held} รายการ ถ้าเพิ่มอีก {adding} จะเกินขีดจำกัด {limit} รายการ ระบบยังไม่ได้บันทึกอะไร กรุณาลบริชเมนูที่ไม่ใช้แล้ว หรือเพิ่มค่า menu_generation ก่อนลองใหม่",
+        "LINE holds {held} rich menus; {adding} more would pass its limit of {limit}. Nothing was saved: delete unused rich menus, or bump menu_generation, then try again."
+    ),
+    (
         "kernel.branding.err_menu_unused",
         "เมนูนี้ไม่มีปุ่ม จึงไม่ได้ใช้รูป",
         "This menu has no entries, so its image is never shown."

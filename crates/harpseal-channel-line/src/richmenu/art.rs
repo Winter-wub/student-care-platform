@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harpseal::{
-    Channel, Error, Menu, MenuArea, MenuArt, MenuImageProblem, MenuImages, MenuKey, MenuLayout,
-    MenuSlot, Result,
+    Channel, Menu, MenuArea, MenuArt, MenuImageProblem, MenuImages, MenuKey, MenuLayout, MenuSlot,
+    Result,
 };
 use serde_json::Value;
 
@@ -199,11 +199,16 @@ impl MenuArt for LineChannel {
         Arc::new(self.drawn(images))
     }
 
-    async fn stage(&self, images: &MenuImages, unlocked: &[Menu], locked: bool) -> Result<()> {
+    async fn stage(
+        &self,
+        images: &MenuImages,
+        unlocked: &[Menu],
+        locked: bool,
+    ) -> Result<Option<MenuImageProblem>> {
         let view = self.drawn(images);
         let wanted = view.staged(unlocked, locked)?;
         if wanted.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
         let list = view.rich_menu_list().await?;
         let missing = wanted
@@ -213,11 +218,11 @@ impl MenuArt for LineChannel {
         if list.len() + missing > MAX_RICH_MENUS {
             // Refused before creating any: a half-staged change would leave
             // some Locales without their new rich menu.
-            return Err(Error::Platform(format!(
-                "LINE holds {} rich menus; {missing} more would pass its limit of \
-                 {MAX_RICH_MENUS}: delete unused ones (or bump menu_generation) first",
-                list.len()
-            )));
+            return Ok(Some(MenuImageProblem::TooManyMenus {
+                held: list.len() as u32,
+                adding: missing as u32,
+                limit: MAX_RICH_MENUS as u32,
+            }));
         }
         let mut made: Vec<(String, String)> = Vec::new();
         for (name, obj, image) in &wanted {
@@ -238,6 +243,6 @@ impl MenuArt for LineChannel {
                 }
             }
         }
-        Ok(())
+        Ok(None)
     }
 }
