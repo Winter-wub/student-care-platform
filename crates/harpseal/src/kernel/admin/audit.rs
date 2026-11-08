@@ -263,8 +263,6 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
                         th { (l("kernel.admin.audit.actor")) }
                         th { (l("kernel.admin.audit.action")) }
                         th { (l("kernel.admin.audit.target")) }
-                        th { (l("kernel.admin.audit.ip")) }
-                        th { (l("kernel.admin.audit.request")) }
                     } }
                     tbody {
                         @for e in rows {
@@ -277,14 +275,24 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
                                     a class="code" href=(format!("/admin/audit/{}", e.id)) { (e.action) }
                                 }
                                 td data-label=(l("kernel.admin.audit.target")) { (target(e)) }
-                                td data-label=(l("kernel.admin.audit.ip")) { (e.ip.as_deref().unwrap_or("–")) }
-                                td class="code" data-label=(l("kernel.admin.audit.request")) {
-                                    (e.request_id.as_deref().unwrap_or("–"))
-                                }
                             }
                         }
                     }
                 }
+            }
+            @if !rows.is_empty() {
+                // Raw details (#123): each row's IP and request id.
+                (crate::ui::technical(v.s, v.staff, html! {
+                    ul class="list audit-tech" {
+                        @for e in rows {
+                            li {
+                                span { (v.time(e.at)) " " span class="code" { (e.action) } }
+                                span { (l("kernel.admin.audit.ip")) " " (e.ip.as_deref().unwrap_or("–")) }
+                                span class="code" { (l("kernel.admin.audit.request")) " " (e.request_id.as_deref().unwrap_or("–")) }
+                            }
+                        }
+                    }
+                }))
             }
             (v.pager(page, pages, |p| format!("/admin/audit?{q}&page={p}")))
         }

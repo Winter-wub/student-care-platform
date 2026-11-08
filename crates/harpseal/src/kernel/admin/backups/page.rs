@@ -54,17 +54,11 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let body = html! {
         h1 { (title) }
         @if latest_failed {
-            div class="flash error" id="backup-failed" role="alert" { (v.t("kernel.backup.failed_alert")) }
+            div class="flash err" id="backup-failed" role="alert" { (v.t("kernel.backup.failed_alert")) }
         }
         section class="card" {
             p { (fill(&v.t("kernel.backup.intro"), &[("days", &days)])) }
-            @if b.enabled {
-                p class="muted" {
-                    (fill(&v.t("kernel.backup.schedule"), &[("schedule", &b.schedule), ("offset", &offset)]))
-                }
-            } @else {
-                p class="muted" { (v.t("kernel.backup.disabled")) }
-            }
+            @if !b.enabled { p class="muted" { (v.t("kernel.backup.disabled")) } }
             div class="actions" {
                 form method="post" action="/admin/backups/now" {
                     (staff.csrf_field())
@@ -78,18 +72,28 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
             }
             @if staff.can(DOWNLOAD) { p class="muted" { (v.t("kernel.backup.export_note")) } }
             p class="muted" id="backups-total" { (fill(&v.t("kernel.backup.total"), &[("size", &total)])) }
-            p class="muted" { (v.t("kernel.backup.restore_hint")) }
         }
         (table(&v, &runs))
-        @if !tables.is_empty() { (table_list(&v, &tables)) }
-        @if !errors.is_empty() {
-            section class="card" id="backup-job-errors" {
-                h2 { (v.t("kernel.backup.job_errors")) }
-                ul {
-                    @for (at, e) in &errors { li { (v.time(*at)) ": " span class="code" { (e) } } }
+        // Raw details (#123): the cron schedule, each run's error, the
+        // Job's errors and the table names.
+        (crate::ui::technical(&s, &staff, html! {
+            @if b.enabled {
+                p class="muted" {
+                    (fill(&v.t("kernel.backup.schedule"), &[("schedule", &b.schedule), ("offset", &offset)]))
                 }
             }
-        }
+            p class="muted" { (v.t("kernel.backup.restore_hint")) }
+            (run_errors(&v, &runs))
+            @if !errors.is_empty() {
+                section class="card" id="backup-job-errors" {
+                    h2 { (v.t("kernel.backup.job_errors")) }
+                    ul {
+                        @for (at, e) in &errors { li { (v.time(*at)) ": " span class="code" { (e) } } }
+                    }
+                }
+            }
+            @if !tables.is_empty() { (table_list(&v, &tables)) }
+        }))
     };
     v.page(StatusCode::OK, &title, body)
 }
@@ -115,13 +119,6 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                             span class=(format!("chip {}", r.state)) {
                                 (v.t(&format!("kernel.backup.state_{}", r.state)))
                             }
-                            @if let Some(e) = &r.error { br; span class="muted code" { (e) } }
-                            @if let Some(e) = &r.prune_error {
-                                br;
-                                span class="field-error prune-error" {
-                                    (fill(&v.t("kernel.backup.prune_failed"), &[("error", e)]))
-                                }
-                            }
                         }
                         td data-label=(v.t("kernel.backup.size")) { (human_bytes(r.bytes)) }
                         td data-label=(v.t("kernel.backup.contents")) {
@@ -138,6 +135,32 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                                     href=(format!("/admin/backups/{}/download", r.id)) {
                                     (v.t("kernel.backup.download"))
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Each run's error and retention error, newest first, for the
+/// technical details (#123).
+fn run_errors(v: &View<'_>, runs: &[Run]) -> Markup {
+    let failed: Vec<&Run> = runs
+        .iter()
+        .filter(|r| r.error.is_some() || r.prune_error.is_some())
+        .collect();
+    html! {
+        @if !failed.is_empty() {
+            ul class="run-errors" {
+                @for r in failed {
+                    li data-id=(r.id) {
+                        (v.time(r.started_at)) ": "
+                        @if let Some(e) = &r.error { span class="code" { (e) } }
+                        @if let Some(e) = &r.prune_error {
+                            " " span class="field-error prune-error" {
+                                (fill(&v.t("kernel.backup.prune_failed"), &[("error", e)]))
                             }
                         }
                     }

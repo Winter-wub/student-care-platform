@@ -77,8 +77,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.usage.package.option_custom", "กำหนดเอง", "Custom"),
     (
         "kernel.usage.package.option_config",
-        "ใช้ค่าจากไฟล์ตั้งค่า ([quotas.line])",
-        "Use the configured value ([quotas.line])"
+        "ใช้ค่าจากไฟล์ตั้งค่า",
+        "Use the configured value"
     ),
     (
         "kernel.usage.package.reset_done",

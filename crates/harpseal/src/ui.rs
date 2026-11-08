@@ -3,8 +3,11 @@
 //! cdnjs URL with Subresource Integrity. No JS framework, no build step.
 //!
 //! Back-office handlers wrap their content with [`back_office`], which adds
-//! the brand bar (saved on `/admin/branding`, else `[branding]` in the
-//! TOML), the navigation the Staff member may see, the pending flash, the
+//! the skip link, the brand bar (saved on `/admin/branding`, else
+//! `[branding]` in the TOML), the navigation the Staff member may see,
+//! grouped "งานประจำ" / "ผู้ดูแลระบบ" with the current page marked (#123;
+//! a Module picks its page's group with
+//! [`crate::ModuleRegistrar::back_office_page_in`]), the pending flash, the
 //! usage banner slot and the CSRF header HTMX sends. Plain `<form method="post">` needs
 //! `staff.csrf_field()` inside.
 //!
@@ -19,11 +22,14 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use crate::{CurrentStaff, Error, PageState};
 
-/// The stylesheet, served by `Deployment::router` at [`CSS_PATH`].
-pub const CSS: &str = include_str!("ui.css");
-/// Bump the query string when `ui.css` changes (it is cached for a day).
+mod shell;
+
+/// The stylesheet, served by `Deployment::router` at [`CSS_PATH`]:
+/// `ui.css`, then the back-office shell's `ui_shell.css` (#123).
+pub const CSS: &str = concat!(include_str!("ui.css"), include_str!("ui_shell.css"));
+/// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=13";
+const CSS_HREF: &str = "/static/app.css?v=14";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).
@@ -62,6 +68,19 @@ pub fn flash(f: &Flash<'_>) -> Markup {
 /// คนจะพ้นสภาพ"), and check any typed confirmation on the server.
 pub fn danger_button(label: &str) -> Markup {
     html! { button class="danger" type="submit" { (label) } }
+}
+
+/// A "ข้อมูลทางเทคนิค" disclosure (#123): raw details an administrator
+/// may need (hashes, IPs, request ids, cron, table and file names),
+/// closed by default so the page reads in plain Thai first.
+pub(crate) fn technical(s: &PageState, staff: &CurrentStaff, body: Markup) -> Markup {
+    let label = s.catalog.t(&staff.locale, "kernel.backoffice.technical");
+    html! {
+        details class="tech" {
+            summary { (label) }
+            div class="tech-body" { (body) }
+        }
+    }
 }
 
 /// The look: the values saved on `/admin/branding` (#114) over
@@ -147,25 +166,30 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
     let brand = brand_of(s);
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let nav = !staff.must_change_password && !staff.nav().is_empty();
+    let texts = shell::NavTexts {
+        menu: t("kernel.backoffice.menu"),
+        home: t("kernel.backoffice.home"),
+        daily: t("kernel.backoffice.group_daily"),
+        admin: t("kernel.backoffice.group_admin"),
+    };
     let inner = html! {
+        (shell::skip_link(&t("kernel.backoffice.skip")))
         header class="bar" {
             (brand_link(&brand, "/admin"))
             form method="post" action="/admin/logout" class="who" {
                 (staff.csrf_field())
-                span { (staff.email) }
+                span class="who-email" { (staff.email) }
                 button class="link" type="submit" { (t("kernel.auth.sign_out")) }
-            }
-            @if nav {
-                nav class="nav" aria-label=(t("kernel.backoffice.menu")) {
-                    @for (label, href) in staff.nav() { a href=(href) { (label) } }
-                }
             }
         }
         // The Quota banner (#26): empty below 80 % of every Quota.
         div id="usage-banner" { @if let Some(b) = &staff.usage_banner { (b) } }
-        main {
-            @if let Some((ok, text)) = &staff.flash { (flash(&Flash { ok: *ok, text })) }
-            (body)
+        div class=(if nav { "office-shell" } else { "office-shell no-nav" }) {
+            @if nav { (shell::nav(staff, &texts)) }
+            main id=(shell::MAIN_ID) tabindex="-1" {
+                @if let Some((ok, text)) = &staff.flash { (flash(&Flash { ok: *ok, text })) }
+                (body)
+            }
         }
     };
     document(&brand, title, "office", Some(staff.csrf_token()), inner)

@@ -150,7 +150,14 @@ async fn the_list_shows_every_key_with_its_source_and_searches() {
     let restored = admin.send(req).await;
     assert!(restored.body.contains("<html"), "full page");
     assert_eq!(restored.header("vary"), Some("HX-Request"));
-    assert!(list.body.contains("deployment.toml"), "TOML source");
+    // The TOML source is a chip; the file's name is in the technical
+    // details (#123).
+    assert!(
+        list.body.contains("<span class=\"chip ok\">ไฟล์ตั้งค่า</span>"),
+        "TOML source"
+    );
+    assert!(list.body.contains("<details class=\"tech\">"));
+    assert!(list.body.contains("deployment.toml"));
     assert!(list.body.contains("edited here") || list.body.contains("แก้ในหลังบ้าน"));
     let found = htmx_get(&admin, "/admin/texts?q=Hi+there").await;
     assert!(found.body.starts_with("<div id=\"texts-results\""));

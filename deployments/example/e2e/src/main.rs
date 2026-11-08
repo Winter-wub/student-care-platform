@@ -149,6 +149,8 @@ async fn walk(r: &mut Runner, w: &World, password: &str) {
         .await;
     r.step("roster import XLSX (upsert, unchanged)", w.roster_xlsx())
         .await;
+    r.step("home: term status cards, grouped nav", w.home())
+        .await;
     r.step("follow -> Consent Card, Menu locked", w.follow())
         .await;
     r.step("accept Consent", w.consent()).await;

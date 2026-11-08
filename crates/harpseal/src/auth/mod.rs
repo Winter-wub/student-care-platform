@@ -34,7 +34,7 @@ pub(crate) use cookies::flash as flash_cookie;
 pub(crate) use cookies::{ct_eq, form_field, get as cookie};
 pub(crate) use csrf_body::{MULTIPART_LIMIT, over_limit};
 pub use guard::CurrentStaff;
-pub(crate) use guard::{AdminCx, Gate, NavItem, forbidden, guard, request_ctx};
+pub(crate) use guard::{AdminCx, Gate, NavItem, NavLink, forbidden, guard, request_ctx};
 pub(crate) use login::{login_form, login_submit, logout, password_form, password_submit};
 pub(crate) use pages::home;
 pub(crate) use role_seed::seed as seed_roles;

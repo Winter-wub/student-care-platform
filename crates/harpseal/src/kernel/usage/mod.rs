@@ -54,7 +54,14 @@ pub(crate) const FULL_PATH: &str = "/admin/usage";
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .messages(texts_package::DEFAULTS)
-        .back_office_page(VIEW, PATH, "kernel.usage.title", 85, get(page::page))
+        .back_office_page_in(
+            crate::NavGroup::Admin,
+            VIEW,
+            PATH,
+            "kernel.usage.title",
+            85,
+            get(page::page),
+        )
         .back_office(
             package_page::EDIT,
             package_page::PATH,

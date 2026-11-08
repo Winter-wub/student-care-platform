@@ -1,0 +1,93 @@
+
+/* Back-office shell (#123): skip link, grouped navigation, term status
+   home, technical details. Appended to ui.css (see `ui::CSS`). */
+
+/* Skip link: off screen until focused, then a Paper tab over the bar. */
+.skip {
+  position: absolute; left: 8px; top: -120px; z-index: 10;
+  display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 16px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 10px; font-weight: 600;
+}
+.skip:focus { top: 8px; outline: 3px solid var(--brand); outline-offset: 2px; }
+main:focus { outline: none; }
+
+/* The bar holds the letterhead and who is signed in; the email hides on
+   phones so the bar stays one row. */
+.bar { flex-wrap: nowrap; }
+.brand { min-width: 0; }
+.brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who { flex: none; }
+.who .link { min-height: var(--tap); }
+@media (max-width: 639px) { .who-email { display: none; } }
+
+/* Navigation: one <details>. Phones: a "เมนู" row naming the current page
+   that opens the groups. From 640 px: a side column. */
+.menu { background: var(--card); border-bottom: 1px solid var(--line); }
+.menu > summary {
+  display: flex; align-items: center; gap: 10px; min-height: var(--tap);
+  padding: 0 var(--gutter); font-weight: 600; cursor: pointer; list-style: none;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary .icon { flex: none; width: 20px; height: 20px; }
+.menu-here { color: var(--muted); font-weight: 400; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-here::before { content: "·"; margin-right: 10px; }
+.menu[open] > summary { border-bottom: 1px solid var(--line); }
+.menu > summary:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
+.nav { padding: 4px 8px 12px; }
+.nav ul { list-style: none; margin: 0; padding: 0; }
+.nav a {
+  display: flex; align-items: center; min-height: var(--tap); padding: 0 12px;
+  border-radius: 10px; color: var(--ink); text-decoration: none;
+}
+.nav a:hover { background: var(--bg); }
+.nav a:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
+.nav a[aria-current="page"] { background: #e8eef3; color: var(--brand); font-weight: 700; }
+.nav-group { margin: 16px 12px 4px; color: var(--muted); font-size: .875rem; font-weight: 600; }
+
+@media (min-width: 640px) {
+  .office-shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); align-items: start; }
+  .office-shell.no-nav { display: block; }
+  .menu {
+    position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+    border-bottom: 0; border-right: 1px solid var(--line); min-height: calc(100vh - 64px);
+  }
+  .nav { padding: 8px 8px 24px; }
+}
+/* Where the browser lets CSS show a closed <details>, the side column is
+   always open from 640 px and the button goes; elsewhere it stays. */
+@supports selector(::details-content) {
+  @media (min-width: 640px) {
+    .menu > summary { display: none; }
+    .menu::details-content { content-visibility: visible; }
+  }
+}
+
+/* Term status home (Attention Wash #fff8e6 on warn rows): one ledger of status cards, each a state, one fact
+   and one next action. Attention is a wash, never a shadow. */
+.term { padding: 0; overflow: hidden; }
+.status-list { list-style: none; margin: 0; padding: 0; }
+.status-card {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px 16px;
+  padding: var(--gutter); border-top: 1px solid var(--line);
+}
+.status-card:first-child { border-top: 0; }
+.status-card[data-state="warn"] { background: #fff8e6; }
+/* Not `.chip.warn`: the roster's `.warn` block would pad it. */
+.chip.caution { background: #fff3d6; color: #6b4a00; }
+.status-card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 1rem; }
+.status-card .fact { margin: 0; }
+.status-card .btn { justify-self: start; margin-top: 4px; }
+@media (min-width: 900px) {
+  .status-card { grid-template-columns: 14rem minmax(0, 1fr) auto; align-items: center; }
+  .status-card .btn { justify-self: end; margin-top: 0; }
+}
+
+/* "ข้อมูลทางเทคนิค": raw details behind a closed disclosure. */
+.tech { margin: 0 0 var(--gutter); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.tech > summary { padding: 0 var(--gutter); font-weight: 600; color: var(--muted); }
+.tech > summary:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; border-radius: var(--radius); }
+.tech-body { padding: 0 var(--gutter) var(--gutter); border-top: 1px solid var(--line); }
+.tech-body > :first-child { margin-top: 12px; }
+.tech-body .card { border: 0; padding: 0; margin: 12px 0 0; }

@@ -47,6 +47,11 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
         @for m in &this {
             (card(&s, &staff, m, &month, &rows, &days, &months, &cur))
         }
+        // Raw details (#123): where the Quota and the numbers come from.
+        (crate::ui::technical(&s, &staff, html! {
+            p class="code" { (t("kernel.usage.tech_config")) }
+            p class="code" { (t("kernel.usage.tech_source")) }
+        }))
     };
     respond(&s, &staff, StatusCode::OK, &title, body)
 }

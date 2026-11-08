@@ -3,6 +3,16 @@
 What Staff see under `/admin`, and the Permission each page needs. Back to
 the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
+`/admin` is the term status page (#123): status cards for the last roster
+import, announcements, the message quota and the last backup, plus any a
+Module adds, each shown only to Staff holding its Permission. The
+navigation groups the pages as **งานประจำ** (Students, the roster,
+announcements, Module pages) and **ผู้ดูแลระบบ** (Security Events, the audit
+log, Staff, Roles, texts, settings, usage, branding, backups). The
+administration pages keep raw details (cron, table names, IPs, request ids,
+Permission ids, config file names) behind a closed "ข้อมูลทางเทคนิค"
+disclosure. See [deployment.md](deployment.md) for a Module's group and card.
+
 `/admin/students` lists the roster (50 per page, HTMX search by name or code)
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
 recent Security Events. A Student with **missing data** (no email, an email that

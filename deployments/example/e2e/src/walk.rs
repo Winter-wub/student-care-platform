@@ -245,9 +245,40 @@ impl World {
     /// Usage, Security Events and the audit log answer 200.
     pub async fn admin_pages(&self) -> R<String> {
         for p in ["/admin/usage", "/admin/security", "/admin/audit"] {
-            self.c.get(p).await?.expect(200, p)?;
+            let r = self.c.get(p).await?.expect(200, p)?;
+            let tech = "<details class=\"tech\"><summary>ข้อมูลทางเทคนิค</summary>";
+            ensure(
+                p == "/admin/security" || r.body.contains(tech),
+                format!("{p} details"),
+            )?;
         }
-        Ok("usage, security, audit: 200".into())
+        Ok("usage, security, audit: 200, technical details closed".into())
+    }
+
+    /// The term status home (#123): the roster card in order after the
+    /// imports, grouped navigation with the current page and a skip link.
+    pub async fn home(&self) -> R<String> {
+        let home = self.c.get("/admin").await?.expect(200, "home")?;
+        let b = &home.body;
+        let roster = b
+            .split("<li class=\"status-card\"")
+            .find(|li| li.contains("<h2>รายชื่อนักศึกษา "))
+            .ok_or("no roster card")?;
+        ensure(
+            roster.starts_with(" data-state=\"ok\""),
+            "roster card in order",
+        )?;
+        ensure(
+            b.contains("id=\"nav-daily\"") && b.contains("id=\"nav-admin\""),
+            "groups",
+        )?;
+        ensure(
+            b.contains("<a href=\"/admin\" aria-current=\"page\">"),
+            "home is current",
+        )?;
+        ensure(b.contains("<a class=\"skip\" href=\"#main\">"), "skip link")?;
+        let cards = b.matches("<li class=\"status-card\"").count();
+        Ok(format!("{cards} status cards, roster ok, nav grouped"))
     }
 
     /// Branding (#114): a too-light colour is refused in Thai; a new name

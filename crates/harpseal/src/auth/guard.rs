@@ -26,6 +26,15 @@ pub(crate) struct NavItem {
     pub(crate) path: String,
     pub(crate) title_key: &'static str,
     pub(crate) order: u16,
+    pub(crate) group: crate::NavGroup,
+}
+
+/// One navigation link the Staff member may open (#123).
+#[derive(Debug, Clone)]
+pub(crate) struct NavLink {
+    pub(crate) label: String,
+    pub(crate) href: String,
+    pub(crate) group: crate::NavGroup,
 }
 
 /// What every back-office request needs: the page state and the
@@ -68,7 +77,9 @@ pub struct CurrentStaff {
     pub locale: Locale,
     permissions: Arc<[String]>,
     csrf: String,
-    pub(crate) nav: Arc<[(String, String)]>,
+    pub(crate) nav: Arc<[NavLink]>,
+    /// The request's path, for the navigation's `aria-current` (#123).
+    pub(crate) path: String,
     pub(crate) flash: Option<(bool, String)>,
     pub(crate) must_change_password: bool,
     /// The Quota banner for the `#usage-banner` slot (#26), if any.
@@ -88,8 +99,8 @@ impl CurrentStaff {
     pub fn csrf_field(&self) -> Markup {
         html! { input type="hidden" name=(CSRF_FIELD) value=(self.csrf); }
     }
-    /// Visible navigation: (title, href).
-    pub(crate) fn nav(&self) -> &[(String, String)] {
+    /// Visible navigation, grouped and sorted.
+    pub(crate) fn nav(&self) -> &[NavLink] {
         &self.nav
     }
 }
@@ -200,13 +211,15 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     let forbidden_permission = gate.permission.filter(|p| !held(p));
     // A path is listed once, under the first Permission held that shows
     // it (the Module settings page has one entry per Permission, #75).
-    let mut nav: Vec<(String, String)> = Vec::new();
+    let mut nav: Vec<NavLink> = Vec::new();
     for n in cx.nav.iter().filter(|n| held(n.permission)) {
-        if !nav.iter().any(|(_, p)| *p == n.path) {
-            nav.push((state.catalog.t(&live.locale, n.title_key), n.path.clone()));
+        if !nav.iter().any(|l| l.href == n.path) {
+            let label = state.catalog.t(&live.locale, n.title_key);
+            let (href, group) = (n.path.clone(), n.group);
+            nav.push(NavLink { label, href, group });
         }
     }
-    let nav: Arc<[(String, String)]> = nav.into();
+    let nav: Arc<[NavLink]> = nav.into();
     let flash = cookies::read_flash(req.headers())
         .map(|(ok, key)| (ok, state.catalog.t(&live.locale, &key)));
     let had_flash = cookies::get(req.headers(), FLASH_COOKIE).is_some();
@@ -224,6 +237,7 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         permissions,
         csrf,
         nav,
+        path: req.uri().path().to_string(),
         flash,
         usage_banner,
     };

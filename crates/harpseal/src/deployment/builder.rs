@@ -13,7 +13,6 @@ use crate::config::DeploymentConfig;
 use crate::error::{BuildError, Part};
 use crate::kernel::Kernel;
 use crate::manifest::{Catalog, MenuEntrySpec, Permission};
-use crate::module::NavSpec;
 use crate::{Channel, Locale, Module, ModuleRegistrar, Services, VerificationMethod};
 
 /// Assembles a [`Deployment`]: config, the runtime's [`Services`], Channels,
@@ -114,11 +113,12 @@ impl DeploymentBuilder {
         config.apply_texts(&mut catalog);
         check_menu_texts(&collected.menu, &catalog)?;
         check_menu_keys(&catalog)?;
-        check_nav(&collected.nav, &catalog)?;
+        checks::nav(&collected.nav, &catalog)?;
         crate::module::check_settings(&collected.settings, &collected.permissions, &catalog)?;
         let mut nav = collected.nav;
         nav.extend(crate::kernel::admin::settings_nav(&collected.settings));
-        let nav = nav_items(nav);
+        let nav = checks::nav_items(nav);
+        let status = checks::status_cards(collected.status, &collected.permissions)?;
         let public: Vec<_> = collected.public.iter().map(|(m, p, _)| (*m, *p)).collect();
         let app_links = crate::kernel::app::check_links(collected.app_links, &public, &catalog)?;
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();
@@ -146,6 +146,7 @@ impl DeploymentBuilder {
                 uploads: collected.uploads,
                 public: collected.public,
                 nav,
+                status,
                 app_links,
                 settings: collected.settings.into(),
             }),
@@ -172,9 +173,10 @@ struct Collected {
     routes: Routes,
     mini_app_users: Vec<&'static str>,
     catalog: Catalog,
-    nav: Vec<(&'static str, NavSpec)>,
+    nav: Vec<(&'static str, crate::module::NavSpec)>,
     app_links: Vec<(&'static str, crate::module::AppLinkSpec)>,
     settings: Vec<crate::module::SettingSpec>,
+    status: Vec<(&'static str, crate::module::StatusSpec)>,
 }
 
 impl Default for Collected {
@@ -196,6 +198,7 @@ impl Default for Collected {
             nav: Vec::new(),
             app_links: Vec::new(),
             settings: Vec::new(),
+            status: Vec::new(),
         }
     }
 }
@@ -248,6 +251,8 @@ impl Collected {
         }
         self.menu.extend(r.menu.into_iter().map(|e| (module, e)));
         self.nav.extend(r.nav.into_iter().map(|n| (module, n)));
+        self.status
+            .extend(r.status.into_iter().map(|c| (module, c)));
         self.app_links
             .extend(r.app_links.into_iter().map(|l| (module, l)));
         crate::module::absorb_settings(&mut self.settings, r.settings)?;
@@ -352,38 +357,4 @@ fn check_menu_keys(catalog: &Catalog) -> Result<(), BuildError> {
         seen.push((key, locale));
     }
     Ok(())
-}
-
-/// Navigation entries: a known title in the default Locale, no parameters.
-fn check_nav(nav: &[(&'static str, NavSpec)], catalog: &Catalog) -> Result<(), BuildError> {
-    let locale = catalog.default_locale();
-    for (module, n) in nav {
-        if n.path.contains('{') {
-            return Err(BuildError::InvalidRoute {
-                module,
-                path: n.path.into(),
-            });
-        }
-        if !catalog.has(&locale, n.title_key) {
-            return Err(BuildError::UnknownText {
-                source: format!("module `{module}`"),
-                key: n.title_key.into(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::NavItem> {
-    let mut items: Vec<crate::auth::NavItem> = nav
-        .into_iter()
-        .map(|(_, n)| crate::auth::NavItem {
-            permission: n.permission,
-            path: format!("{}{}", super::routes::ADMIN, n.path),
-            title_key: n.title_key,
-            order: n.order,
-        })
-        .collect();
-    items.sort_by_key(|n| n.order);
-    items
 }

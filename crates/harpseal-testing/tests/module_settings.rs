@@ -136,13 +136,13 @@ const AUDITS: &str = "SELECT COUNT(*) AS n FROM audit_log WHERE action = 'settin
 async fn the_settings_permission_edits_and_each_change_is_audited() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Treasurer").await;
-    // Listed once in the navigation and once as a tile, even for Staff
-    // holding both Permissions that show it.
+    // Listed once in the navigation (the home has no tiles since #123),
+    // even for Staff holding both Permissions that show it.
     for staff in [&b, &signed_in(&h, &app, "Bursar").await] {
         let home = staff.get("/admin").await.body;
         assert_eq!(
             home.matches("href=\"/admin/settings\"").count(),
-            2,
+            1,
             "{home}"
         );
     }

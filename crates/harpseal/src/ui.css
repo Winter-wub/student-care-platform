@@ -48,9 +48,6 @@ a { color: var(--brand); }
 .brand { font-weight: 700; margin-right: auto; min-height: var(--tap); display: flex; align-items: center; }
 .brand { gap: 10px; }
 .brand .logo { height: 32px; width: auto; border-radius: 6px; background: #fff; }
-.bar .nav { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
-.bar .nav a { padding: 12px 10px; border-radius: 8px; min-height: var(--tap); }
-.bar .nav a:hover { background: rgba(255,255,255,.12); }
 .who { display: flex; align-items: center; gap: 8px; margin: 0; font-size: .875rem; opacity: .9; }
 .who .link { color: var(--brand-ink); }
 
@@ -95,13 +92,6 @@ button.link { background: none; border: 0; padding: 0 4px; min-width: 0; text-de
 @media (min-width: 900px) { .cols { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
 
 .narrow { max-width: 440px; margin-left: auto; margin-right: auto; }
-
-/* Home tiles */
-.tiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
-.tile { display: flex; align-items: center; min-height: 72px; padding: var(--gutter);
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  font-weight: 600; text-decoration: none; }
 
 /* table.rows: stacked cards below 900 px, a real table from 900 px.
    Each td carries data-label, shown as its caption on phones. */

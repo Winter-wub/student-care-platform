@@ -124,7 +124,10 @@ pub fn banner(body: &str) -> &str {
         .find("<div id=\"usage-banner\">")
         .expect("a banner slot");
     let rest = &body[at..];
-    let end = rest.find("<main>").expect("main after the banner");
+    // The navigation and `main` follow in the shell (#123).
+    let end = rest
+        .find("<div class=\"office-shell")
+        .expect("the shell after the banner");
     &rest[..end]
 }
 
