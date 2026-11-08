@@ -6,7 +6,7 @@ use harpseal::render::{
     MENU_MORE_ACTION, RenderCx, char_len, file_link, label_or_host, link_unavailable,
     mini_app_unavailable, split_text, truncate,
 };
-use harpseal::{Attachment, Button, Card, Choices, Menu, Message};
+use harpseal::{Attachment, Button, Card, CardImage, Choices, Menu, Message};
 use serde_json::{Value, json};
 
 /// <https://developers.line.biz/en/reference/messaging-api/#text-message>
@@ -44,6 +44,10 @@ pub const CHAT_BAR_TEXT_MAX: usize = 14;
 /// Ours, not LINE's: a Card body longer than this is sent as Text first, so
 /// one bubble stays far below `BUBBLE_JSON_MAX` (Thai is 3 bytes per char).
 pub const FLEX_BODY_SOFT_MAX: usize = 2000;
+/// The hero image's aspect ratio (#109): LINE's default "20:13" with
+/// `aspectMode: cover`, so every announcement Card has the same shape
+/// (<https://developers.line.biz/en/reference/messaging-api/#f-image>).
+pub const HERO_ASPECT_RATIO: &str = "20:13";
 
 // The invariant that makes "postback data > 300" impossible.
 const _: () = assert!(harpseal::ActionId::MAX_BYTES <= POSTBACK_DATA_MAX);
@@ -73,18 +77,38 @@ fn flex(alt: &str, contents: Value) -> Value {
 }
 
 fn card(c: &Card, cx: &RenderCx) -> Vec<Value> {
+    let image = c.image.as_ref();
     if char_len(&c.body) <= FLEX_BODY_SOFT_MAX {
-        return vec![flex(&c.title, bubble(&c.title, &c.body, &c.buttons, cx))];
+        return vec![flex(
+            &c.title,
+            bubble(&c.title, &c.body, &c.buttons, image, cx),
+        )];
     }
     // Long body: the full text goes first as Text, the bubble keeps title + buttons.
     let mut out = texts(&format!("{}\n\n{}", c.title, c.body));
-    if !c.buttons.is_empty() {
-        out.push(flex(&c.title, bubble(&c.title, "", &c.buttons, cx)));
+    if !c.buttons.is_empty() || image.is_some() {
+        out.push(flex(&c.title, bubble(&c.title, "", &c.buttons, image, cx)));
     }
     out
 }
 
-fn bubble(title: &str, body: &str, buttons: &[Button], cx: &RenderCx) -> Value {
+/// A Card image as the bubble's hero (#109): full width, 20:13, cover.
+/// A URL [`CardImage::safe_url`] refuses leaves the bubble without one.
+fn hero(image: Option<&CardImage>) -> Option<Value> {
+    let url = image?.safe_url()?;
+    Some(json!({
+        "type": "image", "url": url, "size": "full",
+        "aspectRatio": HERO_ASPECT_RATIO, "aspectMode": "cover",
+    }))
+}
+
+fn bubble(
+    title: &str,
+    body: &str,
+    buttons: &[Button],
+    image: Option<&CardImage>,
+    cx: &RenderCx,
+) -> Value {
     let mut contents = Vec::new();
     if !title.is_empty() {
         contents.push(
@@ -108,6 +132,9 @@ fn bubble(title: &str, body: &str, buttons: &[Button], cx: &RenderCx) -> Value {
         "type": "bubble",
         "body": { "type": "box", "layout": "vertical", "spacing": "md", "contents": contents },
     });
+    if let Some(h) = hero(image) {
+        v["hero"] = h;
+    }
     if !footer.is_empty() {
         v["footer"] =
             json!({ "type": "box", "layout": "vertical", "spacing": "sm", "contents": footer });
@@ -165,6 +192,7 @@ fn carousels(cards: &[Card], cx: &RenderCx) -> Vec<Value> {
                 &c.title,
                 &truncate(&c.body, FLEX_BODY_SOFT_MAX),
                 &c.buttons,
+                c.image.as_ref(),
                 cx,
             )
         })
@@ -215,6 +243,7 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
     if !fits {
         // Too many or too long for quick reply: a bubble shows every option.
         let as_card = Card {
+            image: None,
             title: String::new(),
             body: c.text.clone(),
             buttons: c.options.clone(),

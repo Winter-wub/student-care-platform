@@ -79,6 +79,7 @@ async fn chunk(cx: JobContext, job: Job, op: Op) -> Result<()> {
     let s = &cx.services;
     let rows = chunk_rows(&cx, &id, &p, op).await?;
     let texts = store::texts(s, &id).await?;
+    let images = super::files::list(s, &id, super::files::IMAGE).await?;
     let changed = changed(&p);
     let mut items = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
@@ -105,8 +106,10 @@ async fn chunk(cx: JobContext, job: Job, op: Op) -> Result<()> {
         let result = match (op, editor, deleter) {
             (Op::Edit, Some(editor), _) => {
                 let ack = row.require_ack && !it.acked;
+                let d = &cx.deployment;
+                let public = d.config().public_url.as_ref();
                 let card =
-                    super::chat::card(cx.deployment.catalog(), &it.locale, &id, &texts, ack)?;
+                    super::chat::card(d.catalog(), &it.locale, &id, &texts, ack, &images, public)?;
                 let msg = Message::Card(card);
                 editor
                     .edit(&it.to, &it.pid, &msg, &it.locale)

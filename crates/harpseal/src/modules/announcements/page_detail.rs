@@ -55,9 +55,10 @@ pub(super) async fn page(
             stats(&s.deployment, &id).await?,
             deliveries(svc, &id, filter, page).await?,
             super::maint::in_progress(svc, &id).await?,
+            super::files::list(svc, &id, super::files::IMAGE).await?,
         ))
     };
-    let (texts, st, list, busy) = match loaded.await {
+    let (texts, st, list, busy, images) = match loaded.await {
         Ok(x) => x,
         Err(e) => return v.error(&e),
     };
@@ -76,6 +77,7 @@ pub(super) async fn page(
             (hand_picked(&v, &row))
             (actions(&v, &row))
             (texts_card(&texts))
+            (images_card(&v, &images))
             (counts(&v, &st))
             (fragment)
         };
@@ -183,6 +185,28 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
                 (post_button(v, row, "retract", "announcements.action.retract", true))
             }
             a class="btn secondary" href="/admin/announcements" { (v.t("announcements.page.back")) }
+        }
+    }
+}
+
+/// The saved images (#109), through the back-office route: Staff see them
+/// whatever the status (a draft, a retracted one).
+fn images_card(v: &View<'_>, images: &[super::files::Stored]) -> Markup {
+    let label = v.t("announcements.images.slot");
+    html! {
+        @if !images.is_empty() {
+            div class="card" {
+                p class="muted" { (v.t("announcements.images.legend")) }
+                @for f in images {
+                    figure {
+                        (f.img(true).markup(&format!("{label} {}", f.n)))
+                        figcaption class="muted" {
+                            (label) " " (f.n) " · ![…](image:" (f.n) ") · "
+                            (f.size_bytes / 1024) " KB"
+                        }
+                    }
+                }
+            }
         }
     }
 }

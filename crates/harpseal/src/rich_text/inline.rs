@@ -22,6 +22,14 @@ pub enum Inline {
         /// The `https:` URL ([`crate::render::link_url`] holds).
         url: String,
     },
+    /// `![alt](image:N)` (#109): the image in slot `n` (1 to 9) of the
+    /// body's owner, shown in place where one exists, else nothing.
+    Image {
+        /// The alt text, without invisible characters.
+        alt: String,
+        /// The slot.
+        n: u8,
+    },
 }
 
 /// What may open inside the current piece: a kind never nests in itself,
@@ -84,6 +92,15 @@ fn parse_with(s: &str, allow: Allow) -> Vec<Inline> {
             continue;
         }
         if allow.link
+            && ch == '!'
+            && let Some((alt, n, end)) = scan.image(i)
+        {
+            flush(&mut text, &mut out);
+            out.push(Inline::Image { alt, n });
+            i = end;
+            continue;
+        }
+        if allow.link
             && ch == '['
             && let Some((t, url, end)) = scan.bracket_link(i)
         {
@@ -128,6 +145,7 @@ pub(super) fn plain(pieces: &[Inline]) -> String {
             Inline::Text(t) => out.push_str(t),
             Inline::Bold(c) | Inline::Italic(c) => out.push_str(&plain(c)),
             Inline::Link { text, .. } => out.push_str(text),
+            Inline::Image { .. } => {}
         }
     }
     out
@@ -142,9 +160,33 @@ pub(super) fn links(pieces: &[Inline], out: &mut Vec<Link>) {
                 text: text.clone(),
                 url: url.clone(),
             }),
-            Inline::Text(_) => {}
+            Inline::Text(_) | Inline::Image { .. } => {}
         }
     }
+}
+
+/// Appends the image slots of `pieces` to `out`, in order.
+pub(super) fn images(pieces: &[Inline], out: &mut Vec<u8>) {
+    for p in pieces {
+        match p {
+            Inline::Bold(c) | Inline::Italic(c) => images(c, out),
+            Inline::Image { n, .. } => out.push(*n),
+            Inline::Text(_) | Inline::Link { .. } => {}
+        }
+    }
+}
+
+/// A line holding images and nothing else but spaces: chat drops it whole.
+pub(super) fn only_images(pieces: &[Inline]) -> bool {
+    let mut any = false;
+    for p in pieces {
+        match p {
+            Inline::Image { .. } => any = true,
+            Inline::Text(t) if t.trim().is_empty() => {}
+            _ => return false,
+        }
+    }
+    any
 }
 
 /// Only text, no markup.

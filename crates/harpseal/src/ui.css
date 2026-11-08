@@ -264,6 +264,10 @@ form.inline { display: inline-flex; margin: 0; }
 .app-body a { color: var(--brand); text-decoration: underline; }
 .md-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .md-toolbar button { min-width: var(--tap); padding: 4px 10px; }
+.app-img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: var(--radius); }
+.app-images { margin-top: 8px; }
+.image-slot .app-img { max-width: 240px; }
+.announcement-images .hint { font-weight: 600; }
 .mini-preview { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-top: 8px; background: #fff; }
 .app-ack { margin: 12px 0 0; }
 .app-ack button { width: 100%; }

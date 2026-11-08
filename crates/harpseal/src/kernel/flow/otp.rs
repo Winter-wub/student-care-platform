@@ -383,6 +383,7 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
     t.set_menu(Some(&student.locale)).await?;
     let body = t.tf("kernel.link.success", &[("name", &student.name)]);
     t.out.push(Message::Card(Card {
+        image: None,
         title: t.t("kernel.link.success_title"),
         body,
         buttons: Vec::new(),

@@ -8,6 +8,7 @@ use serde_json::json;
 use super::deliver::{deliver_key, parent_job};
 pub(crate) use super::draft::Draft;
 use super::draft::{changed_locales, text_rows};
+use super::files::{self, IMAGE};
 use super::gate::{GATED, JobReq, bump, cas, load_err};
 use super::notice::notice_key;
 use super::store;
@@ -55,7 +56,12 @@ pub(crate) async fn create(
         .bind(now),
     ];
     stmts.extend(text_rows(&id, draft, None));
-    s.db.batch(stmts).await?;
+    let staged = files::stage(s, &id, &draft.images, &[]).await?;
+    stmts.extend(staged.statements(&id, None, now));
+    if let Err(e) = s.db.batch(stmts).await {
+        staged.discard(s).await;
+        return Err(e);
+    }
     Ok(id)
 }
 
@@ -92,17 +98,24 @@ pub(crate) async fn update(
             .ok_or_else(|| Error::Invalid("send_at".into()))?;
         jobs.push(parent_job(id, row.round, next, Some(at)));
     }
-    // Only Cards whose visible text changed are edited (and notified).
+    // Only Cards whose visible text changed are edited (and notified);
+    // a change of images edits every Card (its image may change, #109)
+    // but notifies no one: the notice follows the text alone.
     let locales = if row.status == "sent" {
         changed_locales(&store::texts(s, id).await?, draft)
     } else {
         Vec::new()
     };
-    if !locales.is_empty() {
+    let edit_locales = if row.status == "sent" && !draft.images.is_empty() {
+        draft.texts.iter().map(|(l, _, _)| l.clone()).collect()
+    } else {
+        locales.clone()
+    };
+    if !edit_locales.is_empty() {
         jobs.push(JobReq {
             key: format!("{NAME}:{id}:edit:v{next}"),
             kind: EDIT,
-            payload: json!({ "id": id, "version": next, "locales": locales }),
+            payload: json!({ "id": id, "version": next, "locales": edit_locales }),
             run_at: None,
         });
     }
@@ -119,6 +132,8 @@ pub(crate) async fn update(
             run_at: None,
         });
     }
+    let existing = files::list(s, id, IMAGE).await?;
+    let staged = files::stage(s, id, &draft.images, &existing).await?;
     let old_key = deliver_key(id, row.round, version);
     let audience = serde_json::to_string(&draft.audience).unwrap_or_else(|_| "{}".into());
     let changes = |gate: &str| {
@@ -163,6 +178,7 @@ pub(crate) async fn update(
             .bind(gate),
         );
         v.extend(text_rows(id, draft, Some(gate)));
+        v.extend(staged.statements(id, Some(gate), now));
         if notify {
             v.push(
                 Statement::new(format!(
@@ -176,7 +192,7 @@ pub(crate) async fn update(
         v
     };
     let from: &[&str] = &["draft", "scheduled", "sent"];
-    cas(
+    let done = cas(
         d,
         &row,
         from,
@@ -187,7 +203,12 @@ pub(crate) async fn update(
         changes,
         jobs,
     )
-    .await
+    .await;
+    match &done {
+        Ok(()) => staged.finish(s).await,
+        Err(_) => staged.discard(s).await,
+    }
+    done
 }
 
 /// Confirms a draft: scheduled for its `send_at` when that is still

@@ -79,6 +79,7 @@ async fn a_text_is_one_plain_send_message_with_the_message_id() {
 #[tokio::test]
 async fn a_card_is_escaped_html_with_a_keyboard() {
     let card = Message::Card(Card {
+        image: None,
         title: "ปิด <อาคาร> & ลานจอด".into(),
         body: "วันที่ 5 > 4".into(),
         buttons: vec![Button::action("รับทราบ", id("news.ack.1042"))],

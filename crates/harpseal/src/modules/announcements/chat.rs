@@ -1,10 +1,12 @@
 //! The chat side: the announcement Card, the ack Action
 //! (`announcements.ack.<id>`) and the "ข่าวล่าสุด" Menu entry.
 
+use super::files::{Stored, hero};
 use super::store::{self, Summary, Texts};
 use super::{ACK_PREFIX, MINI_APP_PATH};
+use crate::config::PublicUrl;
 use crate::manifest::Catalog;
-use crate::message::{ActionId, Button, Card, CardList, Locale, Message};
+use crate::message::{ActionId, Button, Card, CardImage, CardList, Locale, Message};
 use crate::module::ActionContext;
 use crate::port_types::Statement;
 use crate::{Deployment, Result, Services};
@@ -26,13 +28,17 @@ pub(crate) const URL_BUTTONS: usize = 2;
 /// body as plain text ([`crate::rich_text`]: markup removed, link text
 /// kept), "รับทราบ" when `ack`, "เปิดดูรายละเอียด", then a URL button for
 /// each of the body's first [`URL_BUTTONS`] distinct links, labelled with
-/// the link text (each adapter cuts it to its limit).
+/// the link text (each adapter cuts it to its limit). With `public_url`
+/// set, the image is the first one the body places, else the lowest slot
+/// (#109; [`super::files::hero`]); without it, none.
 pub(crate) fn card(
     catalog: &Catalog,
     locale: &Locale,
     id: &str,
     texts: &Texts,
     ack: bool,
+    images: &[Stored],
+    public_url: Option<&PublicUrl>,
 ) -> Result<Card> {
     let (title, body) = texts.pick(locale);
     let doc = crate::rich_text::parse(body);
@@ -50,7 +56,12 @@ pub(crate) fn card(
     for link in doc.first_links(URL_BUTTONS) {
         buttons.push(Button::url(link.text, link.url)?);
     }
+    let image = match (public_url, hero(images, body)) {
+        (Some(base), Some(f)) => Some(CardImage::new(base.join(&f.public_path()), title)?),
+        _ => None,
+    };
     Ok(Card {
+        image,
         title: title.to_string(),
         body: doc.plain(),
         buttons,
@@ -200,6 +211,7 @@ pub(crate) async fn on_latest(cx: ActionContext) -> Result<Vec<Message>> {
             detail_path(&a.id),
         ));
         cards.push(Card {
+            image: None,
             title: a.title.clone(),
             // Plain text (#108): markup removed, link text kept.
             body: crate::rich_text::plain(&a.body),

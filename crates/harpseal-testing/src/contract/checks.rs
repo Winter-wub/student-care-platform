@@ -16,6 +16,7 @@ pub(super) fn id(s: &str) -> ActionId {
 
 fn card(n: usize) -> Card {
     Card {
+        image: None,
         title: format!("ประกาศ {n}"),
         body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
         buttons: vec![Button::action("รับทราบ", id(&format!("contract.card.{n}")))],

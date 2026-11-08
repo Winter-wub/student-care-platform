@@ -1,4 +1,5 @@
 use super::*;
+use crate::rich_text::Img;
 use maud::html as m;
 
 fn t(s: &str) -> Inline {
@@ -290,6 +291,11 @@ fn hostile_lines_parse_in_linear_steps() {
         "https://a,",
         "https://seal-bay.invalid/)",
         "]([",
+        "![",
+        "![x](image:",
+        "![x](image:1",
+        "![](image:1)",
+        "!![x](image:0)",
     ];
     for p in patterns {
         for size in [2_000, 16_000] {
@@ -319,4 +325,67 @@ fn a_blank_link_text_falls_back_to_the_host() {
     assert_eq!(line(&s), vec![link("ตารางสอบ ใหม่", url)]);
     let doc = parse(&format!("[\u{200B}]({url})"));
     assert_eq!(doc.first_links(2)[0].text, "reg.seal-bay.invalid");
+}
+
+fn img(alt: &str, n: u8) -> Inline {
+    Inline::Image { alt: alt.into(), n }
+}
+
+#[test]
+fn images_are_placed_by_slot() {
+    assert_eq!(line("![แผนที่ห้อง](image:2)"), vec![img("แผนที่ห้อง", 2)]);
+    assert_eq!(
+        line("ดู ![](image:1) แล้ว **![b](image:3)**"),
+        vec![
+            t("ดู "),
+            img("", 1),
+            t(" แล้ว "),
+            Inline::Bold(vec![img("b", 3)])
+        ]
+    );
+    let doc = parse("![a](image:2)\nข้อความ ![b](image:1)\n- ![c](image:4)");
+    assert_eq!(doc.images(), vec![2, 1, 4]);
+    // Chat: an image line goes away whole; text around an image stays.
+    assert_eq!(doc.plain(), "ข้อความ \n- ");
+    assert!(!doc.is_plain());
+    // Not an image: no slot 0, two digits, other schemes, spaces.
+    for s in [
+        "![x](image:0)",
+        "![x](image:10)",
+        "![x](image: 1)",
+        "![x](IMAGE:1)",
+        "![x](data:image/png;base64,AAAA)",
+        "![x](image:1",
+        "![a[b](image:1)",
+        "! [x](image:1)",
+    ] {
+        assert!(parse(s).images().is_empty(), "{s}");
+        assert_eq!(plain(s), s, "{s}");
+    }
+    // An image never comes from a URL: this is "!" and a plain link.
+    let remote = "![x](https://seal-bay.invalid/a.png)";
+    assert!(parse(remote).images().is_empty());
+    assert_eq!(plain(remote), "!x");
+}
+
+#[test]
+fn hostile_images_stay_escaped() {
+    let s = "![\"><script>alert(1)</script>\u{202E}](image:1) [x](javascript:1)";
+    let src = |n: u8| (n == 1).then(|| Img::new("/announcements/files/abc", Some((20, 13))));
+    let out = parse(s).html_with(&src).into_string();
+    assert!(!out.contains("<script>"), "{out}");
+    assert!(
+        out.contains(
+            r#"<img class="app-img" src="/announcements/files/abc" alt="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;" loading="lazy" decoding="async" width="20" height="13">"#
+        ),
+        "{out}"
+    );
+    // No image for the slot: nothing shown, and no `src` ever comes from
+    // the body.
+    let none = parse("![x](image:3)").html_with(&src).into_string();
+    assert_eq!(none, "<p class=\"app-body\"></p>");
+    assert_eq!(
+        parse("![x](image:1)").html().into_string(),
+        "<p class=\"app-body\"></p>"
+    );
 }

@@ -210,6 +210,7 @@ impl Fields {
             expires_at,
             send_at,
             notify: self.notify,
+            images: Default::default(),
         })
     }
 }

@@ -136,6 +136,7 @@ fn renders_every_fixture_within_limits_and_matches_its_snapshot() {
 #[test]
 fn card_is_bold_title_with_escaped_html() {
     let card = harpseal::Message::Card(harpseal::Card {
+        image: None,
         title: "A <b> & co".into(),
         body: "x < y".into(),
         buttons: vec![],

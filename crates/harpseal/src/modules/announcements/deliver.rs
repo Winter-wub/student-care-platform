@@ -265,6 +265,7 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
         )
         .await?;
     let texts = store::texts(s, &id).await?;
+    let images = super::files::list(s, &id, super::files::IMAGE).await?;
     // One Card per (Locale, already acknowledged): no [รับทราบ] for those.
     let mut groups: BTreeMap<(Locale, bool), Vec<Pending>> = BTreeMap::new();
     let mut blocked = Vec::new();
@@ -294,7 +295,8 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
             break;
         }
         let ack = row.require_ack && !acked;
-        let card = super::chat::card(d.catalog(), &locale, &id, &texts, ack)?;
+        let public = d.config().public_url.as_ref();
+        let card = super::chat::card(d.catalog(), &locale, &id, &texts, ack, &images, public)?;
         let to: Vec<ChannelAccountId> = group.iter().map(|g| g.account.clone()).collect();
         let key = format!(
             "{}/{channel}/{offset}/{}/{}",

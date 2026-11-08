@@ -24,7 +24,8 @@ pub mod seed;
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
     ActionContext, ActionId, BuildError, CatalogEntry, Deployment, DeploymentBuilder,
-    DeploymentConfig, EmailOtp, MenuEntrySpec, Message, Module, ModuleRegistrar, Services,
+    DeploymentConfig, EmailOtp, MenuEntrySpec, Message, Module, ModuleRegistrar, PublicUrl,
+    Services,
 };
 use harpseal_channel_fake::FakeChannel;
 use harpseal_channel_line::{LineChannel, LineConfig};
@@ -47,11 +48,15 @@ pub struct Secrets {
     pub telegram: TelegramConfig,
     /// Fake Channel webhook secret (demos and e2e).
     pub fake_secret: String,
+    /// `HARPSEAL_PUBLIC_URL`: the https origin the Deployment is served at
+    /// (#109), over `public_url` in `deployment.toml`; empty keeps the TOML.
+    /// Not a secret, read the same way so both runtimes see it.
+    pub public_url: String,
 }
 
 impl Secrets {
     /// Every variable [`Secrets::from_lookup`] reads.
-    pub const VARS: [&'static str; 7] = [
+    pub const VARS: [&'static str; 8] = [
         "LINE_CHANNEL_SECRET",
         "LINE_ACCESS_TOKEN",
         "LINE_LIFF_ID",
@@ -59,6 +64,7 @@ impl Secrets {
         "TELEGRAM_WEBHOOK_SECRET",
         "TELEGRAM_WEB_APP_URL",
         "FAKE_SECRET",
+        "HARPSEAL_PUBLIC_URL",
     ];
 
     /// Reads [`Secrets::VARS`] through `get`: the process environment on
@@ -83,6 +89,7 @@ impl Secrets {
                 v("TELEGRAM_WEB_APP_URL"),
             ),
             fake_secret: v("FAKE_SECRET"),
+            public_url: v("HARPSEAL_PUBLIC_URL"),
         }
     }
 }
@@ -135,7 +142,11 @@ impl Module for Contact {
 /// Everything but the Fake Channel: config, Services, LINE, Telegram,
 /// email OTP and the Modules. Tests add the harness's Fake Channel.
 pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
-    let config = config();
+    let mut config = config();
+    // `deployment` refuses a value that is not an https origin.
+    if let Ok(url) = PublicUrl::new(&secrets.public_url) {
+        config.public_url = Some(url);
+    }
     let otp = EmailOtp::new(config.otp.clone());
     let http = services.http.clone();
     let clock = services.clock.clone();
@@ -164,6 +175,8 @@ pub enum StartError {
     MenuImages(String),
     /// The builder refused the configuration.
     Build(BuildError),
+    /// `HARPSEAL_PUBLIC_URL` is set but not an https origin.
+    PublicUrl(harpseal::Error),
 }
 
 impl std::fmt::Display for StartError {
@@ -172,6 +185,7 @@ impl std::fmt::Display for StartError {
             StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
             StartError::MenuImages(m) => write!(f, "LINE rich menu images: {m}"),
             StartError::Build(e) => write!(f, "{e}"),
+            StartError::PublicUrl(e) => write!(f, "HARPSEAL_PUBLIC_URL: {e}"),
         }
     }
 }
@@ -191,6 +205,9 @@ pub fn deployment_with_fake(
     secrets: Secrets,
 ) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
+    if !secrets.public_url.trim().is_empty() {
+        PublicUrl::new(&secrets.public_url).map_err(StartError::PublicUrl)?;
+    }
     // With real credentials, refuse now rather than at the first Inbound.
     secrets.line.check_menu_images().map_err(|e| {
         let why = match e {

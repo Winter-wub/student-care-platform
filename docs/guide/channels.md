@@ -37,6 +37,22 @@ label left blank becomes the URL's host, so no message is refused for an
 empty label. Rules in
 `docs/adr/0003-semantic-message-model.md`.
 
+## Card images
+
+`Card::image` (#109, a `CardImage`: an `https:` URL and an alt text) puts an
+image at the top of a Card; `CardImage::new` refuses a URL that fails
+`link_url`, and every adapter checks it again and leaves a refused image
+out (the Fake Channel fails the send). LINE renders it as the Flex
+bubble's `hero` (`size: full`, `aspectRatio: 20:13`, `aspectMode: cover`):
+one message, no extra quota. Telegram sets the first text message's
+`link_preview_options` (`url`, `prefer_large_media`, `show_above_text`), so
+the image shows as a large preview above the text and the Card stays one
+message that `editMessageText` replaces; Telegram draws the preview itself
+and may show none. The platforms fetch the image without a session, so
+the Deployment needs `public_url` (`docs/guide/self-hosting.md`); without it
+Announcement Cards carry no image. Rules in
+`docs/adr/0003-semantic-message-model.md`.
+
 ## Mini App (LIFF and Telegram Web App)
 
 The Announcements Module sends Mini App buttons, so a Deployment with it
@@ -106,7 +122,9 @@ Create a LINE Official Account with a Messaging API channel (channel
 secret and a long-lived access token) and a LIFF app. Set the webhook URL to
 `https://<host>/webhook/line`. Secrets: `LINE_CHANNEL_SECRET`,
 `LINE_ACCESS_TOKEN`, `LINE_LIFF_ID`. The adapter uploads the rich menu images
-when it sets a Menu; you draw them (next section).
+when it sets a Menu; you draw them (next section). For images on
+announcement Cards (the Flex hero), set `public_url` to the Deployment's
+https origin: LINE fetches each image from there.
 
 ### Rich menu images
 

@@ -28,6 +28,8 @@ pub struct StudentAnnouncement {
     /// Its `expires_at` has passed (#77): a Student gets the "no longer
     /// available" view, without its text.
     pub expired: bool,
+    /// Its images (#109), shown by [`StudentAnnouncement::body_html`].
+    pub(crate) images: Vec<super::files::Stored>,
 }
 
 impl StudentAnnouncement {
@@ -35,6 +37,12 @@ impl StudentAnnouncement {
     /// retracted or expired).
     pub fn needs_ack(&self) -> bool {
         self.require_ack && self.acked_at.is_none() && !self.unavailable()
+    }
+
+    /// The body as the Mini App shows it: formatted, each image in place
+    /// on its public path, then the images not placed (alt `"{label} N"`).
+    pub fn body_html(&self, label: &str) -> maud::Markup {
+        super::files::body_html(&self.body, &self.images, false, label)
     }
 
     /// Retracted or expired: a Student no longer sees its text nor
@@ -87,7 +95,7 @@ pub async fn list_for_student(
     let rows = s.db.query(stmt).await?;
     let mut out = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {
-        out.push(read(&rows, i));
+        out.push(with_images(s, read(&rows, i)).await?);
     }
     Ok(out)
 }
@@ -120,7 +128,18 @@ pub async fn detail_for_student(
     if rows.is_empty() {
         return Ok(None);
     }
-    Ok(Some(read(&rows, 0)))
+    Ok(Some(with_images(s, read(&rows, 0)).await?))
+}
+
+/// `a` with its images, unless it is no longer shown.
+async fn with_images(
+    s: &crate::Services,
+    mut a: StudentAnnouncement,
+) -> Result<StudentAnnouncement> {
+    if !a.unavailable() {
+        a.images = super::files::list(s, &a.id, super::files::IMAGE).await?;
+    }
+    Ok(a)
 }
 
 fn read(rows: &crate::port_types::Rows, i: usize) -> StudentAnnouncement {
@@ -133,5 +152,6 @@ fn read(rows: &crate::port_types::Rows, i: usize) -> StudentAnnouncement {
         at: int(rows, i, "at").unwrap_or(0),
         retracted: text(rows, i, "status") == "retracted",
         expired: int(rows, i, "expired") == Some(1),
+        images: Vec::new(),
     }
 }

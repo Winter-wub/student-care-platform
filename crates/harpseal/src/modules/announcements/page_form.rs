@@ -2,14 +2,15 @@
 //! live Audience count is [`super::page_count`], the Student picker
 //! [`super::page_pick`].
 
-use axum::Form;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
 
 use super::draft::changed_locales;
+use super::files::{self, IMAGE, Stored};
 use super::form::{Fields, MAX_BODY, MAX_TITLE};
+use super::form_images::{self, Posted};
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
@@ -17,7 +18,26 @@ use super::{page_count, page_detail, page_editor, page_notice, page_pick, servic
 use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
-type Posted = Form<Vec<(String, String)>>;
+/// Errors as (field, catalog key).
+type Errors = Vec<(&'static str, &'static str)>;
+
+/// The draft of `f` with the posted images, or every problem of both.
+fn with_images(
+    draft: Result<service::Draft, Errors>,
+    posted: &Posted,
+) -> Result<service::Draft, Errors> {
+    match (draft, posted.image_edits()) {
+        (Ok(mut d), Ok(images)) => {
+            d.images = images;
+            Ok(d)
+        }
+        (Err(mut a), Err(b)) => {
+            a.extend(b);
+            Err(a)
+        }
+        (Err(e), Ok(_)) | (Ok(_), Err(e)) => Err(e),
+    }
+}
 
 pub(super) async fn new_page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     let v = View::new(&s, &staff);
@@ -25,29 +45,28 @@ pub(super) async fn new_page(State(s): State<AppState>, staff: CurrentStaff) -> 
         when: "now".into(),
         ..Fields::default()
     };
-    form_page(&v, StatusCode::OK, None, &fields, &[], None)
+    let form = Form::new(None, &fields);
+    form_page(&v, StatusCode::OK, &form, &[], None)
 }
 
 pub(super) async fn new_post(
     State(s): State<AppState>,
     staff: CurrentStaff,
     ctx: RequestCtx,
-    Form(pairs): Posted,
+    posted: Posted,
 ) -> Response {
     let v = View::new(&s, &staff);
-    let f = Fields::from_pairs(&pairs);
+    let f = Fields::from_pairs(&posted.pairs);
     let d = s.deployment.as_ref();
-    let draft = match f.draft(&d.config().roster, v.offset(), d.services().now_ms()) {
+    let draft = f.draft(&d.config().roster, v.offset(), d.services().now_ms());
+    let draft = match with_images(draft, &posted) {
         Ok(draft) => draft,
         Err(errors) => {
-            return form_page(
-                &v,
-                StatusCode::UNPROCESSABLE_ENTITY,
-                None,
-                &f,
-                &errors,
-                None,
-            );
+            let form = Form {
+                reselect: posted.had_files(),
+                ..Form::new(None, &f)
+            };
+            return form_page(&v, StatusCode::UNPROCESSABLE_ENTITY, &form, &errors, None);
         }
     };
     let actor = Actor::staff(&staff);
@@ -73,10 +92,13 @@ pub(super) async fn edit_page(
 ) -> Response {
     let v = View::new(&s, &staff);
     let svc = &s.services;
-    let (row, texts) = match store::load(svc, &id).await {
-        Ok(Some(row)) => match store::texts(svc, &id).await {
-            Ok(t) => (row, t),
-            Err(e) => return v.error(&e),
+    let (row, texts, images) = match store::load(svc, &id).await {
+        Ok(Some(row)) => match (
+            store::texts(svc, &id).await,
+            files::list(svc, &id, IMAGE).await,
+        ) {
+            (Ok(t), Ok(i)) => (row, t, i),
+            (Err(e), _) | (_, Err(e)) => return v.error(&e),
         },
         Ok(None) => return v.not_found(),
         Err(e) => return v.error(&e),
@@ -89,7 +111,11 @@ pub(super) async fn edit_page(
         Ok(c) => c,
         Err(e) => return v.error(&e),
     };
-    form_page(&v, StatusCode::OK, Some(&row), &fields, &[], cost.as_ref())
+    let form = Form {
+        images: &images,
+        ..Form::new(Some(&row), &fields)
+    };
+    form_page(&v, StatusCode::OK, &form, &[], cost.as_ref())
 }
 
 pub(super) async fn edit_post(
@@ -97,7 +123,7 @@ pub(super) async fn edit_post(
     staff: CurrentStaff,
     ctx: RequestCtx,
     Path(id): Path<String>,
-    Form(pairs): Posted,
+    posted: Posted,
 ) -> Response {
     let v = View::new(&s, &staff);
     let d = s.deployment.as_ref();
@@ -106,7 +132,7 @@ pub(super) async fn edit_post(
         Ok(None) => return v.not_found(),
         Err(e) => return v.error(&e),
     };
-    let mut f = Fields::from_pairs(&pairs);
+    let mut f = Fields::from_pairs(&posted.pairs);
     if row.status == "scheduled" {
         f.when = "later".into();
     }
@@ -119,7 +145,7 @@ pub(super) async fn edit_post(
         f.when = "now".into();
     }
     let now = d.services().now_ms();
-    let mut draft = f.draft(&d.config().roster, v.offset(), now);
+    let mut draft = with_images(f.draft(&d.config().roster, v.offset(), now), &posted);
     // #77: a notice needs an announcement open now and after this save
     // (Students could not open it otherwise) and a changed text (else it
     // would only cost Pushes); a box ticked in vain is an error, not a
@@ -144,11 +170,18 @@ pub(super) async fn edit_post(
         Ok(draft) => draft,
         Err(errors) => {
             let cost = page_notice::cost(d, &row).await.ok().flatten();
+            let images = files::list(d.services(), &id, IMAGE)
+                .await
+                .unwrap_or_default();
+            let form = Form {
+                images: &images,
+                reselect: posted.had_files(),
+                ..Form::new(Some(&row), &f)
+            };
             return form_page(
                 &v,
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Some(&row),
-                &f,
+                &form,
                 &errors,
                 cost.as_ref(),
             );
@@ -174,14 +207,34 @@ fn editable(row: &Row) -> bool {
     matches!(row.status.as_str(), "draft" | "scheduled" | "sent")
 }
 
+/// What the form shows: the announcement edited (if any), the fields,
+/// its saved images, and whether files chosen were lost (#109).
+struct Form<'a> {
+    row: Option<&'a Row>,
+    f: &'a Fields,
+    images: &'a [Stored],
+    reselect: bool,
+}
+
+impl<'a> Form<'a> {
+    fn new(row: Option<&'a Row>, f: &'a Fields) -> Self {
+        Self {
+            row,
+            f,
+            images: &[],
+            reselect: false,
+        }
+    }
+}
+
 fn form_page(
     v: &View<'_>,
     status: StatusCode,
-    row: Option<&Row>,
-    f: &Fields,
+    form: &Form<'_>,
     errors: &[(&'static str, &'static str)],
     cost: Option<&page_notice::Cost>,
 ) -> Response {
+    let (row, f) = (form.row, form.f);
     let title = v.t(if row.is_some() {
         "announcements.page.edit"
     } else {
@@ -200,9 +253,10 @@ fn form_page(
     let body = html! {
         h1 { (title) }
         @if sent { p class="muted" { (v.t("announcements.form.sent_note")) } }
-        form method="post" action=(action) class="card announcement-form" {
+        form method="post" action=(action) enctype="multipart/form-data" class="card announcement-form" {
             (v.staff.csrf_field())
             @if let Some(version) = f.version { input type="hidden" name="version" value=(version); }
+            @if let Some(r) = row { input type="hidden" name="announcement_id" value=(r.id); }
             fieldset {
                 legend { (v.t("announcements.form.thai")) }
                 (err("th"))
@@ -231,6 +285,7 @@ fn form_page(
                     (page_editor::help(v))
                 }
             }
+            (form_images::field(v, form.images, form.reselect, &err))
             @if !sent {
                 label class="check" {
                     input type="checkbox" name="require_ack" value="1" checked[f.require_ack];
@@ -302,7 +357,7 @@ fn form_page(
                     (page_count::placeholder(v))
                 }
             }
-            (page_editor::preview(v, f))
+            (page_editor::preview(v, f, form.images))
             (page_detail::preview(v, &f.title_th, &f.body_th, f.require_ack))
             div class="actions" {
                 @if row.is_none() {

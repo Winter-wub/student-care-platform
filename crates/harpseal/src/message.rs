@@ -3,6 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod image;
+pub use image::CardImage;
+
 /// A language tag such as `th` or `en`. Every Deployment has a default.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -156,7 +159,8 @@ impl Button {
     }
 }
 
-/// A structured message with a title, body and optional buttons.
+/// A structured message with a title, body, optional buttons and an
+/// optional image above them.
 #[derive(Debug, Clone)]
 pub struct Card {
     /// Short heading.
@@ -165,6 +169,8 @@ pub struct Card {
     pub body: String,
     /// Buttons under the body.
     pub buttons: Vec<Button>,
+    /// An image shown at the top of the Card (#109); `None` for most.
+    pub image: Option<CardImage>,
 }
 
 /// Several Cards shown together; adapters cap the length per channel.

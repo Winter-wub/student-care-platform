@@ -48,12 +48,21 @@ impl Limits {
 }
 
 /// A URL button the Fake refuses, as the real adapters do: one whose URL
-/// is not https ([`Button::safe_url`]). Built by hand inside the Core
+/// is not https ([`Button::safe_url`]), and a Card image whose URL is not
+/// (#109; the real adapters leave it out, the Fake fails loudly). Built by hand inside the Core
 /// only; [`Button::url`] never makes one.
 pub(crate) fn refused_url(msg: &Message) -> bool {
-    msg.buttons()
-        .iter()
-        .any(|b| matches!(b, Button::Url { .. }) && b.safe_url().is_none())
+    let image = |c: &Card| c.image.as_ref().is_some_and(|i| i.safe_url().is_none());
+    let bad_image = match msg {
+        Message::Card(c) => image(c),
+        Message::CardList(l) => l.0.iter().any(image),
+        _ => false,
+    };
+    bad_image
+        || msg
+            .buttons()
+            .iter()
+            .any(|b| matches!(b, Button::Url { .. }) && b.safe_url().is_none())
 }
 
 /// The error a refused URL button sends back.
@@ -95,6 +104,7 @@ fn choices(c: &Choices, limits: Limits, locale: &Locale) -> Vec<Message> {
             .any(|b| char_len(b.label()) > limits.quick_reply_label);
     if too_many {
         out.push(Message::Card(Card {
+            image: None,
             title: String::new(),
             body: last,
             buttons: c.options.clone(),

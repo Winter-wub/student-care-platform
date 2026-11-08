@@ -82,7 +82,7 @@ pub(super) async fn results(
                         }
                         @if r.status == "left" { span class="chip" { (v.t("kernel.students.status_left")) } " " }
                         button type="button" class="secondary" hx-post=(PATH) hx-vals=(vals)
-                            hx-include="closest form" hx-target="#hand-picked" hx-swap="outerHTML" {
+                            hx-include="closest form" hx-params=(super::form_images::NOT_FILES) hx-target="#hand-picked" hx-swap="outerHTML" {
                             (v.t("announcements.form.pick_add"))
                         }
                     }
