@@ -6,9 +6,10 @@
 //! style, and the confirm POST must carry that N: [`everyone_ok`] counts
 //! again on the server and refuses a stale or missing one.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::http::header::LOCATION;
+use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 
 use super::form::is_everyone;
@@ -34,18 +35,40 @@ pub(super) fn path(id: &str) -> String {
 /// schedule is cancelled (back to a draft, audit `announcement.cancel`)
 /// and the edit saved on the draft (`announcement.update`), so it goes out
 /// again only through this review step and its confirm, with the danger
-/// button and the recount when it now reaches everyone. A lost race on
-/// the second write leaves a draft with the old content: nothing is sent.
+/// button and the recount when it now reaches everyone. Answers the
+/// review step with its "held" note; a cancel that fails leaves the
+/// schedule as it was (conflict / not editable); an update that fails
+/// after the cancel leaves a draft with the old content, and says so.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn hold(
+    v: &View<'_>,
     d: &Deployment,
     id: &str,
     version: i64,
     draft: super::service::Draft,
     actor: &crate::Actor,
     ctx: &crate::RequestCtx,
-) -> Result<()> {
-    super::service::cancel(d, id, version, actor, ctx).await?;
-    super::service::update(d, id, version + 1, draft, actor, ctx).await
+) -> Response {
+    let detail = format!("/admin/announcements/{id}");
+    match super::service::cancel(d, id, version, actor, ctx).await {
+        Ok(()) => {}
+        Err(crate::Error::Conflict(_)) => {
+            return v.redirect(&detail, false, "announcements.flash.conflict");
+        }
+        Err(crate::Error::Invalid(_)) => {
+            return v.redirect(&detail, false, "announcements.flash.not_editable");
+        }
+        Err(e) => return v.error(&e),
+    }
+    match super::service::update(d, id, version + 1, draft, actor, ctx).await {
+        Ok(()) => (
+            StatusCode::SEE_OTHER,
+            [(LOCATION, format!("{}?held=1", path(id)))],
+        )
+            .into_response(),
+        // The schedule is gone either way: say it is a draft now.
+        Err(_) => v.redirect(&detail, false, "announcements.review.held_failed"),
+    }
 }
 
 /// `None` when `row` does not go to everyone. Otherwise whether `posted`
@@ -101,7 +124,10 @@ pub(super) async fn page(
     State(s): State<AppState>,
     staff: CurrentStaff,
     Path(id): Path<String>,
+    Query(q): Query<Vec<(String, String)>>,
 ) -> Response {
+    // `?held=1`: a schedule whose Audience changed came back here (`hold`).
+    let held = q.iter().any(|(k, val)| k == "held" && val == "1");
     let v = View::new(&s, &staff);
     let svc = &s.services;
     let (row, texts) = match store::load(svc, &id).await {
@@ -136,6 +162,7 @@ pub(super) async fn page(
     let heading = v.t("announcements.review.title");
     let page = html! {
         h1 { (heading) }
+        @if held { p class="note" role="status" { (v.t("announcements.review.held")) } }
         p class="muted" { (v.t("announcements.review.lead")) }
         div class="cols review" {
             div class="card" { (summary(&v, &row, &counts, &used, extra)) }

@@ -28,6 +28,11 @@ pub(crate) const REVIEW: &[E] = th_en![
         "Choose Students: by the student ids added below"
     ),
     (
+        "announcements.form.scope_combined",
+        "ผู้รับของประกาศนี้ใช้ทั้งกลุ่มและรายคนพร้อมกัน (ต้องตรงทั้งสองอย่าง) ถ้าบันทึกโดยไม่เลือก จะใช้ทั้งสองอย่างเหมือนเดิม ถ้าเลือก \"เลือกกลุ่ม\" รายคนจะถูกตัดออก ถ้าเลือก \"เลือกรายคน\" กลุ่มจะถูกตัดออก และถ้าเลือก \"ทุกคน\" ทั้งสองอย่างจะถูกตัดออก ผู้รับอาจเพิ่มขึ้นมาก",
+        "This Audience uses groups and hand-picked Students together (both must match). Saved without a choice, it keeps both. \"Choose groups\" drops the list, \"Choose Students\" drops the groups, and \"Everyone\" drops both: the Audience may grow a lot."
+    ),
+    (
         "announcements.form.scope_required",
         "ยังไม่ได้เลือกผู้รับ เลือก \"ทุกคน\" \"เลือกกลุ่ม\" หรือ \"เลือกรายคน\"",
         "Choose the Audience: everyone, groups or Students"
@@ -151,6 +156,11 @@ pub(crate) const REVIEW: &[E] = th_en![
         "Send to everyone: {n} ({m} reachable)"
     ),
     ("announcements.review.back", "กลับไปแก้ไข", "Back to editing"),
+    (
+        "announcements.review.held_failed",
+        "ยกเลิกกำหนดส่งแล้ว ประกาศนี้กลับเป็นฉบับร่าง แต่บันทึกการแก้ไขไม่สำเร็จ (อาจมีคนแก้ไขพร้อมกัน) กรุณาแก้ไขอีกครั้งแล้วตรวจก่อนส่ง",
+        "The schedule was cancelled and this is a draft again, but the edit was not saved (someone may have edited it at the same time). Edit it again, then review it before sending."
+    ),
     (
         "announcements.review.held",
         "ผู้รับเปลี่ยน จึงพักกำหนดส่งไว้ก่อน ตรวจแล้วกดยืนยันเพื่อตั้งเวลาส่งอีกครั้ง",

@@ -160,6 +160,13 @@ impl Fields {
         a
     }
 
+    /// Groups and a list together, with no choice made: an Audience saved
+    /// before #120 (see [`scope_of`]).
+    pub(crate) fn combined(&self) -> bool {
+        let groups = self.attrs.values().any(|v| !v.is_empty()) || !self.tags.trim().is_empty();
+        self.scope.is_empty() && groups && !self.students.trim().is_empty()
+    }
+
     /// Why the Audience choice cannot be used (#120), as a catalog key:
     /// no choice made while every filter is empty, `groups` without a
     /// group, `students` without an id. A post without `scope` but with
@@ -272,13 +279,15 @@ pub(crate) fn is_everyone(a: &Audience) -> bool {
     a.attributes.is_empty() && a.tags.is_empty() && a.students.is_empty()
 }
 
-/// The choice a stored Audience reads as on its edit form.
+/// The choice a stored Audience reads as on its edit form. An Audience
+/// saved before #120 with groups AND a list matches no single choice:
+/// none (`""`), which keeps both filters when saved again.
 pub(crate) fn scope_of(a: &Audience) -> &'static str {
-    if is_everyone(a) {
-        "everyone"
-    } else if a.attributes.is_empty() && a.tags.is_empty() {
-        "students"
-    } else {
-        "groups"
+    let groups = !a.attributes.is_empty() || !a.tags.is_empty();
+    match (groups, a.students.is_empty()) {
+        (false, true) => "everyone",
+        (false, false) => "students",
+        (true, true) => "groups",
+        (true, false) => "",
     }
 }

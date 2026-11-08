@@ -57,20 +57,19 @@ async fn a_scheduled_group_send_edited_to_everyone_is_held_for_review() {
     // A plain "บันทึก" with everyone: held, not saved onto the schedule.
     let r = edit(&w, &b, &id, "&scope=everyone").await;
     assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(
-        r.header("location"),
-        Some(format!("/admin/announcements/{id}/review").as_str())
-    );
-    assert_eq!(
-        b.cookie("hs_flash").unwrap_or_default(),
-        "err:announcements.review.held"
+    let held = format!("/admin/announcements/{id}/review?held=1");
+    assert_eq!(r.header("location"), Some(held.as_str()));
+    assert!(
+        b.cookie("hs_flash").is_none(),
+        "an info note, not an error flash"
     );
     assert_eq!(texts(&w, STATUS).await, ["draft"]);
     assert_eq!(count(&w, QUEUED).await, 0, "the schedule's Job is gone");
-    let page = b
-        .get(&format!("/admin/announcements/{id}/review"))
-        .await
-        .body;
+    let page = b.get(&held).await.body;
+    assert!(
+        page.contains(r#"<p class="note" role="status">ผู้รับเปลี่ยน จึงพักกำหนดส่งไว้ก่อน"#),
+        "{page}"
+    );
     assert!(
         page.contains(&format!("{DANGER}ส่งถึงทุกคน 3 คน</button>")),
         "{page}"
@@ -100,7 +99,7 @@ async fn a_crafted_edit_cannot_skip_the_review_of_a_new_audience() {
     // Everything a review would post, on the edit form instead.
     let crafted = "&scope=everyone&reviewed=1&reach=3&confirm=yes&do=confirm";
     let r = edit(&w, &b, &id, crafted).await;
-    assert!(r.header("location").unwrap().ends_with("/review"));
+    assert!(r.header("location").unwrap().ends_with("/review?held=1"));
     assert_eq!(texts(&w, STATUS).await, ["draft"]);
     assert_eq!(after_send_at(&w).await, 0, "held: nothing at send_at");
     // Any Audience change is held, not only to everyone.
@@ -109,7 +108,7 @@ async fn a_crafted_edit_cannot_skip_the_review_of_a_new_audience() {
     let b = signed_in(&w, "Officer").await;
     let id = scheduled_group(&w, &b).await;
     let r = edit(&w, &b, &id, "&scope=groups&attr.programme=MSC-Intl").await;
-    assert!(r.header("location").unwrap().ends_with("/review"));
+    assert!(r.header("location").unwrap().ends_with("/review?held=1"));
     assert_eq!(texts(&w, STATUS).await, ["draft"]);
 }
 
@@ -232,4 +231,51 @@ async fn a_choice_drops_the_filters_left_under_another_choice() {
         .body;
     assert!(c.contains("นักศึกษา 2"), "{c}");
     assert!(!c.contains("hand-picked-report"), "{c}");
+}
+
+#[tokio::test]
+async fn a_legacy_combined_audience_keeps_both_filters_when_saved_without_a_choice() {
+    let w = boot().await;
+    roster(&w).await;
+    let b = signed_in(&w, "Officer").await;
+    // Saved before #120: programme MSC AND the list [s1] (no choice posted).
+    let combined = "&attr.programme=MSC&students=code-s1";
+    let id = create(&b, &form("ข่าว", "ข้อความ", combined)).await;
+    let path = format!("/admin/announcements/{id}/edit");
+    let page = b.get(&path).await.body;
+    assert!(
+        page.contains("ใช้ทั้งกลุ่มและรายคนพร้อมกัน"),
+        "the warning: {page}"
+    );
+    assert!(
+        !page.contains(r#"name="scope" value="groups" required"#),
+        "{page}"
+    );
+    for c in ["everyone", "groups", "students"] {
+        let picked = format!(r#"name="scope" value="{c}" checked"#);
+        assert!(!page.contains(&picked), "no choice preselected: {c}");
+    }
+    // Saved again without choosing: both filters stay.
+    let v = version(&w, &id).await;
+    let again = form("ข่าว", "แก้ข้อความ", &format!("{combined}&version={v}"));
+    assert_eq!(b.post(&path, &again).await.status, 303);
+    let audience = texts(&w, "SELECT audience FROM announcement").await;
+    assert!(
+        audience[0].contains(r#""programme":["MSC"]"#),
+        "{audience:?}"
+    );
+    assert!(
+        audience[0].contains(r#""students":["code-s1"]"#),
+        "{audience:?}"
+    );
+    // Choosing "เลือกกลุ่ม" drops the list, as the warning says.
+    let v = version(&w, &id).await;
+    let groups = form(
+        "ข่าว",
+        "แก้ข้อความ",
+        &format!("{combined}&scope=groups&version={v}"),
+    );
+    assert_eq!(b.post(&path, &groups).await.status, 303);
+    let audience = texts(&w, "SELECT audience FROM announcement").await;
+    assert!(!audience[0].contains("code-s1"), "{audience:?}");
 }

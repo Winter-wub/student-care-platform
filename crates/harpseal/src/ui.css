@@ -216,6 +216,10 @@ tr.changed td { background: #fff8e6; }
 /* The Audience choice (#120): a group inside the Audience fieldset. */
 .announcement-form fieldset.scope { border: 0; padding: 0; margin: 0 0 8px; }
 .announcement-form fieldset.scope legend { padding: 0; margin-bottom: 4px; }
+/* An informational note (#120): neutral, neither approved nor refused. */
+.note { padding: 12px 14px; border-radius: 10px; margin-bottom: var(--gutter);
+  background: #e8eef3; color: #2c4456; font-weight: 600; }
+.warn-note { background: #fff3d6; color: #6b4a00; }
 .count .estimate { font-weight: 600; margin-bottom: 0; }
 .preview .bubble { border: 1px solid var(--line); border-radius: 14px; padding: 12px; max-width: 22rem; background: #fff; }
 .preview .bubble p { white-space: pre-wrap; overflow-wrap: anywhere; }
