@@ -13,12 +13,14 @@
 //! a missed cron minute is skipped while a window is caught up by any later
 //! tick in it.
 //!
-//! The limit is read at each run ([`super::package`]), and changing the
-//! LINE package deletes the Channel's record in the same batch as the
-//! change (`package_page`), so the levels already announced this month
-//! start over: Over under Free, then Basic, still emails at Warn and at
-//! Over of Basic. A run that read the old limit just before the change may
-//! still claim one email of it afterwards; that is the only race left.
+//! The limit is read at each run ([`super::package`]) and kept in the
+//! record (`cap`). A record made under another limit is stale: its month
+//! and level announce nothing for the limit in force, so a new email is due
+//! at the next Warn or Over, and its retries are dropped. That covers a
+//! mid-month package switch (Over under Free, then Warn and Over of Basic
+//! each email once), a run that read the old limit and claimed just after
+//! the switch, and a `[quotas]` number changed on a redeploy. A record from
+//! before #115 has no `cap` and counts as current.
 //!
 //! No migration: the record is a `setting` row (see [`super::record`]). A
 //! notification is claimed with one batch: the audit row `usage.notify`
@@ -96,13 +98,16 @@ async fn watch(d: &Deployment, month: &str, m: &ChannelMonth) -> Result<()> {
     let key = format!("{KEY_PREFIX}{}", m.kind);
     let old = read(d, &key).await?;
     let rec = old.as_deref().and_then(Record::parse);
+    // A record made under another limit (the LINE package changed, or
+    // `[quotas]` on a redeploy) says nothing about this one (#115).
+    let stale = rec.as_ref().is_some_and(|r| r.stale(m.cap));
     let due = m.level >= Level::Warn
         && rec
             .as_ref()
-            .is_none_or(|r| r.month != month || r.level < m.level);
+            .is_none_or(|r| r.month != month || stale || r.level < m.level);
     if due {
         let admins = administrators(d).await?;
-        let claimed = Record::claim(month, m.level);
+        let claimed = Record::claim(month, m.level, m.cap);
         if !claim(d, &key, old.as_deref(), &claimed, m, admins.len()).await? {
             return Ok(());
         }
@@ -110,7 +115,7 @@ async fn watch(d: &Deployment, month: &str, m: &ChannelMonth) -> Result<()> {
         return deliver(d, &key, m, claimed, to).await;
     }
     // A retry of the addresses the last sends could not reach.
-    let Some(rec) = rec.filter(|r| r.month == month && !r.pending.is_empty()) else {
+    let Some(rec) = rec.filter(|r| r.month == month && !stale && !r.pending.is_empty()) else {
         return Ok(());
     };
     let Some(old) = old else { return Ok(()) };

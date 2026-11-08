@@ -76,6 +76,12 @@ impl Db for SpyDb {
 
 /// [`super::boot`], with the Deployment on a [`SpyDb`].
 pub async fn boot_spied() -> (Harness, TestApp, Arc<SpyDb>) {
+    boot_spied_on(super::CONFIG, "fake2").await
+}
+
+/// A Deployment of `toml` with the Fake Channel and a second one of kind
+/// `extra`, on a [`SpyDb`].
+pub async fn boot_spied_on(toml: &str, extra: &'static str) -> (Harness, TestApp, Arc<SpyDb>) {
     let h = Harness::new();
     let spy = Arc::new(SpyDb {
         inner: h.db(),
@@ -85,12 +91,12 @@ pub async fn boot_spied() -> (Harness, TestApp, Arc<SpyDb>) {
     });
     let mut services = h.services();
     services.db = spy.clone();
-    let config = DeploymentConfig::from_toml(super::CONFIG).unwrap();
+    let config = DeploymentConfig::from_toml(toml).unwrap();
     let d = h
         .builder()
         .config(config)
         .runtime(services)
-        .channel(h.fake_channel().with_kind("fake2"))
+        .channel(h.fake_channel().with_kind(extra))
         .build()
         .unwrap();
     let app = h.boot(d).await;

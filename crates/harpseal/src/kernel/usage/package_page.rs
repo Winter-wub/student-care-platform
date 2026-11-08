@@ -17,10 +17,8 @@ use serde::Deserialize;
 
 use super::package::{self, Choice, Current, KEY, MAX_CUSTOM, PACKAGES, SOURCE_DATE, SOURCE_URL};
 use super::store;
-use super::watch::KEY_PREFIX;
 use crate::audit::{Actor, RequestCtx};
 use crate::kernel::text::fill;
-use crate::port_types::Statement;
 use crate::{AppState, CurrentStaff, PageState};
 
 /// Edits the package; also the form's action (under `/admin`).
@@ -177,6 +175,7 @@ pub(super) async fn submit(
         let Some(row) = cur.stored.as_deref() else {
             return redirect(&s, false, "kernel.usage.package.same");
         };
+        // `null` in the audit row when no Quota applies after the reset.
         let fallback = Choice::Config(cur.config).encode();
         let reset = crate::kernel::admin::reset_setting_row(
             &s.services,
@@ -184,9 +183,9 @@ pub(super) async fn submit(
             KEY,
             "",
             row,
-            fallback.as_deref().unwrap_or("none"),
+            fallback.as_deref(),
             &ctx,
-            &forget_notified,
+            &|_| Ok(Vec::new()),
         )
         .await;
         return match reset {
@@ -215,7 +214,7 @@ pub(super) async fn submit(
         cur.stored.as_deref(),
         before.as_deref(),
         &ctx,
-        &forget_notified,
+        &|_| Ok(Vec::new()),
     )
     .await;
     match saved {
@@ -223,23 +222,6 @@ pub(super) async fn submit(
         Ok(false) => redirect(&s, false, "kernel.admin.conflict"),
         Err(e) => failed(&s, &staff, &e),
     }
-}
-
-/// A new limit starts the Quota emails over: the watch Job's record of the
-/// levels already announced this month (`kernel.usage.notified.line`) is
-/// deleted in the same batch as the change, gated on its audit row.
-/// Otherwise "Over" under Free would silence the Warn and Over of Basic.
-/// An address still waiting for a retry of the old limit's email is
-/// dropped with it.
-fn forget_notified(audit_id: &str) -> crate::Result<Vec<Statement>> {
-    Ok(vec![
-        Statement::new(
-            "DELETE FROM setting WHERE key = ? AND locale = '' \
-             AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?)",
-        )
-        .bind(format!("{KEY_PREFIX}{}", package::KIND))
-        .bind(audit_id),
-    ])
 }
 
 /// 500 inside the layout; the error text is never shown.

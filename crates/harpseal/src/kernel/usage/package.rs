@@ -154,15 +154,14 @@ fn decode(stored: &str) -> Option<Choice> {
 /// The choice in force, and the row behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Current {
-    /// The saved value as text, if a row exists (a non-text value is read
-    /// as its `hex()`, so a stale form can still be matched).
+    /// The saved value, if a row exists.
     pub(crate) stored: Option<String>,
     pub(crate) choice: Choice,
     /// `[quotas.line]`, the default (`None`: no Quota).
     pub(crate) config: Option<u64>,
-    /// A row exists but is not a valid choice (unknown, malformed or not
-    /// text): `[quotas.line]` applies and the page asks Staff to choose
-    /// again.
+    /// A row exists but is not a valid choice (an unknown package or a
+    /// malformed number): `[quotas.line]` applies and the page asks Staff
+    /// to choose again.
     pub(crate) unreadable: bool,
 }
 
@@ -182,21 +181,15 @@ pub(crate) fn version(stored: Option<&str>) -> String {
     }
 }
 
-/// The choice in force given the row's `value` and `kind` (`None`: no
-/// row). Pure; the readers differ only in how they fetched the row.
-pub(crate) fn current_of(config: &DeploymentConfig, row: Option<(String, String)>) -> Current {
+/// The choice in force given the row's value (`None`: no row). Pure; the
+/// readers differ only in how they fetched the row.
+pub(crate) fn current_of(config: &DeploymentConfig, stored: Option<String>) -> Current {
     let toml = config
         .quotas
         .get(KIND)
         .map(|q| q.metered_per_month)
         .filter(|c| *c > 0);
-    let (stored, choice) = match row {
-        Some((value, kind)) => {
-            let choice = (kind == "text").then(|| decode(&value)).flatten();
-            (Some(value), choice)
-        }
-        None => (None, None),
-    };
+    let choice = stored.as_deref().and_then(decode);
     let unreadable = stored.is_some() && choice.is_none();
     Current {
         stored,
@@ -208,20 +201,15 @@ pub(crate) fn current_of(config: &DeploymentConfig, row: Option<(String, String)
 
 /// Reads the choice now (one query).
 pub(crate) async fn current(s: &Services, config: &DeploymentConfig) -> Result<Current> {
-    let rows =
-        s.db.query(
-            Statement::new(
-                "SELECT CASE WHEN typeof(value) = 'text' THEN value ELSE hex(value) END AS value, \
-                 typeof(value) AS kind FROM setting WHERE key = ? AND locale = ''",
-            )
-            .bind(KEY),
-        )
+    let rows = s
+        .db
+        .query(Statement::new("SELECT value FROM setting WHERE key = ? AND locale = ''").bind(KEY))
         .await?;
-    let row = rows.get(0, "value").and_then(Value::as_text).map(|v| {
-        let kind = rows.get(0, "kind").and_then(Value::as_text);
-        (v.to_string(), kind.unwrap_or("text").to_string())
-    });
-    Ok(current_of(config, row))
+    let stored = rows
+        .get(0, "value")
+        .and_then(Value::as_text)
+        .map(str::to_string);
+    Ok(current_of(config, stored))
 }
 
 /// Whether any Quota is in force: `[quotas]` is not empty, or a package is

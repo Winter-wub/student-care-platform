@@ -216,16 +216,13 @@ pub(super) fn check(base: &str, value: &str) -> Result<(), Refused> {
     Ok(())
 }
 
-/// The `setting` row `(key, locale)` still holds `expected` (`None` = no
-/// row); a non-text value compares as its `hex()` (LINE package, #115).
+/// `EXISTS`-style condition: the `setting` row `(key, locale)` still
+/// holds `expected` (`None` = no row).
 fn still(key: &str, locale: &str, expected: Option<&str>) -> Statement {
-    const VALUE: &str = "CASE WHEN typeof(value) = 'text' THEN value ELSE hex(value) END";
-    Statement::new(format!(
-        "(SELECT {VALUE} FROM setting WHERE key = ? AND locale = ?) IS ?"
-    ))
-    .bind(key)
-    .bind(locale)
-    .bind(expected.map(str::to_string))
+    Statement::new("(SELECT value FROM setting WHERE key = ? AND locale = ?) IS ?")
+        .bind(key)
+        .bind(locale)
+        .bind(expected.map(str::to_string))
 }
 
 /// Builds more statements for a write's batch from its audit row id.
@@ -286,7 +283,7 @@ pub(crate) async fn save(
 
 /// Deletes the `setting` row `(key, locale)` if it still holds
 /// `expected`, audited as `setting.reset` (after = the text it falls back
-/// to), with the statements `then` builds as in [`save`]. `false` when it
+/// to, `null` when nothing does), with the statements `then` builds as in [`save`]. `false` when it
 /// changed or was already gone.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn reset(
@@ -295,7 +292,7 @@ pub(crate) async fn reset(
     key: &str,
     locale: &str,
     expected: &str,
-    fallback: &str,
+    fallback: Option<&str>,
     ctx: &RequestCtx,
     then: Then<'_>,
 ) -> Result<bool> {

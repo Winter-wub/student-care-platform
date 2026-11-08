@@ -9,23 +9,22 @@ use crate::{Deployment, Result, Services};
 
 /// `usage_daily` rows whose local day is `since` (`YYYY-MM-DD`) or later,
 /// and the LINE package choice, in ONE query (one D1 call per page view,
-/// #115): the `setting` row rides along as a last row with `pkg_kind` set.
+/// #115): the `setting` row rides along as one more row with `is_pkg` set.
 pub(crate) async fn usage_and_package(
     services: &Services,
     config: &DeploymentConfig,
     since: &str,
 ) -> Result<(Vec<Row>, Current)> {
+    // One query, not two: the package row is appended to the usage rows
+    // (D1 bills a call per query, and the banner runs on every page view).
     let rows = services
         .db
         .query(
             Statement::new(
-                "SELECT channel, day, metered, free, failed, NULL AS pkg, NULL AS pkg_kind \
+                "SELECT channel, day, metered, free, failed, NULL AS pkg, NULL AS is_pkg \
                  FROM usage_daily WHERE day >= ? \
                  UNION ALL \
-                 SELECT '', '', 0, 0, 0, \
-                        CASE WHEN typeof(value) = 'text' THEN value ELSE hex(value) END, \
-                        typeof(value) \
-                 FROM setting WHERE key = ? AND locale = ''",
+                 SELECT '', '', 0, 0, 0, value, 1 FROM setting WHERE key = ? AND locale = ''",
             )
             .bind(since)
             .bind(package::KEY),
@@ -41,8 +40,8 @@ pub(crate) async fn usage_and_package(
     let mut usage = Vec::new();
     let mut choice = None;
     for i in 0..rows.len() {
-        match rows.get(i, "pkg_kind").and_then(Value::as_text) {
-            Some(kind) => choice = Some((text(i, "pkg"), kind.to_string())),
+        match rows.get(i, "is_pkg").and_then(Value::as_i64) {
+            Some(_) => choice = Some(text(i, "pkg")),
             None => usage.push(Row {
                 channel: text(i, "channel"),
                 day: text(i, "day"),

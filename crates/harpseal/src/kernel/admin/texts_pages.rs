@@ -351,7 +351,7 @@ async fn reset(
         key,
         &f.locale,
         old,
-        &row.base,
+        Some(&row.base),
         ctx,
         &relink,
     );

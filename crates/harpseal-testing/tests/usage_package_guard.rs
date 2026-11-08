@@ -181,15 +181,8 @@ async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again(
     seed(&h, "line", TODAY, 1000, 0, 0).await;
     watch(&app).await; // Pro: no level reached
     seed(&h, "line", TODAY, 31_500, 0, 0).await;
-    watch(&app).await; // 90 % of Pro: a record
-    assert_eq!(
-        int(
-            &h,
-            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
-        )
-        .await,
-        1
-    );
+    watch(&app).await; // 90 % of Pro: one email
+    assert_eq!(h.emails().len(), 1);
     h.clock().advance_minutes(1);
 
     assert_eq!(
@@ -202,8 +195,7 @@ async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again(
     assert!(c.contains("ยังไม่ได้เลือกแพ็กเกจ ใช้ค่าจากไฟล์ตั้งค่า: 300"), "{c}");
     assert!(c.contains("<option value=\"config\" selected>"), "{c}");
     assert!(c.contains("ใช้ไป 31500 จาก 300"), "{c}");
-    // Audited as setting.reset (before = the choice, after = what applies),
-    // and the Quota emails start over.
+    // Audited as setting.reset (before = the choice, after = what applies).
     let rows = h
         .db()
         .query(Statement::new(
@@ -218,13 +210,13 @@ async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again(
     };
     assert_eq!(json("before")["value"], "pro");
     assert_eq!(json("after")["value"], "custom:300");
-    assert_eq!(
-        int(
-            &h,
-            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
-        )
-        .await,
-        0
+    // The Pro record is stale under 300: 31,500 of 300 emails Over again.
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 2);
+    assert!(
+        h.emails()[1].subject.contains("10500%"),
+        "{}",
+        h.emails()[1].subject
     );
     // A stale form cannot remove a newer choice.
     let page = b.get("/admin/usage").await.body;
@@ -237,22 +229,23 @@ async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again(
 }
 
 #[tokio::test]
-async fn a_value_that_is_not_text_is_flagged_and_can_be_repaired() {
-    let (h, app) = boot_line(true).await;
+async fn removing_the_choice_without_a_toml_number_audits_a_null_after() {
+    let (h, app) = boot_line(false).await;
     let b = admin(&h, &app).await;
-    run(
-        &h,
-        &format!(
-            "INSERT INTO setting (key, locale, value, updated_at) VALUES ('{KEY}', '', x'ff00', 0)"
-        ),
-    )
-    .await;
-    let body = b.get("/admin/usage").await.body;
-    let c = card(&body, "line");
-    assert!(c.contains("ค่าที่บันทึกไว้อ่านไม่ได้"), "{c}");
-    assert!(c.contains("ใช้ไป 0 จาก 300"), "{c}");
-    assert_eq!(choose(&b, "pro", "").await, "ok:kernel.usage.package.saved");
-    assert_eq!(stored(&h).await.as_deref(), Some("pro"));
-    let body = b.get("/admin/usage").await.body;
-    assert!(!card(&body, "line").contains("ค่าที่บันทึกไว้อ่านไม่ได้"));
+    choose(&b, "pro", "").await;
+    assert_eq!(
+        choose(&b, "config", "").await,
+        "ok:kernel.usage.package.reset_done"
+    );
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT after FROM audit_log WHERE action = 'setting.reset'",
+        ))
+        .await
+        .unwrap();
+    let after: serde_json::Value =
+        serde_json::from_str(rows.get(0, "after").unwrap().as_text().unwrap()).unwrap();
+    assert!(after["value"].is_null(), "{after}");
+    assert_eq!(after["key"], KEY);
 }

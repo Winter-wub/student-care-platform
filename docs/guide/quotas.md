@@ -75,10 +75,14 @@ Free (300) to Basic (15,000) with 1,000 Pushes already sent shows 1,000
 of 15,000 and clears the banner; the usage page, the banner, the
 "used X/Y" beside the Announcement send estimate, the
 `kernel.usage.watch` emails and the tick that enqueues the watch all agree.
-A change also starts the Quota emails over: the watch Job's record of the
-levels already announced this month (`kernel.usage.notified.line`) is
-deleted in the same batch as the change. So Over under Free, an upgrade to
-Basic, then Warn and Over of Basic each email once. A Deployment with no
+The Quota emails follow the limit too. The watch Job's record of the
+levels already announced this month (`kernel.usage.notified.line`) keeps
+the limit it was made under (`cap`); a record made under another limit is
+stale and blocks nothing. So Over under Free, an upgrade to Basic, then
+Warn and Over of Basic each email once, even when a run that still read the
+old limit claims its email just after the switch. The same holds when
+`[quotas.line]` is changed on a redeploy. A record from before #115 has no
+`cap` and counts as current. A Deployment with no
 `[quotas]` starts the watch as soon as a package is saved (the tick reads
 one `setting` row per minute, only while `[quotas]` is empty). The usage
 page, the banner and the Quota job each read the usage rows and the
@@ -93,6 +97,8 @@ writes the audit row `setting.update` (target `setting`/
 `kernel.usage.line_package:`) with the value before and after, in the same
 batch as the value. Before the first save the value before is the TOML
 number as `custom:<n>` (`null` without one). A saved value that no longer
-reads (an unknown package, a malformed number or a value that is not text,
-for instance from a restored row of another version) falls back to the
-TOML number and the page says so until Staff choose again.
+reads (an unknown package or a malformed number, for instance from a
+restored row of another version) falls back to the TOML number and the
+page says so until Staff choose again. Removing the choice ("use the
+configured value") audits `setting.reset` with the value before and a
+`null` after when `[quotas.line]` sets no number.

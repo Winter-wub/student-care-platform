@@ -6,7 +6,7 @@
 
 mod usage_support;
 
-use harpseal::Timestamp;
+use harpseal::{DeploymentConfig, Statement, Timestamp};
 use harpseal_testing::START_MS;
 use usage_support::package::*;
 use usage_support::*;
@@ -231,16 +231,73 @@ async fn a_package_switch_starts_the_quota_emails_over() {
         h.emails()[2].subject
     );
 
-    // The record went with the switch, in the batch of the audit row.
-    choose(&b, "pro", "").await;
+    // The record remembers the limit it was claimed under.
     assert_eq!(
         int(
             &h,
-            "SELECT count(*) FROM setting WHERE key = 'kernel.usage.notified.line'"
+            "SELECT json_extract(value, '$.cap') FROM setting \
+             WHERE key = 'kernel.usage.notified.line'"
         )
         .await,
-        0
+        15_000
     );
+}
+
+const LINE_300: &str = "\n[quotas.line]\nmetered_per_month = 300\n";
+
+#[tokio::test]
+async fn a_switch_between_reading_the_month_and_the_claim_does_not_block_the_new_limit() {
+    let (h, app, spy) =
+        usage_support::spy::boot_spied_on(&format!("{CONFIG_LINE}{LINE_300}"), "line").await;
+    let b = admin(&h, &app).await;
+    seed(&h, "line", TODAY, 300, 0, 0).await; // Over under the TOML's 300
+    // The package is switched to Basic after the run read its month (limit
+    // 300) and before it claims the Over.
+    let db = h.db();
+    spy.before_next_claim(Box::pin(async move {
+        let sql = format!(
+            "INSERT INTO setting (key, locale, value, updated_at) VALUES ('{KEY}', '', 'basic', 0)"
+        );
+        db.execute(Statement::new(sql)).await.unwrap();
+    }));
+    watch(&app).await;
+    assert!(!spy.hook_pending(), "the switch happened before the claim");
+    assert_eq!(h.emails().len(), 1, "the run claimed Over of the old limit");
+    // Its record is stale under Basic: Warn of Basic still emails once.
+    seed(&h, "line", TODAY, 12_000, 0, 0).await;
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 2, "{:?}", h.emails());
+    assert!(h.emails()[1].subject.contains("80%"));
+    let page = b.get("/admin/usage").await.body;
+    assert!(card(&page, "line").contains("ใช้ไป 12000 จาก 15000"));
+}
+
+#[tokio::test]
+async fn a_changed_toml_number_on_a_redeploy_makes_the_old_record_stale() {
+    let (h, app) = boot_line(true).await; // [quotas.line] 300
+    admin(&h, &app).await;
+    seed(&h, "line", TODAY, 300, 0, 0).await;
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 1, "Over of 300, once");
+
+    // The same database, redeployed with a bigger number.
+    let toml = format!("{CONFIG_LINE}\n[quotas.line]\nmetered_per_month = 1000\n");
+    let d = h
+        .builder()
+        .config(DeploymentConfig::from_toml(&toml).unwrap())
+        .channel(h.fake_channel().with_kind("line"))
+        .build()
+        .unwrap();
+    let app = h.boot(d).await;
+    watch(&app).await; // 300 of 1000: nothing to say
+    assert_eq!(h.emails().len(), 1);
+    seed(&h, "line", TODAY, 800, 0, 0).await;
+    watch(&app).await;
+    watch(&app).await;
+    assert_eq!(h.emails().len(), 2, "Warn of 1000, once");
+    assert!(h.emails()[1].subject.contains("80%"));
 }
 
 #[tokio::test]
