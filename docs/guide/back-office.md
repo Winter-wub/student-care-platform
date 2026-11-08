@@ -209,7 +209,7 @@ stay on one line; lists do not nest. A link's text loses invisible
 characters; one with nothing visible left (`[](https://…)`) shows the URL's
 host. For a body over 2,000 characters the preview shows "ยาวเกิน 2,000
 ตัวอักษร" instead (a request over 128 KB is refused with 413). The form's
-toolbar (B, I, •, 1., 🔗) inserts the syntax (without script the help line
+toolbar (B, I, •, 1., H, 🔗, 🖼 and the five colours) inserts the syntax (without script the help line
 shows it), and "ตัวอย่างในมินิแอป" shows the body exactly as the Mini App
 does, refreshed as Staff type (`POST /admin/announcements/preview`). The Mini
 App shows the format; a link opens outside the chat app
@@ -224,6 +224,40 @@ invisible characters removed, the host when nothing is left); the
 exactly as before; one that happens to contain `*word*`, a `- ` or `1. `
 line, or a link in brackets now shows formatted.
 
+**Headings and colours (#113).** A line starting `## ` is a heading,
+`### ` a smaller one (the toolbar's H turns the caret's line into `## `,
+then `### `, then back to text). `{red}text{/red}` colours its text; the
+palette is fixed: `red`, `orange`, `green`, `blue` and `grey` (each a
+swatch on the toolbar, each at least 4.5:1 on white; DESIGN.md "Text
+palette"). Any other name (`{pink}`, a hex) stays text as typed. Colours
+hold bold, italic and links, and never another colour. In chat a heading
+is a plain line (its `##` left out) and colours are dropped; the Mini App
+and the preview show both. A body that already held such a line or marker
+now shows formatted.
+
+**PDFs (#113).** The forms also take up to 3 PDFs (slots `pdf1` to
+`pdf3`), at most 10 MB each, told by their bytes (`%PDF-` at the start and
+`%%EOF` inside) and named `.pdf`: an HTML or any other file renamed `.pdf`
+is refused. A PDF with a script, an embedded file or a launch action is
+refused too (`/JavaScript`, `/JS`, `/EmbeddedFile(s)`, `/Launch` outside its
+streams; one hidden in a compressed object stream is not found, a known
+limit). A Thai hint names the limits and says never to attach personal
+data: anyone with the link can open the file. The name uploaded is kept
+(its folder, control and invisible characters removed, at most 120
+characters). PDFs follow the images' rules: stored in `announcement_file`
+(kind `pdf`) and the FileStore, served at `/announcements/files/<token>`
+only while the announcement is sent and live, kept on their URL after a
+sent announcement replaces or removes them until it is retracted or
+expires, deleted at once before sending, and carried by backup and
+restore. They are served as `application/pdf` with
+`Content-Disposition: inline; filename*=UTF-8''…` (the Thai name), an
+ASCII `filename` fallback, `nosniff` and the sandbox CSP. The Mini App
+lists them after the body with their names and sizes and opens them
+outside the chat app. The pushed Card gives the first PDF a URL button
+labelled with its name, inside the 2-URL-button budget (the body's first
+link, then the PDF), only when `public_url` is set. Staff download them
+from the announcement's page; the back office does not preview them.
+
 **Images (#109).** The create and edit forms take up to 4 images per
 announcement (slots 1 to 4): JPEG or PNG only, told by their bytes and
 named as what they are (a PNG named `.jpg`, a JPEG without a frame header,
@@ -236,7 +270,8 @@ to the slots names the limits and asks Staff to shrink large images first
 and never to put personal data in an image: each one is served on a public
 URL. A refused file names the limit it broke; files chosen are lost when
 the form comes back with an error (the browser cannot keep them), and the
-form says so. A request over 4.25 MB is refused (413) before it is read.
+form says so. A request over 34.25 MB (4 images and 3 PDFs at their
+largest) is refused (413) before it is read.
 `![คำอธิบายรูป](image:N)` in a body places image N there (the toolbar's 🖼
 inserts it for the first image not placed yet); the Mini App shows each
 image in place, lazily loaded, with its alt text, and the images not placed

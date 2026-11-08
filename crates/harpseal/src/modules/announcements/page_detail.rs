@@ -55,7 +55,7 @@ pub(super) async fn page(
             stats(&s.deployment, &id).await?,
             deliveries(svc, &id, filter, page).await?,
             super::maint::in_progress(svc, &id).await?,
-            super::files::list(svc, &id, super::files::IMAGE).await?,
+            super::files::list(svc, &id).await?,
         ))
     };
     let (texts, st, list, busy, images) = match loaded.await {
@@ -189,16 +189,26 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
     }
 }
 
-/// The saved images (#109), through the back-office route: Staff see them
-/// whatever the status (a draft, a retracted one).
-fn images_card(v: &View<'_>, images: &[super::files::Stored], texts: &Texts) -> Markup {
+/// The saved images (#109) and PDFs (#113), through the back-office
+/// route: Staff see them whatever the status (a draft, a retracted one).
+fn images_card(v: &View<'_>, files: &[super::files::Stored], texts: &Texts) -> Markup {
     let bodies: Vec<&str> = texts.0.values().map(|(_, b)| b.as_str()).collect();
     let label = v.t("announcements.images.slot");
+    let images: Vec<&super::files::Stored> = files
+        .iter()
+        .filter(|f| f.kind == super::files::IMAGE)
+        .collect();
     html! {
+        @if super::files::pdfs(files).next().is_some() {
+            div class="card" {
+                p class="muted" { (v.t("announcements.pdfs.legend")) }
+                (super::files_pdf::list_html(files, true))
+            }
+        }
         @if !images.is_empty() {
             div class="card" {
                 p class="muted" { (v.t("announcements.images.legend")) }
-                (super::form_images::hero_warning(v, images, &bodies))
+                (super::form_images::hero_warning(v, files, &bodies))
                 @for f in images {
                     figure {
                         (f.img(true).markup(&format!("{label} {}", f.n)))

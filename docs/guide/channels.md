@@ -24,7 +24,9 @@ carry the Deployment's salt (`Menu::salt`), and answers
 
 ## URL buttons
 
-`Button::url(label, url)` opens a web page outside the chat (#108). It
+`Button::url(label, url)` opens a web page outside the chat (#108). An
+Announcement's Card uses it for the body's links and, with `public_url`
+set, for its first PDF (#113), at most 2 URL buttons in all. It
 refuses anything but an `https:` URL (`harpseal::render::link_url`). LINE
 renders a `uri` action (Flex button label 40, quick reply 20), Telegram an
 inline keyboard `url` button (label cut to 40), the Fake Channel records it.

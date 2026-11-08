@@ -1,7 +1,8 @@
 //! The images part of the create / edit form (#109): the posted form
 //! ([`Posted`], `multipart/form-data` from a browser, or a plain form
 //! without files), the slots with the Thai hint, and the checks that turn
-//! the posted files into [`ImageEdits`].
+//! the posted files into [`FileEdits`] (the PDF slots are
+//! [`super::form_pdfs`]).
 //!
 //! Slots `image1` to `image4`: a file chosen fills (or replaces) the
 //! slot, the box `imageN_remove` empties it. Each file is sniffed
@@ -15,7 +16,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 
-use super::files::{ImageEdits, MAX_IMAGE_BYTES, MAX_IMAGES, NewImage, Stored, slot};
+use super::files::{FileEdits, IMAGE, MAX_IMAGE_BYTES, MAX_IMAGES, NewFile, Stored, slot};
 use super::files_sniff::{HERO_SIDE, size_ok, sniff};
 use super::view::View;
 use crate::manifest::CatalogEntry as E;
@@ -26,7 +27,7 @@ const SLOTS: [&str; MAX_IMAGES as usize] = ["image1", "image2", "image3", "image
 /// `hx-params` of the form's HTMX fragments (the Audience count, the
 /// preview, the picker): never the files, which those routes neither need
 /// nor take (their body limits are small).
-pub(super) const NOT_FILES: &str = "not image1,image2,image3,image4";
+pub(super) const NOT_FILES: &str = "not image1,image2,image3,image4,pdf1,pdf2,pdf3";
 
 /// Image texts, Thai and English.
 pub(crate) const TEXTS: &[E] = &[
@@ -144,35 +145,37 @@ pub(crate) const TEXTS: &[E] = &[
 
 /// One file part as posted.
 #[derive(Debug, Clone)]
-struct FilePart {
-    field: String,
-    file_name: String,
+pub(super) struct FilePart {
+    pub(super) field: String,
+    pub(super) file_name: String,
     /// The bytes, cut at one past the limit (enough to refuse it).
-    bytes: Vec<u8>,
+    pub(super) bytes: Vec<u8>,
 }
 
 /// The create / edit form as posted: its text fields and its files.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Posted {
     pub(super) pairs: Vec<(String, String)>,
-    files: Vec<FilePart>,
+    pub(super) files: Vec<FilePart>,
 }
 
 impl Posted {
     /// Whether any file was chosen (lost when the form comes back); ask
-    /// before [`Posted::image_edits`] moves them out.
+    /// before [`Posted::file_edits`] moves them out.
     pub(super) fn had_files(&self) -> bool {
         !self.files.is_empty()
     }
 
-    /// The image edits, the files' bytes moved out (the form keeps its
-    /// text fields), or every problem as (field, catalog key), each once.
-    pub(super) fn image_edits(&mut self) -> Result<ImageEdits, Vec<(&'static str, &'static str)>> {
-        let mut edits = ImageEdits::default();
+    /// The image edits, the image files' bytes moved out (the PDF parts
+    /// must be taken first: any other file is "too many"), or every
+    /// problem as (field, catalog key), each once.
+    pub(super) fn image_edits(&mut self) -> Result<FileEdits, Vec<(&'static str, &'static str)>> {
+        let mut edits = FileEdits::default();
+        let mut removed: Vec<u8> = Vec::new();
         let mut errors = Vec::new();
         for (k, _) in &self.pairs {
             if let Some(n) = k.strip_suffix("_remove").and_then(slot_of) {
-                edits.remove.push(n);
+                removed.push(n);
             }
         }
         if self.files.len() > SLOTS.len() {
@@ -195,20 +198,22 @@ impl Posted {
                 Some((_, size)) if !size_ok(size) => {
                     errors.push((field, "announcements.images.too_many_pixels"));
                 }
-                Some((kind, size)) => edits.put.push(NewImage {
+                Some((kind, size)) => edits.put.push(NewFile {
+                    kind: IMAGE,
                     n,
-                    kind,
-                    size,
+                    content_type: kind.content_type(),
+                    ext: kind.ext(),
+                    size: Some(size),
+                    name: format!("image-{n}.{}", kind.ext()),
                     bytes: f.bytes,
                 }),
                 None => errors.push((field, "announcements.images.bad_type")),
             }
         }
-        edits
-            .remove
-            .retain(|n| !edits.put.iter().any(|p| p.n == *n));
-        edits.remove.sort_unstable();
-        edits.remove.dedup();
+        removed.retain(|n| !edits.put.iter().any(|p| p.n == *n));
+        removed.sort_unstable();
+        removed.dedup();
+        edits.remove = removed.into_iter().map(|n| (IMAGE, n)).collect();
         if errors.is_empty() {
             Ok(edits)
         } else {
@@ -225,7 +230,8 @@ impl Posted {
                     let mut bytes = Vec::new();
                     while let Some(chunk) = field.chunk().await.map_err(status)? {
                         // Keep one byte past the limit: enough to refuse.
-                        let room = (MAX_IMAGE_BYTES + 1).saturating_sub(bytes.len());
+                        let max = super::files_pdf::read_limit(&name).unwrap_or(MAX_IMAGE_BYTES);
+                        let room = (max + 1).saturating_sub(bytes.len());
                         bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
                     }
                     // No file chosen: browsers still send an empty part.

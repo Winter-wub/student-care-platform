@@ -11,15 +11,16 @@
 //!
 //! Both answer with the stored content type (never one guessed from the
 //! bytes or the FileStore), `X-Content-Type-Options: nosniff`,
-//! `Content-Disposition: inline` with a generated name, and a
-//! `Content-Security-Policy` that runs nothing, should a browser render
-//! the file as a page.
+//! `Content-Disposition: inline` with a generated name (an image) or the
+//! name uploaded (a PDF, #113: `filename*` in UTF-8, so a Thai name
+//! survives), and a `Content-Security-Policy` that runs nothing, should
+//! a browser render the file as a page.
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use super::files::{COLUMNS, Stored, stored_at};
+use super::files::{COLUMNS, IMAGE, PDF, Stored, stored_at};
 use crate::port_types::Statement;
 use crate::{AppState, Result, Services};
 
@@ -74,22 +75,29 @@ async fn respond(s: &Services, f: &Stored, cache: &'static str) -> Response {
         Ok(None) => return not_found(),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    // Only the types the upload takes; anything else stored is not served.
-    let Some(kind) = super::files_sniff::ImageType::parse(&f.content_type) else {
-        return not_found();
+    // Only the types the upload takes, each under its own kind; anything
+    // else stored is not served.
+    let image = super::files_sniff::ImageType::parse(&f.content_type).filter(|_| f.kind == IMAGE);
+    let pdf = f.kind == PDF && f.content_type == super::files_pdf::CONTENT_TYPE;
+    let (content_type, disposition) = match image {
+        Some(kind) => (
+            kind.content_type(),
+            format!("inline; filename=\"image-{}.{}\"", f.n, kind.ext()),
+        ),
+        None if pdf => (
+            super::files_pdf::CONTENT_TYPE,
+            super::files_pdf::disposition(&f.file_name, f.n),
+        ),
+        None => return not_found(),
     };
-    let name = format!("image-{}.{}", f.n, kind.ext());
     let mut r = (StatusCode::OK, bytes).into_response();
     let h = r.headers_mut();
-    h.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static(kind.content_type()),
-    );
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     );
-    if let Ok(v) = HeaderValue::from_str(&format!("inline; filename=\"{name}\"")) {
+    if let Ok(v) = HeaderValue::from_str(&disposition) {
         h.insert(header::CONTENT_DISPOSITION, v);
     }
     h.insert(

@@ -1,7 +1,7 @@
 //! The chat side: the announcement Card, the ack Action
 //! (`announcements.ack.<id>`) and the "ข่าวล่าสุด" Menu entry.
 
-use super::files::{Stored, hero};
+use super::files::{Stored, hero, pdfs};
 use super::store::{self, Summary, Texts};
 use super::{ACK_PREFIX, MINI_APP_PATH};
 use crate::config::PublicUrl;
@@ -30,7 +30,10 @@ pub(crate) const URL_BUTTONS: usize = 2;
 /// each of the body's first [`URL_BUTTONS`] distinct links, labelled with
 /// the link text (each adapter cuts it to its limit). With `public_url`
 /// set, the image is the first one the body places, else the lowest slot
-/// (#109; [`super::files::hero`]); without it, none.
+/// (#109; [`super::files::hero`]); without it, none. With `public_url`
+/// set and a PDF attached (#113), the first PDF takes the last of the
+/// [`URL_BUTTONS`]: a URL button labelled with its name, after the links.
+/// `files` holds every kind.
 pub(crate) fn card(
     catalog: &Catalog,
     locale: &Locale,
@@ -53,8 +56,16 @@ pub(crate) fn card(
         catalog.t(locale, "announcements.card.open"),
         detail_path(id),
     ));
-    for link in doc.first_links(URL_BUTTONS) {
+    let pdf = public_url.zip(pdfs(images).next());
+    let links = URL_BUTTONS - usize::from(pdf.is_some());
+    for link in doc.first_links(links) {
         buttons.push(Button::url(link.text, link.url)?);
+    }
+    if let Some((base, f)) = pdf {
+        buttons.push(Button::url(
+            f.file_name.clone(),
+            base.join(&f.public_path()),
+        )?);
     }
     let image = match (public_url, hero(images, body)) {
         (Some(base), Some(f)) => Some(CardImage::new(base.join(&f.public_path()), title)?),

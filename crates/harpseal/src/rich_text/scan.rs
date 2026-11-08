@@ -7,8 +7,10 @@
 //! so later openers before it give up at once. The next `]` and `[` are
 //! cached the same way, a bracket link's URL scan stops at the next
 //! bracket or space, and a bare URL that failed marks its whole token
-//! dead.
+//! dead. The next closer of each colour (#113, `{/red}`) is cached the
+//! same way too.
 
+use super::Colour;
 use crate::render::{URL_MAX, clean_label, label_or_host, link_url};
 
 #[cfg(test)]
@@ -44,6 +46,8 @@ pub(super) struct Scan<'a> {
     /// start up to the position found.
     rb: Option<Option<usize>>,
     lb: Option<Option<usize>>,
+    /// The last search for each colour's closer, the same way.
+    colour_close: [Option<Option<usize>>; 5],
     /// No bare URL starts before this byte (a failed token).
     bare_dead_until: usize,
 }
@@ -95,6 +99,7 @@ impl<'a> Scan<'a> {
             dead_italic: None,
             rb: None,
             lb: None,
+            colour_close: [None; 5],
             bare_dead_until: 0,
         }
     }
@@ -146,15 +151,44 @@ impl<'a> Scan<'a> {
         from: usize,
         b: char,
     ) -> Option<usize> {
+        let mut buf = [0u8; 4];
+        Self::find_str_cached(s, cache, from, b.encode_utf8(&mut buf))
+    }
+
+    /// Where `pat` next starts at or after `from`. The answer of the last
+    /// search holds for any later `from` up to the position found (or for
+    /// every one, when nothing was found), so each byte is scanned once.
+    fn find_str_cached(
+        s: &str,
+        cache: &mut Option<Option<usize>>,
+        from: usize,
+        pat: &str,
+    ) -> Option<usize> {
         if let Some(found) = *cache
             && found.is_none_or(|p| p >= from)
         {
             return found;
         }
-        let found = s[from..].find(b).map(|k| from + k);
+        let found = s[from..].find(pat).map(|k| from + k);
         step(found.map_or(s.len(), |p| p + 1) - from);
         *cache = Some(found);
         found
+    }
+
+    /// `{name}text{/name}` opening at `i` (#113): (colour, where the text
+    /// starts, where its closer starts), when `name` is in the palette and
+    /// the text is not empty. Anything else (`{pink}`, `{red}` without its
+    /// closer) is text.
+    pub(super) fn colour(&mut self, i: usize) -> Option<(Colour, usize, usize)> {
+        let rest = &self.s[i..];
+        step(9);
+        let c = Colour::ALL
+            .into_iter()
+            .find(|c| rest.starts_with(c.open()))?;
+        let from = i + c.open().len();
+        let close =
+            Self::find_str_cached(self.s, &mut self.colour_close[c.index()], from, c.close())?;
+        (close > from).then_some((c, from, close))
     }
 
     /// `[text](url)` opening at `i`: (label, url, end), when the text holds

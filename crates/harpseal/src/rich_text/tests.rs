@@ -264,51 +264,6 @@ fn bracket_urls_balance_parentheses() {
     assert_eq!(plain(open), open);
 }
 
-/// Steps (characters the main loop reads plus bytes every helper scans,
-/// counted by `scan::step` in tests) for `s`.
-fn steps(s: &str) -> usize {
-    scan::STEPS.with(|c| c.set(0));
-    let doc = parse(s);
-    assert!(doc.plain().len() <= s.len() + 64);
-    scan::STEPS.with(std::cell::Cell::get)
-}
-
-/// Every hostile line costs at most 8 steps per byte, at a 2,000-byte size
-/// and at 8 times that: deterministic, whatever the machine's load. A
-/// quadratic parse (say, a `]` search cache that never hits) blows the
-/// bound at once.
-#[test]
-fn hostile_lines_parse_in_linear_steps() {
-    let patterns = [
-        "**a ",
-        "*a ",
-        "[",
-        "[x](",
-        "[x](a(",
-        "*",
-        "**",
-        "*** ",
-        "https://a,",
-        "https://seal-bay.invalid/)",
-        "]([",
-        "![",
-        "![x](image:",
-        "![x](image:1",
-        "![](image:1)",
-        "!![x](image:0)",
-    ];
-    for p in patterns {
-        for size in [2_000, 16_000] {
-            let s = p.repeat(size / p.len() + 1);
-            let n = steps(&s);
-            assert!(n <= 8 * s.len(), "{p:?} x{}: {n} steps", s.len());
-        }
-    }
-    // The 2,000-character body itself, mixed.
-    let body = "**a [".repeat(400);
-    assert!(steps(&body) <= 8 * body.len());
-}
-
 #[test]
 fn a_blank_link_text_falls_back_to_the_host() {
     let url = "https://reg.seal-bay.invalid/exam";

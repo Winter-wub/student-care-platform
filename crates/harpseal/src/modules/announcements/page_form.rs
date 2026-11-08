@@ -8,9 +8,10 @@ use axum::response::Response;
 use maud::{Markup, html};
 
 use super::draft::changed_locales;
-use super::files::{self, IMAGE, Stored};
+use super::files::{self, Stored};
 use super::form::{Fields, MAX_BODY, MAX_TITLE};
 use super::form_images::{self, Posted};
+use super::form_pdfs;
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
@@ -21,14 +22,15 @@ use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 /// Errors as (field, catalog key).
 type Errors = Vec<(&'static str, &'static str)>;
 
-/// The draft of `f` with the posted images, or every problem of both.
+/// The draft of `f` with the posted files (images, PDFs), or every
+/// problem of both.
 fn with_images(
     draft: Result<service::Draft, Errors>,
     posted: &mut Posted,
 ) -> Result<service::Draft, Errors> {
-    match (draft, posted.image_edits()) {
-        (Ok(mut d), Ok(images)) => {
-            d.images = images;
+    match (draft, posted.file_edits()) {
+        (Ok(mut d), Ok(files)) => {
+            d.files = files;
             Ok(d)
         }
         (Err(mut a), Err(b)) => {
@@ -94,10 +96,7 @@ pub(super) async fn edit_page(
     let v = View::new(&s, &staff);
     let svc = &s.services;
     let (row, texts, images) = match store::load(svc, &id).await {
-        Ok(Some(row)) => match (
-            store::texts(svc, &id).await,
-            files::list(svc, &id, IMAGE).await,
-        ) {
+        Ok(Some(row)) => match (store::texts(svc, &id).await, files::list(svc, &id).await) {
             (Ok(t), Ok(i)) => (row, t, i),
             (Err(e), _) | (_, Err(e)) => return v.error(&e),
         },
@@ -172,9 +171,7 @@ pub(super) async fn edit_post(
         Ok(draft) => draft,
         Err(errors) => {
             let cost = page_notice::cost(d, &row).await.ok().flatten();
-            let images = files::list(d.services(), &id, IMAGE)
-                .await
-                .unwrap_or_default();
+            let images = files::list(d.services(), &id).await.unwrap_or_default();
             let form = Form {
                 images: &images,
                 reselect: had_files,
@@ -288,6 +285,7 @@ fn form_page(
                 }
             }
             (form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect, &err))
+            (form_pdfs::field(v, form.images, sent, &err))
             @if !sent {
                 label class="check" {
                     input type="checkbox" name="require_ack" value="1" checked[f.require_ack];

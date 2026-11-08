@@ -265,7 +265,7 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
         )
         .await?;
     let texts = store::texts(s, &id).await?;
-    let images = super::files::list(s, &id, super::files::IMAGE).await?;
+    let images = super::files::list(s, &id).await?;
     // One Card per (Locale, already acknowledged): no [รับทราบ] for those.
     let mut groups: BTreeMap<(Locale, bool), Vec<Pending>> = BTreeMap::new();
     let mut blocked = Vec::new();

@@ -14,11 +14,6 @@ use crate::kernel::text::Texts;
 use crate::modules::announcements::StudentAnnouncement;
 use crate::rich_text;
 
-/// The body has a link (the page then loads [`external::script`]).
-fn has_links(body: &str) -> bool {
-    !rich_text::parse(body).links().is_empty()
-}
-
 /// Pinned LIFF SDK (LINE's "edge/2" channel).
 pub(crate) const LIFF_SDK: &str = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 /// Telegram's Web App script.
@@ -275,7 +270,7 @@ pub(crate) fn home(s: &PageState, t: &Texts, v: &AppVisitor, h: &Home<'_>) -> Re
                     ul class="app-news" {
                         @for a in news { li id=(format!("a-{}", a.id)) { (item(s, t, v, a)) } }
                     }
-                    (external::script(s, &v.channel, news.iter().any(|a| has_links(&a.body))))
+                    (external::script(s, &v.channel, news.iter().any(StudentAnnouncement::opens_outside)))
                 }
             }
         }
@@ -365,7 +360,7 @@ pub(crate) fn detail(
                 (a.body_html(&t.t("announcements.images.slot")))
                 (ack_part(t, v, a))
             }
-            (external::script(s, &v.channel, has_links(&a.body)))
+            (external::script(s, &v.channel, a.opens_outside()))
         }
     };
     let title = if let Some(key) = gone {

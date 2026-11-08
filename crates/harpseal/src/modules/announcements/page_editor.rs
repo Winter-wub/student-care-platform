@@ -12,10 +12,11 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, PreEscaped, html};
 
-use super::files::{self, IMAGE, Stored};
+use super::files::{self, Stored};
 use super::form::{Fields, MAX_BODY};
 use super::view::View;
 use crate::manifest::CatalogEntry as E;
+use crate::rich_text::Colour;
 use crate::{AppState, CurrentStaff};
 
 /// The preview route (Permission `announcements.send`).
@@ -39,21 +40,45 @@ pub(crate) const EDITOR: &[E] = &[
     E::new("announcements.editor.numbered", "en", "Numbered list"),
     E::new("announcements.editor.link", "th", "ลิงก์"),
     E::new("announcements.editor.link", "en", "Link"),
+    E::new(
+        "announcements.editor.heading",
+        "th",
+        "หัวข้อ (กดซ้ำเพื่อเปลี่ยนขนาด)",
+    ),
+    E::new(
+        "announcements.editor.heading",
+        "en",
+        "Heading (press again to change its size)",
+    ),
+    E::new("announcements.editor.colour.red", "th", "สีแดง"),
+    E::new("announcements.editor.colour.red", "en", "Red"),
+    E::new("announcements.editor.colour.orange", "th", "สีส้ม"),
+    E::new("announcements.editor.colour.orange", "en", "Orange"),
+    E::new("announcements.editor.colour.green", "th", "สีเขียว"),
+    E::new("announcements.editor.colour.green", "en", "Green"),
+    E::new("announcements.editor.colour.blue", "th", "สีน้ำเงิน"),
+    E::new("announcements.editor.colour.blue", "en", "Blue"),
+    E::new("announcements.editor.colour.grey", "th", "สีเทา"),
+    E::new("announcements.editor.colour.grey", "en", "Grey"),
     E::new("announcements.editor.placeholder", "th", "ข้อความ"),
     E::new("announcements.editor.placeholder", "en", "text"),
     E::new(
         "announcements.editor.help",
         "th",
         "จัดรูปแบบได้: **ตัวหนา** *ตัวเอียง* บรรทัดที่ขึ้นต้นด้วย \"- \" หรือ \"1. \" เป็นรายการ \
-         [ข้อความ](https://…) เป็นลิงก์ ลิงก์ต้องขึ้นต้นด้วย https:// เท่านั้น \
-         ลิงก์สองอันแรกจะเป็นปุ่มในแชทด้วย",
+         บรรทัดที่ขึ้นต้นด้วย \"## \" หรือ \"### \" เป็นหัวข้อ {red}ข้อความ{/red} เป็นสี \
+         (red, orange, green, blue, grey) [ข้อความ](https://…) เป็นลิงก์ \
+         ลิงก์ต้องขึ้นต้นด้วย https:// เท่านั้น ลิงก์สองอันแรกจะเป็นปุ่มในแชทด้วย \
+         ในแชทหัวข้อจะเป็นบรรทัดธรรมดาและไม่มีสี",
     ),
     E::new(
         "announcements.editor.help",
         "en",
         "Formatting: **bold** *italic*, lines starting \"- \" or \"1. \" are lists, \
-         [text](https://…) is a link. Links must start with https://. \
-         The first two links also become buttons in chat.",
+         lines starting \"## \" or \"### \" are headings, {red}text{/red} is a colour \
+         (red, orange, green, blue, grey), [text](https://…) is a link. \
+         Links must start with https://. The first two links also become buttons in chat. \
+         Chat shows headings as plain lines and no colours.",
     ),
     E::new(
         "announcements.editor.too_long",
@@ -90,6 +115,18 @@ const TOOLBAR_JS: &str = r#"(function () {
     ta.value = v.slice(0, start) + out + v.slice(e);
     ta.selectionStart = start; ta.selectionEnd = start + out.length;
   };
+  // `## ` → `### ` → none → `## ` on the caret's line.
+  var heading = function (ta) {
+    var s = ta.selectionStart, v = ta.value;
+    var start = v.lastIndexOf('\n', s - 1) + 1;
+    var rest = v.slice(start), next;
+    if (rest.indexOf('### ') === 0) { next = rest.slice(4); }
+    else if (rest.indexOf('## ') === 0) { next = '#' + rest; }
+    else { next = '## ' + rest; }
+    ta.value = v.slice(0, start) + next;
+    var p = Math.max(start, s + next.length - rest.length);
+    ta.selectionStart = p; ta.selectionEnd = p;
+  };
   document.querySelectorAll('.md-toolbar').forEach(function (bar) {
     var ta = document.getElementById(bar.dataset.for);
     if (!ta) { return; }
@@ -102,6 +139,11 @@ const TOOLBAR_JS: &str = r#"(function () {
       else if (k === 'italic') { wrap(ta, '*', '*', ph); }
       else if (k === 'list') { lines(ta, false); }
       else if (k === 'numbered') { lines(ta, true); }
+      else if (k === 'heading') { heading(ta); }
+      else if (k.indexOf('colour-') === 0) {
+        var c = k.slice(7);
+        wrap(ta, '{' + c + '}', '{/' + c + '}', ph);
+      }
       else if (k === 'image') {
         // The first slot with an image (saved or chosen) the body does not
         // place yet; else slot 1.
@@ -132,6 +174,7 @@ pub(super) fn toolbar(v: &View<'_>, id: &str) -> Markup {
         ("italic", "I", "announcements.editor.italic"),
         ("list", "•", "announcements.editor.list"),
         ("numbered", "1.", "announcements.editor.numbered"),
+        ("heading", "H", "announcements.editor.heading"),
         ("link", "🔗", "announcements.editor.link"),
         ("image", "🖼", "announcements.editor.image"),
     ];
@@ -142,6 +185,14 @@ pub(super) fn toolbar(v: &View<'_>, id: &str) -> Markup {
             @for (kind, face, key) in buttons {
                 button type="button" class="secondary" data-md=(kind)
                     title=(v.t(key)) aria-label=(v.t(key)) { (face) }
+            }
+            // The palette (#113): an "A" in each colour, never a free one.
+            @for c in Colour::ALL {
+                @let label = v.t(&format!("announcements.editor.colour.{}", c.name()));
+                button type="button" class="secondary swatch"
+                    data-md={ "colour-" (c.name()) } title=(label) aria-label=(label) {
+                    span class=(c.class()) { "A" }
+                }
             }
         }
     }
@@ -204,9 +255,7 @@ pub(super) async fn fragment(
     // The edit form names its announcement: the preview shows its images.
     let id = pairs.iter().find(|(k, _)| k == "announcement_id");
     let images = match id {
-        Some((_, id)) => files::list(&s.services, id, IMAGE)
-            .await
-            .unwrap_or_default(),
+        Some((_, id)) => files::list(&s.services, id).await.unwrap_or_default(),
         None => Vec::new(),
     };
     (StatusCode::OK, Html(preview(&v, &f, &images).into_string())).into_response()

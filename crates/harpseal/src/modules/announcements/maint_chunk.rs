@@ -79,7 +79,7 @@ async fn chunk(cx: JobContext, job: Job, op: Op) -> Result<()> {
     let s = &cx.services;
     let rows = chunk_rows(&cx, &id, &p, op).await?;
     let texts = store::texts(s, &id).await?;
-    let images = super::files::list(s, &id, super::files::IMAGE).await?;
+    let images = super::files::list(s, &id).await?;
     let changed = changed(&p);
     let mut items = Vec::with_capacity(rows.len());
     for i in 0..rows.len() {

@@ -7,6 +7,9 @@
 //!   from 1 to 99, `.` and a space is a numbered item, shown with the
 //!   number typed (`2567. ภาคเรียน` stays text). Consecutive items of one
 //!   kind make one list. Lists do not nest: an indented marker is text.
+//! - A line starting `## ` or `### ` (#113) is a heading of level 2 or 3
+//!   when anything but spaces follows; `#`, `#### ` and `##x` are text.
+//!   In chat ([`Doc::plain`]) it is a plain line, the marker left out.
 //! - Any other line is text; line breaks and blank lines are kept as
 //!   typed (the Mini App shows them with `white-space: pre-line`).
 //! - Inside a line: `**bold**`, `*italic*` (the opening marker followed
@@ -20,6 +23,12 @@
 //!   (`https:`, no user info, no unsafe characters, at most
 //!   [`crate::render::URL_MAX`] bytes); any other `[text](url)`, and every
 //!   `javascript:`, `data:` or `http:` URL, stays text exactly as typed.
+//! - `{red}text{/red}` (#113) colours its text with one of the fixed
+//!   palette ([`Colour`]: `red`, `orange`, `green`, `blue`, `grey`); the
+//!   text must not be empty, and a colour never holds another. Bold and
+//!   italic may hold a colour and the reverse, so nesting stops at four
+//!   levels. Chat drops the colour and keeps the text. Any other name is
+//!   text.
 //! - `![alt](image:N)` (#109) places image `N` (one digit, 1 to 9) of the
 //!   body's owner there; where no such image exists it shows nothing. In
 //!   chat ([`Doc::plain`]) an image is left out, and a line or list item
@@ -34,13 +43,19 @@
 //! A body with none of these renders exactly as before: [`Doc::html`] is
 //! the same `<p class="app-body">` and [`Doc::plain`] the same text.
 
+mod colour;
 mod html;
 mod inline;
 mod scan;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_format;
+#[cfg(test)]
+mod tests_steps;
 
+pub use colour::Colour;
 pub use html::{Img, html};
 pub use inline::Inline;
 
@@ -55,6 +70,13 @@ pub enum Block {
     /// A numbered list; each item keeps the number typed
     /// ([`Item::number`]).
     Numbered(Vec<Item>),
+    /// A heading line (#113): `## ` (level 2) or `### ` (level 3).
+    Heading {
+        /// 2 or 3.
+        level: u8,
+        /// The content after the marker.
+        content: Vec<Inline>,
+    },
 }
 
 /// One list item: its marker as typed (for the plain text) and content.
@@ -91,6 +113,11 @@ pub struct Doc {
 pub fn parse(body: &str) -> Doc {
     let mut blocks: Vec<Block> = Vec::new();
     for line in body.split('\n') {
+        if let Some((level, rest)) = heading_marker(line) {
+            let content = inline::parse(rest);
+            blocks.push(Block::Heading { level, content });
+            continue;
+        }
         match list_marker(line) {
             Some((marker, rest, number)) => {
                 let item = Item {
@@ -117,6 +144,17 @@ pub fn parse(body: &str) -> Doc {
     Doc { blocks }
 }
 
+/// `(level, rest)` of a heading line: `## x` → `(2, "x")`, `### x` →
+/// `(3, "x")`; a marker followed by spaces only is no heading.
+fn heading_marker(line: &str) -> Option<(u8, &str)> {
+    let (level, rest) = if let Some(rest) = line.strip_prefix("### ") {
+        (3, rest)
+    } else {
+        (2, line.strip_prefix("## ")?)
+    };
+    (!rest.trim().is_empty()).then_some((level, rest))
+}
+
 /// `(marker, rest, number)` of a list line: `- x` → `("- ", "x", None)`,
 /// `3. x` → `("3. ", "x", Some(3))`.
 fn list_marker(line: &str) -> Option<(&str, &str, Option<u32>)> {
@@ -135,7 +173,8 @@ fn list_marker(line: &str) -> Option<(&str, &str, Option<u32>)> {
 
 impl Doc {
     /// The body as plain text, for chat: markup removed, link text kept
-    /// (a bare URL stays the URL), list markers and line breaks as typed.
+    /// (a bare URL stays the URL), list markers and line breaks as typed,
+    /// a heading's marker and every colour left out.
     /// A body without markup comes back unchanged.
     pub fn plain(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
@@ -152,6 +191,11 @@ impl Doc {
                         .filter(|i| !inline::only_images(&i.content))
                         .map(|i| format!("{}{}", i.marker, inline::plain(&i.content))),
                 ),
+                Block::Heading { content, .. } => {
+                    if !inline::only_images(content) {
+                        lines.push(inline::plain(content));
+                    }
+                }
             }
         }
         lines.join("\n")
@@ -163,6 +207,7 @@ impl Doc {
         for b in &self.blocks {
             match b {
                 Block::Text(ls) => ls.iter().for_each(|l| inline::links(l, &mut out)),
+                Block::Heading { content, .. } => inline::links(content, &mut out),
                 Block::Bullets(items) | Block::Numbered(items) => items
                     .iter()
                     .for_each(|i| inline::links(&i.content, &mut out)),
@@ -177,6 +222,7 @@ impl Doc {
         for b in &self.blocks {
             match b {
                 Block::Text(ls) => ls.iter().for_each(|l| inline::images(l, &mut out)),
+                Block::Heading { content, .. } => inline::images(content, &mut out),
                 Block::Bullets(items) | Block::Numbered(items) => items
                     .iter()
                     .for_each(|i| inline::images(&i.content, &mut out)),

@@ -28,7 +28,8 @@ pub struct StudentAnnouncement {
     /// Its `expires_at` has passed (#77): a Student gets the "no longer
     /// available" view, without its text.
     pub expired: bool,
-    /// Its images (#109), shown by [`StudentAnnouncement::body_html`].
+    /// Its files: images (#109) and PDFs (#113), shown by
+    /// [`StudentAnnouncement::body_html`].
     pub(crate) images: Vec<super::files::Stored>,
 }
 
@@ -40,9 +41,18 @@ impl StudentAnnouncement {
     }
 
     /// The body as the Mini App shows it: formatted, each image in place
-    /// on its public path, then the images not placed (alt `"{label} N"`).
+    /// on its public path, then the images not placed (alt `"{label} N"`),
+    /// then the PDFs with their names and sizes.
     pub fn body_html(&self, label: &str) -> maud::Markup {
         super::files::body_html(&self.body, &self.images, false, label)
+    }
+
+    /// The page needs the "open outside" script: the body has a link, or
+    /// a PDF is attached (#113).
+    pub fn opens_outside(&self) -> bool {
+        !self.unavailable()
+            && (super::files::pdfs(&self.images).next().is_some()
+                || !crate::rich_text::parse(&self.body).links().is_empty())
     }
 
     /// Retracted or expired: a Student no longer sees its text nor
@@ -94,9 +104,9 @@ pub async fn list_for_student(
         .bind(limit);
     let rows = s.db.query(stmt).await?;
     let mut out: Vec<StudentAnnouncement> = (0..rows.len()).map(|i| read(&rows, i)).collect();
-    // Their images in one query, not one per announcement.
+    // Their files in one query, not one per announcement.
     let ids: Vec<&str> = out.iter().map(|a| a.id.as_str()).collect();
-    let mut images = super::files::list_many(s, &ids, super::files::IMAGE).await?;
+    let mut images = super::files::list_many(s, &ids).await?;
     for a in &mut out {
         a.images = images.remove(&a.id).unwrap_or_default();
     }
@@ -140,7 +150,7 @@ async fn with_images(
     mut a: StudentAnnouncement,
 ) -> Result<StudentAnnouncement> {
     if !a.unavailable() {
-        a.images = super::files::list(s, &a.id, super::files::IMAGE).await?;
+        a.images = super::files::list(s, &a.id).await?;
     }
     Ok(a)
 }
