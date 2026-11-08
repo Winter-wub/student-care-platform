@@ -132,15 +132,24 @@ impl LogoKind {
 }
 
 /// Width and height of a PNG (its `IHDR`).
+/// The last 12 bytes of every PNG: the empty `IEND` chunk and its CRC.
+const PNG_END: &[u8; 12] = b"\0\0\0\0IEND\xaeB`\x82";
+
+/// Width and height of a PNG (its `IHDR`), if it is one from its signature
+/// to its `IEND` chunk.
 fn png_size(b: &[u8]) -> Option<(u32, u32)> {
-    let ok = b.len() >= 24 && b.starts_with(b"\x89PNG\r\n\x1a\n") && &b[12..16] == b"IHDR";
+    let ok = b.len() >= 24 + PNG_END.len()
+        && b.starts_with(b"\x89PNG\r\n\x1a\n")
+        && &b[12..16] == b"IHDR"
+        && b.ends_with(PNG_END);
     let be = |i: usize| u32::from_be_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
     ok.then(|| (be(16), be(20)))
 }
 
-/// Width and height of a JPEG: the first start-of-frame marker.
+/// Width and height of a JPEG: the first start-of-frame marker, in a file
+/// that starts with SOI and ends with EOI.
 fn jpeg_size(b: &[u8]) -> Option<(u32, u32)> {
-    if !b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+    if !b.starts_with(&[0xFF, 0xD8, 0xFF]) || !b.ends_with(&[0xFF, 0xD9]) {
         return None;
     }
     let mut i = 2;
@@ -199,6 +208,7 @@ mod tests {
         v.extend(w.to_be_bytes());
         v.extend(h.to_be_bytes());
         v.extend([8, 6, 0, 0, 0]);
+        v.extend(PNG_END);
         v
     }
 
@@ -208,6 +218,7 @@ mod tests {
         v.extend(h.to_be_bytes());
         v.extend(w.to_be_bytes());
         v.extend([1, 1, 0x11, 0]);
+        v.extend([0xFF, 0xD9]);
         v
     }
 
@@ -248,6 +259,13 @@ mod tests {
             "kernel.branding.err_logo_large"
         );
         assert_eq!(LogoKind::of_key("branding/ab.jpg"), Some(LogoKind::Jpeg));
+        // A header alone is no image.
+        let mut cut = png(200, 80);
+        cut.truncate(cut.len() - 1);
+        assert!(logo(&cut).is_err());
+        let mut cut = jpeg(300, 120);
+        cut.pop();
+        assert!(logo(&cut).is_err());
     }
 
     #[test]

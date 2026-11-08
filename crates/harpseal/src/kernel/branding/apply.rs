@@ -3,7 +3,9 @@
 //!
 //! 1. Each new image is checked by every Channel with Menu images
 //!    ([`crate::MenuArt::check`]) against every Locale's Menu.
-//! 2. The new images go to the FileStore under their content keys.
+//! 2. The new images go to the FileStore under their content keys, and the
+//!    revision salt is stored (if there is none) and read back, so the
+//!    staged names and every later retire agree.
 //! 3. Each Channel stages the platform objects the change needs
 //!    ([`crate::MenuArt::stage`]: on LINE the rich menus of the next
 //!    revision of every Locale's unlocked Menu, and of the locked Menu's
@@ -145,9 +147,13 @@ pub(crate) async fn save(
             written.push(store::put(s, MENU_DIR, b, "png", first.content_type()).await?);
         }
     }
+    // The salt the staged rich menus are named with must be the one every
+    // later retire reads: store it first if there is none (a concurrent
+    // first save may win; read back whichever did). Drawing it is no
+    // visible change, so a failed stage may leave it.
     let salt = match &saved.salt {
         Some(salt) => salt.clone(),
-        None => menu::new_salt(s)?,
+        None => stored_salt(s).await?,
     };
     let locked_revision = saved.locked_revision + u32::from(locked_changed);
     let next = Saved {
@@ -184,6 +190,22 @@ pub(crate) async fn save(
         .collect();
     store::forget(s, &replaced).await;
     Ok(MenuImagesSaved::Saved)
+}
+
+/// The Deployment's revision salt, drawn and stored if there is none.
+async fn stored_salt(s: &crate::Services) -> Result<String> {
+    let insert = Statement::new(
+        "INSERT INTO menu_salt (salt) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM menu_salt)",
+    )
+    .bind(menu::new_salt(s)?);
+    s.db.execute(insert).await?;
+    let rows =
+        s.db.query(Statement::new("SELECT salt FROM menu_salt LIMIT 1"))
+            .await?;
+    rows.get(0, "salt")
+        .and_then(Value::as_text)
+        .map(str::to_string)
+        .ok_or_else(|| Error::Platform("no revision salt after storing one".into()))
 }
 
 /// Each Locale's unlocked Menu at its next revision, with `salt`: the

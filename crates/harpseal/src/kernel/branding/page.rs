@@ -31,6 +31,8 @@ pub(super) struct LookForm {
     errors: HashMap<&'static str, String>,
     /// Show the preview of these values.
     preview: bool,
+    /// The version the form was first rendered from (kept across a preview).
+    seen: Option<String>,
 }
 
 impl LookForm {
@@ -85,7 +87,10 @@ fn source(v: &View<'_>, stored: &Stored, key: &str) -> Markup {
 
 fn look_section(v: &View<'_>, stored: &Stored, f: &LookForm) -> Markup {
     let err = |k: &str| f.errors.get(k);
-    let saved_logo = stored.get(LOGO_KEY).map(super::logo::url);
+    let saved_logo = stored
+        .get(LOGO_KEY)
+        .filter(|k| super::store::is_logo_key(k))
+        .map(super::logo::url);
     let logo_src = match (&f.draft, f.drop_logo) {
         (Some((bytes, kind)), _) => Some(data_url(kind.content_type(), bytes)),
         (None, true) => v.s.config.branding.logo.clone(),
@@ -107,6 +112,7 @@ fn look_section(v: &View<'_>, stored: &Stored, f: &LookForm) -> Markup {
             }
             form method="post" action=(format!("/admin{SAVE_PATH}")) enctype="multipart/form-data" {
                 (v.staff.csrf_field())
+                input type="hidden" name="seen" value=(f.seen.clone().unwrap_or_else(|| seen(stored)));
                 div class="field" {
                     label for="b-name" { (v.t("kernel.branding.name")) " " (source(v, stored, NAME_KEY)) }
                     input id="b-name" name="name" value=(f.name) maxlength="200"
@@ -154,6 +160,16 @@ fn look_section(v: &View<'_>, stored: &Stored, f: &LookForm) -> Markup {
     }
 }
 
+/// A version of the saved name, colour and logo, sent with the form: a save
+/// or reset from a form rendered before another save is refused.
+pub(super) fn seen(stored: &Stored) -> String {
+    let parts: Vec<&str> = [NAME_KEY, COLOR_KEY, LOGO_KEY]
+        .iter()
+        .map(|k| stored.get(k).unwrap_or("\u{0}"))
+        .collect();
+    super::store::sha256_hex(parts.join("\u{1}").as_bytes())[..16].to_string()
+}
+
 /// The fields of the form.
 #[derive(Default)]
 struct Posted {
@@ -163,6 +179,8 @@ struct Posted {
     logo: Vec<u8>,
     draft: String,
     drop_logo: bool,
+    /// [`seen`] of the settings the form was rendered from.
+    seen: String,
 }
 
 /// Longest text field read, in bytes (the logo draft is base64).
@@ -193,6 +211,7 @@ async fn read(mut m: Multipart) -> Option<Posted> {
             "logo" => p.logo = bytes.to_vec(),
             "logo_draft" => p.draft = text(),
             "drop_logo" => p.drop_logo = true,
+            "seen" => p.seen = text(),
             _ => {}
         }
     }
@@ -213,6 +232,11 @@ pub(super) async fn submit(
         return v.error();
     };
     let actor = Actor::staff(&staff);
+    // Saved meanwhile (another tab, another Administrator): never write over
+    // values this form did not show.
+    if p.op != "preview" && p.seen != seen(&stored) {
+        return v.redirect(false, "kernel.admin.conflict");
+    }
     if p.op == "reset" {
         let done = save::save(&s.deployment, &stored, Values::default(), &actor, &ctx).await;
         return flash(&v, done, "kernel.branding.reset_done");
@@ -222,6 +246,7 @@ pub(super) async fn submit(
         color: p.color.clone(),
         drop_logo: p.drop_logo,
         preview: p.op == "preview",
+        seen: Some(p.seen.clone()),
         ..LookForm::default()
     };
     let name = check::name(&p.name).map_err(|r| f.errors.insert("name", v.refused(&r)));
@@ -264,7 +289,10 @@ pub(super) async fn submit(
     }
     // A value equal to `deployment.toml`'s is no setting: it follows the file.
     let toml = super::Chrome::of(&s.config, &Stored::default());
-    let logo = match (f.draft, p.drop_logo, stored.get(LOGO_KEY)) {
+    let kept = stored
+        .get(LOGO_KEY)
+        .filter(|k| super::store::is_logo_key(k));
+    let logo = match (f.draft, p.drop_logo, kept) {
         (Some((bytes, kind)), _, _) => Logo::New(bytes, kind),
         (None, false, Some(key)) => Logo::Keep(key.to_string()),
         _ => Logo::None,

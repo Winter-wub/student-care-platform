@@ -19,14 +19,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harpseal::{
-    Channel, Menu, MenuArea, MenuArt, MenuImageProblem, MenuImages, MenuKey, MenuLayout, MenuSlot,
-    Result,
+    Channel, Error, Menu, MenuArea, MenuArt, MenuImageProblem, MenuImages, MenuKey, MenuLayout,
+    MenuSlot, Result,
 };
 use serde_json::Value;
 
 use super::image::PNG_MAGIC;
 use super::{IMAGE_MAX_BYTES, IMAGE_SIZES, keeper, rich_menu};
 use crate::{LineChannel, LineConfig, render};
+
+/// Most rich menus a LINE channel holds
+/// (<https://developers.line.biz/en/reference/messaging-api/#create-rich-menu>).
+pub(crate) const MAX_RICH_MENUS: usize = 1000;
 
 impl LineChannel {
     /// This Channel's configuration with `images` in place.
@@ -202,6 +206,19 @@ impl MenuArt for LineChannel {
             return Ok(());
         }
         let list = view.rich_menu_list().await?;
+        let missing = wanted
+            .iter()
+            .filter(|(n, _, _)| keeper(&list, n).is_none())
+            .count();
+        if list.len() + missing > MAX_RICH_MENUS {
+            // Refused before creating any: a half-staged change would leave
+            // some Locales without their new rich menu.
+            return Err(Error::Platform(format!(
+                "LINE holds {} rich menus; {missing} more would pass its limit of \
+                 {MAX_RICH_MENUS}: delete unused ones (or bump menu_generation) first",
+                list.len()
+            )));
+        }
         let mut made: Vec<(String, String)> = Vec::new();
         for (name, obj, image) in &wanted {
             if let Some(id) = keeper(&list, name) {

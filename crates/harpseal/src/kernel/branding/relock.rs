@@ -8,8 +8,11 @@
 //! `after` (the last `channel_account.id` done), `hop` and `waits`. A run
 //! re-locks a page of [`PAGE`] accounts per Channel (one `set_menu` each,
 //! under the 50 subrequests of a Workers free-plan invocation), then
-//! continues. An account the platform will never reach is passed over;
-//! any other failure continues at that account after a wait. Once every
+//! continues. Each account's state is read again just before its
+//! `set_menu`: one that linked meanwhile is left alone. An account the
+//! platform will never reach is passed over; any other failure continues at
+//! that account after a wait, and past [`MAX_TRIES`] failed runs on the same
+//! account it is passed over too. Once every
 //! Channel is done, `retire_menus` gets the locked Menu at this revision
 //! and every revision from 1 before it (revision 0, the unsalted name
 //! another Deployment on the token may share, is never handed over); a
@@ -40,6 +43,16 @@ pub(crate) const PAGE: usize = 20;
 const RETRY_SECS: i64 = 60;
 /// Waits one change's Job may chain; past it the run fails with an error.
 const MAX_WAITS: i64 = 200;
+/// Runs one account may fail (not rate limited) before it is passed over.
+pub(crate) const MAX_TRIES: i64 = 5;
+
+/// Where a continuation picks up.
+struct Next<'a> {
+    after: &'a str,
+    secs: i64,
+    /// The account that failed and how many runs it failed.
+    stuck: Option<(&'a str, i64)>,
+}
 
 pub(super) fn register(r: &mut ModuleRegistrar) {
     r.job(JobSpec::new(RELOCK), run);
@@ -106,22 +119,45 @@ impl Run<'_> {
                 let (Some(id), Some(external)) = (text("id"), text("external_id")) else {
                     continue;
                 };
+                // Linked since the page was read: it has its unlocked Menu now.
+                if self.linked_now(&id).await? {
+                    after = id;
+                    continue;
+                }
                 let account = ChannelAccountId::new(ch.kind(), external);
                 match ch.set_menu(&account, None).await {
                     Ok(()) => {}
                     Err(e) if matches!(e.root(), Error::Unreachable | Error::Invalid(_)) => {}
                     Err(e) => {
-                        let secs = match e.root() {
-                            Error::RateLimited { retry_after_secs } => i64::from(*retry_after_secs),
-                            _ => RETRY_SECS,
+                        let (secs, tries) = match e.root() {
+                            // A rate limit is no fault of the account.
+                            Error::RateLimited { retry_after_secs } => {
+                                (i64::from(*retry_after_secs), 0)
+                            }
+                            _ => (RETRY_SECS, self.tries_of(&id) + 1),
                         };
-                        return self.continue_at(ch.as_ref(), "relock", &after, secs).await;
+                        // An account that keeps failing is passed over: one
+                        // account never holds the others (and the retire) back.
+                        if tries <= MAX_TRIES {
+                            let stuck = (tries > 0).then_some((id.as_str(), tries));
+                            let next = Next {
+                                after: &after,
+                                secs,
+                                stuck,
+                            };
+                            return self.continue_at(ch.as_ref(), "relock", next).await;
+                        }
                     }
                 }
                 after = id;
             }
             if rows.len() == PAGE {
-                return self.continue_at(ch.as_ref(), "relock", &after, 0).await;
+                let next = Next {
+                    after: &after,
+                    secs: 0,
+                    stuck: None,
+                };
+                return self.continue_at(ch.as_ref(), "relock", next).await;
             }
             after.clear();
         }
@@ -174,9 +210,12 @@ impl Run<'_> {
                     _ => return Err(e),
                 },
             };
-            return self
-                .continue_at(ch.as_ref(), "retire", "", i64::from(secs))
-                .await;
+            let next = Next {
+                after: "",
+                secs: i64::from(secs),
+                stuck: None,
+            };
+            return self.continue_at(ch.as_ref(), "retire", next).await;
         }
         Ok(())
     }
@@ -218,15 +257,26 @@ impl Run<'_> {
         Ok(())
     }
 
-    /// Enqueues the continuation at `ch`, `phase`, `after`, due `secs`
-    /// from now (a wait when `secs > 0`, counted against [`MAX_WAITS`]).
-    async fn continue_at(
-        &self,
-        ch: &dyn Channel,
-        phase: &str,
-        after: &str,
-        secs: i64,
-    ) -> Result<()> {
+    /// Whether account `id` is linked now.
+    async fn linked_now(&self, id: &str) -> Result<bool> {
+        let st = Statement::new("SELECT flow_state FROM channel_account WHERE id = ?").bind(id);
+        let rows = self.cx.services.db.query(st).await?;
+        Ok(rows.get(0, "flow_state").and_then(Value::as_text) == Some("linked"))
+    }
+
+    /// How many runs already failed on account `id`.
+    fn tries_of(&self, id: &str) -> i64 {
+        match self.p["stuck"].as_str() {
+            Some(s) if s == id => self.p["tries"].as_i64().unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    /// Enqueues the continuation at `ch`, `phase`, `next.after`, due
+    /// `next.secs` from now (a wait when `secs > 0`, counted against
+    /// [`MAX_WAITS`]), remembering the account that failed (`stuck`).
+    async fn continue_at(&self, ch: &dyn Channel, phase: &str, next: Next<'_>) -> Result<()> {
+        let (after, secs) = (next.after, next.secs);
         let hop = self.p["hop"].as_i64().unwrap_or(0) + 1;
         let waits = self.p["waits"].as_i64().unwrap_or(0) + i64::from(secs > 0);
         if waits > MAX_WAITS {
@@ -243,6 +293,8 @@ impl Run<'_> {
             "after": after,
             "hop": hop,
             "waits": waits,
+            "stuck": next.stuck.map(|(id, _)| id),
+            "tries": next.stuck.map_or(0, |(_, n)| n),
         });
         let key = format!("{RELOCK}:r{}:{hop}", self.revision);
         let at = Timestamp(self.cx.services.now_ms() + secs.max(0) * 1000);

@@ -240,18 +240,19 @@ impl Writer<'_> {
             .filter_map(|c| page.columns.iter().skip(skip).position(|n| n == c))
             .map(|i| i + skip)
             .collect();
-        // A `setting` whose key ends in `_file_key` names an object too
-        // (#114: the branding logo and Menu images).
+        // The branding files (#114) are named by three Kernel settings, not
+        // by a column: only those, with a value of their own shape, are
+        // followed. Any other `setting` value is data, never a file key.
         let col = |c: &str| page.columns.iter().skip(skip).position(|n| n == c);
-        let setting = match (tab.t.name.as_str(), col("key"), col("value")) {
-            ("setting", Some(k), Some(v)) => Some((k + skip, v + skip)),
+        let setting = match (tab.t.name.as_str(), col("key"), col("locale"), col("value")) {
+            ("setting", Some(k), Some(l), Some(v)) => Some((k + skip, l + skip, v + skip)),
             _ => None,
         };
         for row in &page.rows {
-            if let Some((k, v)) = setting
-                && let (Some(Value::Text(key)), Some(Value::Text(file))) = (row.get(k), row.get(v))
-                && key.ends_with("_file_key")
-                && !file.is_empty()
+            if let Some((k, l, v)) = setting
+                && let (Some(Value::Text(key)), Some(Value::Text(locale)), Some(Value::Text(file))) =
+                    (row.get(k), row.get(l), row.get(v))
+                && crate::kernel::branding::names_file(key, locale, file)
             {
                 held.files.insert(file.clone());
             }

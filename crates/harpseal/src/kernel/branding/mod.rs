@@ -52,7 +52,7 @@ use crate::port_types::{Statement, Value};
 use crate::{AppState, Result, Services};
 
 pub(crate) use relock::RELOCK;
-pub(crate) use store::{drawn, drawn_all};
+pub(crate) use store::{drawn, drawn_all, names_file};
 
 /// The display name.
 pub(crate) const NAME_KEY: &str = "kernel.branding.name";
@@ -142,26 +142,35 @@ pub(crate) struct Chrome {
 }
 
 impl Chrome {
-    /// The saved values over the TOML ones.
+    /// The saved values over the TOML ones. Each saved value is checked
+    /// again as it is read (a restored or edited row is data, not trusted
+    /// markup): a colour that is not `#rrggbb` readable under white text, a
+    /// logo key of another shape, or a name that is empty or too long falls
+    /// back to the TOML value.
     pub(crate) fn of(config: &DeploymentConfig, stored: &Stored) -> Self {
         let b = &config.branding;
-        let logo = match stored.get(LOGO_KEY) {
+        let logo = match stored.get(LOGO_KEY).filter(|k| store::is_logo_key(k)) {
             Some(key) => Some(logo::url(key)),
             None => b.logo.clone(),
         };
+        let name = stored.get(NAME_KEY).and_then(|n| check::name(n).ok());
+        let color = stored.get(COLOR_KEY).and_then(|c| check::color(c).ok());
         Chrome {
-            name: stored
-                .get(NAME_KEY)
-                .map(str::to_string)
+            name: name
                 .or_else(|| b.name.clone())
                 .unwrap_or_else(|| config.name.clone()),
-            color: stored
-                .get(COLOR_KEY)
-                .map_or_else(|| b.primary_color.clone(), str::to_string),
+            color: color.unwrap_or_else(|| b.primary_color.clone()),
             logo,
             font_url: b.font_url.clone(),
         }
     }
+}
+
+/// The institution's name for emails: the one saved on `/admin/branding`,
+/// else the TOML's (also when the settings cannot be read).
+pub(crate) async fn org_name(d: &crate::Deployment) -> String {
+    let stored = Stored::load(d.services()).await.unwrap_or_default();
+    Chrome::of(d.config(), &stored).name
 }
 
 /// The chrome's settings for this process, and since when (ms).

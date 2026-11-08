@@ -306,8 +306,7 @@ async fn send(d: &Deployment, m: &ChannelMonth, rec: &Record, to: &[&Admin]) -> 
     let Ok(texts) = Texts::load(s, d.catalog_arc(), d.config().default_locale.clone()).await else {
         return to.iter().map(|a| a.email.clone()).collect();
     };
-    let c = d.config();
-    let org = c.branding.name.clone().unwrap_or_else(|| c.name.clone());
+    let org = crate::kernel::branding::org_name(d).await;
     let (used, cap) = (m.used().to_string(), m.cap.unwrap_or(0).to_string());
     let percent = m.percent().unwrap_or(0).to_string();
     let channel = channel_label(&m.kind);

@@ -39,9 +39,13 @@ the files, so the storage needed is about `retention_days` times the
 database and files together; the Backups page shows the total.
 
 The files are those a row names: a `file_key` or `*_file_key` column, and
-(since #114) a `setting` whose key ends in `_file_key`, which is how the
-branding logo and the LINE menu images saved on `/admin/branding` are
-stored. The format is unchanged (still 2): they are `files/<sha256>` entries
+(since #114) the three branding settings saved on `/admin/branding`
+(`kernel.branding.logo_file_key`, `.menu_locked_file_key`,
+`.menu_unlocked_file_key`, Locale `''`) when their value has the shape the
+Kernel writes (`branding/<sha256>.png|jpg`, `branding/menu/<sha256>.png`).
+Any other `setting` is data: a Module setting named `..._file_key`, or a
+branding value pointing elsewhere, is backed up as a row and never followed
+as a file, so it can neither break the backup nor pull other objects in. The format is unchanged (still 2): they are `files/<sha256>` entries
 like any other, listed in the manifest, and a restore puts them back. A
 backup taken before #114 restores as before.
 

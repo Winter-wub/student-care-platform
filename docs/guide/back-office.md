@@ -287,7 +287,12 @@ the file. "คืนค่าตามไฟล์ตั้งค่า" deletes
   on in the form, so "บันทึก" after it needs no second upload.
 
 Every save is one batch gated on its audit row (`branding.update`, or
-`branding.reset`), with the values before and after. A page in another Worker
+`branding.reset`), with the values before and after. A form shown before
+another save is refused ("conflict"): reload and try again. Saved values are
+checked again when read (a restored or edited row falls back to the TOML
+value), and the logo route serves only a key of the logo's own shape, with
+`Content-Security-Policy: default-src 'none'`. The logo must be a whole PNG
+(ending with its `IEND` chunk) or JPEG (ending with EOI). A page in another Worker
 isolate may show the old look for up to 10 seconds.
 
 **LINE menu images.** The same page replaces the images of the locked and

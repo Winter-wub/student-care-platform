@@ -11,14 +11,11 @@ mod common;
 use std::sync::Arc;
 
 use axum::body::Body;
+use common::branding::with_locked;
 use common::relink::*;
-use common::{LineApi, SECRET, TOKEN, png};
+use common::{LineApi, png};
 use harpseal::branding::{MenuImagesSaved, reset_menu_images, set_menu_images};
-use harpseal::{
-    ActionId, ChannelAccountId, Deployment, DeploymentConfig, Menu, MenuEntry, MenuImageProblem,
-    MenuSlot, RequestCtx, Statement, Value,
-};
-use harpseal_channel_line::{KIND, LineChannel, LineConfig};
+use harpseal::{MenuImageProblem, MenuSlot, RequestCtx, Statement, Value};
 use harpseal_testing::{Harness, RecordedRequest};
 
 const CONTENT: &str = "https://api-data.line.me/v2/bot/richmenu/";
@@ -200,45 +197,10 @@ async fn a_reset_returns_every_account_to_the_configured_image_the_same_way() {
     assert_eq!(n, 1);
 }
 
-/// A Deployment on `api` with a locked Menu, `linked` linked accounts and
-/// `locked` that are not linked (all on the configured locked image).
-async fn with_locked(api: &LineApi, linked: usize, locked: usize) -> (Harness, Deployment) {
-    let h = Harness::new();
-    let start = Menu::new(vec![MenuEntry {
-        label: "เริ่มใช้งาน".into(),
-        action: ActionId::new("kernel.link.start").unwrap(),
-    }]);
-    let cfg = LineConfig::new(SECRET, TOKEN, "")
-        .with_menu_images(png(2500, 843), png(2500, 843))
-        .with_locked_menu(start);
-    let line = LineChannel::new(cfg, Arc::new(api.clone()));
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
-    let d = h.builder().config(config).channel(line).build().unwrap();
-    d.migrate().await.unwrap();
-    for i in 0..linked + locked {
-        let state = if i < linked { "linked" } else { "new" };
-        let ca = format!(
-            "INSERT INTO channel_account (id, channel, external_id, first_seen_at, flow_state, \
-             updated_at) VALUES ('ca{i:05}', 'line', '{}', 1, '{state}', 1)",
-            user(i)
-        );
-        h.db().execute(Statement::new(ca)).await.unwrap();
-    }
-    let ch = d.channel("line").unwrap();
-    for i in linked..linked + locked {
-        ch.set_menu(&ChannelAccountId::new(KIND, user(i)), None)
-            .await
-            .unwrap();
-    }
-    h.create_staff("editor@sealbay.example", "kelp forest at dawn", &["Editor"])
-        .await;
-    (h, d)
-}
-
 #[tokio::test]
 async fn a_new_locked_image_relocks_every_account_not_linked_and_retires_older_revisions() {
     let api = LineApi::default();
-    let (h, d) = with_locked(&api, 2, 25).await;
+    let (h, d) = with_locked(Harness::new(), Arc::new(api.clone()), 2, 25).await;
     let staff = harpseal::Actor::Staff(
         h.db()
             .query(Statement::new("SELECT id FROM staff"))

@@ -28,6 +28,11 @@ pub(crate) fn image(bytes: Vec<u8>, content_type: &'static str, cache: &'static 
         HeaderValue::from_static("nosniff"),
     );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    // An image is never a document: nothing in it may load or run.
+    h.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; sandbox"),
+    );
     r
 }
 
@@ -35,14 +40,18 @@ pub(super) async fn serve(State(s): State<AppState>) -> Response {
     let Ok(stored) = Stored::load(&s.services).await else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
+    // Only a key of the logo's own shape is read: a tampered row never
+    // serves another object (a backup, a Student's file).
     let Some((key, kind)) = stored
         .get(LOGO_KEY)
+        .filter(|k| super::store::is_logo_key(k))
         .and_then(|k| Some((k, LogoKind::of_key(k)?)))
     else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    match s.services.files.get(key).await {
-        Ok(Some(bytes)) => image(bytes, kind.content_type(), "public, max-age=86400"),
+    // Read once per process: the key is a content address.
+    match s.deployment.branding().images.get(&s.services, key).await {
+        Ok(Some(bytes)) => image(bytes.to_vec(), kind.content_type(), "public, max-age=86400"),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }

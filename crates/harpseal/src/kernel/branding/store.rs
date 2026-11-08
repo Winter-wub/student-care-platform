@@ -25,6 +25,46 @@ pub(crate) fn key_of(dir: &str, bytes: &[u8], ext: &str) -> String {
     format!("{dir}/{}.{ext}", sha256_hex(bytes))
 }
 
+/// Whether `key` is one this module makes in `dir` with one of `exts`:
+/// `<dir>/<64 lowercase hex>.<ext>`. Values read back from the database
+/// are checked with it before they name a file (a tampered or restored
+/// row must not reach another object).
+fn is_key_in(key: &str, dir: &str, exts: &[&str]) -> bool {
+    let Some(file) = key.strip_prefix(dir).and_then(|r| r.strip_prefix('/')) else {
+        return false;
+    };
+    let Some((hash, ext)) = file.split_once('.') else {
+        return false;
+    };
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && exts.contains(&ext)
+}
+
+/// A logo key: `branding/<sha256>.png` or `.jpg`.
+pub(crate) fn is_logo_key(key: &str) -> bool {
+    is_key_in(key, "branding", &["png", "jpg"])
+}
+
+/// A Menu image key: `branding/menu/<sha256>.png`.
+pub(crate) fn is_menu_key(key: &str) -> bool {
+    is_key_in(key, "branding/menu", &["png"])
+}
+
+/// Whether the `setting` row (`key`, `locale`) holding `value` names a
+/// branding file: one of the three file settings, Locale `''`, and a value
+/// of the shape that setting's files have. Backups follow only these.
+pub(crate) fn names_file(key: &str, locale: &str, value: &str) -> bool {
+    locale.is_empty()
+        && match key {
+            super::LOGO_KEY => is_logo_key(value),
+            LOCKED_KEY | UNLOCKED_KEY => is_menu_key(value),
+            _ => false,
+        }
+}
+
 /// Stores `bytes` under its content key; the key.
 pub(crate) async fn put(
     s: &Services,
@@ -40,9 +80,12 @@ pub(crate) async fn put(
 
 /// Deletes each of `keys` that no `setting` row names any more (a save
 /// replaced or reset it). An older backup holds its own copy. A failure
-/// only leaks the file.
+/// only leaks the file. Race: a save of the very same content committed
+/// between this check and the delete would name a deleted file; it then
+/// draws the configured image (Menu) or no logo until saved again. Keys are
+/// content addresses, so that needs the same bytes saved twice at once.
 pub(crate) async fn forget(s: &Services, keys: &[String]) {
-    for key in keys {
+    for key in keys.iter().filter(|k| is_logo_key(k) || is_menu_key(k)) {
         let named =
             s.db.query(
                 Statement::new("SELECT 1 FROM setting WHERE value = ? LIMIT 1").bind(key.as_str()),
@@ -131,8 +174,10 @@ impl Saved {
                 continue;
             };
             match k.as_str() {
-                LOCKED_KEY => out.locked = Some(v),
-                UNLOCKED_KEY => out.unlocked = Some(v),
+                // A value of another shape is ignored: the configured image.
+                LOCKED_KEY if is_menu_key(&v) => out.locked = Some(v),
+                UNLOCKED_KEY if is_menu_key(&v) => out.unlocked = Some(v),
+                LOCKED_KEY | UNLOCKED_KEY => {}
                 LOCKED_REVISION_KEY => out.locked_revision = v.parse().unwrap_or(0),
                 _ => out.salt = Some(v),
             }
@@ -216,4 +261,44 @@ pub(crate) async fn drawn_all(d: &Deployment) -> Result<Vec<Arc<dyn Channel>>> {
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_branding_keys_of_their_own_shape_name_files() {
+        let h = "a".repeat(64);
+        assert!(names_file(
+            super::super::LOGO_KEY,
+            "",
+            &format!("branding/{h}.jpg")
+        ));
+        assert!(names_file(
+            LOCKED_KEY,
+            "",
+            &format!("branding/menu/{h}.png")
+        ));
+        for (k, l, v) in [
+            (super::super::LOGO_KEY, "th", format!("branding/{h}.png")),
+            (super::super::LOGO_KEY, "", format!("branding/menu/{h}.png")),
+            (super::super::LOGO_KEY, "", format!("branding/{h}.gif")),
+            (
+                super::super::LOGO_KEY,
+                "",
+                format!("branding/{}.png", "A".repeat(64)),
+            ),
+            (
+                super::super::LOGO_KEY,
+                "",
+                "backups/20261107T190000000Z/manifest.json".into(),
+            ),
+            (UNLOCKED_KEY, "", format!("branding/menu/{h}.png/../x")),
+            ("dues.receipt_file_key", "", "https://pay.example/x".into()),
+            ("dues.receipt_file_key", "", format!("branding/{h}.png")),
+        ] {
+            assert!(!names_file(k, l, &v), "{k} {l} {v}");
+        }
+    }
 }
