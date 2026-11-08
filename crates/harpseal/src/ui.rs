@@ -3,9 +3,9 @@
 //! cdnjs URL with Subresource Integrity. No JS framework, no build step.
 //!
 //! Back-office handlers wrap their content with [`back_office`], which adds
-//! the brand bar (`[branding]` in the TOML), the navigation the Staff
-//! member may see, the pending flash, the usage banner slot and the CSRF
-//! header HTMX sends. Plain `<form method="post">` needs
+//! the brand bar (saved on `/admin/branding`, else `[branding]` in the
+//! TOML), the navigation the Staff member may see, the pending flash, the
+//! usage banner slot and the CSRF header HTMX sends. Plain `<form method="post">` needs
 //! `staff.csrf_field()` inside.
 //!
 //! Layout helpers in `ui.css`: `.card`, `.field`, `.row2`, `.cols`,
@@ -54,34 +54,17 @@ pub fn flash(f: &Flash<'_>) -> Markup {
     }
 }
 
-/// The look from `[branding]`.
-struct Brand<'a> {
-    name: &'a str,
-    color: &'a str,
-    logo: Option<&'a str>,
-    font_url: Option<&'a str>,
-}
+/// The look: the values saved on `/admin/branding` (#114) over
+/// `[branding]` in the TOML.
+type Brand = crate::kernel::branding::Chrome;
 
-impl<'a> Brand<'a> {
-    fn of(s: &'a PageState) -> Self {
-        let b = &s.config.branding;
-        Brand {
-            name: b.name.as_deref().unwrap_or(&s.config.name),
-            color: &b.primary_color,
-            logo: b.logo.as_deref(),
-            font_url: b.font_url.as_deref(),
-        }
-    }
+fn brand_of(s: &PageState) -> Brand {
+    let stored = s.deployment.branding().stored();
+    Brand::of(&s.config, &stored)
 }
 
 /// Whole document. `csrf` goes into `hx-headers` on `<body>`.
-fn document(
-    brand: &Brand<'_>,
-    title: &str,
-    class: &str,
-    csrf: Option<&str>,
-    inner: Markup,
-) -> Markup {
+fn document(brand: &Brand, title: &str, class: &str, csrf: Option<&str>, inner: Markup) -> Markup {
     let hx_headers = csrf.map(|t| format!(r#"{{"X-CSRF-Token":"{t}"}}"#));
     html! {
         (DOCTYPE)
@@ -91,9 +74,10 @@ fn document(
                 meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover";
                 meta name="color-scheme" content="light";
                 title { (title) " · " (brand.name) }
-                @if let Some(f) = brand.font_url { link rel="stylesheet" href=(f); }
+                @if let Some(f) = &brand.font_url { link rel="stylesheet" href=(f); }
                 link rel="stylesheet" href=(CSS_HREF);
-                // `primary_color` is checked to be a CSS hex colour at load.
+                // `primary_color` is checked to be a CSS hex colour at load,
+                // and a saved one to be `#rrggbb`.
                 style { (PreEscaped(format!(":root{{--brand:{}}}", brand.color))) }
                 script src=(HTMX_URL) integrity=(HTMX_SRI) crossorigin="anonymous"
                     referrerpolicy="no-referrer" defer {}
@@ -103,18 +87,54 @@ fn document(
     }
 }
 
-fn brand_link(brand: &Brand<'_>, href: &str) -> Markup {
+fn brand_link(brand: &Brand, href: &str) -> Markup {
     html! {
         a class="brand" href=(href) {
-            @if let Some(logo) = brand.logo { img class="logo" src=(logo) alt=""; }
+            @if let Some(logo) = &brand.logo { img class="logo" src=(logo) alt=""; }
             span { (brand.name) }
+        }
+    }
+}
+
+/// The Mini App's slim header: the logo and the name, in the brand colour.
+fn mini_bar(brand: &Brand) -> Markup {
+    html! {
+        header class="mini-bar" {
+            @if let Some(logo) = &brand.logo { img class="logo" src=(logo) alt=""; }
+            span { (brand.name) }
+        }
+    }
+}
+
+/// The back-office and Mini App headers drawn with `name`, `color` (a
+/// checked `#rrggbb`) and the logo at `logo` (a URL or a `data:` URL), for
+/// the preview of `/admin/branding` (#114). Nothing is saved.
+pub(crate) fn preview_bars(
+    name: &str,
+    color: &str,
+    logo: Option<&str>,
+    office: &str,
+    mini: &str,
+) -> Markup {
+    let brand = Brand {
+        name: name.to_string(),
+        color: color.to_string(),
+        logo: logo.map(str::to_string),
+        font_url: None,
+    };
+    html! {
+        div class="brand-preview" style=(format!("--brand:{color}")) {
+            p class="muted" { (office) }
+            div class="bar" { (brand_link(&brand, "#")) }
+            p class="muted" { (mini) }
+            div class="mini-frame" { (mini_bar(&brand)) }
         }
     }
 }
 
 /// A back-office page for the signed-in Staff member.
 pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Markup) -> Markup {
-    let brand = Brand::of(s);
+    let brand = brand_of(s);
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let nav = !staff.must_change_password && !staff.nav().is_empty();
     let inner = html! {
@@ -164,7 +184,7 @@ pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response
 
 /// A page with the brand bar and no navigation (sign-in, errors).
 pub fn bare(s: &PageState, title: &str, body: Markup) -> Markup {
-    let brand = Brand::of(s);
+    let brand = brand_of(s);
     let inner = html! {
         header class="bar" { (brand_link(&brand, "/admin")) }
         main { (body) }
@@ -174,8 +194,9 @@ pub fn bare(s: &PageState, title: &str, body: Markup) -> Markup {
 
 /// A Mini App page with the Deployment's branding.
 pub fn mini_app(s: &PageState, title: &str, body: Markup) -> Markup {
-    let brand = Brand::of(s);
-    document(&brand, title, "mini", None, mini_inner(brand.name, body))
+    let brand = brand_of(s);
+    let inner = html! { (mini_bar(&brand)) (mini_inner(&brand.name, body)) };
+    document(&brand, title, "mini", None, inner)
 }
 
 /// A Mini App page of an App Session (#28): `csrf` goes into the headers
@@ -188,14 +209,17 @@ pub fn mini_app_session(
     notice_label: &str,
     body: Markup,
 ) -> Markup {
-    let brand = Brand::of(s);
+    let brand = brand_of(s);
     // A page of a live session checks it is this tab's before it is
     // painted, and ends the entry page's loop guard (#86).
     let body = html! {
         @if let Some(t) = csrf { script { (PreEscaped(crate::kernel::app::tab_js(t))) } }
         (body)
     };
-    let inner = mini_footer(brand.name, "/notice?app=1", notice_label, body);
+    let inner = html! {
+        (mini_bar(&brand))
+        (mini_footer(&brand.name, "/notice?app=1", notice_label, body))
+    };
     document(&brand, title, "mini", csrf, inner)
 }
 
@@ -211,11 +235,11 @@ fn mini_footer(org: &str, notice: &str, label: &str, body: Markup) -> Markup {
 }
 
 /// The whole document with the default theme. `org` is the Deployment
-/// name. Prefer [`mini_app`] and [`bare`], which apply `[branding]`.
+/// name. Prefer [`mini_app`] and [`bare`], which apply the branding.
 pub fn page(org: &str, title: &str, shell: Shell, body: Markup) -> Markup {
     let brand = Brand {
-        name: org,
-        color: crate::config::DEFAULT_PRIMARY,
+        name: org.to_string(),
+        color: crate::config::DEFAULT_PRIMARY.to_string(),
         logo: None,
         font_url: None,
     };

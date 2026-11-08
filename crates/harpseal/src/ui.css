@@ -272,3 +272,18 @@ form.inline { display: inline-flex; margin: 0; }
 .app-wait { color: #8a5a00; font-weight: 600; }
 .app-center { text-align: center; }
 .app-center .btn { margin-top: 8px; }
+
+/* Branding (#114): the Mini App's slim header, and the previews of
+   /admin/branding. */
+.mini-bar {
+  display: flex; align-items: center; gap: 10px; padding: 8px var(--gutter);
+  background: var(--brand); color: var(--brand-ink); font-weight: 700;
+}
+.mini-bar .logo { height: 28px; width: auto; border-radius: 6px; background: #fff; }
+.brand-preview { border: 1px dashed var(--line, #ccd); border-radius: 10px; padding: 8px 12px 12px; }
+.brand-preview .bar { border-radius: 8px; }
+.brand-preview .mini-frame { max-width: 380px; border-radius: 8px; overflow: hidden; }
+.menu-preview { margin: 8px 0 16px; }
+.menu-preview svg { width: 100%; max-width: 720px; height: auto; display: block; border-radius: 8px; }
+.menu-preview rect { fill: rgba(255,255,255,.18); stroke: #ff1744; stroke-width: 8; }
+.menu-preview text { fill: #fff; stroke: #000; stroke-width: 6; paint-order: stroke; font-size: 72px; font-weight: 700; }

@@ -92,7 +92,8 @@ pub(super) async fn run(cx: JobContext, job: Job) -> Result<()> {
         salt,
         started,
     };
-    let channels = d.channels();
+    // Drawn on the Menu images saved on `/admin/branding` (#114).
+    let channels = &crate::kernel::branding::drawn_all(&d).await?;
     let start = p["channel"]
         .as_str()
         .and_then(|k| channels.iter().position(|c| c.kind().as_str() == k))

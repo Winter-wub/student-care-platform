@@ -275,6 +275,9 @@ impl Turn<'_> {
             Some(l) => Some(crate::kernel::menu::unlocked(self.d, &self.texts, l).await?),
             None => None,
         };
+        // Drawn on the Menu images saved on `/admin/branding` (#114).
+        let view = crate::kernel::branding::drawn(self.d, channel).await?;
+        let channel = view.as_deref().unwrap_or(channel);
         channel.set_menu(&self.from, menu.as_ref()).await
     }
 

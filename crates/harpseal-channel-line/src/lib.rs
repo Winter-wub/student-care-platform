@@ -45,8 +45,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use harpseal::{
     BatchReceipt, Channel, ChannelAccountId, ChannelKind, Delivery, Error, HttpClient, Inbound,
-    IncomingFile, Locale, Menu, MenuRelinked, MenuRetire, Message, MiniApp, Multicast, RenderCx,
-    Result, ResumeToken, SendReceipt, WebhookRequest,
+    IncomingFile, Locale, Menu, MenuArt, MenuRelinked, MenuRetire, Message, MiniApp, Multicast,
+    RenderCx, Result, ResumeToken, SendReceipt, WebhookRequest,
 };
 use http::Method;
 
@@ -336,6 +336,10 @@ impl Channel for LineChannel {
         (!self.cfg.liff_id.is_empty()).then_some(self as &dyn MiniApp)
     }
     fn multicast(&self) -> Option<&dyn Multicast> {
+        Some(self)
+    }
+    /// The rich menu images, replaceable from `/admin/branding` (#114).
+    fn menu_art(&self) -> Option<&dyn MenuArt> {
         Some(self)
     }
 }

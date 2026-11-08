@@ -162,5 +162,7 @@ async fn walk(r: &mut Runner, w: &World, password: &str) {
     r.step("Mini App shows it acknowledged", w.mini_app()).await;
     r.step("admin usage / security / audit", w.admin_pages())
         .await;
+    r.step("admin branding: save, chrome, reset", w.branding())
+        .await;
     r.step("self-unlink via Menu", w.unlink()).await;
 }

@@ -63,6 +63,23 @@ pub fn name_key(name: &str) -> Option<Option<(&str, u32)>> {
     }
 }
 
+/// The Menu key, generation, revision and salt of a revisioned name
+/// (`harpseal-<key>-<generation>-r<revision>-<salt>-<hash>`); `None` for
+/// any other name.
+pub(super) fn revision_of(name: &str) -> Option<(&str, u32, u32, &str)> {
+    let rest = name.strip_prefix(NAME_PREFIX)?;
+    let parts: Vec<&str> = rest.split('-').collect();
+    match parts.as_slice() {
+        [key, generation, revision, salt, hash]
+            if is_hash(hash) && is_revision(revision) && is_salt(salt) =>
+        {
+            let r = revision[1..].parse().ok()?;
+            Some((valid_key(key)?, generation_of(generation)?, r, salt))
+        }
+        _ => None,
+    }
+}
+
 fn generation_of(generation: &str) -> Option<u32> {
     let digits = !generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit());
     generation.parse().ok().filter(|_| digits)
@@ -134,6 +151,11 @@ mod tests {
             format!("harpseal-locked-2-{H}")
         );
         assert_eq!(make(None, 5, Some("0a1b2c3d"), H), format!("harpseal-{H}"));
+        assert_eq!(
+            revision_of(&format!("harpseal-locked-2-r7-0a1b2c3d-{H}")),
+            Some(("locked", 2, 7, "0a1b2c3d"))
+        );
+        assert_eq!(revision_of(&format!("harpseal-th-2-{H}")), None);
     }
 
     #[test]

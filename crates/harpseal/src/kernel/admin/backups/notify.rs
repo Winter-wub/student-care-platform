@@ -96,8 +96,7 @@ async fn claim_and_send(d: &Deployment, kind: Failure) -> Result<Option<usize>> 
         return Ok(None);
     }
     let texts = Texts::load(s, d.catalog_arc(), d.config().default_locale.clone()).await?;
-    let c = d.config();
-    let org = c.branding.name.clone().unwrap_or_else(|| c.name.clone());
+    let org = crate::kernel::branding::org_name(d).await;
     let args = [
         ("org", org.as_str()),
         ("day", day.as_str()),

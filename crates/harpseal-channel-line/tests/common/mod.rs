@@ -3,6 +3,7 @@
 
 #![allow(dead_code)] // each test binary uses part of this
 
+pub mod branding;
 pub mod relink;
 
 use std::sync::{Arc, Mutex};

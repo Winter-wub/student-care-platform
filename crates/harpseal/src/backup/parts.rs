@@ -240,7 +240,22 @@ impl Writer<'_> {
             .filter_map(|c| page.columns.iter().skip(skip).position(|n| n == c))
             .map(|i| i + skip)
             .collect();
+        // The branding files (#114) are named by three Kernel settings, not
+        // by a column: only those, with a value of their own shape, are
+        // followed. Any other `setting` value is data, never a file key.
+        let col = |c: &str| page.columns.iter().skip(skip).position(|n| n == c);
+        let setting = match (tab.t.name.as_str(), col("key"), col("locale"), col("value")) {
+            ("setting", Some(k), Some(l), Some(v)) => Some((k + skip, l + skip, v + skip)),
+            _ => None,
+        };
         for row in &page.rows {
+            if let Some((k, l, v)) = setting
+                && let (Some(Value::Text(key)), Some(Value::Text(locale)), Some(Value::Text(file))) =
+                    (row.get(k), row.get(l), row.get(v))
+                && crate::kernel::branding::names_file(key, locale, file)
+            {
+                held.files.insert(file.clone());
+            }
             let mut at = 0;
             for (u, w) in tab.uniq.iter().zip(&tab.widths) {
                 let values = row.get(at..at + w).unwrap_or_default();

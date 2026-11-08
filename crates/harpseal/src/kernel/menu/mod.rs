@@ -71,11 +71,12 @@ pub(crate) fn forget_runs(s: &Services) -> Vec<Statement> {
         Statement::new(
             "UPDATE job SET state = 'failed', last_error = ?, finished_at = ?, \
              lock_token = NULL, locked_until = NULL \
-             WHERE kind = ? AND state IN ('queued', 'running')",
+             WHERE kind IN (?, ?) AND state IN ('queued', 'running')",
         )
         .bind("cancelled by the restore of a backup")
         .bind(s.now_ms())
-        .bind(RELINK),
+        .bind(RELINK)
+        .bind(crate::kernel::branding::RELOCK),
     ]
 }
 
@@ -153,66 +154,100 @@ pub(crate) fn on_save(
     let default = catalog.default_locale();
     let old = Texts::with_overrides(catalog.clone(), before, default.clone());
     let new = Texts::with_overrides(catalog.clone(), after, default);
-    let now = d.services().now_ms();
-    let audited = || Statement::new("EXISTS (SELECT 1 FROM audit_log WHERE id = ?)").bind(gate);
     let mut stmts = Vec::new();
     for l in catalog.locales() {
         let (o, n) = (old.in_locale(&l), new.in_locale(&l));
-        let was = d.menu_with(&l, |k| o.t(k));
-        let is = d.menu_with(&l, |k| n.t(k));
-        let (was, is) = (entries_json(&was), entries_json(&is));
+        let was = entries_json(&d.menu_with(&l, |k| o.t(k)));
+        let is = entries_json(&d.menu_with(&l, |k| n.t(k)));
         if was == is {
             continue;
         }
-        let tag = l.as_str();
         if stmts.is_empty() {
             // The Deployment's revision salt, once.
-            let salt = new_salt(d.services())?;
-            stmts.push(
-                Statement::new(
-                    "INSERT INTO menu_salt (salt) SELECT ? \
-                     WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?) \
-                     AND NOT EXISTS (SELECT 1 FROM menu_salt)",
-                )
-                .bind(salt)
-                .bind(gate),
-            );
+            stmts.push(salt_once(&new_salt(d.services())?, gate));
         }
-        stmts.push(
-            Statement::new(
-                "INSERT INTO menu_revision (locale, revision, entries, state, created_at, \
-                 updated_at) SELECT ?, 0, ?, 'live', ?, ? \
-                 WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?) \
-                 AND NOT EXISTS (SELECT 1 FROM menu_revision WHERE locale = ?)",
-            )
-            .bind(tag)
-            .bind(was)
-            .bind(now)
-            .bind(now)
-            .bind(gate)
-            .bind(tag),
-        );
-        stmts.push(
-            Statement::new(
-                "INSERT INTO menu_revision (locale, revision, entries, state, created_at, \
-                 updated_at) SELECT ?, MAX(revision) + 1, ?, 'linking', ?, ? \
-                 FROM menu_revision WHERE locale = ? \
-                 AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?) HAVING COUNT(*) > 0",
-            )
-            .bind(tag)
-            .bind(is)
-            .bind(now)
-            .bind(now)
-            .bind(tag)
-            .bind(gate),
-        );
-        let job_key = format!("{RELINK}:{tag}:{gate}");
-        let payload = json!({ "locale": tag });
-        let (_, enqueue) =
-            d.jobs()
-                .insert_unique_if(&job_key, RELINK, &payload, None, audited())?;
-        stmts.push(enqueue);
+        stmts.extend(next_revision(d, &l, &was, &is, gate)?);
     }
+    Ok(stmts)
+}
+
+/// The statements a Menu image save (#114) adds to its batch, gated on
+/// its audit row `gate`: the next revision of every Locale's unlocked
+/// Menu (the same entries, `texts` with their `setting` overrides: the
+/// image is in the platform object, not in the entries) and one Job
+/// [`RELINK`] each, so every account is re-linked to the new image and
+/// the older revisions retired as after a label save. `salt` is the one
+/// the new rich menus were staged with, stored if there is none yet.
+pub(crate) fn on_images(
+    d: &Deployment,
+    texts: &Texts,
+    salt: &str,
+    gate: &str,
+) -> Result<Vec<Statement>> {
+    let mut stmts = vec![salt_once(salt, gate)];
+    for l in d.catalog().locales() {
+        let t = texts.in_locale(&l);
+        let entries = entries_json(&d.menu_with(&l, |k| t.t(k)));
+        stmts.extend(next_revision(d, &l, &entries, &entries, gate)?);
+    }
+    Ok(stmts)
+}
+
+/// Stores `salt` as the Deployment's revision salt unless it has one.
+pub(crate) fn salt_once(salt: &str, gate: &str) -> Statement {
+    Statement::new(
+        "INSERT INTO menu_salt (salt) SELECT ? \
+         WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?) \
+         AND NOT EXISTS (SELECT 1 FROM menu_salt)",
+    )
+    .bind(salt)
+    .bind(gate)
+}
+
+/// Revision 0 (`was`, the Menu shown until now) the first time, the next
+/// revision (`is`), and the Job [`RELINK`] of Locale `l`.
+fn next_revision(
+    d: &Deployment,
+    l: &Locale,
+    was: &str,
+    is: &str,
+    gate: &str,
+) -> Result<Vec<Statement>> {
+    let now = d.services().now_ms();
+    let tag = l.as_str();
+    let audited = || Statement::new("EXISTS (SELECT 1 FROM audit_log WHERE id = ?)").bind(gate);
+    let mut stmts = vec![
+        Statement::new(
+            "INSERT INTO menu_revision (locale, revision, entries, state, created_at, \
+             updated_at) SELECT ?, 0, ?, 'live', ?, ? \
+             WHERE EXISTS (SELECT 1 FROM audit_log WHERE id = ?) \
+             AND NOT EXISTS (SELECT 1 FROM menu_revision WHERE locale = ?)",
+        )
+        .bind(tag)
+        .bind(was)
+        .bind(now)
+        .bind(now)
+        .bind(gate)
+        .bind(tag),
+        Statement::new(
+            "INSERT INTO menu_revision (locale, revision, entries, state, created_at, \
+             updated_at) SELECT ?, MAX(revision) + 1, ?, 'linking', ?, ? \
+             FROM menu_revision WHERE locale = ? \
+             AND EXISTS (SELECT 1 FROM audit_log WHERE id = ?) HAVING COUNT(*) > 0",
+        )
+        .bind(tag)
+        .bind(is)
+        .bind(now)
+        .bind(now)
+        .bind(tag)
+        .bind(gate),
+    ];
+    let job_key = format!("{RELINK}:{tag}:{gate}");
+    let payload = json!({ "locale": tag });
+    let (_, enqueue) = d
+        .jobs()
+        .insert_unique_if(&job_key, RELINK, &payload, None, audited())?;
+    stmts.push(enqueue);
     Ok(stmts)
 }
 

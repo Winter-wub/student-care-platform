@@ -65,7 +65,8 @@ pub use auth::{
     create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub use channel::{
-    Channel, DeleteMessage, EditMessage, MenuRelinked, MenuRetire, MiniApp, Multicast, ResumeToken,
+    Channel, DeleteMessage, EditMessage, MenuArea, MenuArt, MenuImageProblem, MenuImages,
+    MenuLayout, MenuRelinked, MenuRetire, MenuSlot, MiniApp, Multicast, ResumeToken,
     SendAttachment, WebClient,
 };
 pub use config::{
@@ -88,6 +89,7 @@ pub use jobs::{JobId, Jobs};
 pub use kernel::admin::texts_api as texts;
 pub use kernel::app::{AppForm, AppStudent};
 pub use kernel::audience;
+pub use kernel::branding::api as branding;
 pub use kernel::links;
 pub use kernel::links::LinkChange;
 pub use kernel::roster::api as roster;

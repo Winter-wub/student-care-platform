@@ -1,3 +1,4 @@
+use super::image::PNG_MAGIC;
 use super::*;
 
 pub(crate) fn png(w: u32, h: u32) -> Vec<u8> {

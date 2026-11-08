@@ -26,8 +26,11 @@
 //!   keep their SQLite type: `null`, integers as `42`, reals as `3.0`, text
 //!   as strings, blobs as `{"$blob": "<base64>"}`.
 //! - `files/<sha256 of the key>`: the bytes of each object named by a
-//!   `file_key` or `*_file_key` column. An object missing from the
-//!   FileStore is listed as `missing` and skipped, never fatal.
+//!   `file_key` or `*_file_key` column, or by one of the three branding
+//!   file settings (#114: the logo and Menu images; Locale `''`, and only a
+//!   value of the shape the Kernel writes, so no other `setting` is ever
+//!   followed as a file). An object missing from the FileStore is listed as `missing`
+//!   and skipped, never fatal.
 //!
 //! Every user table is dumped except the `migration` table (a restore
 //! re-runs the migrations) and SQLite's and D1's internal tables.
@@ -77,7 +80,7 @@ pub(crate) mod schema;
 mod settle;
 mod store;
 mod unique;
-mod value;
+pub(crate) mod value;
 mod verify;
 pub(crate) mod xlsx;
 

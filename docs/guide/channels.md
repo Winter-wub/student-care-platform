@@ -173,6 +173,14 @@ The example Deployment draws its images with a script and bundles them:
   of failing on the first Inbound. An empty token (the Fake Channel, demos,
   `just e2e`) skips the check.
 
+The images set here are the defaults. An Administrator can replace either
+image on `/admin/branding` with a preview of the tap areas, and return to
+these defaults with "คืนรูปตั้งต้น" ([back office](back-office.md#branding)).
+The adapter offers that through `Channel::menu_art` (`MenuArt::check`: the
+size and grid rules above; `stage`: the new rich menus are created before
+anything is saved; `drawn_on`: the Channel drawing on the saved images).
+`check_menu_images` at start-up still checks the configured ones.
+
 Each Menu becomes one rich menu, created on first use and reused by name:
 `harpseal-<key>-<generation>-<hash>`. `<hash>` covers the rendered rich menu
 and its image; `<key>` says which Menu it is and comes from the Menu itself

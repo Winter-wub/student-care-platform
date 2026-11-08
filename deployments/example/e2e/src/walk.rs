@@ -234,4 +234,66 @@ impl World {
         }
         Ok("usage, security, audit: 200".into())
     }
+
+    /// Branding (#114): a too-light colour is refused in Thai; a new name
+    /// and colour are saved, audited and shown in the back office and the
+    /// Mini App, then returned to the TOML.
+    pub async fn branding(&self) -> R<String> {
+        const NAME: &str = "มหาวิทยาลัยหาดแมวน้ำ (e2e)";
+        // The version of the values the form shows: a stale form is refused.
+        let seen = |body: &str| -> R<String> {
+            let mark = "name=\"seen\" value=\"";
+            let at = body.find(mark).ok_or("no seen field")? + mark.len();
+            let end = body[at..].find('"').ok_or("no seen end")?;
+            Ok(body[at..at + end].to_string())
+        };
+        let page = self.c.get("/admin/branding").await?.expect(200, "page")?;
+        let v = seen(&page.body)?;
+        let save = [
+            ("seen", v.as_str()),
+            ("op", "save"),
+            ("name", NAME),
+            ("color", "#ffd400"),
+        ];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &save, "", b"")
+            .await?;
+        let r = r.expect(422, "light colour")?;
+        ensure(r.body.contains("อ่านยาก"), "refusal in Thai")?;
+        let save = [
+            ("seen", v.as_str()),
+            ("op", "save"),
+            ("name", NAME),
+            ("color", "#1b4f72"),
+        ];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &save, "", b"")
+            .await?;
+        r.expect(303, "save")?;
+        let home = self.c.get("/admin").await?.expect(200, "home")?;
+        ensure(home.body.contains("--brand:#1b4f72"), "back office colour")?;
+        let notice = self.c.get("/notice").await?.expect(200, "notice")?;
+        ensure(notice.body.contains(NAME), "Mini App name")?;
+        let n = self.int(
+            "SELECT count(*) FROM audit_log WHERE action = 'branding.update'",
+            &[],
+        )?;
+        ensure(n == 1, format!("{n} audit rows"))?;
+        let page = self.c.get("/admin/branding").await?.expect(200, "page")?;
+        let v = seen(&page.body)?;
+        let reset = [("seen", v.as_str()), ("op", "reset")];
+        let r = self
+            .c
+            .post_file("/admin/branding/save", &reset, "", b"")
+            .await?;
+        r.expect(303, "reset")?;
+        let n = self.int(
+            "SELECT count(*) FROM setting WHERE key LIKE 'kernel.branding.%'",
+            &[],
+        )?;
+        ensure(n == 0, format!("{n} branding settings left"))?;
+        Ok("refused, saved, shown, reset".into())
+    }
 }

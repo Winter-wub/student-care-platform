@@ -5,7 +5,7 @@
 use harpseal::{Error, Result};
 use http::Method;
 
-use super::fail;
+use super::{IMAGE_MAX_BYTES, IMAGE_SIZES, fail};
 use crate::LineChannel;
 use crate::api::{API_DATA, path_id};
 
@@ -68,4 +68,29 @@ impl LineChannel {
             Err(e) => Err(e),
         }
     }
+}
+
+pub(super) const PNG_MAGIC: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+
+/// Width and height of a PNG within LINE's limits, or why not.
+pub fn png_size(image: &[u8]) -> Result<(usize, usize)> {
+    let bad = |why: &str| Error::Invalid(format!("LINE rich menu image: {why}"));
+    if image.is_empty() {
+        return Err(bad("not configured"));
+    }
+    if image.len() > IMAGE_MAX_BYTES {
+        return Err(bad("over 1 MB"));
+    }
+    if image.len() < 24 || &image[..8] != PNG_MAGIC || &image[12..16] != b"IHDR" {
+        return Err(bad("not a PNG"));
+    }
+    let be = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize;
+    let size = (be(&image[16..20]), be(&image[20..24]));
+    if !IMAGE_SIZES.contains(&size) {
+        return Err(bad(&format!(
+            "{} x {} px, must be 2500 x 1686 or 2500 x 843",
+            size.0, size.1
+        )));
+    }
+    Ok(size)
 }
