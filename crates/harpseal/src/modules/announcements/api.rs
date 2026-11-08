@@ -1,6 +1,8 @@
 //! Announcements from code: the same path the back office uses
 //! (`POST /admin/announcements/new`, then "ส่ง" on the detail page), for a
-//! CLI or a seed. The acting Staff member must be active and hold
+//! CLI, a seed, or a Module's own page or Job (pass
+//! [`crate::PageState::deployment`] or [`crate::JobContext::deployment`]).
+//! The acting Staff member must be active and hold
 //! `announcements.send`, as on the pages; every write is audited as that
 //! Staff member.
 

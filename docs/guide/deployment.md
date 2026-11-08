@@ -301,6 +301,56 @@ audit row written with it, so demo data stays distinguishable
 (`harpseal seed-example` uses it). A confirmed roster import is applied by
 the Job `kernel.roster.import` on the next ticks.
 
+### Calling Core services from a Module page
+
+A Module's back-office handler reaches the functions above through
+`PageState::deployment()` (and a Job handler through
+`JobContext::deployment()`). Act as the signed-in Staff member with
+`Actor::staff(&staff)` and pass the request's `RequestCtx` (extract it like
+`CurrentStaff`): the service checks that Staff member's Permission and
+audits the write with the request's address, user agent and request id, as
+the Core page does. The route's own Permission is not enough: a Staff member
+who may open `/admin/reminders` but lacks `announcements.send` is refused.
+`ui::service_error` answers that refusal with the same 403 page the Core
+page shows.
+
+```rust
+use harpseal::audience::{Audience, parse_student_ids};
+use harpseal::modules::announcements::{NewAnnouncement, create_draft};
+use harpseal::{Actor, AppState, CurrentStaff, RequestCtx, ui};
+
+async fn announce(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    ctx: RequestCtx,
+    Form(form): Form<Vec<(String, String)>>,
+) -> Response {
+    let ids = parse_student_ids(field(&form, "ids"));
+    if ids.is_empty() {
+        // No list is no filter: the draft would go to everyone.
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    }
+    let mut audience = Audience::everyone();
+    audience.students = ids;
+    let mut new = NewAnnouncement::new("เตือนชำระค่าธรรมเนียม", "กรุณาชำระภายในวันศุกร์นี้");
+    new.audience = audience;
+    match create_draft(s.deployment(), &new, &Actor::staff(&staff), &ctx).await {
+        Ok(id) => Redirect::to(&format!("/admin/announcements/{id}")).into_response(),
+        Err(e) => ui::service_error(&s, &staff, &e),
+    }
+}
+```
+
+The draft opens on the Core's detail page, where Staff check the Audience
+and send it (`confirm` sends from code). Use the borrowed `Deployment`
+within the request or run only: a clone kept in a Module field, a `static`
+or a handler forms a reference cycle (the Deployment owns the handlers)
+and is never freed. A Job has no signed-in Staff member; one acting for
+Staff passes `Actor::Staff` with the id its page saved in the payload, and
+that Staff member's Permission is checked again when the Job runs. The
+example's `deployments/example/deployment/src/reminders.rs` has the
+whole page.
+
 ## Reading spreadsheet uploads in a Module
 
 `harpseal::sheet` is the reader the roster import uses, public so a
