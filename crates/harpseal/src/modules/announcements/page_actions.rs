@@ -68,14 +68,15 @@ fn done(v: &View<'_>, id: &str, r: crate::Result<()>, ok_key: &str) -> Response 
 }
 
 /// The confirmation page re-posting `version` with `confirm=yes`; with
-/// `everyone` (the Students it reaches), the danger button naming them.
+/// `everyone` (the Students it reaches, and how many of them have a live
+/// Link when it counts unreachable ones), the danger button naming them.
 fn ask(
     v: &View<'_>,
     id: &str,
     path: &str,
     text_key: &str,
     version: i64,
-    everyone: Option<usize>,
+    everyone: Option<(usize, Option<usize>)>,
 ) -> Response {
     let title = v.t("announcements.page.confirm");
     let body = html! {
@@ -87,8 +88,8 @@ fn ask(
                 input type="hidden" name="version" value=(version);
                 input type="hidden" name="confirm" value="yes";
                 div class="actions" {
-                    @if let Some(n) = everyone {
-                        (review::everyone_button(v, n))
+                    @if let Some((n, live)) = everyone {
+                        (review::everyone_button(v, n, live))
                     } @else {
                         button type="submit" { (title) }
                     }
@@ -164,14 +165,18 @@ pub(super) async fn resend(
     };
     // A new round to everyone: the danger button and its reach (#120).
     let everyone = if is_everyone(&row.audience) {
-        match crate::audience::count(&s.deployment, &row.audience).await {
-            Ok(c) => Some(c.students),
-            Err(e) => return v.error(&e),
+        let d = &s.deployment;
+        match (
+            crate::audience::count(d, &row.audience).await,
+            review::reachable(d, &row.audience).await,
+        ) {
+            (Ok(c), Ok(live)) => Some((c.students, live)),
+            (Err(e), _) | (_, Err(e)) => return v.error(&e),
         }
     } else {
         None
     };
-    let stale = everyone.is_some_and(|n| p.reach.as_deref() != Some(n.to_string().as_str()));
+    let stale = everyone.is_some_and(|(n, _)| p.reach.as_deref() != Some(n.to_string().as_str()));
     if !p.yes || stale {
         let key = if p.yes {
             "announcements.review.changed"

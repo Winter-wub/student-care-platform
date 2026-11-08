@@ -12,7 +12,8 @@ const CHOICES: [&str; 3] = ["everyone", "groups", "students"];
 
 pub(super) fn field(v: &View<'_>, f: &Fields) -> Markup {
     html! {
-        div class="field scope" role="radiogroup" aria-label=(v.t("announcements.form.audience")) {
+        fieldset class="scope" {
+            legend { (v.t("announcements.form.scope_legend")) }
             @for c in CHOICES {
                 label class="check" {
                     input type="radio" name="scope" value=(c) required checked[f.scope == c];

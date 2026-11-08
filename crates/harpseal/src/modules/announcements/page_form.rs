@@ -185,7 +185,15 @@ pub(super) async fn edit_post(
     };
     let version = f.version.unwrap_or(-1);
     let actor = Actor::staff(&staff);
-    match service::update(d, &id, version, draft, &actor, &ctx).await {
+    // #120: a schedule whose Audience changes is held as a draft for review.
+    let held = row.status == "scheduled" && draft.audience != row.audience;
+    let saved = if held {
+        page_review::hold(d, &id, version, draft, &actor, &ctx).await
+    } else {
+        service::update(d, &id, version, draft, &actor, &ctx).await
+    };
+    match saved {
+        Ok(()) if held => v.redirect(&page_review::path(&id), false, "announcements.review.held"),
         Ok(()) if f.submit == "confirm" && row.status == "draft" => {
             v.redirect(&page_review::path(&id), true, "announcements.flash.updated")
         }

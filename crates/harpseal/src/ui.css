@@ -213,6 +213,9 @@ tr.changed td { background: #fff8e6; }
 .head-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .announcement-form fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 0 0 16px; min-width: 0; }
 .announcement-form legend { font-weight: 600; padding: 0 4px; }
+/* The Audience choice (#120): a group inside the Audience fieldset. */
+.announcement-form fieldset.scope { border: 0; padding: 0; margin: 0 0 8px; }
+.announcement-form fieldset.scope legend { padding: 0; margin-bottom: 4px; }
 .count .estimate { font-weight: 600; margin-bottom: 0; }
 .preview .bubble { border: 1px solid var(--line); border-radius: 14px; padding: 12px; max-width: 22rem; background: #fff; }
 .preview .bubble p { white-space: pre-wrap; overflow-wrap: anywhere; }

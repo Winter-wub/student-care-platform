@@ -18,7 +18,7 @@ use super::view::View;
 use crate::audience::Counts;
 use crate::kernel::students::channel_label;
 use crate::kernel::text::fill;
-use crate::kernel::usage::MonthSummary;
+use crate::kernel::usage::{LINE_KIND, MonthSummary};
 use crate::{AppState, CurrentStaff, Deployment, Result};
 
 /// The posted field carrying the reach confirmed (everyone only), and the
@@ -28,6 +28,24 @@ pub(super) const REVIEWED: &str = "reviewed";
 
 pub(super) fn path(id: &str) -> String {
     format!("/admin/announcements/{id}/review")
+}
+
+/// Saves a scheduled announcement whose Audience changed (#120): its
+/// schedule is cancelled (back to a draft, audit `announcement.cancel`)
+/// and the edit saved on the draft (`announcement.update`), so it goes out
+/// again only through this review step and its confirm, with the danger
+/// button and the recount when it now reaches everyone. A lost race on
+/// the second write leaves a draft with the old content: nothing is sent.
+pub(super) async fn hold(
+    d: &Deployment,
+    id: &str,
+    version: i64,
+    draft: super::service::Draft,
+    actor: &crate::Actor,
+    ctx: &crate::RequestCtx,
+) -> Result<()> {
+    super::service::cancel(d, id, version, actor, ctx).await?;
+    super::service::update(d, id, version + 1, draft, actor, ctx).await
 }
 
 /// `None` when `row` does not go to everyone. Otherwise whether `posted`
@@ -46,12 +64,33 @@ pub(super) async fn everyone_ok(
     ))
 }
 
-/// The danger button of a send to everyone, carrying its reach.
-pub(super) fn everyone_button(v: &View<'_>, n: usize) -> Markup {
-    let label = fill(
-        &v.t("announcements.review.everyone_button"),
-        &[("n", &n.to_string())],
-    );
+/// How many of `a`'s Students have a live Link, when `a` also counts
+/// unreachable ones (`None` otherwise): the danger label names both.
+pub(super) async fn reachable(
+    d: &Deployment,
+    a: &crate::audience::Audience,
+) -> Result<Option<usize>> {
+    if !a.include_unreachable {
+        return Ok(None);
+    }
+    let mut live = a.clone();
+    live.include_unreachable = false;
+    Ok(Some(crate::audience::count(d, &live).await?.students))
+}
+
+/// The danger button of a send to everyone, carrying its reach `n`;
+/// "(ติดต่อได้ M)" when `reachable` is fewer.
+pub(super) fn everyone_button(v: &View<'_>, n: usize, reachable: Option<usize>) -> Markup {
+    let label = match reachable.filter(|m| *m != n) {
+        Some(m) => fill(
+            &v.t("announcements.review.everyone_button_reach"),
+            &[("n", &n.to_string()), ("m", &m.to_string())],
+        ),
+        None => fill(
+            &v.t("announcements.review.everyone_button"),
+            &[("n", &n.to_string())],
+        ),
+    };
     html! {
         input type="hidden" name=(REACH) value=(n);
         (crate::ui::danger_button(&label))
@@ -79,15 +118,27 @@ pub(super) async fn page(
     }
     let (counts, used) = reach(&s.deployment, &row.audience).await;
     let Some(counts) = counts else {
-        return v.error(&crate::Error::Invalid("audience".into()));
+        // The Audience no longer counts (e.g. the roster schema changed).
+        let edit = format!("{detail}/edit");
+        return v.redirect(&edit, false, "announcements.form.audience_invalid");
     };
+    let everyone = is_everyone(&row.audience);
+    let live = match everyone {
+        true => reachable(&s.deployment, &row.audience)
+            .await
+            .unwrap_or(None),
+        false => None,
+    };
+    let extra = crate::kernel::usage::line_extra(svc, &s.config)
+        .await
+        .unwrap_or(None);
     let (title, body) = texts.0.get("th").cloned().unwrap_or_default();
     let heading = v.t("announcements.review.title");
     let page = html! {
         h1 { (heading) }
         p class="muted" { (v.t("announcements.review.lead")) }
         div class="cols review" {
-            div class="card" { (summary(&v, &row, &counts, &used)) }
+            div class="card" { (summary(&v, &row, &counts, &used, extra)) }
             (super::page_detail::preview(&v, &title, &body, row.require_ack))
         }
         div class="actions" {
@@ -95,8 +146,8 @@ pub(super) async fn page(
                 (v.staff.csrf_field())
                 input type="hidden" name="version" value=(row.version);
                 input type="hidden" name=(REVIEWED) value="1";
-                @if is_everyone(&row.audience) {
-                    (everyone_button(&v, counts.students))
+                @if everyone {
+                    (everyone_button(&v, counts.students, live))
                 } @else {
                     button type="submit" { (v.t("announcements.review.confirm")) }
                 }
@@ -107,7 +158,14 @@ pub(super) async fn page(
     v.page(StatusCode::OK, &heading, page)
 }
 
-fn summary(v: &View<'_>, row: &Row, c: &Counts, used: &[(String, MonthSummary)]) -> Markup {
+/// `extra`: whether the LINE package buys extra messages (`None`: unknown).
+fn summary(
+    v: &View<'_>,
+    row: &Row,
+    c: &Counts,
+    used: &[(String, MonthSummary)],
+    extra: Option<bool>,
+) -> Markup {
     let n = |k: &str, n: usize| fill(&v.t(k), &[("n", &n.to_string())]);
     let a = &row.audience;
     let d = v.s.deployment.as_ref();
@@ -122,7 +180,7 @@ fn summary(v: &View<'_>, row: &Row, c: &Counts, used: &[(String, MonthSummary)])
         .per_channel
         .iter()
         .filter(|(k, _)| metered(d, k))
-        .flat_map(|(k, (active, _))| quota_lines(v, k, *active, used))
+        .flat_map(|(k, (active, _))| quota_lines(v, k, *active, used, extra))
         .collect();
     html! {
         dl class="facts" {
@@ -165,12 +223,15 @@ fn summary(v: &View<'_>, row: &Row, c: &Counts, used: &[(String, MonthSummary)])
 }
 
 /// "จะใช้ข้อความ LINE ประมาณ N ข้อความ จากโควตาเดือนนี้ที่เหลือ M", and
-/// how far over what is left, if it is.
+/// how far over what is left, if it is, with what then happens: LINE
+/// Free refuses the rest (announcements never fall back to email), a
+/// package with extra messages costs more, any other Quota only warns.
 fn quota_lines(
     v: &View<'_>,
     kind: &str,
     units: usize,
     used: &[(String, MonthSummary)],
+    extra: Option<bool>,
 ) -> Vec<String> {
     let channel = channel_label(kind);
     let n = units.to_string();
@@ -194,7 +255,13 @@ fn quota_lines(
     )];
     let over = (units as u64).saturating_sub(left);
     if over > 0 {
-        let text = v.t("announcements.review.quota_over");
+        let key = match (kind == LINE_KIND, extra) {
+            (true, Some(true)) => "announcements.review.quota_over",
+            (true, Some(false)) => "announcements.review.quota_over_free",
+            (true, None) => "announcements.review.quota_over_unknown",
+            (false, _) => "announcements.review.quota_over_warn",
+        };
+        let text = v.t(key);
         lines.push(fill(&text, &[("over", &over.to_string())]));
     }
     lines

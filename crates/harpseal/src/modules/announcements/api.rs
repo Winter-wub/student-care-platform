@@ -112,6 +112,11 @@ pub async fn create_draft(
 /// run on the next ticks). Returns whether it was scheduled. Audit
 /// `announcement.send` or `announcement.schedule`; a stale `version` is
 /// `Error::Conflict`.
+///
+/// The caller owns the confirmation: there is no review step and no
+/// recount of a send to everyone here (#120), only the Permission and the
+/// version. A page that calls this should show the reach first, as
+/// `/admin/announcements/{id}/review` does.
 pub async fn confirm(
     d: &Deployment,
     id: &str,

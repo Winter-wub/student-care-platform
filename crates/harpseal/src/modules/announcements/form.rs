@@ -131,22 +131,32 @@ impl Fields {
         }
     }
 
-    /// The Audience the form describes (unchecked). `everyone` drops the
-    /// filters still filled in below it.
+    /// The Audience the form describes (unchecked). The choice keeps only
+    /// its own filters (#120): `everyone` none, `groups` the attributes and
+    /// Tags, `students` the list, so filters left filled in under another
+    /// choice are dropped, never sent to. A post without a choice (an
+    /// older page) keeps them all.
     pub(crate) fn audience(&self) -> Audience {
         let mut a = Audience::everyone();
         a.include_unreachable = self.unreachable;
-        if self.scope == "everyone" {
-            return a;
+        let (groups, list) = match self.scope.as_str() {
+            "everyone" => (false, false),
+            "groups" => (true, false),
+            "students" => (false, true),
+            _ => (true, true),
+        };
+        if groups {
+            a.attributes = self
+                .attrs
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            a.tags = split(&self.tags).collect();
         }
-        a.attributes = self
-            .attrs
-            .iter()
-            .filter(|(_, v)| !v.is_empty())
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        a.tags = split(&self.tags).collect();
-        a.students = parse_student_ids(&self.students);
+        if list {
+            a.students = parse_student_ids(&self.students);
+        }
         a
     }
 

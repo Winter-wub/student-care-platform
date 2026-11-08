@@ -219,14 +219,20 @@ pub fn form(title: &str, body: &str, extra: &str) -> String {
 
 /// `form` with the Audience choice (#120) its filters imply, unless it
 /// names one: `groups` with an attribute or Tag, `students` with a list,
-/// else `everyone`.
+/// else `everyone`. Groups and a list together stay without a choice, as
+/// an older page posts them (the Audience ANDs them; a choice would keep
+/// only its own filters).
 pub fn with_scope(form: &str) -> String {
     if form.split('&').any(|p| p.starts_with("scope=")) {
         return form.to_string();
     }
     let filled = |p: &str| p.split_once('=').is_some_and(|(_, v)| !v.is_empty());
     let has = |k: &str| form.split('&').any(|p| p.starts_with(k) && filled(p));
-    let scope = if has("attr.") || has("tags=") {
+    let groups = has("attr.") || has("tags=");
+    if groups && has("students=") {
+        return form.to_string();
+    }
+    let scope = if groups {
         "groups"
     } else if has("students=") {
         "students"

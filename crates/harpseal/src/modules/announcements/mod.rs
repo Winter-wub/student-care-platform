@@ -42,6 +42,21 @@
 //!   their names and sizes, and the first is a URL button on the Card.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
+//! - **Confirmation in proportion to reach** (#120): the Audience is an
+//!   explicit choice (`scope`: ทุกคน / เลือกกลุ่ม / เลือกรายคน; empty filters
+//!   never mean everyone), and "ยืนยันส่ง" opens a review step
+//!   (`page_review`). What guards what:
+//!   - the review step and its `reviewed` field only guard against an
+//!     accidental click, for group and hand-picked sends: a POST can carry
+//!     `reviewed=1` without the page having been seen;
+//!   - CSRF and the Permission `announcements.send` are the security gates;
+//!   - a send or resend to everyone is a server gate: the POST must carry
+//!     `reach`, and it must equal a recount of the Audience at that moment
+//!     (else nothing is sent);
+//!   - a scheduled announcement whose Audience changes is held as a draft
+//!     and goes out again only through the review step (`page_review::hold`;
+//!     `service::update` refuses the change on a schedule);
+//!   - the version compare-and-set keeps a double submit to one send.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
 //!   the pages (Permission `announcements.send` checked, audited as the
 //!   acting Staff member).

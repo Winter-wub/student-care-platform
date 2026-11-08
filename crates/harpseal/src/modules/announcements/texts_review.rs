@@ -11,6 +11,7 @@ macro_rules! th_en {
 
 pub(crate) const REVIEW: &[E] = th_en![
     // The Audience choice on the form.
+    ("announcements.form.scope_legend", "ส่งถึง", "Send to"),
     (
         "announcements.form.scope_everyone",
         "ทุกคน: นักศึกษาทุกคนที่เชื่อมบัญชี",
@@ -28,7 +29,7 @@ pub(crate) const REVIEW: &[E] = th_en![
     ),
     (
         "announcements.form.scope_required",
-        "ยังไม่ได้เลือกผู้รับ เลือก ทุกคน เลือกกลุ่ม หรือเลือกรายคน",
+        "ยังไม่ได้เลือกผู้รับ เลือก \"ทุกคน\" \"เลือกกลุ่ม\" หรือ \"เลือกรายคน\"",
         "Choose the Audience: everyone, groups or Students"
     ),
     (
@@ -92,10 +93,30 @@ pub(crate) const REVIEW: &[E] = th_en![
         "จะใช้ข้อความ {channel} ประมาณ {n} ข้อความ จากโควตาเดือนนี้ที่เหลือ {left}",
         "Will use about {n} {channel} messages of the {left} left this month"
     ),
+    // Over what is left, by what happens then (#120). LINE with a package
+    // that buys extra messages:
     (
         "announcements.review.quota_over",
-        "เกินโควตาที่เหลือ {over} ข้อความ ระบบยังส่งต่อ แต่อาจมีค่าใช้จ่ายเพิ่ม",
-        "{over} over what is left: sending goes on, but it may cost extra"
+        "เกินโควตาที่เหลือ {over} ข้อความ แพ็กเกจนี้ซื้อข้อความเพิ่มได้ จึงยังส่งต่อ แต่อาจมีค่าใช้จ่ายเพิ่ม",
+        "{over} over what is left: this package buys extra messages, so sending goes on, but it may cost extra"
+    ),
+    // LINE Free: LINE refuses the rest; announcements do not fall back to email.
+    (
+        "announcements.review.quota_over_free",
+        "เกินโควตาที่เหลือ {over} ข้อความ แพ็กเกจฟรีซื้อข้อความเพิ่มไม่ได้ LINE จะไม่ส่งส่วนที่เกิน บัญชีเหล่านั้นจะไม่ได้รับประกาศนี้ และระบบไม่ส่งทางอีเมลแทน",
+        "{over} over what is left: the Free package cannot buy more, so LINE refuses the rest; those accounts do not get this announcement, and it is not sent by email instead"
+    ),
+    // LINE without a chosen package: it depends on the package.
+    (
+        "announcements.review.quota_over_unknown",
+        "เกินโควตาที่เหลือ {over} ข้อความ ถ้าแพ็กเกจซื้อข้อความเพิ่มไม่ได้ LINE จะไม่ส่งส่วนที่เกิน และระบบไม่ส่งทางอีเมลแทน (เลือกแพ็กเกจได้ที่หน้าการใช้งานและโควตา)",
+        "{over} over what is left: if the package cannot buy more, LINE refuses the rest and it is not sent by email instead (choose the package on the usage page)"
+    ),
+    // Any other Channel: the Quota only warns.
+    (
+        "announcements.review.quota_over_warn",
+        "เกินโควตาที่เหลือ {over} ข้อความ โควตานี้มีไว้เตือนเท่านั้น ระบบยังส่งต่อ",
+        "{over} over what is left: this Quota only warns, sending goes on"
     ),
     (
         "announcements.review.quota_no_cap",
@@ -124,7 +145,17 @@ pub(crate) const REVIEW: &[E] = th_en![
         "ส่งถึงทุกคน {n} คน",
         "Send to everyone: {n}"
     ),
+    (
+        "announcements.review.everyone_button_reach",
+        "ส่งถึงทุกคน {n} คน (ติดต่อได้ {m})",
+        "Send to everyone: {n} ({m} reachable)"
+    ),
     ("announcements.review.back", "กลับไปแก้ไข", "Back to editing"),
+    (
+        "announcements.review.held",
+        "ผู้รับเปลี่ยน จึงพักกำหนดส่งไว้ก่อน ตรวจแล้วกดยืนยันเพื่อตั้งเวลาส่งอีกครั้ง",
+        "The Audience changed, so the schedule is on hold. Check it and confirm to schedule it again."
+    ),
     (
         "announcements.review.changed",
         "จำนวนผู้รับเปลี่ยนไปจากที่ตรวจไว้ ยังไม่ได้ส่ง ตรวจอีกครั้งแล้วกดยืนยัน",

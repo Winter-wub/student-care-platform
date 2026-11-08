@@ -64,7 +64,9 @@ async fn a_list_is_anded_with_the_other_filters() {
     let w = world().await;
     let b = signed_in(&w, "Officer").await;
     // s1, s3: year 2; s4: year 3. Year 2 alone would reach s1 and s3; on
-    // the list [s1, s4] only s1 is both listed and in year 2.
+    // the list [s1, s4] only s1 is both listed and in year 2. Posted
+    // without a choice, as an older page does: since #120 the form's
+    // choices keep only their own filters, the Audience still ANDs them.
     let extra = format!("{}&attr.year=2", ids(&["code-s1", "code-s4"]));
     sent(&w, &b, &extra).await;
     assert_eq!(delivered(&w).await, ["s1"]);
