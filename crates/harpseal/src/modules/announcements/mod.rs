@@ -197,7 +197,12 @@ impl Module for Announcements {
         .job(JobSpec::new(NOTICE_CHUNK), notice::notice_chunk)
         .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job)
         .messages(status::TEXTS)
-        .status_card(status::PERMISSION, status::ORDER, status::card);
+        .status_card(
+            status::PERMISSION,
+            status::TITLE,
+            status::ORDER,
+            status::card,
+        );
         pages(r);
     }
 }

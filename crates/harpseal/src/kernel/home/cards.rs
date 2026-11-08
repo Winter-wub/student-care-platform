@@ -1,6 +1,6 @@
 //! The Kernel's status cards on the term status home (#123): the last
 //! roster import, the message quota this month and the last backup. One
-//! query each, run only on the home for Staff holding the card's
+//! query each (the quota card reuses the banner's read of the request), run only on the home for Staff holding the card's
 //! Permission. (Announcements add their own card from their Module.)
 
 use crate::kernel::students::view::{channel_label, format_ms};
@@ -26,8 +26,8 @@ impl Cx {
     fn time(&self, ms: i64) -> String {
         format_ms(ms, self.s.config.utc_offset_minutes().unwrap_or(0))
     }
-    fn card(&self, state: CardState, prefix: &str, fact: String) -> StatusCard {
-        StatusCard::new(state, self.t(&format!("{prefix}.title")), fact)
+    fn card(&self, state: CardState, fact: String) -> StatusCard {
+        StatusCard::new(state, fact)
     }
 }
 
@@ -45,7 +45,6 @@ fn int(rows: &Rows, c: &str) -> Option<i64> {
 /// The latest roster import that was not cancelled.
 pub(super) async fn roster(s: AppState, staff: CurrentStaff) -> Result<StatusCard> {
     let cx = Cx { s, staff };
-    let p = "kernel.home.roster";
     let rows = cx
         .s
         .services
@@ -56,7 +55,7 @@ pub(super) async fn roster(s: AppState, staff: CurrentStaff) -> Result<StatusCar
         ))
         .await?;
     if rows.is_empty() {
-        let card = cx.card(CardState::Empty, p, cx.t("kernel.home.roster.empty"));
+        let card = cx.card(CardState::Empty, cx.t("kernel.home.roster.empty"));
         return Ok(card.action(cx.t("kernel.home.roster.start"), "/admin/roster"));
     }
     let file = text(&rows, "file_name");
@@ -71,17 +70,17 @@ pub(super) async fn roster(s: AppState, staff: CurrentStaff) -> Result<StatusCar
         "done" => {
             let n = int(&rows, "total_rows").unwrap_or(0).to_string();
             let fact = fill_t("kernel.home.roster.done", &[("time", &at), ("rows", &n)]);
-            cx.card(CardState::Ok, p, fact)
+            cx.card(CardState::Ok, fact)
                 .action(cx.t("kernel.home.roster.new"), "/admin/roster")
         }
         "queued" | "running" => {
             let fact = fill_t("kernel.home.roster.running", &[("file", &file)]);
-            cx.card(CardState::Ok, p, fact)
+            cx.card(CardState::Ok, fact)
                 .action(cx.t("kernel.home.roster.open"), open)
         }
         "previewed" => {
             let fact = fill_t("kernel.home.roster.waiting", &[("file", &file)]);
-            cx.card(CardState::Warn, p, fact)
+            cx.card(CardState::Warn, fact)
                 .action(cx.t("kernel.home.roster.open"), open)
         }
         _ => {
@@ -89,7 +88,7 @@ pub(super) async fn roster(s: AppState, staff: CurrentStaff) -> Result<StatusCar
                 "kernel.home.roster.failed",
                 &[("file", &file), ("time", &at)],
             );
-            cx.card(CardState::Warn, p, fact)
+            cx.card(CardState::Warn, fact)
                 .action(cx.t("kernel.home.roster.open"), open)
         }
     })
@@ -98,26 +97,28 @@ pub(super) async fn roster(s: AppState, staff: CurrentStaff) -> Result<StatusCar
 /// This month's metered messages of the Channel nearest its Quota.
 pub(super) async fn quota(s: AppState, staff: CurrentStaff) -> Result<StatusCard> {
     let cx = Cx { s, staff };
-    let p = "kernel.home.quota";
-    let kinds: Vec<String> =
-        cx.s.deployment
-            .channel_kinds()
-            .iter()
-            .map(|k| k.as_str().to_string())
-            .collect();
-    let months = usage::month_summaries(&cx.s.deployment, &kinds).await?;
+    // The guard read this month's usage for the banner on this same
+    // request; read it again only if that read failed.
+    let months = match &cx.staff.usage_month {
+        Some(m) => m.clone(),
+        None => std::sync::Arc::new(
+            usage::this_month(&cx.s)
+                .await
+                .ok_or_else(|| crate::Error::Db("usage_daily could not be read".into()))?,
+        ),
+    };
     let capped = months
         .iter()
-        .filter_map(|(kind, m)| m.cap.filter(|c| *c > 0).map(|cap| (kind, m, cap)))
-        .max_by_key(|(_, m, cap)| (m.level, m.used.max(0) as u64 * 1000 / cap));
-    let Some((kind, m, cap)) = capped else {
-        let card = cx.card(CardState::Empty, p, cx.t("kernel.home.quota.empty"));
+        .filter_map(|m| m.cap.filter(|c| *c > 0).map(|cap| (m, cap)))
+        .max_by_key(|(m, cap)| (m.level, m.used().max(0) as u64 * 1000 / cap));
+    let Some((m, cap)) = capped else {
+        let card = cx.card(CardState::Empty, cx.t("kernel.home.quota.empty"));
         return Ok(card.action(cx.t("kernel.home.quota.set"), usage::FULL_PATH));
     };
-    let percent = (m.used.max(0) as u64 * 100 / cap).to_string();
+    let percent = (m.used().max(0) as u64 * 100 / cap).to_string();
     let args = [
-        ("channel", channel_label(kind)),
-        ("used", m.used.to_string()),
+        ("channel", channel_label(&m.kind)),
+        ("used", m.used().to_string()),
         ("cap", cap.to_string()),
         ("percent", percent),
     ];
@@ -129,14 +130,13 @@ pub(super) async fn quota(s: AppState, staff: CurrentStaff) -> Result<StatusCard
         CardState::Ok
     };
     Ok(cx
-        .card(state, p, fact)
+        .card(state, fact)
         .action(cx.t("kernel.home.quota.open"), usage::FULL_PATH))
 }
 
 /// The latest backup run, and when one last finished.
 pub(super) async fn backup(s: AppState, staff: CurrentStaff) -> Result<StatusCard> {
     let cx = Cx { s, staff };
-    let p = "kernel.home.backup";
     let rows =
         cx.s.services
             .db
@@ -148,7 +148,7 @@ pub(super) async fn backup(s: AppState, staff: CurrentStaff) -> Result<StatusCar
             .await?;
     let open = "/admin/backups";
     if rows.is_empty() {
-        let card = cx.card(CardState::Empty, p, cx.t("kernel.home.backup.empty"));
+        let card = cx.card(CardState::Empty, cx.t("kernel.home.backup.empty"));
         return Ok(card.action(cx.t("kernel.home.backup.start"), open));
     }
     let at = |c: &str| cx.time(int(&rows, c).unwrap_or(0));
@@ -168,6 +168,6 @@ pub(super) async fn backup(s: AppState, staff: CurrentStaff) -> Result<StatusCar
         ),
     };
     Ok(cx
-        .card(state, p, fact)
+        .card(state, fact)
         .action(cx.t("kernel.home.backup.open"), open))
 }

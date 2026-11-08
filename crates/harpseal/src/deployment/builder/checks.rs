@@ -100,16 +100,24 @@ pub(super) fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::N
     items
 }
 
-/// Status cards (#123): each guarded by a declared Permission, sorted by
-/// `order` (registration order breaks ties).
+/// Status cards (#123): each guarded by a declared Permission and titled
+/// by a known text, sorted by `order` (registration order breaks ties).
 pub(super) fn status_cards(
     cards: Vec<(&'static str, StatusSpec)>,
     permissions: &[crate::manifest::Permission],
+    catalog: &Catalog,
 ) -> Result<Vec<StatusSpec>, BuildError> {
+    let locale = catalog.default_locale();
     for (module, c) in &cards {
         if !permissions.iter().any(|p| p.id == c.permission) {
             let permission = c.permission;
-            return Err(BuildError::UnguardedRoute { module, permission });
+            return Err(BuildError::UnguardedStatusCard { module, permission });
+        }
+        if !catalog.has(&locale, c.title_key) {
+            return Err(BuildError::UnknownText {
+                source: format!("module `{module}`"),
+                key: c.title_key.into(),
+            });
         }
     }
     let mut cards: Vec<StatusSpec> = cards.into_iter().map(|(_, c)| c).collect();

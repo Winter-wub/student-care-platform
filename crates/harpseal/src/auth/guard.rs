@@ -84,6 +84,8 @@ pub struct CurrentStaff {
     pub(crate) must_change_password: bool,
     /// The Quota banner for the `#usage-banner` slot (#26), if any.
     pub(crate) usage_banner: Option<Markup>,
+    /// This month's usage per Channel, read for the banner (#123).
+    pub(crate) usage_month: Option<Arc<Vec<crate::kernel::usage::quota::ChannelMonth>>>,
 }
 
 impl CurrentStaff {
@@ -224,10 +226,15 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         .map(|(ok, key)| (ok, state.catalog.t(&live.locale, &key)));
     let had_flash = cookies::get(req.headers(), FLASH_COOKIE).is_some();
     let usage_view = held(crate::kernel::usage::VIEW);
-    let usage_banner = match renders_a_page(&req) {
-        true => crate::kernel::usage::banner(state, &live.locale, usage_view).await,
+    // One `usage_daily` read per full-page GET: the banner, and the home's
+    // quota card reuses it (#123).
+    let usage_month = match renders_a_page(&req) {
+        true => crate::kernel::usage::this_month(state).await.map(Arc::new),
         false => None,
     };
+    let usage_banner = usage_month
+        .as_deref()
+        .and_then(|m| crate::kernel::usage::render_banner(state, &live.locale, m, usage_view));
     let staff = CurrentStaff {
         id: live.staff_id,
         email: live.email,
@@ -240,6 +247,7 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         path: req.uri().path().to_string(),
         flash,
         usage_banner,
+        usage_month,
     };
     // Nothing above read the body. A pending password change and a missing
     // Permission answer without reading it (the handler never runs), so a

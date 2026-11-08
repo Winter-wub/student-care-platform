@@ -50,29 +50,31 @@ impl CardState {
     }
 }
 
-/// One card on the term status home: a state, a title, one fact and one
-/// next action. Texts are already in the Staff member's Locale.
+/// What a status card says on the term status home: a state, one fact
+/// and one next action, already in the Staff member's Locale. The title
+/// is the card's `title_key` ([`ModuleRegistrar::status_card`]), so even a
+/// card that failed to read is named.
 ///
 /// ```
 /// use harpseal::{CardState, StatusCard};
-/// let card = StatusCard::new(CardState::Warn, "ค่าธรรมเนียม", "12 คนค้างชำระ")
+/// let card = StatusCard::new(CardState::Warn, "12 คนค้างชำระ")
 ///     .action("ดูยอดค้างชำระ", "/admin/fees");
 /// assert_eq!(card.state(), CardState::Warn);
+/// assert_eq!(card.fact(), "12 คนค้างชำระ");
+/// assert_eq!(card.action_link(), Some(("ดูยอดค้างชำระ", "/admin/fees")));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusCard {
     pub(crate) state: CardState,
-    pub(crate) title: String,
     pub(crate) fact: String,
     pub(crate) action: Option<(String, String)>,
 }
 
 impl StatusCard {
     /// A card with no action yet.
-    pub fn new(state: CardState, title: impl Into<String>, fact: impl Into<String>) -> Self {
+    pub fn new(state: CardState, fact: impl Into<String>) -> Self {
         Self {
             state,
-            title: title.into(),
             fact: fact.into(),
             action: None,
         }
@@ -89,16 +91,40 @@ impl StatusCard {
     pub fn state(&self) -> CardState {
         self.state
     }
+
+    /// The card's fact.
+    pub fn fact(&self) -> &str {
+        &self.fact
+    }
+
+    /// The next action as `(label, href)`, if one was set.
+    pub fn action_link(&self) -> Option<(&str, &str)> {
+        self.action.as_ref().map(|(l, h)| (l.as_str(), h.as_str()))
+    }
 }
 
-/// Builds a status card for the signed-in Staff member. Runs only on the
-/// home page, only for Staff holding the card's Permission, once per
-/// view: keep it to one or two queries. An `Err` shows a "could not read"
-/// card in its place; the rest of the home still renders.
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Builds a status card for the signed-in Staff member: an
+/// `async fn(AppState, CurrentStaff) -> harpseal::Result<StatusCard>` or
+/// an equivalent closure (the only implementations; the trait is sealed).
+/// Runs only on the home page, only for Staff holding the card's
+/// Permission, once per view: keep it to one or two queries. An `Err`
+/// shows the card's title with "could not read"; the rest of the home
+/// still renders.
 #[async_trait]
-pub trait StatusSource: Send + Sync {
+pub trait StatusSource: sealed::Sealed + Send + Sync {
     /// The card.
     async fn card(&self, s: AppState, staff: CurrentStaff) -> Result<StatusCard>;
+}
+
+impl<F, Fut> sealed::Sealed for F
+where
+    F: Fn(AppState, CurrentStaff) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<StatusCard>> + Send + 'static,
+{
 }
 
 #[async_trait]
@@ -116,6 +142,7 @@ where
 #[derive(Clone)]
 pub(crate) struct StatusSpec {
     pub(crate) permission: &'static str,
+    pub(crate) title_key: &'static str,
     pub(crate) order: u16,
     pub(crate) source: Arc<dyn StatusSource>,
 }
@@ -148,26 +175,37 @@ impl ModuleRegistrar {
     /// A status card on the term status home (`/admin`), shown only to
     /// Staff holding `permission` and rendered by the Core shell with
     /// every other card, sorted by `order` (lower first; the Kernel's
-    /// cards use 10 to 40). `source` runs once per home view and never on
-    /// other pages, so a card costs at most its own queries there: keep it
-    /// to one or two. `build()` refuses an undeclared `permission`
-    /// ([`crate::BuildError::UnguardedRoute`]).
+    /// cards use 10 to 40). `title_key` is the catalog key of its title,
+    /// shown even when `source` fails. `source` runs once per home view
+    /// and never on other pages, so a card costs at most its own queries
+    /// there: keep it to one or two. `build()` refuses an undeclared
+    /// `permission` ([`crate::BuildError::UnguardedStatusCard`]) and a
+    /// `title_key` with no text in the default Locale
+    /// ([`crate::BuildError::UnknownText`]).
     ///
-    /// ```ignore
-    /// r.status_card("fees.import", 50, |s: AppState, staff: CurrentStaff| async move {
-    ///     let n = owing(&s).await?;
-    ///     Ok(StatusCard::new(CardState::Warn, "ค่าธรรมเนียม", format!("{n} คนค้างชำระ"))
-    ///         .action("ดูยอดค้างชำระ", "/admin/fees"))
-    /// });
+    /// ```no_run
+    /// use harpseal::{AppState, CardState, CurrentStaff, ModuleRegistrar, StatusCard};
+    ///
+    /// async fn fees(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusCard> {
+    ///     let owing = 12; // one COUNT query in a real card
+    ///     let fact = s.catalog.tf(&staff.locale, "fees.home.owing", &[("n", &owing.to_string())]);
+    ///     Ok(StatusCard::new(CardState::Warn, fact).action("ดูยอดค้างชำระ", "/admin/fees"))
+    /// }
+    ///
+    /// fn register(r: &mut ModuleRegistrar) {
+    ///     r.status_card("fees.import", "fees.home.title", 50, fees);
+    /// }
     /// ```
     pub fn status_card(
         &mut self,
         permission: &'static str,
+        title_key: &'static str,
         order: u16,
         source: impl StatusSource + 'static,
     ) -> &mut Self {
         self.status.push(StatusSpec {
             permission,
+            title_key,
             order,
             source: Arc::new(source),
         });

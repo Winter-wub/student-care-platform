@@ -236,6 +236,14 @@ pub enum BuildError {
         /// The undeclared Permission id.
         permission: &'static str,
     },
+    /// A status card ([`crate::ModuleRegistrar::status_card`]) is shown to
+    /// holders of a Permission no Module declared.
+    UnguardedStatusCard {
+        /// The Module that registered the card.
+        module: &'static str,
+        /// The undeclared Permission id.
+        permission: &'static str,
+    },
     /// A Module sends `Button::MiniApp` but a Channel has no Mini App URL.
     MiniAppUnavailable {
         /// The Module that declared the Mini App button.
@@ -331,6 +339,10 @@ impl core::fmt::Display for BuildError {
             BuildError::UnguardedRoute { module, permission } => write!(
                 f,
                 "module `{module}` guards a back-office route with unknown permission `{permission}`"
+            ),
+            BuildError::UnguardedStatusCard { module, permission } => write!(
+                f,
+                "module `{module}` shows a status card to unknown permission `{permission}`"
             ),
             BuildError::InvalidSetting {
                 module,

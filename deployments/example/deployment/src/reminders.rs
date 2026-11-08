@@ -28,6 +28,10 @@ use maud::html;
 
 /// The weekly Job.
 pub const WEEKLY: &str = "reminders.weekly";
+/// When the weekly Job runs: Mondays at [`HOUR`]:00, local time.
+pub const SCHEDULE: &str = "0 9 * * 1";
+/// The hour of [`SCHEDULE`], for the home's fees card (#123).
+pub const HOUR: i64 = 9;
 /// One chunk of the weekly reminder.
 pub const SEND: &str = "reminders.send";
 /// The Tag that selects the Students.
@@ -89,7 +93,7 @@ impl Module for Reminders {
     fn register(&self, r: &mut ModuleRegistrar) {
         r.permission(PERMISSION)
             .messages(TEXTS)
-            .job(JobSpec::scheduled(WEEKLY, "0 9 * * 1"), weekly)
+            .job(JobSpec::scheduled(WEEKLY, SCHEDULE), weekly)
             .job(JobSpec::new(SEND), send)
             .back_office_page(
                 PERMISSION.id,

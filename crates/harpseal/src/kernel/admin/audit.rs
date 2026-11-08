@@ -281,12 +281,14 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
                 }
             }
             @if !rows.is_empty() {
-                // Raw details (#123): each row's IP and request id.
+                // Raw details (#123): each row's IP and request id, linked to it.
                 (crate::ui::technical(v.s, v.staff, html! {
                     ul class="list audit-tech" {
                         @for e in rows {
                             li {
-                                span { (v.time(e.at)) " " span class="code" { (e.action) } }
+                                a href=(format!("/admin/audit/{}", e.id)) {
+                                    (v.time(e.at)) " " span class="code" { (e.action) }
+                                }
                                 span { (l("kernel.admin.audit.ip")) " " (e.ip.as_deref().unwrap_or("–")) }
                                 span class="code" { (l("kernel.admin.audit.request")) " " (e.request_id.as_deref().unwrap_or("–")) }
                             }

@@ -25,7 +25,14 @@ body {
   font: 16px/1.6 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Sukhumvit Set", sans-serif;
   overflow-wrap: anywhere;
 }
+/* `main` is the container the content's breakpoints query (#123): the
+   back office's side navigation takes 15rem, so the viewport says
+   little about the room the content has. */
 main {
+  container-type: inline-size;
+  /* A size container has no content width: without this, the shell's
+     grid (auto margins, no stretch) would shrink it to nothing. */
+  width: 100%;
   max-width: 960px;
   margin: 0 auto;
   padding: var(--gutter);
@@ -86,14 +93,15 @@ button.danger:focus-visible, .btn.danger:focus-visible { outline: 3px solid var(
 button.link { background: none; border: 0; padding: 0 4px; min-width: 0; text-decoration: underline; font-weight: 400; }
 .wide { width: 100%; }
 .row2 { display: grid; gap: 12px; grid-template-columns: 1fr; }
-@media (min-width: 640px) { .row2 { grid-template-columns: 1fr 1fr; } }
+@container (min-width: 600px) { .row2 { grid-template-columns: 1fr 1fr; } }
 
 .cols { display: grid; gap: 0 var(--gutter); grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 900px) { .cols { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+@container (min-width: 860px) { .cols { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
 
 .narrow { max-width: 440px; margin-left: auto; margin-right: auto; }
 
-/* table.rows: stacked cards below 900 px, a real table from 900 px.
+/* table.rows: stacked cards while main's content is under 860 px (a
+   900 px window without the side navigation), a real table from there.
    Each td carries data-label, shown as its caption on phones. */
 table.rows { width: 100%; border-collapse: collapse; }
 table.rows thead { display: none; }
@@ -101,7 +109,7 @@ table.rows tr { display: block; background: var(--card); border: 1px solid var(-
   border-radius: var(--radius); padding: 8px var(--gutter); margin-bottom: 12px; }
 table.rows td { display: flex; gap: 12px; padding: 6px 0; min-width: 0; }
 table.rows td::before { content: attr(data-label); flex: 0 0 8rem; color: var(--muted); font-size: .875rem; }
-@media (min-width: 900px) {
+@container (min-width: 860px) {
   table.rows { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
   table.rows thead { display: table-header-group; }
   table.rows tr { display: table-row; border: 0; border-top: 1px solid var(--line); }
@@ -161,7 +169,7 @@ td.icons { flex-wrap: wrap; }
 .facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px 16px; margin: 0 0 16px; }
 .facts dt { color: var(--muted); font-size: .875rem; }
 .facts dd { margin: 0 0 8px; }
-@media (min-width: 640px) { .facts { grid-template-columns: 10rem minmax(0, 1fr); } .facts dd { margin: 0; } }
+@container (min-width: 600px) { .facts { grid-template-columns: 10rem minmax(0, 1fr); } .facts dd { margin: 0; } }
 .chip.override { background: #fff3d6; color: #6b4a00; }
 .field-warning { color: #8a5a00; font-weight: 600; margin: 6px 0 0; }
 .field-error { color: var(--err-ink); font-weight: 600; margin: 6px 0 0; }

@@ -29,7 +29,7 @@ mod shell;
 pub const CSS: &str = concat!(include_str!("ui.css"), include_str!("ui_shell.css"));
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=14";
+const CSS_HREF: &str = "/static/app.css?v=15";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

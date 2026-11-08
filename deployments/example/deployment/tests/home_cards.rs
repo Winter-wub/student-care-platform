@@ -95,7 +95,7 @@ async fn the_fees_card_follows_the_import_and_the_staff_members_permissions() {
     .await;
     let card = fees_card(&home(&app, "feedesk").await).unwrap();
     assert!(card.contains("data-state=\"warn\""), "{card}");
-    assert!(card.contains("2 คนค้างชำระ · เตือนอัตโนมัติรอบถัดไป วันจันทร์ 09:00"));
+    assert!(card.contains("2 คนค้างชำระ · เตือนอัตโนมัติรอบถัดไป วันจันทร์ 2026-11-09 09:00"));
     assert!(
         card.contains("href=\"/admin/fees\""),
         "no reminders.send: open fees"

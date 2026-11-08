@@ -21,7 +21,9 @@ main:focus { outline: none; }
 .who .link { min-height: var(--tap); }
 @media (max-width: 639px) { .who-email { display: none; } }
 
-/* Navigation: one <details>. Phones: a "เมนู" row naming the current page
+/* The current page is the brand with its ink, the bar's own pair, whose
+   contrast the branding page checks on save, so a light brand stays legible.
+   Navigation: one <details>. Phones: a "เมนู" row naming the current page
    that opens the groups. From 640 px: a side column. */
 .menu { background: var(--card); border-bottom: 1px solid var(--line); }
 .menu > summary {
@@ -43,7 +45,9 @@ main:focus { outline: none; }
 }
 .nav a:hover { background: var(--bg); }
 .nav a:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
-.nav a[aria-current="page"] { background: #e8eef3; color: var(--brand); font-weight: 700; }
+.nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); font-weight: 700; }
+.nav a[aria-current="page"]:hover { background: var(--brand); }
+.nav a[aria-current="page"]:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 .nav-group { margin: 16px 12px 4px; color: var(--muted); font-size: .875rem; font-weight: 600; }
 
 @media (min-width: 640px) {
@@ -74,12 +78,15 @@ main:focus { outline: none; }
 }
 .status-card:first-child { border-top: 0; }
 .status-card[data-state="warn"] { background: #fff8e6; }
-/* Not `.chip.warn`: the roster's `.warn` block would pad it. */
-.chip.caution { background: #fff3d6; color: #6b4a00; }
+/* Not `.chip.warn`: the roster's `.warn` block would pad it. Its border
+   (#a37200) is 4.0:1 on the Attention Wash, so the chip reads on a warn row. */
+.chip.caution { background: #fff3d6; color: #6b4a00; border: 1px solid #a37200; padding: 1px 9px; }
 .status-card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 1rem; }
 .status-card .fact { margin: 0; }
 .status-card .btn { justify-self: start; margin-top: 4px; }
-@media (min-width: 900px) {
+/* Three columns once main's content has room (about 1000 px with the
+   side navigation, 750 px without), not at a viewport width. */
+@container (min-width: 720px) {
   .status-card { grid-template-columns: 14rem minmax(0, 1fr) auto; align-items: center; }
   .status-card .btn { justify-self: end; margin-top: 0; }
 }

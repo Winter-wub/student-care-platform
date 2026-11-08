@@ -118,7 +118,7 @@ impl DeploymentBuilder {
         let mut nav = collected.nav;
         nav.extend(crate::kernel::admin::settings_nav(&collected.settings));
         let nav = checks::nav_items(nav);
-        let status = checks::status_cards(collected.status, &collected.permissions)?;
+        let status = checks::status_cards(collected.status, &collected.permissions, &catalog)?;
         let public: Vec<_> = collected.public.iter().map(|(m, p, _)| (*m, *p)).collect();
         let app_links = crate::kernel::app::check_links(collected.app_links, &public, &catalog)?;
         let mut menu: Vec<MenuEntrySpec> = collected.menu.into_iter().map(|(_, e)| e).collect();

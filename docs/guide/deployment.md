@@ -494,20 +494,24 @@ import, announcements, the message quota and the last backup (orders 10
 to 40). A Module adds its own:
 
 ```rust
-r.status_card("fees.import", 50, fees_card);
+r.status_card("fees.import", "fees.home.title", 50, fees_card);
 
 async fn fees_card(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusCard> {
     let owing = count_owing(&s).await?; // one query
-    let t = |k: &str| s.catalog.t(&staff.locale, k);
+    let tf = |k: &str, args: &[(&str, &str)]| s.catalog.tf(&staff.locale, k, args);
     Ok(if owing == 0 {
-        StatusCard::new(CardState::Ok, t("fees.home.title"), t("fees.home.clear"))
+        StatusCard::new(CardState::Ok, tf("fees.home.clear", &[]))
     } else {
-        StatusCard::new(CardState::Warn, t("fees.home.title"), format!("{owing} คนค้างชำระ"))
-            .action(t("fees.home.open"), "/admin/fees")
+        let n = owing.to_string();
+        StatusCard::new(CardState::Warn, tf("fees.home.owing", &[("n", &n)]))
+            .action(tf("fees.home.open", &[]), "/admin/fees")
     })
 }
 ```
 
+- **Title.** `title_key` is a catalog key: the Core shows its text, also
+  when the source fails, so Staff always know which card it is.
+  `Catalog::tf` fills `{name}` placeholders in your texts.
 - **States.** `CardState::Empty` (nothing yet: the fact says what to do
   first, such as "ยังไม่ได้นำเข้ายอดค้างชำระ", and the action starts it),
   `Ok`, and `Warn` (needs a Staff member's attention). The Core draws them
@@ -520,9 +524,16 @@ async fn fees_card(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusC
   card's Permission, once per view. Keep it to one or two queries (D1
   bills per query and per row read): count with SQL, do not load rows.
 - **Contained.** A source that returns `Err` shows "อ่านข้อมูลส่วนนี้ไม่ได้"
-  in its place; the error text is never shown and the rest of the home
-  renders.
+  under the card's title; the error text is never shown and the rest of
+  the home renders.
 - `build()` refuses a card whose Permission no Module declared
-  (`BuildError::UnguardedRoute`).
+  (`BuildError::UnguardedStatusCard`) and a `title_key` with no text in
+  the default Locale (`BuildError::UnknownText`).
+- **Sources** are `async fn(AppState, CurrentStaff) -> harpseal::Result<StatusCard>`
+  or an equivalent closure; `StatusSource` is sealed. Tests read a card
+  back with `state()`, `fact()` and `action_link()`.
+- **One after another.** The home runs the visible cards in order, not
+  concurrently (no `futures` crate in the Core); the quota card reuses the
+  usage read the banner already made for the request.
 
 `deployments/example/deployment/src/fees/status.rs` is the worked example.

@@ -102,17 +102,24 @@
     ],
     "breakpoints": [
       {
-        "name": "pair",
-        "value": "640px"
-      },
-      {
         "name": "nav",
         "value": "640px",
-        "purpose": "Below: the navigation folds behind the เมนู row; from: a 15rem side column."
+        "purpose": "Viewport: below, the navigation folds behind the เมนู row; from, a 15rem side column."
+      },
+      {
+        "name": "pair",
+        "value": "@container main 600px",
+        "purpose": ".row2 and .facts side by side."
+      },
+      {
+        "name": "status-card",
+        "value": "@container main 720px",
+        "purpose": "Status cards in three columns."
       },
       {
         "name": "table",
-        "value": "900px"
+        "value": "@container main 860px",
+        "purpose": "table.rows and .cols: a real table and the 3:2 split."
       }
     ]
   },
@@ -185,17 +192,17 @@
       "name": "Grouped Navigation",
       "kind": "nav",
       "refersTo": "nav-link",
-      "description": "Home, then งานประจำ and ผู้ดูแลระบบ groups filtered by Permission; the current page is aria-current with Chip Fog and brand text. A <details> that folds behind เมนู below 640 px without JS.",
+      "description": "Home, then งานประจำ and ผู้ดูแลระบบ groups filtered by Permission; the current page is aria-current, filled with the brand and its On Brand text (the letterhead pair, contrast checked on save). A <details> that folds behind เมนู below 640 px without JS.",
       "html": "<nav class=\"ds-nav\"><a href=\"#\">หน้าหลัก</a><p class=\"ds-group\">งานประจำ</p><a href=\"#\" aria-current=\"page\">นักศึกษา</a><a href=\"#\">นำเข้ารายชื่อ</a><p class=\"ds-group\">ผู้ดูแลระบบ</p><a href=\"#\">เจ้าหน้าที่</a><a href=\"#\">สำรองข้อมูล</a></nav>",
-      "css": ".ds-nav{width:15rem;padding:8px;background:#fff;border-right:1px solid #dde3e9}.ds-nav a{display:flex;align-items:center;min-height:48px;padding:0 12px;border-radius:10px;color:#17212b;text-decoration:none}.ds-nav a:hover{background:#f4f6f8}.ds-nav a[aria-current=page]{background:#e8eef3;color:#0f5c7a;font-weight:700}.ds-group{margin:16px 12px 4px;color:#5b6b7a;font-size:.8125rem;font-weight:600}"
+      "css": ".ds-nav{width:15rem;padding:8px;background:#fff;border-right:1px solid #dde3e9}.ds-nav a{display:flex;align-items:center;min-height:48px;padding:0 12px;border-radius:10px;color:#17212b;text-decoration:none}.ds-nav a:hover{background:#f4f6f8}.ds-nav a[aria-current=page]{background:#0f5c7a;color:#fff;font-weight:700}.ds-group{margin:16px 12px 4px;color:#5b6b7a;font-size:.8125rem;font-weight:600}"
     },
     {
       "name": "Status Card",
       "kind": "card",
       "refersTo": "status-card-warn",
-      "description": "One line of the term status home: a title with a state chip (ยังไม่เริ่ม / เรียบร้อย / ต้องดู), one fact and one next action. Warn rows get a #fff8e6 wash; never the brand, never a shadow.",
+      "description": "One line of the term status home: a title with a state chip (ยังไม่เริ่ม / เรียบร้อย / ต้องดู), one fact and one next action. Warn rows get the #fff8e6 Attention Wash and the Caution chip a #a37200 border (4.0:1); a failed card keeps its title; never the brand, never a shadow.",
       "html": "<ul class=\"ds-ledger\"><li><strong>รายชื่อนักศึกษา <span class=\"ds-chip ds-ok\">เรียบร้อย</span></strong><span>นำเข้าล่าสุด 2026-11-09 12:06 · 50 แถว</span><a href=\"#\">นำเข้าไฟล์ใหม่</a></li><li class=\"ds-warn-row\"><strong>ค่าธรรมเนียม <span class=\"ds-chip ds-warn\">ต้องดู</span></strong><span>12 คนค้างชำระ · เตือนอัตโนมัติรอบถัดไป วันจันทร์ 09:00</span><a href=\"#\">ส่งเตือนตอนนี้</a></li></ul>",
-      "css": ".ds-ledger{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #dde3e9;border-radius:12px;overflow:hidden}.ds-ledger li{display:grid;grid-template-columns:14rem 1fr auto;align-items:center;gap:6px 16px;padding:16px;border-top:1px solid #dde3e9}.ds-ledger li:first-child{border-top:0}.ds-warn-row{background:#fff8e6}.ds-ledger a{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border:1px solid #0f5c7a;border-radius:10px;color:#0f5c7a;font-weight:600;text-decoration:none}.ds-chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8125rem;font-weight:400}.ds-ok{background:#e5f5ec;color:#145c36}.ds-warn{background:#fff3d6;color:#6b4a00}"
+      "css": ".ds-ledger{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #dde3e9;border-radius:12px;overflow:hidden}.ds-ledger li{display:grid;grid-template-columns:14rem 1fr auto;align-items:center;gap:6px 16px;padding:16px;border-top:1px solid #dde3e9}.ds-ledger li:first-child{border-top:0}.ds-warn-row{background:#fff8e6}.ds-ledger a{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border:1px solid #0f5c7a;border-radius:10px;color:#0f5c7a;font-weight:600;text-decoration:none}.ds-chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8125rem;font-weight:400}.ds-ok{background:#e5f5ec;color:#145c36}.ds-warn{background:#fff3d6;color:#6b4a00;border:1px solid #a37200}"
     },
     {
       "name": "Technical Disclosure",

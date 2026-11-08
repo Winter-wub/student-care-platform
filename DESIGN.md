@@ -18,6 +18,7 @@ colors:
   refused-ink: "#8a1c1c"
   refused-press: "#6f1515"
   caution-wash: "#fff3d6"
+  caution-edge: "#a37200"
   attention-wash: "#fff8e6"
   caution-ink: "#6b4a00"
   caution-meter: "#c98a00"
@@ -122,8 +123,8 @@ components:
     padding: "0 12px"
     height: "48px"
   nav-link-current:
-    backgroundColor: "{colors.chip-fog}"
-    textColor: "{colors.harbour-teal}"
+    backgroundColor: "{colors.harbour-teal}"
+    textColor: "{colors.on-brand}"
     rounded: "{rounded.control}"
     padding: "0 12px"
     height: "48px"
@@ -146,7 +147,7 @@ components:
 
 The back office is a well-run registrar's counter. Papers are stacked neatly, every form is checked before it is stamped, and the institution's colour appears only on the letterhead. Everything else stays out of the way. The system is flat, quiet and orderly. Paper-white cards sit on a cool mist ground, separated by thin rules, never by shadows. One brand colour does the speaking: it fills the top bar and the primary buttons, then steps back so content and status carry the page.
 
-It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards below 900 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
+It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards when the content is narrower than 860 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
 
 This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure). It is the reference to improve on, not a ceiling.
 
@@ -213,9 +214,10 @@ The only colours Staff can give text in an Announcement body (`{red}…{/red}`),
 ## Layout
 
 - **Containers:** a single centred column. `main` is at most 960px wide with a 16 px gutter that respects safe-area insets. The Mini App narrows to 560px.
-- **Two-column pages:** from 900 px, `.cols` splits 3:2. Form pairs (`.row2`) sit side by side from 640 px.
+- **Content breakpoints are container queries on `main` (#123),** not the viewport, because the side navigation takes 15rem from 640 px. `main`'s content box is about the window minus 32 px without the navigation, minus 272 px with it.
+- **Two-column pages:** from a 860 px content width, `.cols` splits 3:2. Form pairs (`.row2`) and `.facts` sit side by side from 600 px.
 - **Spacing:** 4, 8, 12 and 16 px steps. 16 px is the gutter and the card padding.
-- **Responsive tables:** `table.rows` are stacked cards with an inline caption per cell (`data-label`) below 900 px, and a real table above.
+- **Responsive tables:** `table.rows` are stacked cards with an inline caption per cell (`data-label`) below a 860 px content width (a 900 px window without the navigation, about 1130 px with it), and a real table above.
 - **Dense lists:** use `.list`, divided by top rules, rather than tables.
 - **Back-office shell:** from 640 px a 15rem navigation column and the content column (`main`, at most 960 px); below 640 px one column under the menu row.
 - **Home:** the term status ledger (below), not a copy of the navigation.
@@ -271,10 +273,10 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Skip link:** the first focusable element, "ข้ามไปยังเนื้อหา", off screen until focused, then a Paper tab with a solid brand ring over the bar. It jumps to `main#main`.
 - **Top bar (the letterhead):** a brand-coloured band, one row, holding the institution name (with an optional logo on a white tile) and the signed-in "who" line with sign-out. Below 640 px the email hides so the bar stays one row (64 px).
 - **Grouped navigation:** one `<details class="menu">` with a Home link, then two groups: **งานประจำ** (Students, the roster, announcements, every Module's daily pages) and **ผู้ดูแลระบบ** (Security Events, audit, Staff, Roles, texts, settings, usage, branding, backups). Group names are Caption-size Slate Note labels; a group the Staff member has no page in is not drawn. Links are Ledger Ink on Paper, 48 px tall, 10 px radius, Counter Mist on hover.
-- **Current page:** `aria-current="page"` on the entry that owns the path (the longest parent, so `/admin/roster/123` marks the roster), drawn as Chip Fog with brand text at 700 (Harbour Teal on it is 6.3:1). No coloured side stripe.
+- **Current page:** `aria-current="page"` on the entry that owns the path (the longest parent, so `/admin/roster/123` marks the roster), drawn as the brand with On Brand text at 700: the letterhead's own pair, whose contrast the branding page checks on save (at least 4.5:1), so a light institution colour stays legible. Its focus ring is Ledger Ink at a 2px offset. No coloured side stripe.
 - **Below 640 px:** the navigation folds behind a 48 px "เมนู" row on Paper (a drawn three-line icon, the word, then the current page in Slate Note). It opens without JS. Bar plus menu row is 113 px before the content on a 390 × 844 screen (was 392 px).
 - **From 640 px:** a 15rem Paper side column with a Rule Line on its right, sticky to the top. Where the browser supports `::details-content` it is always open and the button is hidden; elsewhere the button stays and still works.
-- **Brand:** stays on the letterhead. The side column is Paper, never brand-filled (The Letterhead Rule).
+- **Brand:** the letterhead and the one current-page entry. The side column is Paper, never brand-filled (The Letterhead Rule).
 
 ### Flash and banners
 - **Flash:** a full-width wash block (approved or refused) in label weight.
@@ -285,9 +287,10 @@ The `table.rows` pattern carries Staff's daily lists (Students, imports, audit).
 
 ### Status card (signature, #123)
 The `/admin` home is "this term at a glance": one Paper card holding a ledger of status cards divided by Rule Lines, sorted by order. Each card is a **title with a state chip**, **one fact** (a short Thai sentence with the number that matters) and **one next action** (a secondary button). Kernel cards: the last roster import, announcements, the message quota, the last backup; Modules add their own (the example's fees card). Only cards the Staff member's Permissions allow are drawn.
-- **States:** Empty, a neutral chip "ยังไม่เริ่ม", whose fact says what to do first ("ยังไม่ได้นำเข้ารายชื่อ") and whose action starts it. Ok, an Approved chip "เรียบร้อย". Warn, a Caution chip "ต้องดู" on the Attention Wash (#fff8e6). The state never uses the brand (The Fixed Status Rule); the wash is the only emphasis, never a shadow or a side stripe.
-- **Layout:** stacked below 900 px; from 900 px three columns: title and chip (14rem), the fact, the action at the end.
-- **Failure:** a card that cannot be read shows "อ่านข้อมูลส่วนนี้ไม่ได้" in its place; the rest renders.
+- **Title:** from the card's catalog key, so a card that cannot be read is still named.
+- **States:** Empty, a neutral chip "ยังไม่เริ่ม", whose fact says what to do first ("ยังไม่ได้นำเข้ารายชื่อ") and whose action starts it. Ok, an Approved chip "เรียบร้อย". Warn, a Caution chip "ต้องดู" with a 1px #a37200 border (4.0:1 on the wash) on the Attention Wash (#fff8e6). The state never uses the brand (The Fixed Status Rule); the wash is the only emphasis, never a shadow or a side stripe.
+- **Layout:** stacked below a 720 px content width; from there three columns: title and chip (14rem), the fact, the action at the end.
+- **Failure:** a card that cannot be read keeps its title, shows a Warn chip and "อ่านข้อมูลส่วนนี้ไม่ได้"; the rest renders.
 - **Not a dashboard:** no big numbers, no sparklines, no tiles. One fact per card.
 
 ### Technical details disclosure (#123)

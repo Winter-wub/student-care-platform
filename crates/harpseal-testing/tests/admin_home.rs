@@ -35,13 +35,11 @@ struct Pages;
 const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("pages.classes", "th", "รายวิชา"),
     CatalogEntry::new("pages.tool", "th", "เครื่องมือ"),
+    CatalogEntry::new("pages.broken", "th", "การ์ดที่อ่านไม่ได้"),
 ];
 
 async fn tool_card(_: AppState, _: CurrentStaff) -> harpseal::Result<StatusCard> {
-    Ok(
-        StatusCard::new(CardState::Warn, "เครื่องมือ", "มีงานค้าง 3 รายการ")
-            .action("เปิด", "/admin/tool"),
-    )
+    Ok(StatusCard::new(CardState::Warn, "มีงานค้าง 3 รายการ").action("เปิด", "/admin/tool"))
 }
 
 async fn broken_card(_: AppState, _: CurrentStaff) -> harpseal::Result<StatusCard> {
@@ -70,8 +68,8 @@ impl Module for Pages {
                 95,
                 get(|| async { "tool" }),
             )
-            .status_card("pages.tool", 50, tool_card)
-            .status_card("pages.tool", 60, broken_card);
+            .status_card("pages.tool", "pages.tool", 50, tool_card)
+            .status_card("pages.tool", "pages.broken", 60, broken_card);
     }
 }
 
@@ -257,7 +255,7 @@ async fn the_backup_card_reads_empty_ok_then_warn() {
 }
 
 #[tokio::test]
-async fn the_announcements_card_reads_empty_ok_then_warn() {
+async fn the_announcements_card_reads_empty_ok_then_warn_when_overdue() {
     let (h, app, _) = boot(false).await;
     let b = as_who(&app, "admin").await;
     let home = b.get("/admin").await.body;
@@ -272,12 +270,29 @@ async fn the_announcements_card_reads_empty_ok_then_warn() {
                   VALUES (?, ?, ?, 0, 0)";
     exec(&h, insert, &["a1", "sent", &START_MS.to_string()]).await;
     assert_eq!(state(&b.get("/admin").await.body, "ประกาศ"), "ok");
+    // Drafts are a fact, not a warning.
     let draft =
         "INSERT INTO announcement (id, status, created_at, updated_at) VALUES (?, 'draft', 0, 0)";
     exec(&h, draft, &["a2"]).await;
     let (st, li) = card(&b.get("/admin").await.body, "ประกาศ").unwrap();
+    assert_eq!(st, "ok");
+    assert!(li.contains("ร่างที่ยังไม่ได้ส่ง 1 ฉบับ"), "{li}");
+    // A schedule 15 minutes past that has not gone out is a warning.
+    let scheduled = "INSERT INTO announcement (id, status, send_at, created_at, updated_at) \
+                     VALUES ('a3', 'scheduled', ?, 0, 0)";
+    exec(&h, scheduled, &[&(START_MS + 3_600_000).to_string()]).await;
+    assert_eq!(
+        state(&b.get("/admin").await.body, "ประกาศ"),
+        "ok",
+        "not yet due"
+    );
+    h.clock().advance_minutes(60 + 16);
+    let (st, li) = card(&b.get("/admin").await.body, "ประกาศ").unwrap();
     assert_eq!(st, "warn");
-    assert!(li.contains("1 ฉบับ"), "{li}");
+    assert!(
+        li.contains("ยังไม่ได้ส่ง") && li.contains("href=\"/admin/announcements\""),
+        "{li}"
+    );
 }
 
 #[tokio::test]
@@ -287,7 +302,9 @@ async fn a_module_card_shows_only_with_its_permission_and_a_failing_one_stays_co
     let (st, li) = card(&admin, "เครื่องมือ").expect("the Module's card");
     assert_eq!(st, "warn");
     assert!(li.contains("มีงานค้าง 3 รายการ") && li.contains("href=\"/admin/tool\""));
-    assert!(admin.contains("อ่านข้อมูลส่วนนี้ไม่ได้"), "the failing card");
+    let (st, li) = card(&admin, "การ์ดที่อ่านไม่ได้").expect("the failing card, by its title");
+    assert_eq!(st, "warn");
+    assert!(li.contains("data-failed") && li.contains("อ่านข้อมูลส่วนนี้ไม่ได้"));
     assert!(!admin.contains("no such table"), "never the error text");
     // Sorted by order: the roster (10) first, the Module's (50) after the backup (40).
     let pos = |t: &str| admin.find(&format!("<h2>{t} ")).unwrap();
@@ -326,9 +343,53 @@ async fn the_administration_pages_put_raw_details_behind_a_disclosure() {
         .expect("audit details");
     assert!(!open.contains("รหัสคำขอ"), "no request id column");
     assert!(tech.contains("รหัสคำขอ"));
+    // Each technical line links to its row, so an IP can be matched to it.
+    let rows = tech.split("</ul>").next().unwrap();
+    let lines = rows.matches("<li>").count();
+    assert!(lines > 0);
+    assert_eq!(rows.matches("<li><a href=\"/admin/audit/").count(), lines);
     // A Role's Permissions read as descriptions; ids are technical.
     let roles = b.get("/admin/roles").await.body;
     let (open, tech) = roles.split_once("<details class=\"tech\">").unwrap();
     assert!(!open.contains(">kernel.student.view<"));
     assert!(tech.contains(">kernel.student.view<"));
+}
+
+#[tokio::test]
+async fn build_refuses_a_card_with_an_undeclared_permission_or_title() {
+    struct Bad(&'static str, &'static str);
+    impl Module for Bad {
+        fn name(&self) -> &'static str {
+            "bad"
+        }
+        fn register(&self, r: &mut ModuleRegistrar) {
+            r.messages(&[CatalogEntry::new("bad.title", "th", "การ์ด")])
+                .status_card(self.0, self.1, 10, tool_card);
+        }
+    }
+    let h = Harness::new();
+    let e = h
+        .builder()
+        .module(Bad("bad.nobody", "bad.title"))
+        .build()
+        .err();
+    assert!(
+        matches!(
+            e,
+            Some(harpseal::BuildError::UnguardedStatusCard {
+                module: "bad",
+                permission: "bad.nobody"
+            })
+        ),
+        "{e:?}"
+    );
+    let e = h
+        .builder()
+        .module(Bad("kernel.student.view", "bad.missing"))
+        .build()
+        .err();
+    assert!(
+        matches!(e, Some(harpseal::BuildError::UnknownText { .. })),
+        "{e:?}"
+    );
 }
