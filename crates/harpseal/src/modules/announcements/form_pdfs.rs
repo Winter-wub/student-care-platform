@@ -110,6 +110,18 @@ pub(crate) const TEXTS: &[E] = &[
          and upload that.",
     ),
     E::new(
+        "announcements.pdfs.unreadable",
+        "th",
+        "ตรวจไฟล์ PDF นี้ไม่ได้ (โครงสร้างไฟล์ไม่ครบหรือผิดรูปแบบ) \
+         ลองสั่งพิมพ์เป็น PDF ใหม่แล้วอัปโหลดอีกครั้ง",
+    ),
+    E::new(
+        "announcements.pdfs.unreadable",
+        "en",
+        "This PDF could not be checked (incomplete or malformed): print it to a new PDF \
+         and upload that.",
+    ),
+    E::new(
         "announcements.pdfs.too_big",
         "th",
         "ไฟล์ใหญ่เกิน 10 MB ลดขนาดไฟล์แล้วอัปโหลดใหม่",
@@ -190,6 +202,7 @@ fn pdf_edits(pairs: &[(String, String)], parts: Vec<FilePart>) -> Result<FileEdi
             }),
             Err(Refusal::NotPdf) => errors.push((field, "announcements.pdfs.bad_type")),
             Err(Refusal::Active) => errors.push((field, "announcements.pdfs.active")),
+            Err(Refusal::Unreadable) => errors.push((field, "announcements.pdfs.unreadable")),
         }
     }
     removed.retain(|n| !edits.put.iter().any(|p| p.n == *n));

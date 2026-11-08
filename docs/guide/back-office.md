@@ -244,9 +244,10 @@ says "แนบได้ครั้งละ 1 ไฟล์ บันทึก�
 remove one and save first. PDFs are told by their bytes (`%PDF-` at the start and
 `%%EOF` inside) and named `.pdf`: an HTML or any other file renamed `.pdf`
 is refused. A PDF with a script, an embedded file, a launch action, a
-form submission, a remote go-to, XFA or rich media is refused too (one
-pass that skips strings, comments and stream data; a key hidden in a
-compressed object stream is not found, a known limit). A Thai hint names the limits and says never to attach personal
+form submission, a remote go-to, XFA or rich media is refused, as is one
+with a string or stream left open to its end. This scan is a best-effort
+filter (a compressed object stream can hide a key); the protection is the
+sandboxed serving and the phone's own browser. A Thai hint names the limits and says never to attach personal
 data: anyone with the link can open the file. The name uploaded is kept
 (its folder, control and invisible characters removed, at most 120
 characters). PDFs follow the images' rules: stored in `announcement_file`

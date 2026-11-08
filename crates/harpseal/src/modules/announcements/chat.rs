@@ -58,16 +58,16 @@ pub(crate) fn card(
         catalog.t(locale, "announcements.card.open"),
         detail_path(id),
     ));
-    let pdf = public_url.zip(pdfs(images).next());
+    // The PDF button first, so a refused one gives its place back to a link.
+    let pdf = public_url
+        .zip(pdfs(images).next())
+        .and_then(|(base, f)| Button::url(f.file_name.clone(), base.join(&f.public_path())).ok())
+        .map(Button::external);
     let links = URL_BUTTONS - usize::from(pdf.is_some());
     for link in doc.first_links(links) {
         buttons.push(Button::url(link.text, link.url)?);
     }
-    if let Some((base, f)) = pdf
-        && let Ok(b) = Button::url(f.file_name.clone(), base.join(&f.public_path()))
-    {
-        buttons.push(b.external());
-    }
+    buttons.extend(pdf);
     let image = match (public_url, hero(images, body)) {
         (Some(base), Some(f)) => Some(CardImage::new(base.join(&f.public_path()), title)?),
         _ => None,

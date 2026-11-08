@@ -5,13 +5,15 @@
 //! name ends `.pdf`. An HTML or any other file renamed `.pdf` is refused.
 //! It is then scanned once, cheaply, for active content
 //! ([`super::files_pdf_scan`]): script, embedded files, launch, form
-//! submission, remote go-to, XFA and rich media keys refuse it.
+//! submission, remote go-to, XFA and rich media keys refuse it, and so
+//! does a string, hex string or stream left open to the end.
 //!
-//! **Known limit.** That scan reads only what is not inside a stream: a
-//! PDF 1.5 object stream (compressed dictionaries) can hide the same keys,
-//! and it would pass. The file is never opened by the server; it is
-//! served with `nosniff` and `Content-Security-Policy: sandbox`, and is
-//! opened by the Student's own PDF viewer.
+//! **The scan is a best-effort filter.** It reads only what is not inside
+//! a stream: a PDF 1.5 object stream (compressed dictionaries) can hide the
+//! same keys, and it would pass. The real protection is the delivery: the
+//! server never opens the file, serves it with `nosniff` and
+//! `Content-Security-Policy: sandbox`, and LINE's button opens it in the
+//! phone's own browser.
 
 use maud::{Markup, html};
 
@@ -31,6 +33,9 @@ pub(crate) enum Refusal {
     NotPdf,
     /// Script, an embedded file or a launch action found.
     Active,
+    /// A string, hex string or stream left open to the end, or a
+    /// malformed hex string: the scan could not read the rest.
+    Unreadable,
 }
 
 /// Whether `bytes` named `file_name` is a PDF the Announcements take.
@@ -39,8 +44,10 @@ pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Result<(), Refusal> {
     if !named || !bytes.starts_with(b"%PDF-") || !contains(bytes, b"%%EOF") {
         return Err(Refusal::NotPdf);
     }
-    if super::files_pdf_scan::active(bytes) {
-        return Err(Refusal::Active);
+    match super::files_pdf_scan::scan(bytes) {
+        super::files_pdf_scan::Verdict::Clean => {}
+        super::files_pdf_scan::Verdict::Active => return Err(Refusal::Active),
+        super::files_pdf_scan::Verdict::Unreadable => return Err(Refusal::Unreadable),
     }
     Ok(())
 }

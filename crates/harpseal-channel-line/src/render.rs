@@ -173,15 +173,17 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
         // and shows as the visible notice instead. An external one (#113,
         // a PDF) carries `openExternalBrowser=1`: LINE then opens the
         // phone's browser, not its in-app one, which shows a sandboxed
-        // PDF blank on iOS before 18.4.
-        Button::Url { label, .. } => b.safe_url().map(|uri| {
+        // PDF blank on iOS before 18.4. The URL is checked again once the
+        // parameter is on: one pushed past LINE's 1,000 bytes leaves the
+        // button out (the visible notice instead).
+        Button::Url { label, .. } => b.safe_url().and_then(|uri| {
             let label = truncate(&label_or_host(label, uri), label_max);
             let uri = if b.is_external() {
-                external_uri(uri)
+                Some(external_uri(uri)).filter(|u| harpseal::render::link_url(u))?
             } else {
                 uri.to_string()
             };
-            json!({ "type": "uri", "label": label, "uri": uri })
+            Some(json!({ "type": "uri", "label": label, "uri": uri }))
         }),
         // #[non_exhaustive]: an unknown kind renders as the visible notice.
         _ => None,

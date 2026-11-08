@@ -105,6 +105,15 @@ async fn refused_pdfs_name_the_limit_in_thai_and_nothing_is_stored() {
             ),
             "มีสคริปต์ ไฟล์ฝัง หรือคำสั่งเปิดโปรแกรม",
         ),
+        // An unreferenced `(` before the script: it would have hidden it.
+        (
+            f(
+                "pdf1",
+                "open.pdf",
+                pdf("0 0 obj (\n2 0 obj << /S /JavaScript /JS (app.alert(1)) >> endobj"),
+            ),
+            "ตรวจไฟล์ PDF นี้ไม่ได้",
+        ),
         (f("pdf1", "big.pdf", big), "ไฟล์ใหญ่เกิน 10 MB"),
         (f("pdf4", "fourth.pdf", pdf("")), "แนบ PDF ได้ไม่เกิน 3 ไฟล์"),
     ] {
