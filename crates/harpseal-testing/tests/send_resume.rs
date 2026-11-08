@@ -116,6 +116,7 @@ fn news(n: usize) -> Message {
     Message::CardList(CardList(
         (0..n)
             .map(|i| Card {
+                image: None,
                 title: format!("ข่าวคณะ {i}"),
                 body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
                 buttons: Vec::new(),

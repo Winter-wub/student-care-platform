@@ -27,6 +27,7 @@ async fn each_locale_menu_gets_a_keyed_rich_menu() {
         _ => None,
     });
     let d = builder(h.services(), secrets)
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .unwrap();

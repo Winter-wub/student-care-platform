@@ -18,6 +18,7 @@ fn secrets() -> Secrets {
 async fn the_roles_page_lists_every_declared_permission() {
     let h = Harness::new();
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");

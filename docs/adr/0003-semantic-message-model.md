@@ -29,3 +29,19 @@ A URL button carries no Action, so the rule that no Action is dropped is unchang
 The adapters clean labels the same way (blank becomes the host) and cut them to the limits above.
 
 An Announcement's body is a small Markdown subset (`harpseal::rich_text`); a Card body stays plain text. A link that fails `link_url` is text, so it never becomes a button, and a Push is never refused because of a URL. The pushed Card shows the body with the markup removed and adds a URL button for each of the body's first two distinct links after the Mini App button. The Mini App shows the format.
+
+## Amendment (#109, 2026-11-08): a Card image
+
+Announcements carry images, and the first belongs at the top of the pushed Card. `Card` gains `image: Option<CardImage>`: an `https:` URL the platform fetches itself, without a session, and an alt text. `CardImage::new` refuses a URL that fails `render::link_url`, as `Button::url` does; every adapter checks again (`CardImage::safe_url`) and leaves a refused image out. `Card` is a plain struct, so adding the field breaks every `Card { .. }` literal outside the Core; a Module adds `image: None`. The Card's text never depends on the image: it reads the same with the image left out.
+
+The Core serves the image itself on an unguessable public path (`/announcements/files/<token>`, 128 random bits), only while the Announcement is sent and live, and builds the absolute URL from the Deployment's `public_url`. Without `public_url` a Card has no image.
+
+Degrade rules:
+
+| | LINE | Telegram | Fake |
+|---|---|---|---|
+| Card / Card List with an image | the Flex bubble's `hero`: `size: full`, `aspectRatio: 20:13`, `aspectMode: cover`; one message, no extra quota | the first text message's `link_preview_options` (`url`, `prefer_large_media`, `show_above_text`): the image as a large preview above the text, still one message, so `editMessageText` replaces it and `deleteMessage` removes it like any Card; Telegram builds the preview itself and may show none, and the text stands alone then | recorded as sent |
+| A long body sent as Text first (LINE, over 2,000 characters) | the hero goes on the bubble that keeps the title and buttons | (no such split) | — |
+| Image URL refused (fails `link_url`; never from `CardImage::new`) | no hero | no preview options | `send` fails with `Error::Invalid`, nothing recorded |
+
+Telegram was given a link preview rather than `sendPhoto` with the text as caption (captions stop at 1,024 characters, and a photo message cannot be edited into a text one) or a photo before the Card (two messages to edit and delete, and the image would stay behind after an edit that removes it).

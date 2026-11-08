@@ -32,6 +32,7 @@ pub(crate) fn consent_card(
         body = format!("{body}\n\n{}", texts.t("kernel.consent.read_full_hint"));
     }
     Ok(Message::Card(Card {
+        image: None,
         title: texts.t(title_key),
         body,
         buttons,

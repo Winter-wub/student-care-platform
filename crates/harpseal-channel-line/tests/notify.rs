@@ -26,6 +26,7 @@ struct Probe(Reports);
 fn notice() -> Notice {
     let cards = (0..61)
         .map(|i| Card {
+            image: None,
             title: format!("ค่าธรรมเนียม {i}"),
             body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
             buttons: Vec::new(),

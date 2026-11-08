@@ -92,6 +92,13 @@ fn card(c: &Card, cx: &RenderCx) -> Vec<Value> {
         )),
         true,
     )];
+    // #109: the image as the large link preview above the text: still one
+    // text message, so `editMessageText` replaces it like any Card.
+    if let Some(url) = c.image.as_ref().and_then(|i| i.safe_url()) {
+        out[0]["link_preview_options"] = json!({
+            "url": url, "prefer_large_media": true, "show_above_text": true,
+        });
+    }
     for rest in chunks {
         out.push(send_message(json!(escape_html(&rest)), true));
     }

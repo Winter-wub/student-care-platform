@@ -9,7 +9,7 @@
 //! bracket or space, and a bare URL that failed marks its whole token
 //! dead.
 
-use crate::render::{URL_MAX, label_or_host, link_url};
+use crate::render::{URL_MAX, clean_label, label_or_host, link_url};
 
 #[cfg(test)]
 thread_local! {
@@ -197,6 +197,31 @@ impl<'a> Scan<'a> {
         let url = &s[start..end];
         step(url.len() + text.len());
         link_url(url).then(|| (label_or_host(text, url), url, end + 1))
+    }
+
+    /// `![alt](image:N)` opening at `i` (#109): (alt, slot, end), when the
+    /// alt holds no bracket and `N` is one digit from 1 to 9. The alt
+    /// loses invisible characters ([`clean_label`]). Its `]` and `[` come
+    /// from the same caches as a link's, so a run of `![` costs one scan.
+    pub(super) fn image(&mut self, i: usize) -> Option<(String, u8, usize)> {
+        let s = self.s;
+        if !s[i..].starts_with("![") {
+            return None;
+        }
+        let open = i + 1;
+        let close = Self::find_cached(s, &mut self.rb, open + 1, ']')?;
+        if Self::find_cached(s, &mut self.lb, open + 1, '[').is_some_and(|p| p < close) {
+            return None;
+        }
+        let tail = s[close + 1..].strip_prefix("(image:")?.as_bytes();
+        step(9);
+        let n = match tail {
+            [d @ b'1'..=b'9', b')', ..] => d - b'0',
+            _ => return None,
+        };
+        let alt = &s[open + 1..close];
+        step(alt.len());
+        Some((clean_label(alt), n, close + 10))
     }
 
     /// The bare URL at `i`, if one starts a word there and passes

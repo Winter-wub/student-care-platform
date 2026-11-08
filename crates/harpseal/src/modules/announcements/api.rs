@@ -102,7 +102,7 @@ pub async fn create_draft(
             let keys: Vec<&str> = errors.iter().map(|(_, k)| *k).collect();
             Error::Invalid(format!("announcement refused: {}", keys.join(", ")))
         })?;
-    service::create(d, &draft, actor, ctx).await
+    service::create(d, draft, actor, ctx).await
 }
 
 /// Confirms draft `id` seen at `version` (0 for a new draft): scheduled

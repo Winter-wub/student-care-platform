@@ -33,6 +33,7 @@ fn keyboard(v: &Value) -> Vec<&Value> {
 fn card_url_buttons_are_url_buttons() {
     let long = "ตารางสอบปลายภาคเรียนที่ 2 ปีการศึกษา 2569 ทุกคณะ ฉบับปรับปรุงล่าสุด";
     let msg = Message::Card(Card {
+        image: None,
         title: "ตารางสอบ <ด่วน>".into(),
         body: "ดูตารางสอบได้ที่ลิงก์ & ปุ่ม".into(),
         buttons: vec![
@@ -81,6 +82,7 @@ fn a_non_https_url_is_refused_visibly() {
         let raw = harpseal::fixtures::raw_url_button("ลิงก์อันตราย", bad);
         for msg in [
             Message::Card(Card {
+                image: None,
                 title: "t".into(),
                 body: "b".into(),
                 buttons: vec![ack(), raw.clone()],

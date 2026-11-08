@@ -138,6 +138,16 @@ boot it on `harpseal-testing`. Depend on the published crates (or on a
 handing over. Put Students' data mapping in `[roster]`, Roles in `[roles]`,
 texts in `[texts.<locale>]`; secrets only in the environment.
 
+Set `public_url` (a top-level key of `deployment.toml`, before any
+`[section]`) to the https origin the Deployment is served at, such as
+`public_url = "https://students.example.ac.th"`; the examples also read
+`HARPSEAL_PUBLIC_URL`, which wins. It must be an origin only (no path); a
+trailing `/` is trimmed. LINE and Telegram fetch announcement images from it
+(`/announcements/files/<token>`, public and unguessable, served only while
+the announcement is sent and live), so without it chat Cards go out without
+an image; the Mini App shows images either way. The path must reach the
+Deployment from the internet without a sign-in.
+
 Behind a reverse proxy, terminate TLS there, forward to `HARPSEAL_ADDR` and
 set `[staff] trust_forwarded_for = true`. The Deployment backs itself up
 every night into the FileStore; `harpseal backup` makes a point-in-time

@@ -32,6 +32,8 @@ crons = ["* * * * *"]
 
 [vars]
 EMAIL_FROM = "Seal Bay University <noreply@sealbay.example>"
+# The Worker's https origin (#109): announcement images on chat Cards.
+# HARPSEAL_PUBLIC_URL = "https://students.sealbay.example"
 
 [[d1_databases]]
 binding = "DB"

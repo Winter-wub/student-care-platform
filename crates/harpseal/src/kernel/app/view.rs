@@ -305,7 +305,7 @@ fn item(s: &PageState, t: &Texts, v: &AppVisitor, a: &StudentAnnouncement) -> Ma
                 }
             }
             div class="full" {
-                (rich_text::html(&a.body))
+                (a.body_html(&t.t("announcements.images.slot")))
                 (ack_part(t, v, a))
             }
         }
@@ -362,7 +362,7 @@ pub(crate) fn detail(
             article class="card" {
                 h1 { (a.title) }
                 p class="muted" { (date(s, a.at)) }
-                (rich_text::html(&a.body))
+                (a.body_html(&t.t("announcements.images.slot")))
                 (ack_part(t, v, a))
             }
             (external::script(s, &v.channel, has_links(&a.body)))

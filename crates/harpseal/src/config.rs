@@ -9,12 +9,16 @@ mod announcements;
 mod backup;
 mod locales;
 mod mini_app;
+mod offset;
+mod public_url;
 mod roster;
 
+pub use public_url::PublicUrl;
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
 pub use {announcements::AnnouncementsConfig, backup::BackupConfig, mini_app::MiniAppConfig};
 
 use crate::{manifest::Catalog, message::Locale};
+use offset::parse_offset;
 
 /// The whole `deployment.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -77,6 +81,8 @@ pub struct DeploymentConfig {
     /// The Mini App's App Session ([`MiniAppConfig`]).
     #[serde(default)]
     pub mini_app: MiniAppConfig,
+    /// The https origin the Deployment is served at ([`PublicUrl`], #109).
+    pub public_url: Option<PublicUrl>,
 }
 
 fn default_offset() -> String {
@@ -329,22 +335,6 @@ impl DeploymentConfig {
     }
 }
 
-/// `+07:00` / `-03:30` -> minutes.
-fn parse_offset(s: &str) -> Option<i32> {
-    let (sign, rest) = match s.as_bytes().first()? {
-        b'+' => (1, &s[1..]),
-        b'-' => (-1, &s[1..]),
-        _ => return None,
-    };
-    let (h, m) = rest.split_once(':')?;
-    let two_digits = |p: &str| p.len() == 2 && p.bytes().all(|b| b.is_ascii_digit());
-    if !two_digits(h) || !two_digits(m) {
-        return None;
-    }
-    let (h, m): (i32, i32) = (h.parse().ok()?, m.parse().ok()?);
-    (h <= 14 && m < 60).then_some(sign * (h * 60 + m))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,19 +373,5 @@ mod tests {
         assert_eq!(c.utc_offset_minutes().unwrap(), 0);
         assert!(c.staff.cookie_secure);
         assert_eq!(c.branding.primary_color, DEFAULT_PRIMARY);
-    }
-
-    #[test]
-    fn offsets() {
-        assert_eq!(parse_offset("+07:00"), Some(420));
-        assert_eq!(parse_offset("-03:30"), Some(-210));
-        assert_eq!(parse_offset("07:00"), None);
-        assert_eq!(parse_offset("+7:00"), None);
-        assert_eq!(parse_offset("++7:00"), None);
-        assert_eq!(parse_offset("+-7:00"), None);
-        assert_eq!(parse_offset("-+07:00"), None);
-        assert_eq!(parse_offset("+15:00"), None);
-        let bad = "name = \"X\"\ndefault_locale = \"th\"\nutc_offset = \"Asia/Bangkok\"";
-        assert!(DeploymentConfig::from_toml(bad).is_err());
     }
 }

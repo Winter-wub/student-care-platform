@@ -65,6 +65,7 @@ fn a_quick_reply_label_over_20_turns_the_choices_into_a_bubble() {
 fn a_card_body_over_2000_goes_first_as_text() {
     let body = "ก".repeat(FLEX_BODY_SOFT_MAX + 1);
     let msg = Message::Card(Card {
+        image: None,
         title: "ระเบียบการแต่งกาย".into(),
         body: body.clone(),
         buttons: vec![Button::action("รับทราบ", id("news.ack.7"))],
@@ -82,6 +83,7 @@ fn a_card_body_over_2000_goes_first_as_text() {
 #[test]
 fn a_card_body_in_a_carousel_is_cut_to_2000() {
     let card = Card {
+        image: None,
         title: "ประกาศ".into(),
         body: "ข".repeat(3000),
         buttons: vec![Button::action("รับทราบ", id("news.ack.8"))],
@@ -98,6 +100,7 @@ fn a_card_body_in_a_carousel_is_cut_to_2000() {
 #[test]
 fn alt_text_is_cut_to_1500() {
     let msg = Message::Card(Card {
+        image: None,
         title: "ค".repeat(2000),
         body: "สั้น".into(),
         buttons: vec![],

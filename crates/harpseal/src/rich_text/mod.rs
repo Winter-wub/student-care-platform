@@ -20,6 +20,11 @@
 //!   (`https:`, no user info, no unsafe characters, at most
 //!   [`crate::render::URL_MAX`] bytes); any other `[text](url)`, and every
 //!   `javascript:`, `data:` or `http:` URL, stays text exactly as typed.
+//! - `![alt](image:N)` (#109) places image `N` (one digit, 1 to 9) of the
+//!   body's owner there; where no such image exists it shows nothing. In
+//!   chat ([`Doc::plain`]) an image is left out, and a line or list item
+//!   that held only images is left out whole. The alt is never a link and loses invisible
+//!   characters; every output escapes it.
 //! - Anything unmatched (`**` without a partner, a lone `[`) is text. HTML
 //!   is never interpreted: every output escapes it.
 //!
@@ -36,7 +41,7 @@ mod scan;
 #[cfg(test)]
 mod tests;
 
-pub use html::html;
+pub use html::{Img, html};
 pub use inline::Inline;
 
 /// One block of a body.
@@ -136,10 +141,15 @@ impl Doc {
         let mut lines: Vec<String> = Vec::new();
         for b in &self.blocks {
             match b {
-                Block::Text(ls) => lines.extend(ls.iter().map(|l| inline::plain(l))),
+                Block::Text(ls) => lines.extend(
+                    ls.iter()
+                        .filter(|l| !inline::only_images(l))
+                        .map(|l| inline::plain(l)),
+                ),
                 Block::Bullets(items) | Block::Numbered(items) => lines.extend(
                     items
                         .iter()
+                        .filter(|i| !inline::only_images(&i.content))
                         .map(|i| format!("{}{}", i.marker, inline::plain(&i.content))),
                 ),
             }
@@ -156,6 +166,20 @@ impl Doc {
                 Block::Bullets(items) | Block::Numbered(items) => items
                     .iter()
                     .for_each(|i| inline::links(&i.content, &mut out)),
+            }
+        }
+        out
+    }
+
+    /// The image slots placed, in reading order (duplicates included).
+    pub fn images(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for b in &self.blocks {
+            match b {
+                Block::Text(ls) => ls.iter().for_each(|l| inline::images(l, &mut out)),
+                Block::Bullets(items) | Block::Numbered(items) => items
+                    .iter()
+                    .for_each(|i| inline::images(&i.content, &mut out)),
             }
         }
         out

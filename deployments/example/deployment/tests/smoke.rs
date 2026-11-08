@@ -16,6 +16,7 @@ fn secrets() -> Secrets {
 
 async fn boot(h: &Harness) -> harpseal_testing::TestApp {
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");
@@ -31,15 +32,16 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("มหาวิทยาลัยอ่าวแมวน้ำ"), "TOML text wins");
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
-    // Seventeen Kernel migrations, the Announcements Module's two and the
-    // Fees Module's two.
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(21));
+    // Seventeen Kernel migrations, the Announcements Module's three and
+    // the Fees Module's two.
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(22));
 }
 
 #[test]
 fn example_has_four_roles_and_the_contact_menu() {
     let h = Harness::new();
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .unwrap();

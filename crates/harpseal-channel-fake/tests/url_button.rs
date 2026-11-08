@@ -9,6 +9,7 @@ const URL: &str = "https://reg.seal-bay.invalid/exam";
 
 fn card(b: Button) -> Message {
     Message::Card(Card {
+        image: None,
         title: "ตารางสอบ".into(),
         body: "ดูได้ที่ปุ่ม".into(),
         buttons: vec![Button::mini_app("เปิดดูรายละเอียด", "/app/x"), b],

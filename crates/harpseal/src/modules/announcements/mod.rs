@@ -33,6 +33,11 @@
 //!   Mini App list, and a Student opening or acknowledging it (chat Action,
 //!   Mini App deep link) is told it is no longer available (#77). Staff
 //!   still see it, marked expired.
+//! - **Files** (#109, Module migration `0003_files`): up to 4 JPEG or PNG
+//!   images per announcement in `announcement_file` and the FileStore;
+//!   served publicly at `/announcements/files/<token>` only while it is
+//!   sent and live; the first is the chat
+//!   Card's image, and the Mini App shows each in place.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
@@ -43,7 +48,11 @@ mod api;
 mod chat;
 mod deliver;
 mod draft;
+mod files;
+mod files_serve;
+mod files_sniff;
 mod form;
+mod form_images;
 mod gate;
 mod maint;
 mod maint_chunk;
@@ -139,10 +148,15 @@ impl Module for Announcements {
             "0002_edit_notice",
             include_str!("../../../migrations/announcements/0002_edit_notice.sql"),
         )
+        .migration(
+            "0003_files",
+            include_str!("../../../migrations/announcements/0003_files.sql"),
+        )
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
         .messages(page_editor::EDITOR)
+        .messages(form_images::TEXTS)
         .menu_entry(latest, chat::on_latest)
         .action_prefix(ACK_PREFIX, chat::on_ack)
         .mini_app_button(MINI_APP_PATH)
@@ -159,7 +173,19 @@ impl Module for Announcements {
     }
 }
 
+/// The create / edit form takes images (#109): its body may hold
+/// [`files::MAX_IMAGES`] of [`files::MAX_IMAGE_BYTES`]; a larger request is
+/// refused before it is read.
+fn upload(path: &'static str) -> crate::module::UploadSpec {
+    crate::module::UploadSpec {
+        path,
+        max_body: files::FORM_BODY_LIMIT,
+        too_large: None,
+    }
+}
+
 fn pages(r: &mut ModuleRegistrar) {
+    r.public("/announcements/files/{token}", get(files_serve::public));
     let (view, send) = ("announcements.view", "announcements.send");
     r.back_office_page(
         view,
@@ -168,9 +194,9 @@ fn pages(r: &mut ModuleRegistrar) {
         NAV_ORDER,
         get(page_list::page),
     )
-    .back_office(
+    .back_office_upload(
         send,
-        "/announcements/new",
+        upload("/announcements/new"),
         get(page_form::new_page).post(page_form::new_post),
     )
     .back_office(send, "/announcements/audience", post(page_count::fragment))
@@ -187,10 +213,15 @@ fn pages(r: &mut ModuleRegistrar) {
         get(page_pick::results).post(page_pick::add),
     )
     .back_office(view, "/announcements/{id}", get(page_detail::page))
-    .back_office(
+    .back_office_upload(
         send,
-        "/announcements/{id}/edit",
+        upload("/announcements/{id}/edit"),
         get(page_form::edit_page).post(page_form::edit_post),
+    )
+    .back_office(
+        view,
+        "/announcements/{id}/files/{token}",
+        get(files_serve::staff),
     )
     .back_office(
         send,

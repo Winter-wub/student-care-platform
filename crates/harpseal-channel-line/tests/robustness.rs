@@ -38,6 +38,7 @@ fn cards61() -> Message {
     Message::CardList(CardList(
         (0..61)
             .map(|i| Card {
+                image: None,
                 title: format!("ประกาศ {i}"),
                 body: "มหาวิทยาลัยอ่าวแมวน้ำ".into(),
                 buttons: Vec::new(),

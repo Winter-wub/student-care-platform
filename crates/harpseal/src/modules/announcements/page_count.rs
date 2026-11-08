@@ -67,7 +67,7 @@ fn count_box(
         };
         return html! {
             div id="audience-count" class="card count" hx-post=(PATH)
-                hx-trigger=(TRIGGER) hx-include="closest form"
+                hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
                 hx-target="this" hx-swap="outerHTML" {
                 p class="muted field-error" { (v.t(why)) }
             }
@@ -86,7 +86,7 @@ fn count_box(
         .sum();
     html! {
         div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(TRIGGER) hx-include="closest form"
+            hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
             hx-target="this" hx-swap="outerHTML" aria-live="polite" {
             p { strong { (v.t("announcements.form.students")) " " (c.students) } }
             @if let Some(p) = picked { (hand_picked(v, a, c, p)) }
@@ -157,7 +157,7 @@ pub(super) fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
 pub(super) fn placeholder(v: &View<'_>) -> Markup {
     html! {
         div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(format!("load, {TRIGGER}")) hx-include="closest form"
+            hx-trigger=(format!("load, {TRIGGER}")) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
             hx-target="this" hx-swap="outerHTML" aria-live="polite" {
             p class="muted" { (v.t("announcements.form.counting")) }
         }

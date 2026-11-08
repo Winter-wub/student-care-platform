@@ -223,6 +223,46 @@ invisible characters removed, the host when nothing is left); the
 "ข่าวล่าสุด" list shows the plain text only. A body without the format looks
 exactly as before; one that happens to contain `*word*`, a `- ` or `1. `
 line, or a link in brackets now shows formatted.
+
+**Images (#109).** The create and edit forms take up to 4 images per
+announcement (slots 1 to 4): JPEG or PNG only, told by their bytes and
+named as what they are (a PNG named `.jpg`, a JPEG without a frame header,
+an SVG, a GIF or text is refused), at most 1 MB, 4096 pixels a side
+and 16 megapixels each (so 4096 x 4096 is refused), never re-encoded or resized. The form warns, without
+refusing, when the image on a chat Card (Thai or English) is over 1024
+pixels a side:
+LINE may not show a larger Flex hero. A Thai hint next
+to the slots names the limits and asks Staff to shrink large images first
+and never to put personal data in an image: each one is served on a public
+URL. A refused file names the limit it broke; files chosen are lost when
+the form comes back with an error (the browser cannot keep them), and the
+form says so. A request over 4.25 MB is refused (413) before it is read.
+`![คำอธิบายรูป](image:N)` in a body places image N there (the toolbar's 🖼
+inserts it for the first image not placed yet); the Mini App shows each
+image in place, lazily loaded, with its alt text, and the images not placed
+after the body. On a draft or a sent announcement an edit may add, replace
+(a new file in a slot) or remove ("ลบรูปนี้") images. Before it is sent, the
+files removed or replaced are deleted from the FileStore. Once sent, Cards
+already delivered show the old image, so it stays served on its own URL
+(marked superseded, no longer on the pages or new Cards) until the
+announcement is retracted or expires; it is kept after that, as nothing
+purges announcements yet. On a sent announcement the form says so next to
+"ลบรูปนี้": an image removed for personal data needs the announcement
+retracted. An edit of a sent one edits its
+Cards where the Channel can (Telegram) whenever the images change; the edit
+notice follows the text alone. A retracted announcement keeps its images,
+as it keeps its text: Staff still see them on its page.
+
+The images are in the FileStore under `announcement-file/<id>/` and in the
+table `announcement_file` (Module migration `0003_files`), so the backup
+carries them. Each is served at `/announcements/files/<token>` (128 random
+bits) only while its announcement is sent and not expired; a draft, a
+retracted or expired one, a removed image and an unknown token all get the
+same 404. Staff see every image at `/admin/announcements/<id>/files/<token>`
+(`announcements.view`). The chat Card shows the first image the body places,
+else image 1, as the LINE Flex hero or the Telegram link preview
+(`docs/guide/channels.md`), only when `public_url` is set
+(`docs/guide/self-hosting.md`).
 The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`. LINE cannot edit a sent
 message: tick "แจ้งผู้รับว่ามีการแก้ไข" when saving the edit of a sent

@@ -28,6 +28,7 @@ async fn run(h: &Harness, sql: &str) {
 /// One linked Student who owes 12,500.00 baht.
 async fn boot(h: &Harness) -> TestApp {
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");

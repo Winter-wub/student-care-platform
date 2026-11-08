@@ -12,10 +12,10 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, PreEscaped, html};
 
+use super::files::{self, IMAGE, Stored};
 use super::form::{Fields, MAX_BODY};
 use super::view::View;
 use crate::manifest::CatalogEntry as E;
-use crate::rich_text;
 use crate::{AppState, CurrentStaff};
 
 /// The preview route (Permission `announcements.send`).
@@ -102,6 +102,18 @@ const TOOLBAR_JS: &str = r#"(function () {
       else if (k === 'italic') { wrap(ta, '*', '*', ph); }
       else if (k === 'list') { lines(ta, false); }
       else if (k === 'numbered') { lines(ta, true); }
+      else if (k === 'image') {
+        // The first slot with an image (saved or chosen) the body does not
+        // place yet; else slot 1.
+        var n = 1;
+        for (var i = 1; i <= 4; i += 1) {
+          var slot = document.querySelector('[data-image-slot="' + i + '"]');
+          var file = document.getElementById('image' + i);
+          var has = (slot && slot.hasAttribute('data-filled')) || (file && file.files.length);
+          if (has && ta.value.indexOf('(image:' + i + ')') < 0) { n = i; break; }
+        }
+        wrap(ta, '![', '](image:' + n + ')', ph);
+      }
       else if (k === 'link') {
         wrap(ta, '[', '](https://)', ph);
         var p = ta.selectionEnd + 2;
@@ -121,6 +133,7 @@ pub(super) fn toolbar(v: &View<'_>, id: &str) -> Markup {
         ("list", "•", "announcements.editor.list"),
         ("numbered", "1.", "announcements.editor.numbered"),
         ("link", "🔗", "announcements.editor.link"),
+        ("image", "🖼", "announcements.editor.image"),
     ];
     html! {
         div class="md-toolbar" role="toolbar" hidden data-for=(id)
@@ -145,13 +158,15 @@ pub(super) fn script() -> Markup {
 }
 
 /// The Mini App preview of the bodies in `f` (Thai, then English when
-/// written), refreshed on every change of the form.
-pub(super) fn preview(v: &View<'_>, f: &Fields) -> Markup {
+/// written) with the saved `images` (#109; a file chosen but not saved
+/// shows after the save), refreshed on every change of the form.
+pub(super) fn preview(v: &View<'_>, f: &Fields, images: &[Stored]) -> Markup {
+    let label = v.t("announcements.images.slot");
     shell(html! {
         p class="muted" { (v.t("announcements.editor.preview")) }
-        div class="mini-preview" lang="th" { (rich_text::html(&f.body_th)) }
+        div class="mini-preview" lang="th" { (files::body_html(&f.body_th, images, true, &label)) }
         @if !f.body_en.trim().is_empty() {
-            div class="mini-preview" lang="en" { (rich_text::html(&f.body_en)) }
+            div class="mini-preview" lang="en" { (files::body_html(&f.body_en, images, true, &label)) }
         }
     })
 }
@@ -160,7 +175,7 @@ pub(super) fn preview(v: &View<'_>, f: &Fields) -> Markup {
 fn shell(inner: Markup) -> Markup {
     html! {
         div id="body-preview" class="card preview" hx-post=(PATH)
-            hx-trigger="input changed delay:400ms from:closest form" hx-include="closest form"
+            hx-trigger="input changed delay:400ms from:closest form" hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
             hx-target="this" hx-swap="outerHTML" aria-live="polite" { (inner) }
     }
 }
@@ -186,5 +201,13 @@ pub(super) async fn fragment(
         });
         return (StatusCode::OK, Html(line.into_string())).into_response();
     }
-    (StatusCode::OK, Html(preview(&v, &f).into_string())).into_response()
+    // The edit form names its announcement: the preview shows its images.
+    let id = pairs.iter().find(|(k, _)| k == "announcement_id");
+    let images = match id {
+        Some((_, id)) => files::list(&s.services, id, IMAGE)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    (StatusCode::OK, Html(preview(&v, &f, &images).into_string())).into_response()
 }

@@ -43,7 +43,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let settings = NativeSettings::from_env()?;
     let secrets = Secrets::from_lookup(|k| std::env::var(k).ok());
-    let d = builder(services(&settings)?, secrets).build()?;
+    let d = builder(services(&settings)?, secrets)?.build()?;
     if args.first().map(String::as_str) == Some("seed-example") {
         let (email, force) = seed_args(&args[1..])?;
         if force {

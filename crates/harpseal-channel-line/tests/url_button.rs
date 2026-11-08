@@ -28,6 +28,7 @@ fn footer(v: &Value) -> &Vec<Value> {
 fn card_url_buttons_are_uri_actions() {
     let long = "ตารางสอบปลายภาคเรียนที่ 2 ปีการศึกษา 2569 ทุกคณะ ฉบับปรับปรุงล่าสุด";
     let msg = Message::Card(Card {
+        image: None,
         title: "ตารางสอบ".into(),
         body: "ดูตารางสอบได้ที่ลิงก์".into(),
         buttons: vec![
@@ -80,6 +81,7 @@ fn a_non_https_url_is_refused_visibly() {
         assert!(Button::url("x", bad).is_err());
         let raw = raw_url("ลิงก์อันตราย", bad);
         let msg = Message::Card(Card {
+            image: None,
             title: "t".into(),
             body: "b".into(),
             buttons: vec![ack(), raw.clone()],
@@ -115,6 +117,7 @@ fn raw_url(label: &str, url: &str) -> Button {
 fn format_characters_leave_url_labels() {
     let raw = harpseal::fixtures::raw_url_button("\u{202E}ตาราง\u{200B}สอบ", URL);
     let msg = Message::Card(Card {
+        image: None,
         title: "t".into(),
         body: "b".into(),
         buttons: vec![raw],

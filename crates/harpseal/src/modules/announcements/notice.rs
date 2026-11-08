@@ -243,6 +243,7 @@ async fn fan_out(
 fn card(cx: &JobContext, locale: &Locale, id: &str, texts: &store::Texts) -> Card {
     let catalog = &cx.catalog;
     Card {
+        image: None,
         title: catalog.t(locale, "announcements.notice.title"),
         body: texts.pick(locale).0.to_string(),
         buttons: vec![Button::mini_app(

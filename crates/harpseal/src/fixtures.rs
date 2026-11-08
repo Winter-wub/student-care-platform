@@ -45,6 +45,7 @@ pub fn raw_url_button(label: &str, url: &str) -> Button {
 
 fn news(n: u32, title: &str, body: &str) -> Card {
     Card {
+        image: None,
         title: title.into(),
         body: body.into(),
         buttons: vec![
@@ -94,6 +95,7 @@ pub fn otp_locked() -> Message {
 /// Fixture `otp_success` (see `docs/prototypes/message-render/`).
 pub fn otp_success() -> Message {
     Message::Card(Card {
+        image: None,
         title: "ผูกบัญชีเรียบร้อย".into(),
         body: "สวัสดีคุณสมหญิง (รหัส 65012345) ตอนนี้คุณจะได้รับประกาศและใช้เมนูทั้งหมดได้แล้ว".into(),
         buttons: vec![action("ดูประกาศล่าสุด", "news.latest")],
@@ -196,6 +198,7 @@ pub fn degrade_choices_120() -> Message {
 /// A Card whose labels exceed LINE's 40-char Flex button label.
 pub fn degrade_long_labels() -> Message {
     Message::Card(Card {
+        image: None,
         title: "แบบสอบถาม".into(),
         body: "กรุณาเลือกหนึ่งข้อ".into(),
         buttons: vec![action(

@@ -43,6 +43,7 @@ fn no_files(_: &str) -> std::io::Result<Vec<u8>> {
 fn bundled_images_are_the_size_the_grid_wants_for_the_cells_they_were_drawn_for() {
     let h = Harness::new();
     let d = builder(h.services(), line_secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .unwrap();
