@@ -106,6 +106,7 @@ pub use module::{
     SettingKind, SettingValue, Settings, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection,
     Uploads,
 };
+pub use module::{CardState, NavGroup, StatusCard, StatusSource};
 pub use module::{
     DEFAULT_BUDGET, MAX_NOTIFY, Notice, Notified, NotifyDefer, NotifyFailure, NotifyOutcome,
     NotifyReport, NotifySkip, NotifyTo,

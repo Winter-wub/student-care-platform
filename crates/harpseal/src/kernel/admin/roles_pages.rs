@@ -40,10 +40,20 @@ fn permission_boxes(perms: &[Permission], held: &[String]) -> Markup {
                     label class="check" {
                         input type="checkbox" name="permission" value=(p.id)
                             checked[held.iter().any(|h| h == p.id)];
-                        " " span class="code" { (p.id) } " " span class="muted" { (p.description) }
+                        " " span { (p.description) }
                     }
                 }
             }
+        }
+    }
+}
+
+/// Every Permission's id beside its description, for the technical
+/// details (#123).
+fn permission_ids(perms: &[Permission]) -> Markup {
+    html! {
+        ul class="list permission-ids" {
+            @for p in perms { li { span class="code" { (p.id) } span class="muted" { (p.description) } } }
         }
     }
 }
@@ -78,14 +88,13 @@ async fn render_list(
             section class="card" {
                 h2 {
                     a href=(format!("/admin/roles/{}", r.id)) { (r.name) }
-                    @if from_toml(v, &r.name) { " " span class="chip" { (l("kernel.admin.roles.toml")) } }
                 }
                 p class="muted" { (l("kernel.admin.roles.holders")) " " (r.holders) }
                 @for (module, list) in by_module(declared) {
                     @let held: Vec<&&Permission> = list.iter().filter(|p| r.permissions.iter().any(|h| h == p.id)).collect();
                     @if !held.is_empty() {
                         p { span class="code" { (module) } ": "
-                            @for p in held { span class="chip" title=(p.description) { (p.id) } " " } }
+                            @for p in held { span class="chip" title=(p.id) { (p.description) } " " } }
                     }
                 }
             }
@@ -103,6 +112,13 @@ async fn render_list(
                 button type="submit" { (l("kernel.admin.roles.create")) }
             }
         }
+        // Raw details (#123): Roles from the TOML, Permission ids.
+        (crate::ui::technical(v.s, v.staff, html! {
+            @for r in all.iter().filter(|r| from_toml(v, &r.name)) {
+                p { (r.name) " " span class="chip" { (l("kernel.admin.roles.toml")) } }
+            }
+            (permission_ids(declared))
+        }))
     };
     v.page(status, &title, body)
 }
@@ -188,7 +204,6 @@ fn render_edit(
     let body = html! {
         p { a href="/admin/roles" { "← " (l("kernel.admin.roles.title")) } }
         h1 { (role.name) }
-        @if from_toml(v, &role.name) { p class="muted" { (l("kernel.admin.roles.toml_help")) } }
         p class="muted" { (l("kernel.admin.roles.holders")) " " (role.holders) }
         p class="muted" { (l("kernel.admin.roles.undeclared")) }
         form method="post" action=(base) class="card" {
@@ -207,6 +222,11 @@ fn render_edit(
         } @else {
             p class="muted" { (l("kernel.admin.roles.in_use")) }
         }
+        // Raw details (#123): where the Role came from, Permission ids.
+        (crate::ui::technical(v.s, v.staff, html! {
+            @if from_toml(v, &role.name) { p class="muted" { (l("kernel.admin.roles.toml_help")) } }
+            (permission_ids(v.s.deployment.permissions()))
+        }))
     };
     v.page(status, &role.name, body)
 }

@@ -463,3 +463,77 @@ no file behind. Backups leave kept uploads out, rows and files (see
 `deployments/example/deployment/src/fees.rs` is a worked example: outstanding
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.
+
+## A Module's back-office pages: navigation group and home card
+
+Every back-office page shares the Core shell (#123): a skip link to the
+content, the institution's bar, and the navigation in two groups,
+**งานประจำ** (daily work) and **ผู้ดูแลระบบ** (administration), with the
+current page marked `aria-current="page"`. Below 640 px the navigation folds
+behind a "เมนู" button (a `<details>`, no JS); from 640 px it is a side
+column. A group shows only the pages the Staff member's Permissions allow,
+and disappears when it has none.
+
+`back_office_page` lists a page under งานประจำ, which suits most Module
+pages (fees, grades, requests). An administration page picks the other
+group:
+
+```rust
+r.back_office_page("grades.import", "/grades", "grades.title", 60, get(page))
+    .back_office_page_in(NavGroup::Admin, "grades.setup", "/grades/setup",
+        "grades.setup_title", 95, get(setup));
+```
+
+Within a group, pages sort by their order (the Kernel uses 10 to 90).
+
+### A status card on the home
+
+`/admin` is the term status page: one ledger of status cards, each a
+state, one fact and one next action. The Kernel shows the last roster
+import, announcements, the message quota and the last backup (orders 10
+to 40). A Module adds its own:
+
+```rust
+r.status_card("fees.import", "fees.home.title", 50, fees_card);
+
+async fn fees_card(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusCard> {
+    let owing = count_owing(&s).await?; // one query
+    let tf = |k: &str, args: &[(&str, &str)]| s.catalog.tf(&staff.locale, k, args);
+    Ok(if owing == 0 {
+        StatusCard::new(CardState::Ok, tf("fees.home.clear", &[]))
+    } else {
+        let n = owing.to_string();
+        StatusCard::new(CardState::Warn, tf("fees.home.owing", &[("n", &n)]))
+            .action(tf("fees.home.open", &[]), "/admin/fees")
+    })
+}
+```
+
+- **Title.** `title_key` is a catalog key: the Core shows its text, also
+  when the source fails, so Staff always know which card it is.
+  `Catalog::tf` fills `{name}` placeholders in your texts.
+- **States.** `CardState::Empty` (nothing yet: the fact says what to do
+  first, such as "ยังไม่ได้นำเข้ายอดค้างชำระ", and the action starts it),
+  `Ok`, and `Warn` (needs a Staff member's attention). The Core draws them
+  in the fixed status colours, never the brand.
+- **One fact, one action.** Write the fact as a short Thai sentence with
+  the number that matters; link the action to a page the Staff member may
+  open (check `staff.can(..)` when the best action needs another
+  Permission, as the example's card does for "ส่งเตือนตอนนี้").
+- **Cheap.** The source runs only on the home, only for Staff holding the
+  card's Permission, once per view. Keep it to one or two queries (D1
+  bills per query and per row read): count with SQL, do not load rows.
+- **Contained.** A source that returns `Err` shows "อ่านข้อมูลส่วนนี้ไม่ได้"
+  under the card's title; the error text is never shown and the rest of
+  the home renders.
+- `build()` refuses a card whose Permission no Module declared
+  (`BuildError::UnguardedStatusCard`) and a `title_key` with no text in
+  the default Locale (`BuildError::UnknownText`).
+- **Sources** are `async fn(AppState, CurrentStaff) -> harpseal::Result<StatusCard>`
+  or an equivalent closure; `StatusSource` is sealed. Tests read a card
+  back with `state()`, `fact()` and `action_link()`.
+- **One after another.** The home runs the visible cards in order, not
+  concurrently (no `futures` crate in the Core); the quota card reuses the
+  usage read the banner already made for the request.
+
+`deployments/example/deployment/src/fees/status.rs` is the worked example.

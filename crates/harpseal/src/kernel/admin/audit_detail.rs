@@ -58,11 +58,16 @@ pub(super) async fn page(
                 dt { (l("kernel.admin.at")) } dd { (v.time(e.at)) }
                 dt { (l("kernel.admin.audit.actor")) } dd { (actor(&e)) }
                 dt { (l("kernel.admin.audit.target")) } dd { (target(&e)) }
+            }
+        }
+        // Raw details (#123): the IP, the browser and the request id.
+        (crate::ui::technical(&s, &staff, html! {
+            dl class="facts" {
                 dt { (l("kernel.admin.audit.ip")) } dd { (e.ip.as_deref().unwrap_or("–")) }
                 dt { (l("kernel.admin.audit.user_agent")) } dd { (ua.unwrap_or("–")) }
                 dt { (l("kernel.admin.audit.request")) } dd class="code" { (e.request_id.as_deref().unwrap_or("–")) }
             }
-        }
+        }))
         section class="card" {
             h2 { (l("kernel.admin.audit.changes")) }
             (diff(&v, before.as_ref(), after.as_ref()))

@@ -139,10 +139,17 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "Required placeholders:"
     ),
     ("kernel.admin.texts.source_default", "ค่าตั้งต้น", "default"),
+    ("kernel.admin.texts.source_toml", "ไฟล์ตั้งค่า", "config file"),
+    // The technical details (#123).
     (
-        "kernel.admin.texts.source_toml",
-        "deployment.toml",
-        "deployment.toml"
+        "kernel.admin.texts.tech_toml",
+        "ป้าย \"ไฟล์ตั้งค่า\" คือข้อความจาก [texts] ใน deployment.toml ข้อความที่แก้ในหลังบ้านจะใช้แทนค่านั้น",
+        "\"config file\" marks a text from [texts] in deployment.toml; an edit here is used instead."
+    ),
+    (
+        "kernel.admin.texts.tech_key",
+        "ชื่อคีย์ของข้อความ (ใช้อ้างอิงในโค้ดและไฟล์ตั้งค่า):",
+        "The text's key (as code and the config file name it):"
     ),
     (
         "kernel.admin.texts.source_setting",

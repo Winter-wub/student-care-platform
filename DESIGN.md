@@ -18,6 +18,8 @@ colors:
   refused-ink: "#8a1c1c"
   refused-press: "#6f1515"
   caution-wash: "#fff3d6"
+  caution-edge: "#a37200"
+  attention-wash: "#fff8e6"
   caution-ink: "#6b4a00"
   caution-meter: "#c98a00"
   over-meter: "#c62828"
@@ -114,6 +116,27 @@ components:
     backgroundColor: "{colors.harbour-teal}"
     textColor: "{colors.on-brand}"
     padding: "8px 16px"
+  nav-link:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ledger-ink}"
+    rounded: "{rounded.control}"
+    padding: "0 12px"
+    height: "48px"
+  nav-link-current:
+    backgroundColor: "{colors.harbour-teal}"
+    textColor: "{colors.on-brand}"
+    rounded: "{rounded.control}"
+    padding: "0 12px"
+    height: "48px"
+  status-card-warn:
+    backgroundColor: "{colors.attention-wash}"
+    textColor: "{colors.ledger-ink}"
+    padding: "{spacing.gutter}"
+  tech-disclosure:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.slate-note}"
+    rounded: "{rounded.card}"
+    padding: "0 16px"
 ---
 
 # Design System: harpseal
@@ -124,9 +147,9 @@ components:
 
 The back office is a well-run registrar's counter. Papers are stacked neatly, every form is checked before it is stamped, and the institution's colour appears only on the letterhead. Everything else stays out of the way. The system is flat, quiet and orderly. Paper-white cards sit on a cool mist ground, separated by thin rules, never by shadows. One brand colour does the speaking: it fills the top bar and the primary buttons, then steps back so content and status carry the page.
 
-It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards below 900 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
+It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards when the content is narrower than 860 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
 
-This document records the incumbent system as of the start of the back-office revamp (#116). It is the reference to improve on, not a ceiling.
+This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure). It is the reference to improve on, not a ceiling.
 
 **Key Characteristics:**
 - Calm and trustworthy: flat surfaces, thin rules, a single accent.
@@ -153,7 +176,8 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 ### Status
 - **Approved Wash / Approved Ink** (#e5f5ec / #145c36): success flashes, "done" buttons, active Links, the meter under its limit.
 - **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips, and the danger button's fill. **Refused Press** (#6f1515) is the danger button's hover.
-- **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
+- **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips, the "ต้องดู" chip. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
+- **Attention Wash** (#fff8e6): the whole row that needs a look: a changed audit row, a Warn status card (#123). Ledger Ink on it is 15.4:1.
 
 ### Text palette (#113)
 The only colours Staff can give text in an Announcement body (`{red}…{/red}`), as CSS classes `tc-red` … `tc-grey`. Fixed, never per Deployment, never a free hex. Each passes 4.5:1 on Paper and on Counter Mist; there is no dark theme, so a dark surface would need its own set. Colour adds emphasis, never meaning alone: coloured text is also semi-bold (600), and links keep their underline so Text Blue is never read as a link.
@@ -190,11 +214,13 @@ The only colours Staff can give text in an Announcement body (`{red}…{/red}`),
 ## Layout
 
 - **Containers:** a single centred column. `main` is at most 960px wide with a 16 px gutter that respects safe-area insets. The Mini App narrows to 560px.
-- **Two-column pages:** from 900 px, `.cols` splits 3:2. Form pairs (`.row2`) sit side by side from 640 px.
+- **Content breakpoints are container queries on `main` (#123),** not the viewport, because the side navigation takes 15rem from 640 px. `main`'s content box is about the window minus 32 px without the navigation, minus 272 px with it.
+- **Two-column pages:** from a 860 px content width, `.cols` splits 3:2. Form pairs (`.row2`) and `.facts` sit side by side from 600 px.
 - **Spacing:** 4, 8, 12 and 16 px steps. 16 px is the gutter and the card padding.
-- **Responsive tables:** `table.rows` are stacked cards with an inline caption per cell (`data-label`) below 900 px, and a real table above.
+- **Responsive tables:** `table.rows` are stacked cards with an inline caption per cell (`data-label`) below a 860 px content width (a 900 px window without the navigation, about 1130 px with it), and a real table above.
 - **Dense lists:** use `.list`, divided by top rules, rather than tables.
-- **Home tiles:** an auto-fill grid with a minimum width of 220 px.
+- **Back-office shell:** from 640 px a 15rem navigation column and the content column (`main`, at most 960 px); below 640 px one column under the menu row.
+- **Home:** the term status ledger (below), not a copy of the navigation.
 
 **The No-Sideways Rule.** No page scrolls horizontally at 360 px. Lists and stacked tables exist so that it never has to.
 
@@ -243,9 +269,14 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Style:** fully round, 2px 10px padding, 0.8125rem. Neutral (Chip Fog), plus approved, refused and caution variants.
 - **Clickable chips** grow to the 48px tap height.
 
-### Navigation
-- **Top bar:** a brand-coloured band holding the institution name (with an optional logo on a white tile), the nav links (12px 10px, 48px tall, white at 12% alpha on hover) and the signed-in "who" line.
-- **Mobile:** the nav wraps beneath the name.
+### Navigation (#123)
+- **Skip link:** the first focusable element, "ข้ามไปยังเนื้อหา", off screen until focused, then a Paper tab with a solid brand ring over the bar. It jumps to `main#main`.
+- **Top bar (the letterhead):** a brand-coloured band, one row, holding the institution name (with an optional logo on a white tile) and the signed-in "who" line with sign-out. Below 640 px the email hides so the bar stays one row (64 px).
+- **Grouped navigation:** one `<details class="menu">` with a Home link, then two groups: **งานประจำ** (Students, the roster, announcements, every Module's daily pages) and **ผู้ดูแลระบบ** (Security Events, audit, Staff, Roles, texts, settings, usage, branding, backups). Group names are Caption-size Slate Note labels; a group the Staff member has no page in is not drawn. Links are Ledger Ink on Paper, 48 px tall, 10 px radius, Counter Mist on hover.
+- **Current page:** `aria-current="page"` on the entry that owns the path (the longest parent, so `/admin/roster/123` marks the roster), drawn as the brand with On Brand text at 700: the letterhead's own pair, whose contrast the branding page checks on save (at least 4.5:1), so a light institution colour stays legible. Its focus ring is Ledger Ink at a 2px offset. No coloured side stripe.
+- **Below 640 px:** the navigation folds behind a 48 px "เมนู" row on Paper (a drawn three-line icon, the word, then the current page in Slate Note). It opens without JS. Bar plus menu row is 113 px before the content on a 390 × 844 screen (was 392 px).
+- **From 640 px:** a 15rem Paper side column with a Rule Line on its right, sticky to the top. Where the browser supports `::details-content` it is always open and the button is hidden; elsewhere the button stays and still works.
+- **Brand:** the letterhead and the one current-page entry. The side column is Paper, never brand-filled (The Letterhead Rule).
 
 ### Flash and banners
 - **Flash:** a full-width wash block (approved or refused) in label weight.
@@ -253,6 +284,17 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 
 ### Responsive data table (signature)
 The `table.rows` pattern carries Staff's daily lists (Students, imports, audit). Below 900 px each row becomes a bordered card and each cell shows its column name as a caption. Above 900 px it is a single bordered table with muted headers.
+
+### Status card (signature, #123)
+The `/admin` home is "this term at a glance": one Paper card holding a ledger of status cards divided by Rule Lines, sorted by order. Each card is a **title with a state chip**, **one fact** (a short Thai sentence with the number that matters) and **one next action** (a secondary button). Kernel cards: the last roster import, announcements, the message quota, the last backup; Modules add their own (the example's fees card). Only cards the Staff member's Permissions allow are drawn.
+- **Title:** from the card's catalog key, so a card that cannot be read is still named.
+- **States:** Empty, a neutral chip "ยังไม่เริ่ม", whose fact says what to do first ("ยังไม่ได้นำเข้ารายชื่อ") and whose action starts it. Ok, an Approved chip "เรียบร้อย". Warn, a Caution chip "ต้องดู" with a 1px #a37200 border (4.0:1 on the wash) on the Attention Wash (#fff8e6). The state never uses the brand (The Fixed Status Rule); the wash is the only emphasis, never a shadow or a side stripe.
+- **Layout:** stacked below a 720 px content width; from there three columns: title and chip (14rem), the fact, the action at the end.
+- **Failure:** a card that cannot be read keeps its title, shows a Warn chip and "อ่านข้อมูลส่วนนี้ไม่ได้"; the rest renders.
+- **Not a dashboard:** no big numbers, no sparklines, no tiles. One fact per card.
+
+### Technical details disclosure (#123)
+Administration pages keep raw details (cron, table names, IPs, request ids, Permission ids, config file names) behind a closed `details.tech` "ข้อมูลทางเทคนิค" at the end of the page: Paper, 1px Rule Line, 12px radius, a 48 px Slate Note summary, the body under a Rule Line. Cards inside it lose their own border so nothing nests.
 
 ### Message preview bubble (signature)
 The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem wide. Staff see roughly what Students will get before they send.
@@ -266,10 +308,13 @@ The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem 
 - **Do** use the fixed status pairs (Approved, Refused, Caution) for every state message.
 - **Do** keep body line height at 1.6 for Thai.
 - **Do** use `table.rows` or `.list` for collections, so phones get stacked cards.
+- **Do** give every home status card one state, one fact and one next action.
+- **Do** put raw technical details behind the "ข้อมูลทางเทคนิค" disclosure.
 
 ### Don't:
 - **Don't** add box shadows or elevation.
 - **Don't** colour status messages with the brand colour.
 - **Don't** let any page scroll sideways at 360px.
-- **Don't** fill large areas with the brand colour beyond the top bar.
+- **Don't** fill large areas with the brand colour beyond the top bar: the navigation column is Paper.
+- **Don't** turn the home into tiles of the navigation or a wall of vanity numbers.
 - **Don't** show the harpseal brand on Student-facing surfaces (chat, Mini App).

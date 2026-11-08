@@ -47,6 +47,7 @@ pub(crate) fn nav(specs: &[SettingSpec]) -> Vec<(&'static str, crate::module::Na
                 path: PATH,
                 title_key: TITLE,
                 order: 85,
+                group: crate::NavGroup::Admin,
             };
             (crate::kernel::NAME, n)
         })

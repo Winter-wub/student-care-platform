@@ -69,6 +69,8 @@ struct Registry {
     public: Vec<(&'static str, &'static str, Route)>,
     /// Back-office navigation, sorted (#21).
     nav: Vec<crate::auth::NavItem>,
+    /// Status cards on the `/admin` home, sorted (#123).
+    status: Vec<crate::module::StatusSpec>,
     /// Links on the Mini App home, sorted (#72).
     app_links: Vec<crate::kernel::app::AppLink>,
     /// Module settings, in registration order (#75).
@@ -253,6 +255,11 @@ impl Deployment {
             return Some((*m, h.clone()));
         }
         resolve_prefix(&self.registry.action_prefixes, action.as_str())
+    }
+
+    /// The `/admin` home's status cards, sorted (#123).
+    pub(crate) fn status_cards(&self) -> &[crate::module::StatusSpec] {
+        &self.registry.status
     }
 
     /// The Mini App home's links, sorted (#72).

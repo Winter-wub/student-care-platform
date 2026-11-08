@@ -59,14 +59,16 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .messages(texts::STAFF)
         .messages(module_settings_texts::TEXTS)
-        .back_office_page(
+        .back_office_page_in(
+            crate::NavGroup::Admin,
             SECURITY,
             "/security",
             "kernel.admin.security.title",
             40,
             get(security::page),
         )
-        .back_office_page(
+        .back_office_page_in(
+            crate::NavGroup::Admin,
             AUDIT,
             "/audit",
             "kernel.admin.audit.title",
@@ -74,7 +76,8 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(audit::page),
         )
         .back_office(AUDIT, "/audit/{id}", get(audit_detail::page))
-        .back_office_page(
+        .back_office_page_in(
+            crate::NavGroup::Admin,
             STAFF,
             "/staff",
             "kernel.admin.staff.title",
@@ -95,7 +98,8 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             post(staff_detail::reset_password),
         )
         .back_office(STAFF, "/staff/{id}/unlock", post(staff_detail::unlock))
-        .back_office_page(
+        .back_office_page_in(
+            crate::NavGroup::Admin,
             STAFF,
             "/roles",
             "kernel.admin.roles.title",
@@ -108,7 +112,8 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(roles_pages::edit).post(roles_pages::update),
         )
         .back_office(STAFF, "/roles/{id}/delete", post(roles_pages::delete))
-        .back_office_page(
+        .back_office_page_in(
+            crate::NavGroup::Admin,
             SETTING,
             "/texts",
             "kernel.admin.texts.title",

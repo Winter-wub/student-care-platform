@@ -69,7 +69,14 @@ const DAY_MS: i64 = 86_400_000;
 /// Registers the page, its routes, texts and the Job on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
-        .back_office_page(MANAGE, PATH, "kernel.backup.title", 90, get(page::page))
+        .back_office_page_in(
+            crate::NavGroup::Admin,
+            MANAGE,
+            PATH,
+            "kernel.backup.title",
+            90,
+            get(page::page),
+        )
         .back_office(MANAGE, "/backups/now", post(page::now))
         .back_office(DOWNLOAD, "/backups/export.xlsx", get(export::all))
         .back_office(DOWNLOAD, "/backups/export/{table}", get(export::one))

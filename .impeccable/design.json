@@ -1,56 +1,267 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-09T00:00:00+07:00",
+  "generatedAt": "2026-11-09T12:00:00+07:00",
   "title": "Design System: harpseal",
   "extensions": {
     "colorMeta": {
-      "harbour-teal": { "role": "primary", "displayName": "Harbour Teal", "canonical": "#0f5c7a", "tonalRamp": ["#06252f", "#09374a", "#0c4a63", "#0f5c7a", "#3d7f99", "#6fa3b8", "#a6c7d4", "#dbe9ef"] },
-      "counter-mist": { "role": "neutral", "displayName": "Counter Mist", "canonical": "#f4f6f8", "tonalRamp": ["#1d2329", "#38424c", "#56626e", "#778591", "#9ba7b2", "#bfc8d0", "#dde3e9", "#f4f6f8"] },
-      "ledger-ink": { "role": "neutral", "displayName": "Ledger Ink", "canonical": "#17212b" },
-      "slate-note": { "role": "neutral", "displayName": "Slate Note", "canonical": "#5b6b7a" },
-      "rule-line": { "role": "neutral", "displayName": "Rule Line", "canonical": "#dde3e9" },
-      "approved-ink": { "role": "status", "displayName": "Approved Ink", "canonical": "#145c36" },
-      "refused-ink": { "role": "status", "displayName": "Refused Ink", "canonical": "#8a1c1c" },
-      "refused-press": { "role": "status", "displayName": "Refused Press", "canonical": "#6f1515" },
-      "caution-ink": { "role": "status", "displayName": "Caution Ink", "canonical": "#6b4a00" }
+      "harbour-teal": {
+        "role": "primary",
+        "displayName": "Harbour Teal",
+        "canonical": "#0f5c7a",
+        "tonalRamp": [
+          "#06252f",
+          "#09374a",
+          "#0c4a63",
+          "#0f5c7a",
+          "#3d7f99",
+          "#6fa3b8",
+          "#a6c7d4",
+          "#dbe9ef"
+        ]
+      },
+      "counter-mist": {
+        "role": "neutral",
+        "displayName": "Counter Mist",
+        "canonical": "#f4f6f8",
+        "tonalRamp": [
+          "#1d2329",
+          "#38424c",
+          "#56626e",
+          "#778591",
+          "#9ba7b2",
+          "#bfc8d0",
+          "#dde3e9",
+          "#f4f6f8"
+        ]
+      },
+      "ledger-ink": {
+        "role": "neutral",
+        "displayName": "Ledger Ink",
+        "canonical": "#17212b"
+      },
+      "slate-note": {
+        "role": "neutral",
+        "displayName": "Slate Note",
+        "canonical": "#5b6b7a"
+      },
+      "rule-line": {
+        "role": "neutral",
+        "displayName": "Rule Line",
+        "canonical": "#dde3e9"
+      },
+      "approved-ink": {
+        "role": "status",
+        "displayName": "Approved Ink",
+        "canonical": "#145c36"
+      },
+      "refused-ink": {
+        "role": "status",
+        "displayName": "Refused Ink",
+        "canonical": "#8a1c1c"
+      },
+      "refused-press": {
+        "role": "status",
+        "displayName": "Refused Press",
+        "canonical": "#6f1515"
+      },
+      "caution-ink": {
+        "role": "status",
+        "displayName": "Caution Ink",
+        "canonical": "#6b4a00"
+      }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "Page titles (h1)." },
-      "title": { "displayName": "Title", "purpose": "Card and section titles (h2)." },
-      "body": { "displayName": "Body", "purpose": "All running text; line height 1.6 for Thai marks." },
-      "label": { "displayName": "Label", "purpose": "Form labels, list names, buttons, flashes." },
-      "caption": { "displayName": "Caption", "purpose": "Table headers, meta lines, definition terms." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles (h1)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card and section titles (h2)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All running text; line height 1.6 for Thai marks."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels, list names, buttons, flashes."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Table headers, meta lines, definition terms."
+      }
     },
     "shadows": [],
     "motion": [
-      { "name": "spinner-fade", "value": "opacity .2s", "purpose": "HTMX request spinner fade." }
+      {
+        "name": "spinner-fade",
+        "value": "opacity .2s",
+        "purpose": "HTMX request spinner fade."
+      }
     ],
     "breakpoints": [
-      { "name": "pair", "value": "640px" },
-      { "name": "table", "value": "900px" }
+      {
+        "name": "nav",
+        "value": "640px",
+        "purpose": "Viewport: below, the navigation folds behind the เมนู row; from, a 15rem side column."
+      },
+      {
+        "name": "pair",
+        "value": "@container main 600px",
+        "purpose": ".row2 and .facts side by side."
+      },
+      {
+        "name": "status-card",
+        "value": "@container main 720px",
+        "purpose": "Status cards in three columns."
+      },
+      {
+        "name": "table",
+        "value": "@container main 860px",
+        "purpose": "table.rows and .cols: a real table and the 3:2 split."
+      }
     ]
   },
   "components": [
-    { "name": "Primary Button", "kind": "button", "refersTo": "button-primary", "description": "The one action that moves the work forward; brand-filled.", "html": "<button class=\"ds-btn-primary\">ยืนยันนำเข้า</button>", "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}" },
-    { "name": "Secondary Button", "kind": "button", "refersTo": "button-secondary", "description": "Alternative or cancel actions.", "html": "<button class=\"ds-btn-secondary\">ยกเลิก</button>", "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}" },
-    {"name": "Danger Button", "kind": "button", "refersTo": "button-danger", "description": "An action in proportion to its reach: it sends to every Student or makes many of them lose their Links. Refused Ink, never the brand; the label names the reach. White on it is 9.3:1.", "html": "<button class=\"ds-btn-danger\">ยืนยัน: 20 คนจะพ้นสภาพ</button>", "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #8a1c1c;background:#8a1c1c;color:#fff;cursor:pointer}.ds-btn-danger:hover{background:#6f1515;border-color:#6f1515}.ds-btn-danger:focus-visible{outline:3px solid #8a1c1c;outline-offset:2px}"},
-    { "name": "Text Input", "kind": "input", "refersTo": "input", "description": "Labelled field with brand focus and refused error state.", "html": "<label class=\"ds-label\">รหัสนักศึกษา<input class=\"ds-input\" value=\"69020001\"></label>", "css": ".ds-label{display:block;font-weight:600}.ds-input{display:block;width:100%;margin-top:6px;min-height:48px;padding:10px 12px;font:inherit;background:#fff;border:1px solid #b8c2cc;border-radius:10px;color:#17212b}.ds-input:focus{outline:3px solid rgba(15,92,122,.35);outline-offset:1px;border-color:#0f5c7a}" },
-    { "name": "Top Bar", "kind": "nav", "refersTo": "top-bar", "description": "Brand letterhead with the institution name and nav.", "html": "<nav class=\"ds-bar\"><strong class=\"ds-brand\">ระบบดูแลนักศึกษา</strong><a href=\"#\">นักศึกษา</a><a href=\"#\">ประกาศ</a></nav>", "css": ".ds-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;padding:8px 16px;background:#0f5c7a;color:#fff}.ds-brand{margin-right:auto;font-weight:700}.ds-bar a{color:#fff;text-decoration:none;padding:12px 10px;border-radius:8px}.ds-bar a:hover{background:rgba(255,255,255,.12)}" },
-    { "name": "Card", "kind": "card", "refersTo": "card", "description": "Flat paper container on the mist ground.", "html": "<section class=\"ds-card\"><h2>นำเข้าทะเบียน</h2><p>ตรวจไฟล์ก่อนยืนยัน</p></section>", "css": ".ds-card{background:#fff;border:1px solid #dde3e9;border-radius:12px;padding:16px;color:#17212b}.ds-card h2{font-size:1.125rem;margin:0 0 12px}" },
-    { "name": "Status Chips", "kind": "chip", "refersTo": "chip", "description": "Neutral, approved, refused and caution chips.", "html": "<span class=\"ds-chip\">ปี 1</span> <span class=\"ds-chip ds-ok\">ผูกแล้ว</span> <span class=\"ds-chip ds-err\">ผิดพลาด</span> <span class=\"ds-chip ds-warn\">ใกล้เต็ม</span>", "css": ".ds-chip{display:inline-block;padding:2px 10px;border-radius:999px;background:#e8eef3;color:#2c4456;font-size:.8125rem}.ds-ok{background:#e5f5ec;color:#145c36}.ds-err{background:#fdecec;color:#8a1c1c}.ds-warn{background:#fff3d6;color:#6b4a00}" },
-    { "name": "Flash", "kind": "custom", "refersTo": "flash-ok", "description": "Outcome message after a write.", "html": "<p class=\"ds-flash ds-flash-ok\">บันทึกแล้ว</p><p class=\"ds-flash ds-flash-err\">ไฟล์มีปัญหา 3 แถว</p>", "css": ".ds-flash{padding:12px 14px;border-radius:10px;font-weight:600;margin:0 0 8px}.ds-flash-ok{background:#e5f5ec;color:#145c36}.ds-flash-err{background:#fdecec;color:#8a1c1c}" }
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action that moves the work forward; brand-filled.",
+      "html": "<button class=\"ds-btn-primary\">ยืนยันนำเข้า</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Alternative or cancel actions.",
+      "html": "<button class=\"ds-btn-secondary\">ยกเลิก</button>",
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "An action in proportion to its reach: it sends to every Student or makes many of them lose their Links. Refused Ink, never the brand; the label names the reach. White on it is 9.3:1.",
+      "html": "<button class=\"ds-btn-danger\">ยืนยัน: 20 คนจะพ้นสภาพ</button>",
+      "css": ".ds-btn-danger{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #8a1c1c;background:#8a1c1c;color:#fff;cursor:pointer}.ds-btn-danger:hover{background:#6f1515;border-color:#6f1515}.ds-btn-danger:focus-visible{outline:3px solid #8a1c1c;outline-offset:2px}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled field with brand focus and refused error state.",
+      "html": "<label class=\"ds-label\">รหัสนักศึกษา<input class=\"ds-input\" value=\"69020001\"></label>",
+      "css": ".ds-label{display:block;font-weight:600}.ds-input{display:block;width:100%;margin-top:6px;min-height:48px;padding:10px 12px;font:inherit;background:#fff;border:1px solid #b8c2cc;border-radius:10px;color:#17212b}.ds-input:focus{outline:3px solid rgba(15,92,122,.35);outline-offset:1px;border-color:#0f5c7a}"
+    },
+    {
+      "name": "Top Bar",
+      "kind": "nav",
+      "refersTo": "top-bar",
+      "description": "Brand letterhead: the institution name and who is signed in, one row. The navigation lives in the grouped side column (#123), not in the bar.",
+      "html": "<header class=\"ds-bar\"><strong class=\"ds-brand\">มหาวิทยาลัยซีลเบย์</strong><span class=\"ds-who\">admin@sealbay.example · <u>ออกจากระบบ</u></span></header>",
+      "css": ".ds-bar{display:flex;align-items:center;gap:16px;min-height:64px;padding:8px 16px;background:#0f5c7a;color:#fff}.ds-brand{margin-right:auto;font-weight:700}.ds-who{font-size:.875rem}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat paper container on the mist ground.",
+      "html": "<section class=\"ds-card\"><h2>นำเข้าทะเบียน</h2><p>ตรวจไฟล์ก่อนยืนยัน</p></section>",
+      "css": ".ds-card{background:#fff;border:1px solid #dde3e9;border-radius:12px;padding:16px;color:#17212b}.ds-card h2{font-size:1.125rem;margin:0 0 12px}"
+    },
+    {
+      "name": "Status Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Neutral, approved, refused and caution chips.",
+      "html": "<span class=\"ds-chip\">ปี 1</span> <span class=\"ds-chip ds-ok\">ผูกแล้ว</span> <span class=\"ds-chip ds-err\">ผิดพลาด</span> <span class=\"ds-chip ds-warn\">ใกล้เต็ม</span>",
+      "css": ".ds-chip{display:inline-block;padding:2px 10px;border-radius:999px;background:#e8eef3;color:#2c4456;font-size:.8125rem}.ds-ok{background:#e5f5ec;color:#145c36}.ds-err{background:#fdecec;color:#8a1c1c}.ds-warn{background:#fff3d6;color:#6b4a00}"
+    },
+    {
+      "name": "Flash",
+      "kind": "custom",
+      "refersTo": "flash-ok",
+      "description": "Outcome message after a write.",
+      "html": "<p class=\"ds-flash ds-flash-ok\">บันทึกแล้ว</p><p class=\"ds-flash ds-flash-err\">ไฟล์มีปัญหา 3 แถว</p>",
+      "css": ".ds-flash{padding:12px 14px;border-radius:10px;font-weight:600;margin:0 0 8px}.ds-flash-ok{background:#e5f5ec;color:#145c36}.ds-flash-err{background:#fdecec;color:#8a1c1c}"
+    },
+    {
+      "name": "Grouped Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Home, then งานประจำ and ผู้ดูแลระบบ groups filtered by Permission; the current page is aria-current, filled with the brand and its On Brand text (the letterhead pair, contrast checked on save). A <details> that folds behind เมนู below 640 px without JS.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\">หน้าหลัก</a><p class=\"ds-group\">งานประจำ</p><a href=\"#\" aria-current=\"page\">นักศึกษา</a><a href=\"#\">นำเข้ารายชื่อ</a><p class=\"ds-group\">ผู้ดูแลระบบ</p><a href=\"#\">เจ้าหน้าที่</a><a href=\"#\">สำรองข้อมูล</a></nav>",
+      "css": ".ds-nav{width:15rem;padding:8px;background:#fff;border-right:1px solid #dde3e9}.ds-nav a{display:flex;align-items:center;min-height:48px;padding:0 12px;border-radius:10px;color:#17212b;text-decoration:none}.ds-nav a:hover{background:#f4f6f8}.ds-nav a[aria-current=page]{background:#0f5c7a;color:#fff;font-weight:700}.ds-group{margin:16px 12px 4px;color:#5b6b7a;font-size:.8125rem;font-weight:600}"
+    },
+    {
+      "name": "Status Card",
+      "kind": "card",
+      "refersTo": "status-card-warn",
+      "description": "One line of the term status home: a title with a state chip (ยังไม่เริ่ม / เรียบร้อย / ต้องดู), one fact and one next action. Warn rows get the #fff8e6 Attention Wash and the Caution chip a #a37200 border (4.0:1); a failed card keeps its title; never the brand, never a shadow.",
+      "html": "<ul class=\"ds-ledger\"><li><strong>รายชื่อนักศึกษา <span class=\"ds-chip ds-ok\">เรียบร้อย</span></strong><span>นำเข้าล่าสุด 2026-11-09 12:06 · 50 แถว</span><a href=\"#\">นำเข้าไฟล์ใหม่</a></li><li class=\"ds-warn-row\"><strong>ค่าธรรมเนียม <span class=\"ds-chip ds-warn\">ต้องดู</span></strong><span>12 คนค้างชำระ · เตือนอัตโนมัติรอบถัดไป วันจันทร์ 09:00</span><a href=\"#\">ส่งเตือนตอนนี้</a></li></ul>",
+      "css": ".ds-ledger{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #dde3e9;border-radius:12px;overflow:hidden}.ds-ledger li{display:grid;grid-template-columns:14rem 1fr auto;align-items:center;gap:6px 16px;padding:16px;border-top:1px solid #dde3e9}.ds-ledger li:first-child{border-top:0}.ds-warn-row{background:#fff8e6}.ds-ledger a{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border:1px solid #0f5c7a;border-radius:10px;color:#0f5c7a;font-weight:600;text-decoration:none}.ds-chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8125rem;font-weight:400}.ds-ok{background:#e5f5ec;color:#145c36}.ds-warn{background:#fff3d6;color:#6b4a00;border:1px solid #a37200}"
+    },
+    {
+      "name": "Technical Disclosure",
+      "kind": "custom",
+      "refersTo": "tech-disclosure",
+      "description": "ข้อมูลทางเทคนิค: raw details (cron, table names, IPs, request ids, Permission ids, config file names) closed by default at the end of an administration page.",
+      "html": "<details class=\"ds-tech\"><summary>ข้อมูลทางเทคนิค</summary><p>กำหนดเวลา: 0 2 * * * (เวลา UTC+07:00)</p></details>",
+      "css": ".ds-tech{border:1px solid #dde3e9;border-radius:12px;background:#fff}.ds-tech summary{min-height:48px;display:flex;align-items:center;padding:0 16px;font-weight:600;color:#5b6b7a;cursor:pointer}.ds-tech p{margin:0;padding:12px 16px 16px;border-top:1px solid #dde3e9}"
+    }
   ],
   "narrative": {
     "northStar": "The Registrar's Counter",
     "overview": "The back office is a well-run registrar's counter: papers stacked neatly, every form checked before it is stamped, the institution's colour on the letterhead and nowhere it does not belong. The system is flat, quiet and orderly: paper-white cards on a cool mist ground, separated by thin rules, never by shadows. Built first for non-technical Staff and for phones; the same stylesheet serves the Mini App.",
-    "keyCharacteristics": ["Calm and trustworthy: flat surfaces, thin rules, a single accent.", "Easy on a phone: 48 px targets, stacked tables, one-column Mini App.", "Institution-led colour: the brand is a variable; status colours are fixed.", "System fonts with Thai fallbacks; no web fonts."],
-    "rules": [
-      { "name": "The Letterhead Rule", "body": "The institution colour lives on the letterhead (top bar) and on the one action that moves the work forward. It never fills large areas or decorates.", "section": "colors" },
-      { "name": "The Fixed Status Rule", "body": "Approved, refused and caution colours never follow the brand.", "section": "colors" },
-      { "name": "The Tall Line Rule", "body": "Body line height never drops below 1.6; Thai stacked marks need the room.", "section": "typography" },
-      { "name": "The Flat Counter Rule", "body": "Surfaces sit flat on the counter. If something needs attention, colour it; do not raise it.", "section": "elevation" }
+    "keyCharacteristics": [
+      "Calm and trustworthy: flat surfaces, thin rules, a single accent.",
+      "Easy on a phone: 48 px targets, stacked tables, one-column Mini App.",
+      "Institution-led colour: the brand is a variable; status colours are fixed.",
+      "System fonts with Thai fallbacks; no web fonts."
     ],
-    "dos": ["Do use --brand for the top bar, the primary action, links and focus, and assume it can be any institution colour.", "Do keep every interactive element at least 48 px tall and wide.", "Do separate surfaces with Rule Line borders and tone, not shadows.", "Do use the fixed status pairs (Approved, Refused, Caution) for every state message.", "Do keep body line height at 1.6 for Thai.", "Do use table.rows or .list for collections so phones get stacked cards."],
-    "donts": ["Don't add box shadows or elevation.", "Don't colour status messages with the brand colour.", "Don't let any page scroll sideways at 360 px.", "Don't fill large areas with the brand colour beyond the top bar.", "Don't show the harpseal brand on Student-facing surfaces (chat, Mini App)."]
+    "rules": [
+      {
+        "name": "The Letterhead Rule",
+        "body": "The institution colour lives on the letterhead (top bar) and on the one action that moves the work forward. It never fills large areas or decorates.",
+        "section": "colors"
+      },
+      {
+        "name": "The Fixed Status Rule",
+        "body": "Approved, refused and caution colours never follow the brand.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tall Line Rule",
+        "body": "Body line height never drops below 1.6; Thai stacked marks need the room.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Counter Rule",
+        "body": "Surfaces sit flat on the counter. If something needs attention, colour it; do not raise it.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use --brand for the top bar, the primary action, links and focus, and assume it can be any institution colour.",
+      "Do keep every interactive element at least 48 px tall and wide.",
+      "Do separate surfaces with Rule Line borders and tone, not shadows.",
+      "Do use the fixed status pairs (Approved, Refused, Caution) for every state message.",
+      "Do keep body line height at 1.6 for Thai.",
+      "Do use table.rows or .list for collections so phones get stacked cards.",
+      "Do give every home status card one state, one fact and one next action.",
+      "Do put raw technical details behind the ข้อมูลทางเทคนิค disclosure."
+    ],
+    "donts": [
+      "Don't add box shadows or elevation.",
+      "Don't colour status messages with the brand colour.",
+      "Don't let any page scroll sideways at 360 px.",
+      "Don't fill large areas with the brand colour beyond the top bar.",
+      "Don't show the harpseal brand on Student-facing surfaces (chat, Mini App).",
+      "Don't brand-fill the navigation column.",
+      "Don't turn the home into tiles of the navigation or a wall of vanity numbers."
+    ]
   }
 }

@@ -28,6 +28,7 @@
 //! "not set" until Finance saves one (the demo seed saves a fictional one).
 
 pub mod read;
+pub mod status;
 pub mod student;
 mod texts;
 
@@ -106,6 +107,8 @@ impl Module for Fees {
             include_str!("../migrations/fees/0002_fees_import.sql"),
         )
         .back_office_page(IMPORT, "/fees", "fees.title", 60, get(page))
+        .messages(status::TEXTS)
+        .status_card(IMPORT, "fees.home.title", status::ORDER, status::card)
         .sheet_upload(IMPORT, "/fees/upload", post(upload))
         .back_office(IMPORT, "/fees/{id}", get(preview))
         .back_office(IMPORT, "/fees/{id}/confirm", post(confirm))

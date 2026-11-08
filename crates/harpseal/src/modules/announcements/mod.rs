@@ -91,6 +91,7 @@ mod page_pick;
 mod page_review;
 mod service;
 mod stats;
+mod status;
 mod store;
 mod student;
 mod sweep;
@@ -194,7 +195,14 @@ impl Module for Announcements {
         .job(JobSpec::new(RETRACT_CHUNK), maint_chunk::retract_chunk)
         .job(JobSpec::new(NOTICE), notice::notice)
         .job(JobSpec::new(NOTICE_CHUNK), notice::notice_chunk)
-        .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job);
+        .job(JobSpec::scheduled(SWEEP, SWEEP_SCHEDULE), sweep::job)
+        .messages(status::TEXTS)
+        .status_card(
+            status::PERMISSION,
+            status::TITLE,
+            status::ORDER,
+            status::card,
+        );
         pages(r);
     }
 }

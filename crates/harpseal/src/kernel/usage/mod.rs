@@ -13,7 +13,7 @@
 //! Levels ([`quota::Level`]): `Warn` at 80 % of the cap, `Over` at 100 %.
 //! Sending is never blocked. The banner is rendered server-side: the Staff
 //! guard reads this month's level once per full-page GET (not for POSTs,
-//! HTMX fragments or `.json`/`.csv`; see [`banner`]); a
+//! HTMX fragments or `.json`/`.csv`; see [`this_month`]); a
 //! failing read shows no banner rather than breaking the page. The emails
 //! lag the banner by at most 10 minutes (one Job run).
 //!
@@ -33,7 +33,7 @@ mod watch;
 
 use axum::routing::{get, post};
 
-pub(crate) use banner::banner;
+pub(crate) use banner::{render as render_banner, this_month};
 pub(crate) use package::in_force as quota_in_force;
 pub(crate) use package::{KIND as LINE_KIND, extra as line_extra};
 pub(crate) use quota::Level;
@@ -54,7 +54,14 @@ pub(crate) const FULL_PATH: &str = "/admin/usage";
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .messages(texts_package::DEFAULTS)
-        .back_office_page(VIEW, PATH, "kernel.usage.title", 85, get(page::page))
+        .back_office_page_in(
+            crate::NavGroup::Admin,
+            VIEW,
+            PATH,
+            "kernel.usage.title",
+            85,
+            get(page::page),
+        )
         .back_office(
             package_page::EDIT,
             package_page::PATH,

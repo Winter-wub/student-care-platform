@@ -93,7 +93,14 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         too_large: None,
     };
     r.messages(texts::TEXTS)
-        .back_office_page(EDIT, PATH, "kernel.branding.title", 85, get(page::show))
+        .back_office_page_in(
+            crate::NavGroup::Admin,
+            EDIT,
+            PATH,
+            "kernel.branding.title",
+            85,
+            get(page::show),
+        )
         .back_office_upload(EDIT, spec(SAVE_PATH), post(page::submit))
         .back_office_upload(EDIT, spec(MENU_PATH), post(menu_page::submit))
         .back_office(EDIT, "/branding/menu/{slot}", get(menu_page::image))

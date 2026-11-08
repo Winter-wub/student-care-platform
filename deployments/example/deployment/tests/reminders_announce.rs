@@ -169,7 +169,15 @@ async fn staff_without_announcements_send_get_the_core_pages_refusal() {
     assert_eq!(ours.status, 403);
     assert_eq!(core.status, 403);
     assert!(ours.body.contains("announcements.send"), "{}", ours.body);
-    assert_eq!(ours.body, core.body, "the same 403 page as the Core's");
+    // The same refusal as the Core's; the shell around it marks the page
+    // the request came from (#123), so compare the main column.
+    let main = |b: &str| b.split("<main").nth(1).map(str::to_string);
+    assert!(main(&ours.body).is_some());
+    assert_eq!(
+        main(&ours.body),
+        main(&core.body),
+        "the same 403 page as the Core's"
+    );
 
     assert_eq!(app.count("SELECT count(*) FROM announcement").await, 0);
     let audited = "SELECT count(*) FROM audit_log WHERE action LIKE 'announcement.%'";

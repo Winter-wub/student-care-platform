@@ -3,6 +3,7 @@
 use crate::config::DeploymentConfig;
 use crate::error::BuildError;
 use crate::manifest::Catalog;
+use crate::module::{NavSpec, StatusSpec};
 use crate::{Module, ModuleRegistrar};
 
 /// A Module name that claims the Kernel's namespace: `kernel` or
@@ -62,4 +63,64 @@ pub(super) fn toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result
         }
     }
     Ok(())
+}
+
+/// Navigation entries: a known title in the default Locale, no parameters.
+pub(super) fn nav(nav: &[(&'static str, NavSpec)], catalog: &Catalog) -> Result<(), BuildError> {
+    let locale = catalog.default_locale();
+    for (module, n) in nav {
+        if n.path.contains('{') {
+            return Err(BuildError::InvalidRoute {
+                module,
+                path: n.path.into(),
+            });
+        }
+        if !catalog.has(&locale, n.title_key) {
+            return Err(BuildError::UnknownText {
+                source: format!("module `{module}`"),
+                key: n.title_key.into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::NavItem> {
+    let mut items: Vec<crate::auth::NavItem> = nav
+        .into_iter()
+        .map(|(_, n)| crate::auth::NavItem {
+            permission: n.permission,
+            path: format!("{}{}", crate::deployment::routes::ADMIN, n.path),
+            title_key: n.title_key,
+            order: n.order,
+            group: n.group,
+        })
+        .collect();
+    items.sort_by_key(|n| (n.group, n.order));
+    items
+}
+
+/// Status cards (#123): each guarded by a declared Permission and titled
+/// by a known text, sorted by `order` (registration order breaks ties).
+pub(super) fn status_cards(
+    cards: Vec<(&'static str, StatusSpec)>,
+    permissions: &[crate::manifest::Permission],
+    catalog: &Catalog,
+) -> Result<Vec<StatusSpec>, BuildError> {
+    let locale = catalog.default_locale();
+    for (module, c) in &cards {
+        if !permissions.iter().any(|p| p.id == c.permission) {
+            let permission = c.permission;
+            return Err(BuildError::UnguardedStatusCard { module, permission });
+        }
+        if !catalog.has(&locale, c.title_key) {
+            return Err(BuildError::UnknownText {
+                source: format!("module `{module}`"),
+                key: c.title_key.into(),
+            });
+        }
+    }
+    let mut cards: Vec<StatusSpec> = cards.into_iter().map(|(_, c)| c).collect();
+    cards.sort_by_key(|c| c.order);
+    Ok(cards)
 }

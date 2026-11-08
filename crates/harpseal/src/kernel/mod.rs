@@ -7,6 +7,7 @@ pub(crate) mod app;
 pub mod audience;
 pub(crate) mod branding;
 pub(crate) mod flow;
+pub(crate) mod home;
 pub mod links;
 pub(crate) mod menu;
 pub(crate) mod notice;
@@ -155,6 +156,7 @@ impl Module for Kernel {
         app::register(r);
         menu::register(r);
         branding::register(r);
+        home::register(r);
         r.messages(texts::DEFAULTS)
             .messages(texts_link::DEFAULTS)
             .public(notice::PATH, get(notice::page))

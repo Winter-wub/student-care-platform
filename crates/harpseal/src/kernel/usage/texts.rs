@@ -48,6 +48,17 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.usage.day", "วันที่", "Day"),
     ("kernel.usage.months", "6 เดือนล่าสุด", "Last 6 months"),
     ("kernel.usage.month", "เดือน", "Month"),
+    // The technical details (#123).
+    (
+        "kernel.usage.tech_config",
+        "ค่าจากไฟล์ตั้งค่า: [quotas.<ช่องทาง>] metered_per_month ใน deployment.toml (ใช้เมื่อยังไม่ได้เลือกแพ็กเกจ LINE)",
+        "The configured value: [quotas.<channel>] metered_per_month in deployment.toml (used until a LINE package is chosen)"
+    ),
+    (
+        "kernel.usage.tech_source",
+        "ตัวเลขทั้งหมดอ่านจากตาราง usage_daily ไม่ได้อ่านจาก API ของแพลตฟอร์ม",
+        "Every number is read from the usage_daily table, never from a platform API"
+    ),
     // {channel} {percent}
     (
         "kernel.usage.banner_warn",

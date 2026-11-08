@@ -21,6 +21,7 @@ mod mini_app;
 mod notify;
 mod setting_kind;
 pub(crate) mod settings;
+mod status;
 mod upload;
 pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
 pub(crate) use kept::{RouteModule, sweep_uploads};
@@ -32,6 +33,8 @@ pub use notify::{
 pub(crate) use setting_kind::MAX_ACCOUNT_CHARS;
 pub use settings::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind, SettingValue, Settings};
 pub(crate) use settings::{SettingSpec, absorb as absorb_settings, check as check_settings};
+pub(crate) use status::StatusSpec;
+pub use status::{CardState, NavGroup, StatusCard, StatusSource};
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
 
 /// A switchable part of the Core or customer code.
@@ -206,6 +209,8 @@ pub struct ModuleRegistrar {
     pub(crate) app_links: Vec<AppLinkSpec>,
     /// Typed settings (#75).
     pub(crate) settings: Vec<SettingSpec>,
+    /// Status cards on the `/admin` home (#123).
+    pub(crate) status: Vec<StatusSpec>,
 }
 
 /// A back-office upload route (paths under `/admin`, as registered).
@@ -225,6 +230,7 @@ pub(crate) struct NavSpec {
     pub(crate) path: &'static str,
     pub(crate) title_key: &'static str,
     pub(crate) order: u16,
+    pub(crate) group: NavGroup,
 }
 
 impl ModuleRegistrar {
@@ -245,6 +251,7 @@ impl ModuleRegistrar {
             nav: Vec::new(),
             app_links: Vec::new(),
             settings: Vec::new(),
+            status: Vec::new(),
         }
     }
 
@@ -333,10 +340,12 @@ impl ModuleRegistrar {
     }
 
     /// Like [`ModuleRegistrar::back_office`], and also lists the page in
-    /// the back-office navigation and on the `/admin` home for Staff
-    /// holding `permission`: `title_key` is a catalog key (checked by
-    /// `build()`), `nav_order` sorts the entries (lower first). `path` must
-    /// not contain parameters ([`crate::BuildError::InvalidRoute`]).
+    /// the back-office navigation, in the [`NavGroup::Daily`] group
+    /// ("งานประจำ"), for Staff holding `permission`: `title_key` is a
+    /// catalog key (checked by `build()`), `nav_order` sorts the entries
+    /// (lower first). `path` must not contain parameters
+    /// ([`crate::BuildError::InvalidRoute`]). An administration page uses
+    /// [`ModuleRegistrar::back_office_page_in`] with [`NavGroup::Admin`].
     pub fn back_office_page(
         &mut self,
         permission: &'static str,
@@ -345,13 +354,8 @@ impl ModuleRegistrar {
         nav_order: u16,
         route: MethodRouter<AppState>,
     ) -> &mut Self {
-        self.nav.push(NavSpec {
-            permission,
-            path,
-            title_key,
-            order: nav_order,
-        });
-        self.back_office(permission, path, route)
+        let group = NavGroup::Daily;
+        self.back_office_page_in(group, permission, path, title_key, nav_order, route)
     }
 
     /// A page outside `/admin` with no Staff session: Mini App pages (which

@@ -145,6 +145,12 @@ impl Catalog {
             .unwrap_or_else(|| key.to_string())
     }
 
+    /// [`Catalog::t`] with each `{name}` in the text replaced by its value
+    /// in `args`.
+    pub fn tf(&self, locale: &Locale, key: &str, args: &[(&str, &str)]) -> String {
+        crate::kernel::text::fill(&self.t(locale, key), args)
+    }
+
     /// Every `(locale, key, text)`, unordered (the Texts page sorts them).
     pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
         self.texts

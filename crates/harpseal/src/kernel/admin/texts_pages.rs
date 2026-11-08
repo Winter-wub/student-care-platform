@@ -84,6 +84,7 @@ pub(super) async fn list(
                     hx-target="#texts-results" hx-swap="outerHTML" hx-push-url="true";
             }
             (results)
+            (crate::ui::technical(v.s, v.staff, html! { p { (v.t("kernel.admin.texts.tech_toml")) } }))
         };
         v.page(StatusCode::OK, &title, body)
     })
@@ -262,6 +263,11 @@ async fn render(
                 }
             }
         }
+        // Raw details (#123): the key and where a TOML text comes from.
+        (crate::ui::technical(v.s, v.staff, html! {
+            p { (l("kernel.admin.texts.tech_key")) " " code { (key) } }
+            p { (l("kernel.admin.texts.tech_toml")) }
+        }))
     };
     v.page(status, key, body)
 }
