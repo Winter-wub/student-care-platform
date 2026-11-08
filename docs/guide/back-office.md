@@ -115,7 +115,8 @@ confirm without it is refused and changes nothing. A Deployment whose files
 never list every Student (one file per cohort) sets `modes = ["upsert"]` and
 `default_mode = "upsert"`: the form then offers only `upsert`, and a request
 asking for `full` is refused with 400 and imports nothing (`modes` must not be
-empty, hold only `full` / `upsert` and include `default_mode`; a bad value stops
+empty, hold only `full` / `upsert` and include `default_mode`; without a
+`default_mode`, the form preselects `upsert` when listed, else the only mode; a bad value stops
 the Deployment from building). The preview and the import page name the mode.
 A **blocking** problem refuses the
 whole file with a CSV report: an empty or malformed student id, a duplicate id in

@@ -7,6 +7,20 @@ use std::collections::BTreeSet;
 use crate::message::Locale;
 
 impl RosterConfig {
+    /// Fills a `default_mode` the TOML left out (#120): `upsert` when
+    /// `modes` lists it, else the only mode listed. Left empty otherwise,
+    /// and [`RosterConfig::check`] refuses it.
+    pub(crate) fn resolve_default_mode(&mut self) {
+        if !self.default_mode.is_empty() {
+            return;
+        }
+        if self.allows_mode("upsert") {
+            self.default_mode = "upsert".into();
+        } else if let [only] = self.modes.as_slice() {
+            self.default_mode = only.clone();
+        }
+    }
+
     /// Refuses bad keys (not `[a-z][a-z0-9_]*`, at most 40 bytes), empty or
     /// repeated column headers, an `enum` without values (or with empty or
     /// repeated ones), `values` on a non-`enum`, an empty separator, no
@@ -14,11 +28,14 @@ impl RosterConfig {
     /// `default_mode` outside `modes`, a `blocking` entry that is not a
     /// warning class (or is repeated), and an attribute whose `min` / `max`
     /// / `value_labels` break the rules of [`rules::check`] (#81).
+    /// Fills a `default_mode` the TOML left out first
+    /// ([`RosterConfig::resolve_default_mode`]).
     pub(crate) fn check(
-        &self,
+        &mut self,
         default_locale: &Locale,
         known: &BTreeSet<String>,
     ) -> crate::Result<()> {
+        self.resolve_default_mode();
         let bad = |m: String| Err(crate::Error::Invalid(format!("[roster] {m}")));
         let mut columns = vec![&self.student_code, &self.display_name, &self.email];
         columns.extend(self.locale.as_ref().map(|l| &l.column));
@@ -36,6 +53,9 @@ impl RosterConfig {
             if self.modes[..i].contains(m) {
                 return bad(format!("mode `{m}` is listed twice"));
             }
+        }
+        if self.default_mode.is_empty() {
+            return bad("default_mode is required when modes lists several and not upsert".into());
         }
         if !self.allows_mode(&self.default_mode) {
             let d = &self.default_mode;

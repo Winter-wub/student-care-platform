@@ -4,7 +4,8 @@
 
 mod roster_support;
 
-use harpseal_testing::{Browser, Harness};
+use harpseal::DeploymentConfig;
+use harpseal_testing::{Browser, Harness, TestApp};
 use roster_support::*;
 
 const ACTIVE: &str = "SELECT count(*) FROM student WHERE status = 'active'";
@@ -30,7 +31,7 @@ async fn preview_page(b: &Browser<'_>, id: &str) -> String {
 }
 
 /// Nothing changed: still previewed, no Job, the roster and Links intact.
-async fn unchanged(h: &Harness, app: &harpseal_testing::TestApp, id: &str, active: i64) {
+async fn unchanged(h: &Harness, app: &TestApp, id: &str, active: i64) {
     assert_eq!(import_text(h, id, "state").await, "previewed");
     assert_eq!(run_jobs(h, app).await, 0, "no Job was queued");
     assert_eq!(int(h, ACTIVE, &[]).await, active);
@@ -136,5 +137,33 @@ async fn the_word_confirms_a_warned_full_replace_too() {
     let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
     assert_eq!(confirm_typed(&b, &id, Some(TYPED_WORD)).await.status, 303);
     assert_eq!(flash(&b), "ok:kernel.roster.confirmed");
+    assert_eq!(import_text(&h, &id, "state").await, "queued");
+}
+
+#[tokio::test]
+async fn a_full_only_deployment_without_a_default_mode_still_builds_and_asks() {
+    // An existing `modes = ["full"]` config without `default_mode` keeps
+    // building (#120 is not a breaking change): its default is `full`.
+    let toml = CONFIG.replacen("[roster]\n", "[roster]\nmodes = [\"full\"]\n", 1);
+    let config = DeploymentConfig::from_toml(&toml).unwrap();
+    assert_eq!(config.roster.default_mode, "full");
+    let h = Harness::new();
+    let app: TestApp = h.boot(h.builder().config(config).build().unwrap()).await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let page = b.get("/admin/roster").await.body;
+    assert!(page.contains(r#"value="full" checked"#), "{page}");
+    // The full replace still names its reach and asks for it typed.
+    on_roster(&h, 0..5).await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let page = preview_page(&b, &id).await;
+    assert!(
+        page.contains(&format!("{DANGER}ยืนยัน: 3 คนจะพ้นสภาพ</button>")),
+        "{page}"
+    );
+    assert!(page.contains(TYPED), "{page}");
+    assert_eq!(confirm_typed(&b, &id, None).await.status, 303);
+    assert_eq!(flash(&b), "err:kernel.roster.typed_refused");
+    unchanged(&h, &app, &id, 5).await;
+    confirm_typed(&b, &id, Some("3")).await;
     assert_eq!(import_text(&h, &id, "state").await, "queued");
 }

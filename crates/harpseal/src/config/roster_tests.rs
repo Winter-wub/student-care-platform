@@ -114,10 +114,17 @@ fn modes_are_chosen_and_checked() {
     let c = ok("modes = [\"upsert\"]\ndefault_mode = \"upsert\"").unwrap();
     assert!(c.roster.allows_mode("upsert") && !c.roster.allows_mode("full"));
     assert!(c.roster.is_mapped());
-    // The default is `upsert` (#120), so a full-only list must name its default.
-    assert!(ok("modes = [\"upsert\"]").is_ok());
+    // No default_mode (#120): `upsert` when listed, else the only mode.
+    assert_eq!(
+        ok("modes = [\"upsert\"]").unwrap().roster.default_mode,
+        "upsert"
+    );
+    assert_eq!(
+        ok("modes = [\"full\"]").unwrap().roster.default_mode,
+        "full"
+    );
+    assert_eq!(ok("").unwrap().roster.default_mode, "upsert");
     for bad in [
-        "modes = [\"full\"]",
         "modes = []",
         "modes = []\ndefault_mode = \"full\"",
         "modes = [\"full\"]\ndefault_mode = \"upsert\"",
@@ -134,14 +141,20 @@ fn modes_are_chosen_and_checked() {
 fn a_config_changed_in_code_is_checked_too() {
     let mut r = RosterConfig {
         modes: vec!["full".into()],
+        default_mode: "upsert".into(),
         ..RosterConfig::default()
     };
     assert!(
         r.check(&Locale::th(), &Default::default()).is_err(),
         "default_mode upsert is not in modes"
     );
-    r.default_mode = "full".into();
+    // Left unset in code, it follows the same fallback as the TOML.
+    r.default_mode = String::new();
     assert!(r.check(&Locale::th(), &Default::default()).is_ok());
+    assert_eq!(r.default_mode, "full");
+    let mut both = RosterConfig::default();
+    assert!(both.check(&Locale::th(), &Default::default()).is_ok());
+    assert_eq!(both.default_mode, "upsert");
 }
 
 #[test]

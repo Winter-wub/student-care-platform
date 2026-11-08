@@ -58,7 +58,7 @@ impl DeploymentBuilder {
 
     /// Runs every `Module::register`, merges, validates.
     pub fn build(self) -> Result<Deployment, BuildError> {
-        let config = self.config.ok_or(BuildError::Missing(Part::Config))?;
+        let mut config = self.config.ok_or(BuildError::Missing(Part::Config))?;
         // Public fields can bypass `from_toml`; the values reach the page head.
         config
             .branding

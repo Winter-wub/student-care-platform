@@ -12,8 +12,9 @@
 //! locale       = { column = "ภาษา", default = "th" }
 //! tags         = { column = "กลุ่ม", separator = ";" }
 //! # Which import modes Staff may choose, and the one the form preselects
-//! # and a request without a mode uses. Default: both, `upsert` preselected
-//! # (#120: a full replace is a deliberate choice).
+//! # and a request without a mode uses. Default: both; without a
+//! # `default_mode`, `upsert` when listed (#120: a full replace is a
+//! # deliberate choice), else the only mode listed.
 //! modes        = ["full", "upsert"]
 //! default_mode = "upsert"
 //! # Warning classes that block the file (#71): `missing_email`,
@@ -72,8 +73,12 @@ pub struct RosterConfig {
     /// cohort) lists `["upsert"]` only. Default: both.
     pub modes: Vec<String>,
     /// The mode the upload form preselects and a request without a mode
-    /// uses; one of [`RosterConfig::modes`]. Default `upsert` (#120): a
-    /// full replace, which makes Students left, is a deliberate choice.
+    /// uses; one of [`RosterConfig::modes`]. When the TOML leaves it out:
+    /// `upsert` if `modes` lists it (#120: a full replace, which makes
+    /// Students left, is a deliberate choice), else the only mode listed;
+    /// `modes` with several entries and no `upsert` must name it. Empty
+    /// (unset) in [`RosterConfig::default`]; filled when the Deployment
+    /// is built, for a config made in code too.
     pub default_mode: String,
     /// Warning classes this Deployment makes blocking (#71): `missing_email`,
     /// `invalid_email`, `duplicate_email`, `empty_attribute`. A file with one
@@ -104,7 +109,7 @@ impl Default for RosterConfig {
             locale: None,
             tags: None,
             modes: vec!["full".into(), "upsert".into()],
-            default_mode: "upsert".into(),
+            default_mode: String::new(),
             blocking: Vec::new(),
             attributes: BTreeMap::new(),
             declared: false,
@@ -317,7 +322,13 @@ impl RosterConfig {
     /// Whether roster files can be imported (#24): a `[roster]` section,
     /// or a mapping changed in code from the defaults.
     pub fn is_mapped(&self) -> bool {
-        self.declared || *self != Self::default()
+        // The default `default_mode` once the build filled it is still the
+        // default (#120).
+        let mut d = Self::default();
+        if self.default_mode == "upsert" {
+            d.resolve_default_mode();
+        }
+        self.declared || *self != d
     }
 
     /// Whether `mode` is one of [`RosterConfig::modes`].

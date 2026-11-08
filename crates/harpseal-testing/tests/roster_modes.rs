@@ -162,7 +162,7 @@ async fn with_both_modes_and_an_upsert_default_a_full_preview_keeps_the_leave_wa
 
 #[tokio::test]
 async fn a_full_only_deployment_offers_and_accepts_only_full() {
-    let (h, app) = boot_with("modes = [\"full\"]\ndefault_mode = \"full\"").await;
+    let (h, app) = boot_with("modes = [\"full\"]").await;
     let b = signed_in(&h, &app, "Officer").await;
     let page = b.get("/admin/roster").await.body;
     assert!(page.contains(r#"value="full" checked"#), "{page}");
