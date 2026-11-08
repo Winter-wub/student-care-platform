@@ -40,6 +40,7 @@ pub fn raw_url_button(label: &str, url: &str) -> Button {
     Button::Url {
         label: label.into(),
         url: url.into(),
+        external: false,
     }
 }
 

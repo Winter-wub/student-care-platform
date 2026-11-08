@@ -52,6 +52,7 @@ mod deliver;
 mod draft;
 mod files;
 mod files_pdf;
+mod files_pdf_scan;
 mod files_serve;
 mod files_sniff;
 mod files_stage;

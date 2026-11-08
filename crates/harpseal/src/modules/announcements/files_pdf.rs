@@ -3,9 +3,9 @@
 //!
 //! **The sniff.** The bytes start with `%PDF-` and hold `%%EOF`, and the
 //! name ends `.pdf`. An HTML or any other file renamed `.pdf` is refused.
-//! It is then scanned once, cheaply, for active content: a name token
-//! `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFile` or `/EmbeddedFiles`
-//! (with `#xx` escapes decoded) outside the streams refuses the file.
+//! It is then scanned once, cheaply, for active content
+//! ([`super::files_pdf_scan`]): script, embedded files, launch, form
+//! submission, remote go-to, XFA and rich media keys refuse it.
 //!
 //! **Known limit.** That scan reads only what is not inside a stream: a
 //! PDF 1.5 object stream (compressed dictionaries) can hide the same keys,
@@ -39,7 +39,7 @@ pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Result<(), Refusal> {
     if !named || !bytes.starts_with(b"%PDF-") || !contains(bytes, b"%%EOF") {
         return Err(Refusal::NotPdf);
     }
-    if active(bytes) {
+    if super::files_pdf_scan::active(bytes) {
         return Err(Refusal::Active);
     }
     Ok(())
@@ -47,97 +47,6 @@ pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Result<(), Refusal> {
 
 fn contains(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
-}
-
-/// Keys that run something or carry another file.
-const ACTIVE: [&[u8]; 5] = [
-    b"JavaScript",
-    b"JS",
-    b"Launch",
-    b"EmbeddedFile",
-    b"EmbeddedFiles",
-];
-
-/// White space and delimiters end a name (PDF 32000-1, 7.2.2).
-fn ends_name(b: u8) -> bool {
-    matches!(
-        b,
-        0 | 9
-            | 10
-            | 12
-            | 13
-            | 32
-            | b'('
-            | b')'
-            | b'<'
-            | b'>'
-            | b'['
-            | b']'
-            | b'{'
-            | b'}'
-            | b'/'
-            | b'%'
-    )
-}
-
-fn hex(b: u8) -> Option<u8> {
-    char::from(b)
-        .to_digit(16)
-        .and_then(|d| u8::try_from(d).ok())
-}
-
-/// One pass: every name token outside a stream, decoded, against
-/// [`ACTIVE`]. Linear: each byte is read once (a stream is skipped to its
-/// `endstream`).
-fn active(b: &[u8]) -> bool {
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'/' {
-            let mut name = [0u8; 16];
-            let mut len = 0usize;
-            let mut j = i + 1;
-            while j < b.len() && !ends_name(b[j]) {
-                let mut c = b[j];
-                j += 1;
-                if c == b'#'
-                    && let (Some(h), Some(l)) = (
-                        b.get(j).copied().and_then(hex),
-                        b.get(j + 1).copied().and_then(hex),
-                    )
-                {
-                    c = h * 16 + l;
-                    j += 2;
-                }
-                if len < name.len() {
-                    name[len] = c;
-                }
-                len += 1;
-            }
-            if len <= name.len() && ACTIVE.contains(&&name[..len]) {
-                return true;
-            }
-            i = j;
-            continue;
-        }
-        if b[i] == b's' && starts_stream(b, i) {
-            let from = i + b"stream".len();
-            i = b[from..]
-                .windows(b"endstream".len())
-                .position(|w| w == b"endstream")
-                .map_or(b.len(), |k| from + k + b"endstream".len());
-            continue;
-        }
-        i += 1;
-    }
-    false
-}
-
-/// The keyword `stream` at `i`: after a delimiter or white space (not the
-/// tail of `endstream`) and followed by an end of line.
-fn starts_stream(b: &[u8], i: usize) -> bool {
-    let after = &b[i..];
-    let eol = after.starts_with(b"stream\n") || after.starts_with(b"stream\r\n");
-    eol && (i == 0 || ends_name(b[i - 1]))
 }
 
 /// The name kept for an upload: its last path part, without control or
@@ -245,38 +154,6 @@ mod tests {
         assert_eq!(sniff(b"%PDF-1.4\nno end", "a.pdf"), Err(Refusal::NotPdf));
         assert_eq!(sniff(b"", "a.pdf"), Err(Refusal::NotPdf));
         assert_eq!(sniff(b" %PDF-1.4 %%EOF", "a.pdf"), Err(Refusal::NotPdf));
-    }
-
-    #[test]
-    fn sniff_refuses_script_and_embedded_files() {
-        for key in [
-            "/JavaScript",
-            "/JS",
-            "/J#53",
-            "/Ja#76aScript",
-            "/Launch",
-            "/EmbeddedFiles",
-            "/EmbeddedFile",
-        ] {
-            let pdf = format!("%PDF-1.7\n1 0 obj << /OpenAction << /S {key} (x) >> >>\n%%EOF");
-            assert_eq!(
-                sniff(pdf.as_bytes(), "a.pdf"),
-                Err(Refusal::Active),
-                "{key}"
-            );
-        }
-        // Longer names and the same letters inside a stream pass.
-        for body in [
-            "/JSON /JavaScripts /Launcher /EmbeddedFilesX",
-            "<< /Length 9 >>\nstream\n/JS /Launch\nendstream",
-            "<< /Length 9 >>stream\r\n/JavaScript\nendstream /Type",
-        ] {
-            let pdf = format!("%PDF-1.7\n{body}\n%%EOF");
-            assert_eq!(sniff(pdf.as_bytes(), "a.pdf"), Ok(()), "{body}");
-        }
-        // After a stream, keys are read again.
-        let pdf = b"%PDF-1.7\nstream\nx\nendstream /JS\n%%EOF";
-        assert_eq!(sniff(pdf, "a.pdf"), Err(Refusal::Active));
     }
 
     #[test]

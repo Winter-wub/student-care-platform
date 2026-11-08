@@ -43,11 +43,17 @@ pub(crate) const PDF: &str = "pdf";
 pub(crate) const MAX_PDFS: u8 = 3;
 /// Largest PDF, in bytes (10 MB).
 pub(crate) const MAX_PDF_BYTES: usize = 10 * 1024 * 1024;
-/// Largest create / edit request: every image and every PDF at its
-/// largest plus the form (the preview's 128 KB), with room for the
-/// multipart framing.
+/// New PDFs one save takes (#113 review): the others are added by saving
+/// again, so a request never holds more than one.
+pub(crate) const PDFS_PER_SAVE: usize = 1;
+/// Largest create / edit request: 15,204,352 bytes (14.5 MiB). Every
+/// image at its largest (4 MiB), one PDF at its largest (10 MiB) and
+/// 512 KiB for the text fields and the multipart framing. A Worker holds
+/// a request up to about four times (the CSRF read, the multipart buffer,
+/// the file parts, the copy handed to R2), so one save peaks near 58 MiB of
+/// a 128 MB isolate; with three PDFs per save it was 137 MiB.
 pub(crate) const FORM_BODY_LIMIT: usize =
-    MAX_IMAGES as usize * MAX_IMAGE_BYTES + MAX_PDFS as usize * MAX_PDF_BYTES + 256 * 1024;
+    MAX_IMAGES as usize * MAX_IMAGE_BYTES + PDFS_PER_SAVE * MAX_PDF_BYTES + 512 * 1024;
 /// The public route's prefix.
 pub(crate) const PUBLIC_PREFIX: &str = "/announcements/files";
 

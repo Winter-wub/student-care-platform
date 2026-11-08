@@ -149,7 +149,7 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 - **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
 
 ### Text palette (#113)
-The only colours Staff can give text in an Announcement body (`{red}…{/red}`), as CSS classes `tc-red` … `tc-grey`. Fixed, never per Deployment, never a free hex. Each passes 4.5:1 on Paper and on Counter Mist; there is no dark theme, so a dark surface would need its own set.
+The only colours Staff can give text in an Announcement body (`{red}…{/red}`), as CSS classes `tc-red` … `tc-grey`. Fixed, never per Deployment, never a free hex. Each passes 4.5:1 on Paper and on Counter Mist; there is no dark theme, so a dark surface would need its own set. Colour adds emphasis, never meaning alone: coloured text is also semi-bold (600), and links keep their underline so Text Blue is never read as a link.
 
 | Token | Hex | On Paper #ffffff | On Counter Mist #f4f6f8 |
 |---|---|---|---|

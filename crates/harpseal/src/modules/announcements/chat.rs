@@ -32,7 +32,9 @@ pub(crate) const URL_BUTTONS: usize = 2;
 /// set, the image is the first one the body places, else the lowest slot
 /// (#109; [`super::files::hero`]); without it, none. With `public_url`
 /// set and a PDF attached (#113), the first PDF takes the last of the
-/// [`URL_BUTTONS`]: a URL button labelled with its name, after the links.
+/// [`URL_BUTTONS`]: a URL button labelled with its name, after the links,
+/// marked [`Button::external`] (LINE opens it in the phone's browser).
+/// A PDF URL the button refuses leaves the button out, never the Card.
 /// `files` holds every kind.
 pub(crate) fn card(
     catalog: &Catalog,
@@ -61,11 +63,10 @@ pub(crate) fn card(
     for link in doc.first_links(links) {
         buttons.push(Button::url(link.text, link.url)?);
     }
-    if let Some((base, f)) = pdf {
-        buttons.push(Button::url(
-            f.file_name.clone(),
-            base.join(&f.public_path()),
-        )?);
+    if let Some((base, f)) = pdf
+        && let Ok(b) = Button::url(f.file_name.clone(), base.join(&f.public_path()))
+    {
+        buttons.push(b.external());
     }
     let image = match (public_url, hero(images, body)) {
         (Some(base), Some(f)) => Some(CardImage::new(base.join(&f.public_path()), title)?),

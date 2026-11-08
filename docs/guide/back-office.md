@@ -230,18 +230,23 @@ then `### `, then back to text). `{red}text{/red}` colours its text; the
 palette is fixed: `red`, `orange`, `green`, `blue` and `grey` (each a
 swatch on the toolbar, each at least 4.5:1 on white; DESIGN.md "Text
 palette"). Any other name (`{pink}`, a hex) stays text as typed. Colours
-hold bold, italic and links, and never another colour. In chat a heading
+hold bold, italic and links, and never another colour. Colour adds
+emphasis and never carries meaning alone: coloured text is also
+semi-bold, so it still stands out for a reader who cannot tell the colour,
+and links stay underlined, so blue text is not taken for a link. In chat a heading
 is a plain line (its `##` left out) and colours are dropped; the Mini App
 and the preview show both. A body that already held such a line or marker
 now shows formatted.
 
-**PDFs (#113).** The forms also take up to 3 PDFs (slots `pdf1` to
-`pdf3`), at most 10 MB each, told by their bytes (`%PDF-` at the start and
+**PDFs (#113).** Up to 3 PDFs (slots `pdf1` to `pdf3`), 10 MB each, one
+new PDF per save (a Worker's memory): the form shows one file input and
+says "แนบได้ครั้งละ 1 ไฟล์ บันทึกแล้วแนบไฟล์ถัดไปได้"; with 3 attached,
+remove one and save first. PDFs are told by their bytes (`%PDF-` at the start and
 `%%EOF` inside) and named `.pdf`: an HTML or any other file renamed `.pdf`
-is refused. A PDF with a script, an embedded file or a launch action is
-refused too (`/JavaScript`, `/JS`, `/EmbeddedFile(s)`, `/Launch` outside its
-streams; one hidden in a compressed object stream is not found, a known
-limit). A Thai hint names the limits and says never to attach personal
+is refused. A PDF with a script, an embedded file, a launch action, a
+form submission, a remote go-to, XFA or rich media is refused too (one
+pass that skips strings, comments and stream data; a key hidden in a
+compressed object stream is not found, a known limit). A Thai hint names the limits and says never to attach personal
 data: anyone with the link can open the file. The name uploaded is kept
 (its folder, control and invisible characters removed, at most 120
 characters). PDFs follow the images' rules: stored in `announcement_file`
@@ -255,7 +260,8 @@ ASCII `filename` fallback, `nosniff` and the sandbox CSP. The Mini App
 lists them after the body with their names and sizes and opens them
 outside the chat app. The pushed Card gives the first PDF a URL button
 labelled with its name, inside the 2-URL-button budget (the body's first
-link, then the PDF), only when `public_url` is set. Staff download them
+link, then the PDF), only when `public_url` is set; on LINE it opens in
+the phone's browser (`docs/guide/channels.md`). Staff download them
 from the announcement's page; the back office does not preview them.
 
 **Images (#109).** The create and edit forms take up to 4 images per
@@ -270,8 +276,9 @@ to the slots names the limits and asks Staff to shrink large images first
 and never to put personal data in an image: each one is served on a public
 URL. A refused file names the limit it broke; files chosen are lost when
 the form comes back with an error (the browser cannot keep them), and the
-form says so. A request over 34.25 MB (4 images and 3 PDFs at their
-largest) is refused (413) before it is read.
+form says so. A request over 15,204,352 bytes (14.5 MiB: 4 images of
+1 MiB, one PDF of 10 MiB and 512 KiB for the rest) is refused (413) before
+it is read.
 `![คำอธิบายรูป](image:N)` in a body places image N there (the toolbar's 🖼
 inserts it for the first image not placed yet); the Mini App shows each
 image in place, lazily loaded, with its alt text, and the images not placed

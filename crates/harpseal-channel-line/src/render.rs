@@ -170,14 +170,32 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
             .mini_app_url(path)
             .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
         // A URI action outside LINE; a URL that is not https is refused
-        // and shows as the visible notice instead.
+        // and shows as the visible notice instead. An external one (#113,
+        // a PDF) carries `openExternalBrowser=1`: LINE then opens the
+        // phone's browser, not its in-app one, which shows a sandboxed
+        // PDF blank on iOS before 18.4.
         Button::Url { label, .. } => b.safe_url().map(|uri| {
             let label = truncate(&label_or_host(label, uri), label_max);
+            let uri = if b.is_external() {
+                external_uri(uri)
+            } else {
+                uri.to_string()
+            };
             json!({ "type": "uri", "label": label, "uri": uri })
         }),
         // #[non_exhaustive]: an unknown kind renders as the visible notice.
         _ => None,
     }
+}
+
+/// `uri` with LINE's `openExternalBrowser=1` (before any `#fragment`).
+fn external_uri(uri: &str) -> String {
+    let (base, frag) = match uri.split_once('#') {
+        Some((base, f)) => (base, format!("#{f}")),
+        None => (uri, String::new()),
+    };
+    let sep = if base.contains('?') { '&' } else { '?' };
+    format!("{base}{sep}openExternalBrowser=1{frag}")
 }
 
 fn flex_action(b: &Button, cx: &RenderCx) -> Option<Value> {

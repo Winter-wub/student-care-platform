@@ -1,12 +1,16 @@
 //! The PDF part of the create / edit form (#113): slots `pdf1` to `pdf3`,
 //! the Thai hint, and the checks that turn the posted PDFs into
-//! [`FileEdits`]. A file chosen fills (or replaces) the slot; the box
-//! `pdfN_remove` empties it. Each file is at most [`MAX_PDF_BYTES`] and
-//! sniffed ([`super::files_pdf::sniff`]).
+//! [`FileEdits`]. A save takes one new PDF at most ([`PDFS_PER_SAVE`],
+//! for a Worker's memory): the form shows one file input, for the first
+//! empty slot, and the next file is added by saving again. The box
+//! `pdfN_remove` empties a slot. Each file is at most [`MAX_PDF_BYTES`]
+//! and sniffed ([`super::files_pdf::sniff`]).
 
 use maud::{Markup, html};
 
-use super::files::{FileEdits, MAX_PDF_BYTES, MAX_PDFS, NewFile, PDF, Stored, pdf_slot};
+use super::files::{
+    FileEdits, MAX_PDF_BYTES, MAX_PDFS, NewFile, PDF, PDFS_PER_SAVE, Stored, pdf_slot,
+};
 use super::files_pdf::{CONTENT_TYPE, Refusal, safe_name, size_label, sniff};
 use super::form_images::{FilePart, Posted};
 use super::view::View;
@@ -44,6 +48,26 @@ pub(crate) const TEXTS: &[E] = &[
         "announcements.pdfs.no_public_url",
         "en",
         "public_url is not set: files open from the Mini App only, with no button on chat Cards.",
+    ),
+    E::new(
+        "announcements.pdfs.once",
+        "th",
+        "แนบได้ครั้งละ 1 ไฟล์ บันทึกแล้วแนบไฟล์ถัดไปได้",
+    ),
+    E::new(
+        "announcements.pdfs.once",
+        "en",
+        "One file per save: save, then attach the next one.",
+    ),
+    E::new(
+        "announcements.pdfs.full",
+        "th",
+        "แนบครบ 3 ไฟล์แล้ว ลบไฟล์ใดไฟล์หนึ่งแล้วบันทึกก่อน จึงแนบไฟล์ใหม่ได้",
+    ),
+    E::new(
+        "announcements.pdfs.full",
+        "en",
+        "3 files attached: remove one and save before attaching another.",
     ),
     E::new("announcements.pdfs.slot", "th", "ไฟล์ที่"),
     E::new("announcements.pdfs.slot", "en", "File"),
@@ -137,6 +161,10 @@ fn pdf_edits(pairs: &[(String, String)], parts: Vec<FilePart>) -> Result<FileEdi
         .iter()
         .filter_map(|(k, _)| k.strip_suffix("_remove").and_then(slot_of))
         .collect();
+    if parts.len() > PDFS_PER_SAVE {
+        errors.push(("pdfs", "announcements.pdfs.once"));
+        return Err(errors);
+    }
     let mut seen: Vec<u8> = Vec::new();
     for f in parts {
         // An unknown slot (`pdf4`), or one posted twice.
@@ -175,28 +203,33 @@ fn pdf_edits(pairs: &[(String, String)], parts: Vec<FilePart>) -> Result<FileEdi
     }
 }
 
-/// The PDF fieldset: the hint, one file input per slot, and for a saved
-/// file its name, size and a "remove" box. `files` holds every kind.
+/// The PDF fieldset: the hint and the one-at-a-time line, each saved file
+/// with its name, size and a "remove" box, and one file input for the
+/// first empty slot (none once all are full). `files` holds every kind.
 pub(super) fn field(
     v: &View<'_>,
     files: &[Stored],
     sent: bool,
     err: &dyn Fn(&str) -> Markup,
 ) -> Markup {
+    let next = (1..=MAX_PDFS).find(|n| pdf_slot(files, *n).is_none());
     html! {
         fieldset class="announcement-pdfs" {
             legend { (v.t("announcements.pdfs.legend")) }
             p class="hint" { (v.t("announcements.pdfs.hint")) }
+            p class="muted" { (v.t("announcements.pdfs.once")) }
             @if v.s.config.public_url.is_none() {
                 p class="muted" { (v.t("announcements.pdfs.no_public_url")) }
             }
             (err("pdfs"))
             @for (i, name) in SLOTS.iter().enumerate() {
                 @let n = (i + 1) as u8;
+                @let saved = pdf_slot(files, n);
+                @if saved.is_some() || next == Some(n) {
                 div class="field pdf-slot" data-pdf-slot=(n) {
                     label for=(name) { (v.t("announcements.pdfs.slot")) " " (n) }
                     (err(name))
-                    @if let Some(f) = pdf_slot(files, n) {
+                    @if let Some(f) = saved {
                         p {
                             a href=(f.staff_path()) download { "📄 " (f.file_name) }
                             " (" (size_label(f.size_bytes)) ")"
@@ -209,8 +242,18 @@ pub(super) fn field(
                             p class="field-warning" { (v.t("announcements.pdfs.remove_sent")) }
                         }
                     }
-                    input id=(name) type="file" name=(name) accept="application/pdf,.pdf";
+                    @if saved.is_none() {
+                        input id=(name) type="file" name=(name) accept="application/pdf,.pdf";
+                    }
                 }
+                } @else {
+                    // A slot the form does not show (a posted `pdf2` on a
+                    // new form): its error still shows.
+                    (err(name))
+                }
+            }
+            @if next.is_none() {
+                p class="muted" { (v.t("announcements.pdfs.full")) }
             }
         }
     }
