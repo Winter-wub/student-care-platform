@@ -61,9 +61,7 @@ async fn resend_is_a_new_round_with_a_new_job_key() {
     drain(&w).await;
     w.line.take_calls();
     let v = version(&w, &id).await;
-    let path = format!("/admin/announcements/{id}/resend");
-    assert_eq!(b.post(&path, &format!("version={v}")).await.status, 200);
-    let r = b.post(&path, &format!("version={v}&confirm=yes")).await;
+    let r = resend_confirmed(&b, &id, v).await;
     assert_eq!(r.status, 303);
     drain(&w).await;
     assert_eq!(
@@ -158,13 +156,7 @@ async fn the_form_refuses_a_missing_thai_text_and_counts_the_audience_live() {
     );
     drain(&w).await;
     assert!(w.line.sent().is_empty());
-    let v = version(&w, &id).await;
-    let r = b
-        .post(
-            &format!("/admin/announcements/{id}/confirm"),
-            &format!("version={v}"),
-        )
-        .await;
+    let r = confirm_reviewed(&b, &id).await;
     assert_eq!(r.status, 303);
     drain(&w).await;
     assert_eq!(texts(&w, "SELECT status FROM announcement").await, ["sent"]);

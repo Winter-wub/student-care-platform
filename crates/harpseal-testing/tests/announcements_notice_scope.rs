@@ -151,12 +151,7 @@ async fn an_expired_announcement_gets_no_notice_and_no_resend() {
     let page = b.get(&detail).await.body;
     assert!(!page.contains("/resend"), "{page}");
     let v = version(&w, &id).await;
-    let r = b
-        .post(
-            &format!("{detail}/resend"),
-            &format!("version={v}&confirm=yes"),
-        )
-        .await;
+    let r = resend_confirmed(&b, &id, v).await;
     assert_eq!(r.status, 303);
     let after = b.get(&detail).await.body;
     assert!(after.contains("ข่าวนี้หมดอายุแล้ว ขยายวันหมดอายุก่อนจึงส่งซ้ำได้"));

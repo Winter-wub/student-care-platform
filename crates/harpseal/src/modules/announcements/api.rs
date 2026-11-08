@@ -77,6 +77,8 @@ impl NewAnnouncement {
             tags: self.audience.tags.join(","),
             students: self.audience.students.join("\n"),
             unreachable: self.audience.include_unreachable,
+            // An `Audience` from code is explicit, everyone included.
+            scope: super::form::scope_of(&self.audience).into(),
             notify: false,
             version: None,
             submit: String::new(),

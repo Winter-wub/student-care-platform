@@ -200,6 +200,21 @@ from a spreadsheet paste are ignored. The list is saved with the announcement
 Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
+The Audience is an explicit choice (#120): "ทุกคน", "เลือกกลุ่ม" (at least one
+attribute value or Tag) or "เลือกรายคน" (at least one ID). None is
+preselected on a new announcement, and empty filters no longer mean everyone:
+a form without a choice, or with a choice and nothing in it, is refused in
+Thai and nothing is saved. "ยืนยันส่ง" saves a draft and opens a review step
+(`/admin/announcements/{id}/review`) before anything is sent or scheduled: the
+bubble, the Students and accounts per Channel (counted as the form counts), the
+message quota in plain Thai ("จะใช้ข้อความ LINE ประมาณ N ข้อความ จากโควตาเดือนนี้ที่เหลือ
+M"), and when it goes out; then "ยืนยันส่ง" or "กลับไปแก้ไข" (the draft stays).
+A send to everyone confirms with "ส่งถึงทุกคน N คน" in the danger style, and the
+server counts again: a confirm without that N, or with one that no longer
+matches, is refused and sends nothing. "ส่งซ้ำ" to everyone asks the same way.
+A confirm posted without the review step is sent to it. The code API
+(`announcements::create_draft` / `confirm`) takes an `Audience` value, so
+`Audience::everyone()` there stays an explicit choice.
 The body (up to 2,000 characters, as before) takes a small format (#108):
 `**bold**`, `*italic*`, lines starting `- ` (bullets) or a number from 1
 to 99 and `. ` (numbered, shown with the number typed; `2567. …` is a

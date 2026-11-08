@@ -105,13 +105,17 @@ pub async fn post_parts(b: &Browser<'_>, path: &str, parts: &[Part]) -> TestResp
 /// Creates an announcement from `parts` (title and body added); returns
 /// its id.
 pub async fn create_parts(b: &Browser<'_>, body: &str, extra: Vec<Part>) -> String {
-    let mut parts = vec![t("title_th", "ย้ายห้องสอบ"), t("body_th", body)];
+    let mut parts = vec![
+        t("title_th", "ย้ายห้องสอบ"),
+        t("body_th", body),
+        t("scope", "everyone"),
+    ];
     parts.extend(extra);
     let r = post_parts(b, "/admin/announcements/new", &parts).await;
     assert_eq!(r.status, 303, "{}", r.body);
     let loc = r.header("location").unwrap().to_string();
     assert_eq!(b.get(&loc).await.status, 200);
-    loc.rsplit('/').next().unwrap().to_string()
+    loc.split('/').nth(3).unwrap().to_string()
 }
 
 /// Posts the edit form of `id` with `body` and `extra` parts.
@@ -128,6 +132,7 @@ pub async fn edit_parts(
         t("title_th", "ย้ายห้องสอบ"),
         t("body_th", body),
         t("version", version(w, id).await.to_string()),
+        t("scope", "everyone"),
     ];
     parts.extend(extra);
     post_parts(b, &path, &parts).await
@@ -165,13 +170,7 @@ pub async fn token(w: &World, id: &str, n: &str) -> String {
 /// Confirms (sends) announcement `id` from its detail page, then runs the
 /// Jobs.
 pub async fn send_now(w: &World, b: &Browser<'_>, id: &str) {
-    let v = version(w, id).await;
-    let r = b
-        .post(
-            &format!("/admin/announcements/{id}/confirm"),
-            &format!("version={v}"),
-        )
-        .await;
+    let r = confirm_reviewed(b, id).await;
     assert_eq!(r.status, 303, "{}", r.body);
     drain(w).await;
 }

@@ -175,7 +175,10 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
             @if send && matches!(st, "draft" | "scheduled" | "sent") {
                 a class="btn secondary" href=(format!("/admin/announcements/{}/edit", row.id)) { (v.t("announcements.action.edit")) }
             }
-            @if send && st == "draft" { (post_button(v, row, "confirm", "announcements.action.confirm", false)) }
+            // #120: "ยืนยันส่ง" opens the review step first.
+            @if send && st == "draft" {
+                a class="btn" href=(super::page_review::path(&row.id)) { (v.t("announcements.action.confirm")) }
+            }
             @if send && st == "scheduled" { (post_button(v, row, "cancel", "announcements.action.cancel", true)) }
             // An expired one is not resent (#77): extend the expiry first.
             @if send && st == "sent" && super::notice::open(row, v.s.services.now_ms()) {

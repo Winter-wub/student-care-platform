@@ -77,12 +77,7 @@ async fn an_acknowledgement_survives_a_resend() {
     w.tg.take_sent();
     w.line.take_sent();
     let v = version(&w, &id).await;
-    let r = b
-        .post(
-            &format!("/admin/announcements/{id}/resend"),
-            &format!("version={v}&confirm=yes"),
-        )
-        .await;
+    let r = resend_confirmed(&b, &id, v).await;
     assert_eq!(r.status, 303);
     drain(&w).await;
     // s1's resent Card has no [รับทราบ]; s3 (not acknowledged) keeps it.

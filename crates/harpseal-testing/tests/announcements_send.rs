@@ -203,13 +203,7 @@ async fn a_cancelled_schedule_never_fires_and_can_be_confirmed_again() {
     assert!(w.line.sent().is_empty(), "the cancelled Job is gone");
     // Confirming again (send_at now past) sends at once with a new Job key.
     b.get(&format!("/admin/announcements/{id}")).await;
-    let v = version(&w, &id).await;
-    let r = b
-        .post(
-            &format!("/admin/announcements/{id}/confirm"),
-            &format!("version={v}"),
-        )
-        .await;
+    let r = confirm_reviewed(&b, &id).await;
     assert_eq!(r.status, 303);
     drain(&w).await;
     assert_eq!(texts(&w, "SELECT status FROM announcement").await, ["sent"]);

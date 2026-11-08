@@ -31,6 +31,10 @@ pub(crate) struct Fields {
     /// Hand-picked student ids as typed (newline, comma or space separated).
     pub(crate) students: String,
     pub(crate) unreachable: bool,
+    /// Who it goes to (#120): `everyone`, `groups` (the attribute and Tag
+    /// filters) or `students` (the hand-picked list). Empty filters never
+    /// mean everyone silently: see [`Fields::scope_problem`].
+    pub(crate) scope: String,
     /// "Notify recipients of the edit" (a sent announcement only; #77).
     pub(crate) notify: bool,
     pub(crate) version: Option<i64>,
@@ -74,6 +78,7 @@ impl Fields {
                 "tags" => f.tags.clone_from(v),
                 "students" => f.students.clone_from(v),
                 "unreachable" => f.unreachable = true,
+                "scope" => f.scope.clone_from(v),
                 "notify" => f.notify = true,
                 "version" => f.version = v.parse().ok(),
                 "do" => f.submit.clone_from(v),
@@ -119,15 +124,21 @@ impl Fields {
             tags: row.audience.tags.join(", "),
             students: row.audience.students.join("\n"),
             unreachable: row.audience.include_unreachable,
+            scope: scope_of(&row.audience).into(),
             notify: false,
             version: Some(row.version),
             submit: String::new(),
         }
     }
 
-    /// The Audience the form describes (unchecked).
+    /// The Audience the form describes (unchecked). `everyone` drops the
+    /// filters still filled in below it.
     pub(crate) fn audience(&self) -> Audience {
         let mut a = Audience::everyone();
+        a.include_unreachable = self.unreachable;
+        if self.scope == "everyone" {
+            return a;
+        }
         a.attributes = self
             .attrs
             .iter()
@@ -136,8 +147,24 @@ impl Fields {
             .collect();
         a.tags = split(&self.tags).collect();
         a.students = parse_student_ids(&self.students);
-        a.include_unreachable = self.unreachable;
         a
+    }
+
+    /// Why the Audience choice cannot be used (#120), as a catalog key:
+    /// no choice made while every filter is empty, `groups` without a
+    /// group, `students` without an id. A post without `scope` but with
+    /// filters (an older page) keeps its filters.
+    pub(crate) fn scope_problem(&self) -> Option<&'static str> {
+        let a = self.audience();
+        let groups = !a.attributes.is_empty() || !a.tags.is_empty();
+        match self.scope.as_str() {
+            "everyone" => None,
+            "groups" if !groups => Some("announcements.form.groups_empty"),
+            "students" if a.students.is_empty() => Some("announcements.form.students_empty"),
+            "groups" | "students" => None,
+            _ if is_everyone(&a) => Some("announcements.form.scope_required"),
+            _ => None,
+        }
     }
 
     /// The Draft, or every problem as (field, catalog key).
@@ -187,6 +214,9 @@ impl Fields {
         } else {
             None
         };
+        if let Some(key) = self.scope_problem() {
+            errors.push(("audience", key));
+        }
         let audience = self.audience();
         for (key, values) in &audience.attributes {
             let Some(spec) = roster.attributes.get(key) else {
@@ -224,5 +254,21 @@ impl Fields {
             notify: self.notify,
             files: Default::default(),
         })
+    }
+}
+
+/// Whether `a` reaches every linked Student: no attribute, Tag or list.
+pub(crate) fn is_everyone(a: &Audience) -> bool {
+    a.attributes.is_empty() && a.tags.is_empty() && a.students.is_empty()
+}
+
+/// The choice a stored Audience reads as on its edit form.
+pub(crate) fn scope_of(a: &Audience) -> &'static str {
+    if is_everyone(a) {
+        "everyone"
+    } else if a.attributes.is_empty() && a.tags.is_empty() {
+        "students"
+    } else {
+        "groups"
     }
 }

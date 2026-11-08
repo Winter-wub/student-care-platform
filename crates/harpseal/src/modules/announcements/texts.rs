@@ -247,8 +247,8 @@ pub(crate) const FORM: &[E] = th_en![
     ("announcements.form.audience", "ผู้รับ", "Audience"),
     (
         "announcements.form.audience_help",
-        "ทุกเงื่อนไขต้องตรงพร้อมกัน ในแต่ละช่องตรงค่าใดค่าหนึ่งก็พอ เว้นว่าง = ทุกคน",
-        "Every filter must match; within one filter any value matches. Empty means everyone."
+        "ทุกเงื่อนไขต้องตรงพร้อมกัน ในแต่ละช่องตรงค่าใดค่าหนึ่งก็พอ",
+        "Every filter must match; within one filter any value matches."
     ),
     (
         "announcements.form.any_of",

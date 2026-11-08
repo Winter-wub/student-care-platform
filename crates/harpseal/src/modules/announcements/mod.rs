@@ -59,6 +59,7 @@ mod files_stage;
 mod form;
 mod form_images;
 mod form_pdfs;
+mod form_scope;
 mod gate;
 mod maint;
 mod maint_chunk;
@@ -72,12 +73,14 @@ mod page_form;
 mod page_list;
 mod page_notice;
 mod page_pick;
+mod page_review;
 mod service;
 mod stats;
 mod store;
 mod student;
 mod sweep;
 mod texts;
+mod texts_review;
 mod view;
 
 use axum::routing::{get, post};
@@ -161,6 +164,7 @@ impl Module for Announcements {
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
+        .messages(texts_review::REVIEW)
         .messages(page_editor::EDITOR)
         .messages(form_images::TEXTS)
         .messages(form_pdfs::TEXTS)
@@ -231,6 +235,7 @@ fn pages(r: &mut ModuleRegistrar) {
         "/announcements/{id}/files/{token}",
         get(files_serve::staff),
     )
+    .back_office(send, "/announcements/{id}/review", get(page_review::page))
     .back_office(
         send,
         "/announcements/{id}/confirm",
