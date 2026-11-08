@@ -126,6 +126,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0016_student_email_key_idx",
         include_str!("../../migrations/0016_student_email_key_idx.sql"),
     ),
+    (
+        "0017_role_seed",
+        include_str!("../../migrations/0017_role_seed.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

@@ -33,9 +33,9 @@ pub struct DeploymentConfig {
     #[serde(default)]
     pub branding: BrandingConfig,
     /// Initial Roles: Role name -> Permission ids. `build()` rejects an id
-    /// no Module declared. Merged into the database on every migrate,
-    /// add-only: removing a Role or a Permission here does not remove it
-    /// from the database (do that in the back office).
+    /// no Module declared. Each Role and pair is seeded once (`role_seed`,
+    /// #110): back-office edits survive `migrate`; removing one here
+    /// removes nothing.
     #[serde(default)]
     pub roles: BTreeMap<String, Vec<String>>,
     /// Per-Channel Quotas, keyed by Channel kind (`[quotas.line]`).

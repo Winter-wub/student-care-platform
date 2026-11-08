@@ -23,6 +23,7 @@ mod guard;
 mod login;
 mod pages;
 pub(crate) mod role_admin;
+mod role_seed;
 pub(crate) mod roles;
 mod session;
 mod staff;
@@ -36,6 +37,7 @@ pub use guard::CurrentStaff;
 pub(crate) use guard::{AdminCx, Gate, NavItem, forbidden, guard, request_ctx};
 pub(crate) use login::{login_form, login_submit, logout, password_form, password_submit};
 pub(crate) use pages::home;
+pub(crate) use role_seed::seed as seed_roles;
 pub(crate) use session::prune as prune_sessions;
 pub use staff::{
     ADMINISTRATOR_ROLE, MIN_PASSWORD_CHARS, NewStaff, check_password_rules, create_staff,

@@ -19,6 +19,7 @@ const KERNEL_TABLES: &[&str] = &[
     "role",
     "role_permission",
     "staff_role",
+    "role_seed",
     "staff_session",
     "app_session",
     "rate_limit",
@@ -98,6 +99,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
             ("kernel".into(), "0014_module_upload".into()),
             ("kernel".into(), "0015_notify_delivery".into()),
             ("kernel".into(), "0016_student_email_key_idx".into()),
+            ("kernel".into(), "0017_role_seed".into()),
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
@@ -131,10 +133,10 @@ async fn a_module_migration_runs_after_the_kernel_and_once() {
         [
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
-            "notes"
+            "kernel", "notes"
         ]
     );
-    assert_eq!(d.migrate().await.unwrap().applied.len(), 17);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 18);
     assert!(d.migrate().await.unwrap().applied.is_empty());
 }
 

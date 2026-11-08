@@ -58,8 +58,10 @@ cargo run -p harpseal-example-native --bin harpseal -- \
 `--password-stdin` reads the password from standard input instead (at least 12
 characters; it is then not temporary). `--admin` is refused once any Staff
 exists unless `--force` is given; `--role NAME` grants other Roles. Roles come
-from `[roles]` in `deployment.toml`, merged into the database on every migrate
-(add-only), plus Roles created in the database.
+from `[roles]` in `deployment.toml`, seeded once (each Role and each
+Role/Permission pair on the first migrate that sees it; see
+[the back office](back-office.md)), plus Roles created in
+the database.
 
 Sessions are 12 hours sliding and 7 days absolute; 5 wrong passwords in a row
 lock the account for 15 minutes. The session cookie is `Secure`: browsers
@@ -228,7 +230,9 @@ the restore too**, so no tick or request writes in between. It:
    once per restored row);
 4. checks every table entry and every file against its SHA-256 and row
    count in the manifest, and every file key;
-5. refuses when any table has rows, unless `--force`;
+5. refuses when any table has rows, unless `--force`; with it, also empties
+   `role_seed` when the backup predates it, so the next `migrate` treats
+   the restored Roles as an upgrade, not as edits;
 6. puts each file back under its key (as `application/octet-stream`);
 7. inserts the rows parents first; the last batch also writes the audit row
    `backup.restore` (manifest SHA-256, counts, what `--force` deleted),

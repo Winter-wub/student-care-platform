@@ -33,16 +33,27 @@ Link of a Student, by marking them left.
 Before the split `kernel.link.manage` covered both. `migrate` grants
 `kernel.link.revoke` once to every Role in the database that holds
 `kernel.link.manage`. A `[roles]` entry that lists `kernel.link.manage` without
-`kernel.link.revoke` is granted both on **every** `migrate` (on Cloudflare, every
-cold start) and the migrate report prints a notice for it; update the entry to
+`kernel.link.revoke` is seeded with both, and the migrate report prints a notice
+for it on every `migrate` (on Cloudflare, every cold start); update the entry to
 say what you mean. An entry that lists `kernel.link.revoke` is taken as
 written, so list it alone for unlink without Manual Link.
 
-`[roles]` only ever adds Permissions. Narrowing an existing Role, say from
-`kernel.link.manage` to `kernel.link.revoke`, means removing the Permission on
-the Roles page **and** in `[roles]`; changing the TOML alone leaves it granted.
-A Role that may Manual Link but not unlink must not be listed in `[roles]` (the
-legacy rule would give it unlink back): create it on the Roles page.
+`[roles]` is seeded once. A `migrate` creates a Role name and grants a
+(Role, Permission) pair only the first time it sees it, and records what it
+seeded in `role_seed` (backed up and restored with the rest). So a Permission
+added to `[roles]` later is granted on the next `migrate`, but one an
+Administrator removed on the Roles page stays removed, and a Role deleted
+there is not re-created; only a Role name new to `[roles]` is. Each grant the
+seed really makes is audited (`role.create` or `role.update`, actor
+`system`), except on a new Deployment's first `migrate`, which installs the
+Roles into an empty database. Removing a Permission or a Role from `[roles]` changes nothing in
+the database: do that on the Roles page. A Role created on the Roles page before
+`[roles]` lists its name gets that entry's Permissions on the next `migrate`.
+A Module removed and later added back does not re-grant its Permissions to
+Roles seeded with them before; any taken away meanwhile, grant again on the
+Roles page. The first `migrate` of a database
+created before this rule records every `[roles]` pair it already holds, and
+grants the ones it lacks, as every `migrate` before did.
 
 The attributes come from `[roster.attributes.<key>]` in
 `deployment.toml`: `column`, `type` (`text`, `integer`, `number`, `date` or
@@ -216,9 +227,9 @@ each request to either is itself logged as a sensitive read. `/admin/staff` and
 `/admin/roles` (`kernel.staff.manage`) create Staff with a temporary password
 shown once, disable them (their sessions end), assign Roles, reset passwords,
 clear lockouts and edit Roles; at least one active Staff member always keeps
-`kernel.staff.manage`. A Role from `[roles]` can be edited there too, but the next
-`migrate` grants its TOML Permissions again (see the link Permissions above for the
-one that is implied). `/admin/texts` (`kernel.setting.edit`)
+`kernel.staff.manage`. A Role from `[roles]` can be edited or deleted there too,
+and the edit sticks: a later `migrate` grants only Permissions new to `[roles]`
+(see the link Permissions above). `/admin/texts` (`kernel.setting.edit`)
 edits any catalog text per Locale (it must keep the default's `{name}`
 placeholders) and bumps the privacy notice version, which asks every linked
 Student to accept again on their next message. Edits take effect on the next
