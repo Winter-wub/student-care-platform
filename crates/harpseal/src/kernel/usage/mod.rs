@@ -35,6 +35,7 @@ use axum::routing::{get, post};
 
 pub(crate) use banner::banner;
 pub(crate) use package::in_force as quota_in_force;
+pub(crate) use package::{KIND as LINE_KIND, extra as line_extra};
 pub(crate) use quota::Level;
 pub(crate) use watch::{administrators, enqueue as enqueue_watch};
 

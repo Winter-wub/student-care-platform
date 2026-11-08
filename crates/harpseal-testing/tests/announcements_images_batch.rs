@@ -85,6 +85,7 @@ async fn a_batch_that_commits_but_errs_keeps_listed_objects() {
     let parts: Vec<Part> = vec![
         t("title_th", "ย้ายห้องสอบ"),
         t("body_th", "ห้อง 3105"),
+        t("scope", "everyone"),
         f("image1", "a.png", png(20, 13)),
     ];
     let r = post_parts(&b, "/admin/announcements/new", &parts).await;
@@ -115,6 +116,7 @@ async fn a_batch_that_commits_but_errs_keeps_listed_objects() {
         t("title_th", "ย้ายห้องสอบ"),
         t("body_th", "ห้อง 3105"),
         t("version", "0"),
+        t("scope", "everyone"),
         f("image1", "b.jpg", jpeg(20, 13)),
     ];
     let r = post_parts(&b, &path, &parts).await;
@@ -132,6 +134,7 @@ async fn a_batch_that_commits_but_errs_keeps_listed_objects() {
             t("title_th", "ย้ายห้องสอบ"),
             t("body_th", "ห้อง 3105"),
             t("version", "0"),
+            t("scope", "everyone"),
             f("image1", "c.png", png(20, 13)),
         ],
     )

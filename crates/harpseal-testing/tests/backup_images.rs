@@ -33,6 +33,7 @@ async fn with_image(b: &Browser<'_>) {
             "name=\"body_th\"".into(),
             "![แผนที่](image:1)".as_bytes().to_vec(),
         ),
+        ("name=\"scope\"".into(), b"everyone".to_vec()),
         ("name=\"do\"".into(), b"confirm".to_vec()),
         (
             "name=\"image1\"; filename=\"map.png\"\r\nContent-Type: image/png".into(),
@@ -55,6 +56,17 @@ async fn with_image(b: &Browser<'_>) {
         .unwrap();
     let r = b.send(req).await;
     assert_eq!(r.status, 303, "{}", r.body);
+    // #120: "ยืนยันส่ง" opens the review step; confirm there (everyone).
+    let review = r.header("location").unwrap().to_string();
+    let page = b.get(&review).await.body;
+    let field = |name: &str| {
+        let at = format!("name=\"{name}\" value=\"");
+        let rest = &page[page.find(&at).unwrap() + at.len()..];
+        rest[..rest.find('"').unwrap()].to_string()
+    };
+    let confirm = review.replace("/review", "/confirm");
+    let form = format!("version=0&reviewed=1&reach={}", field("reach"));
+    assert_eq!(b.post(&confirm, &form).await.status, 303);
 }
 
 #[tokio::test]

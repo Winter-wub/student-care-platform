@@ -6,6 +6,9 @@
 #![allow(dead_code)]
 
 pub mod notice;
+mod review;
+
+pub use review::*;
 
 use axum::body::Body;
 use harpseal::modules::announcements::Announcements;
@@ -217,14 +220,23 @@ pub fn form(title: &str, body: &str, extra: &str) -> String {
     )
 }
 
-/// Posts the create form and returns the new announcement's id.
+/// Posts the create form and returns the new announcement's id. With
+/// `do=confirm` it confirms on the review step too (#120).
 pub async fn create(b: &Browser<'_>, form: &str) -> String {
-    let r = b.post("/admin/announcements/new", form).await;
+    let form = with_scope(form);
+    let r = b.post("/admin/announcements/new", &form).await;
     assert_eq!(r.status, 303, "{}", r.body);
-    let loc = r.header("location").unwrap();
-    let id = loc.rsplit('/').next().unwrap().to_string();
+    let loc = r.header("location").unwrap().to_string();
+    let id = loc.split('/').nth(3).unwrap().to_string();
+    if loc.ends_with("/review") {
+        let r = confirm_reviewed(b, &id).await;
+        assert_eq!(r.status, 303, "{}", r.body);
+    }
     // Load the detail page: its CSRF token and version for later posts.
-    assert_eq!(b.get(loc).await.status, 200);
+    assert_eq!(
+        b.get(&format!("/admin/announcements/{id}")).await.status,
+        200
+    );
     id
 }
 

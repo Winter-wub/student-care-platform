@@ -67,6 +67,10 @@ pub async fn upload(
 /// Confirms previewed import `id`: queues the Job that applies it, unless
 /// `[roster] modes` no longer allows the mode it was previewed with
 /// ([`Confirmed::ModeNotAllowed`]). Audit `roster.import`.
+///
+/// The caller owns the confirmation: the typed number of Students who will
+/// become left, which the back office asks for above the shrink warning
+/// (#120), is not asked here. Read the preview's counts first.
 pub async fn confirm(
     d: &Deployment,
     id: &str,

@@ -28,6 +28,7 @@ async fn with_pdf(b: &Browser<'_>) {
         ("name=\"_csrf\"".to_string(), token.into_bytes()),
         ("name=\"title_th\"".into(), "ตารางสอบ".as_bytes().to_vec()),
         ("name=\"body_th\"".into(), "ดูไฟล์แนบ".as_bytes().to_vec()),
+        ("name=\"scope\"".into(), b"everyone".to_vec()),
         ("name=\"do\"".into(), b"confirm".to_vec()),
         (
             "name=\"pdf1\"; filename=\"ตารางสอบ.pdf\"\r\nContent-Type: application/pdf".into(),
@@ -50,6 +51,15 @@ async fn with_pdf(b: &Browser<'_>) {
         .unwrap();
     let r = b.send(req).await;
     assert_eq!(r.status, 303, "{}", r.body);
+    // #120: "ยืนยันส่ง" opens the review step; confirm there (everyone).
+    let review = r.header("location").unwrap().to_string();
+    let page = b.get(&review).await.body;
+    let at = "name=\"reach\" value=\"";
+    let rest = &page[page.find(at).unwrap() + at.len()..];
+    let reach = &rest[..rest.find('"').unwrap()];
+    let confirm = review.replace("/review", "/confirm");
+    let form = format!("version=0&reviewed=1&reach={reach}");
+    assert_eq!(b.post(&confirm, &form).await.status, 303);
 }
 
 #[tokio::test]

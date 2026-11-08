@@ -42,6 +42,21 @@
 //!   their names and sizes, and the first is a URL button on the Card.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
+//! - **Confirmation in proportion to reach** (#120): the Audience is an
+//!   explicit choice (`scope`: ทุกคน / เลือกกลุ่ม / เลือกรายคน; empty filters
+//!   never mean everyone), and "ยืนยันส่ง" opens a review step
+//!   (`page_review`). What guards what:
+//!   - the review step and its `reviewed` field only guard against an
+//!     accidental click, for group and hand-picked sends: a POST can carry
+//!     `reviewed=1` without the page having been seen;
+//!   - CSRF and the Permission `announcements.send` are the security gates;
+//!   - a send or resend to everyone is a server gate: the POST must carry
+//!     `reach`, and it must equal a recount of the Audience at that moment
+//!     (else nothing is sent);
+//!   - a scheduled announcement whose Audience changes is held as a draft
+//!     and goes out again only through the review step (`page_review::hold`;
+//!     `service::update` refuses the change on a schedule);
+//!   - the version compare-and-set keeps a double submit to one send.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
 //!   the pages (Permission `announcements.send` checked, audited as the
 //!   acting Staff member).
@@ -59,6 +74,7 @@ mod files_stage;
 mod form;
 mod form_images;
 mod form_pdfs;
+mod form_scope;
 mod gate;
 mod maint;
 mod maint_chunk;
@@ -72,12 +88,14 @@ mod page_form;
 mod page_list;
 mod page_notice;
 mod page_pick;
+mod page_review;
 mod service;
 mod stats;
 mod store;
 mod student;
 mod sweep;
 mod texts;
+mod texts_review;
 mod view;
 
 use axum::routing::{get, post};
@@ -161,6 +179,7 @@ impl Module for Announcements {
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
+        .messages(texts_review::REVIEW)
         .messages(page_editor::EDITOR)
         .messages(form_images::TEXTS)
         .messages(form_pdfs::TEXTS)
@@ -231,6 +250,7 @@ fn pages(r: &mut ModuleRegistrar) {
         "/announcements/{id}/files/{token}",
         get(files_serve::staff),
     )
+    .back_office(send, "/announcements/{id}/review", get(page_review::page))
     .back_office(
         send,
         "/announcements/{id}/confirm",

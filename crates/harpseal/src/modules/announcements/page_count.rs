@@ -15,7 +15,7 @@ use crate::audience::{self, Audience, Counts, HandPicked, MAX_STUDENTS};
 use crate::kernel::students::channel_label;
 use crate::kernel::text::fill;
 use crate::kernel::usage::{self, MonthSummary};
-use crate::{AppState, CurrentStaff};
+use crate::{AppState, CurrentStaff, Deployment};
 
 type Posted = Form<Vec<(String, String)>>;
 
@@ -32,21 +32,52 @@ pub(super) async fn fragment(
     Form(pairs): Posted,
 ) -> Response {
     let v = View::new(&s, &staff);
-    let a = Fields::from_pairs(&pairs).audience();
-    let counts = audience::count(&s.deployment, &a).await.ok();
+    let f = Fields::from_pairs(&pairs);
+    // #120: no count of everyone until everyone is chosen.
+    if let Some(key) = f.scope_problem() {
+        let shown = boxed(html! { p class="muted" { (v.t(key)) } });
+        return (StatusCode::OK, Html(shown.into_string())).into_response();
+    }
+    let a = f.audience();
+    let (counts, used) = reach(&s.deployment, &a).await;
     let picked = match (&counts, a.students.is_empty()) {
         (Some(_), false) => audience::hand_picked(&s.deployment, &a).await.ok(),
         _ => None,
     };
+    let shown = count_box(&v, &a, counts.as_ref(), picked.as_ref(), &used);
+    (StatusCode::OK, Html(shown.into_string())).into_response()
+}
+
+/// What `a` reaches, as the count box and the review step (#120) both
+/// show it: the counts (`None` when the Audience is not valid) and this
+/// month's usage of each Channel it reaches.
+pub(super) async fn reach(
+    d: &Deployment,
+    a: &Audience,
+) -> (Option<Counts>, Vec<(String, MonthSummary)>) {
+    let counts = audience::count(d, a).await.ok();
     let kinds: Vec<String> = counts
         .iter()
         .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))
         .collect();
-    let used = usage::month_summaries(&s.deployment, &kinds)
-        .await
-        .unwrap_or_default();
-    let shown = count_box(&v, &a, counts.as_ref(), picked.as_ref(), &used);
-    (StatusCode::OK, Html(shown.into_string())).into_response()
+    let used = usage::month_summaries(d, &kinds).await.unwrap_or_default();
+    (counts, used)
+}
+
+/// Whether a send on Channel `kind` is metered: one unit per recipient
+/// (one Card is one Push request).
+pub(super) fn metered(d: &Deployment, kind: &str) -> bool {
+    d.channel(kind).is_some_and(|ch| ch.multicast().is_some())
+        || d.config().quotas.contains_key(kind)
+}
+
+/// The count box around `inner`, counting again on every form change.
+fn boxed(inner: Markup) -> Markup {
+    html! {
+        div id="audience-count" class="card count" hx-post=(PATH)
+            hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
+            hx-target="this" hx-swap="outerHTML" aria-live="polite" { (inner) }
+    }
 }
 
 /// Count, per Channel, and "จะใช้ push ประมาณ x ครั้ง": one metered unit per
@@ -74,10 +105,7 @@ fn count_box(
         };
     };
     let d = v.s.deployment.as_ref();
-    let metered = |kind: &str| {
-        d.channel(kind).is_some_and(|ch| ch.multicast().is_some())
-            || d.config().quotas.contains_key(kind)
-    };
+    let metered = |kind: &str| metered(d, kind);
     let units: usize = c
         .per_channel
         .iter()

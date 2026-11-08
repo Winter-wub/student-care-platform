@@ -97,6 +97,13 @@ pub(crate) async fn update(
     if full {
         draft.audience.check(&d.config().roster)?;
     }
+    // #120: a schedule keeps the Audience it was confirmed with; a new one
+    // goes back to a draft and through the review step (`page_review::hold`).
+    if row.status == "scheduled" && draft.audience != row.audience {
+        return Err(Error::Invalid(
+            "scheduled audience changes need review".into(),
+        ));
+    }
     let mut jobs = Vec::new();
     if row.status == "scheduled" {
         let at = draft

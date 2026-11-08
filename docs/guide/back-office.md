@@ -106,12 +106,19 @@ before, and any other key is refused.
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
 lists them and offers `template.csv`), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert` (add and update only;
-nobody becomes left). The form preselects `[roster] default_mode` (default
-`full`), and a request that sends no mode uses it too. A Deployment whose files
+nobody becomes left). The form lists `upsert` first and preselects `[roster] default_mode`
+(default `upsert`, #120), and a request that sends no mode uses it too. A
+`full` preview's confirm button names how many Students will become left
+("ยืนยัน: N คนจะพ้นสภาพ") in the danger style; when the preview also shows the
+red warning, Staff must type that number or the word "ยืนยัน" first, and a
+confirm without it is refused and changes nothing. That number is from the
+preview (upload time); the left phase runs when the import's Job does, so a
+Student added or edited by hand in between can move the actual count. A Deployment whose files
 never list every Student (one file per cohort) sets `modes = ["upsert"]` and
 `default_mode = "upsert"`: the form then offers only `upsert`, and a request
 asking for `full` is refused with 400 and imports nothing (`modes` must not be
-empty, hold only `full` / `upsert` and include `default_mode`; a bad value stops
+empty, hold only `full` / `upsert` and include `default_mode`; without a
+`default_mode`, the form preselects `upsert` when listed, else the only mode; a bad value stops
 the Deployment from building). The preview and the import page name the mode.
 A **blocking** problem refuses the
 whole file with a CSV report: an empty or malformed student id, a duplicate id in
@@ -195,6 +202,35 @@ from a spreadsheet paste are ignored. The list is saved with the announcement
 Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
+The Audience is an explicit choice (#120): "ทุกคน", "เลือกกลุ่ม" (at least one
+attribute value or Tag) or "เลือกรายคน" (at least one ID). None is
+preselected on a new announcement, and empty filters no longer mean everyone:
+a form without a choice, or with a choice and nothing in it, is refused in
+Thai and nothing is saved. "ยืนยันส่ง" saves a draft and opens a review step
+(`/admin/announcements/{id}/review`) before anything is sent or scheduled: the
+bubble, the Students and accounts per Channel (counted as the form counts), the
+message quota in plain Thai ("จะใช้ข้อความ LINE ประมาณ N ข้อความ จากโควตาเดือนนี้ที่เหลือ
+M"), and when it goes out; then "ยืนยันส่ง" or "กลับไปแก้ไข" (the draft stays).
+A send to everyone confirms with "ส่งถึงทุกคน N คน" in the danger style, and the
+server counts again: a confirm without that N, or with one that no longer
+matches, is refused and sends nothing. "ส่งซ้ำ" to everyone asks the same way.
+N is the count at the moment of confirming: a scheduled send to everyone
+goes to everyone linked at `send_at`, so a roster import in between moves the
+number. With "count unreachable accounts too", the button names both
+("ส่งถึงทุกคน N คน (ติดต่อได้ M)"). Editing a scheduled announcement's
+Audience holds it: the schedule is cancelled, the edit is saved on a draft, and
+it goes out again only after the review step and its confirm (texts and
+timing alone save as before). Past the remaining quota the review step says
+what happens: on LINE Free, LINE refuses the rest and those accounts do not get
+the announcement (announcements do not fall back to email; `notify` does); a
+package that buys extra messages goes on and may cost more; any other Quota
+only warns. The review step and its `reviewed` field only guard against an
+accidental click for group and hand-picked sends; CSRF and the Permission are
+the security gates, and the everyone recount and the typed roster number are
+the server gates.
+A confirm posted without the review step is sent to it. The code API
+(`announcements::create_draft` / `confirm`) takes an `Audience` value, so
+`Audience::everyone()` there stays an explicit choice.
 The body (up to 2,000 characters, as before) takes a small format (#108):
 `**bold**`, `*italic*`, lines starting `- ` (bullets) or a number from 1
 to 99 and `. ` (numbered, shown with the number typed; `2567. …` is a

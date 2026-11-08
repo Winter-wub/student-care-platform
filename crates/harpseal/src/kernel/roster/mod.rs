@@ -46,12 +46,14 @@ mod page_list;
 mod page_problems;
 pub(crate) mod preview;
 mod prune;
+mod reach;
 mod rows;
 mod service;
 mod skipped;
 mod store;
 mod stuck;
 mod texts;
+mod texts_reach;
 mod texts_sheets;
 mod texts_warnings;
 pub(crate) mod validate;
@@ -88,6 +90,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .messages(texts_sheets::DEFAULTS)
         .messages(texts_warnings::DEFAULTS)
+        .messages(texts_reach::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",

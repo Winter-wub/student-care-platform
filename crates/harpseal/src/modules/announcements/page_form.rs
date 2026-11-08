@@ -15,7 +15,7 @@ use super::form_pdfs;
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
-use super::{page_count, page_detail, page_editor, page_notice, page_pick, service};
+use super::{page_count, page_detail, page_editor, page_notice, page_pick, page_review, service};
 use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
@@ -77,15 +77,11 @@ pub(super) async fn new_post(
         Ok(id) => id,
         Err(e) => return v.error(&e),
     };
-    let to = format!("/admin/announcements/{id}");
-    if f.submit != "confirm" {
-        return v.redirect(&to, true, "announcements.flash.saved");
+    if f.submit == "confirm" {
+        // #120: saved as a draft, then the review step before any send.
+        return v.redirect(&page_review::path(&id), true, "announcements.flash.saved");
     }
-    match service::confirm(d, &id, 0, &actor, &ctx).await {
-        Ok(true) => v.redirect(&to, true, "announcements.flash.scheduled"),
-        Ok(false) => v.redirect(&to, true, "announcements.flash.sending"),
-        Err(e) => v.error(&e),
-    }
+    v.redirect(&detail(&id), true, "announcements.flash.saved")
 }
 
 pub(super) async fn edit_page(
@@ -142,6 +138,7 @@ pub(super) async fn edit_post(
         f.tags = row.audience.tags.join(", ");
         f.students = row.audience.students.join("\n");
         f.unreachable = row.audience.include_unreachable;
+        f.scope = super::form::scope_of(&row.audience).into();
         f.when = "now".into();
     }
     let now = d.services().now_ms();
@@ -188,7 +185,14 @@ pub(super) async fn edit_post(
     };
     let version = f.version.unwrap_or(-1);
     let actor = Actor::staff(&staff);
+    // #120: a schedule whose Audience changes is held as a draft for review.
+    if row.status == "scheduled" && draft.audience != row.audience {
+        return page_review::hold(&v, d, &id, version, draft, &actor, &ctx).await;
+    }
     match service::update(d, &id, version, draft, &actor, &ctx).await {
+        Ok(()) if f.submit == "confirm" && row.status == "draft" => {
+            v.redirect(&page_review::path(&id), true, "announcements.flash.updated")
+        }
         Ok(()) => v.redirect(&detail(&id), true, "announcements.flash.updated"),
         Err(Error::Conflict(_)) => v.redirect(&detail(&id), false, "announcements.flash.conflict"),
         Err(Error::Invalid(_)) => {
@@ -326,6 +330,7 @@ fn form_page(
                 fieldset {
                     legend { (v.t("announcements.form.audience")) }
                     (err("audience"))
+                    (super::form_scope::field(v, f))
                     p class="muted" { (v.t("announcements.form.audience_help")) }
                     @for (key, spec) in roster.attributes_in_order() {
                         @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
@@ -362,6 +367,9 @@ fn form_page(
             div class="actions" {
                 @if row.is_none() {
                     button type="submit" name="do" value="draft" class="secondary" { (v.t("announcements.form.save_draft")) }
+                    button type="submit" name="do" value="confirm" { (v.t("announcements.form.confirm")) }
+                } @else if row.is_some_and(|r| r.status == "draft") {
+                    button type="submit" class="secondary" { (v.t("announcements.form.save")) }
                     button type="submit" name="do" value="confirm" { (v.t("announcements.form.confirm")) }
                 } @else {
                     button type="submit" { (v.t("announcements.form.save")) }

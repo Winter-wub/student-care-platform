@@ -212,6 +212,16 @@ pub(crate) async fn current(s: &Services, config: &DeploymentConfig) -> Result<C
     Ok(current_of(config, stored))
 }
 
+/// Whether the chosen LINE package can buy messages beyond its quota
+/// (#120): `None` when no package is chosen (the TOML number or a Custom
+/// one), so nobody knows.
+pub(crate) async fn extra(s: &Services, config: &DeploymentConfig) -> Result<Option<bool>> {
+    Ok(match current(s, config).await?.choice {
+        Choice::Package(p) => Some(p.extra),
+        Choice::Config(_) | Choice::Custom(_) => None,
+    })
+}
+
 /// Whether any Quota is in force: `[quotas]` is not empty, or a package is
 /// chosen. Reads the `setting` row only when `[quotas]` is empty.
 pub(crate) async fn in_force(s: &Services, config: &DeploymentConfig) -> Result<bool> {

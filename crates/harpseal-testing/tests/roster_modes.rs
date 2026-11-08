@@ -50,17 +50,22 @@ async fn upload_without_mode(b: &harpseal_testing::Browser<'_>, bytes: &[u8]) ->
 }
 
 #[tokio::test]
-async fn the_default_config_keeps_both_modes_with_full_preselected() {
+async fn the_default_config_keeps_both_modes_with_upsert_first_and_preselected() {
+    // #120: a full replace is a deliberate choice.
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     let page = b.get("/admin/roster").await.body;
-    assert!(page.contains(r#"value="full" checked"#), "{page}");
-    assert!(page.contains(r#"value="upsert""#));
-    assert!(!page.contains(r#"value="upsert" checked"#));
-    // A request without a mode is still a `full` import, as before.
+    assert!(page.contains(r#"value="upsert" checked"#), "{page}");
+    assert!(page.contains(r#"value="full""#));
+    assert!(!page.contains(r#"value="full" checked"#));
+    let (up, full) = (page.find(r#"value="upsert""#), page.find(r#"value="full""#));
+    assert!(up < full, "upsert is offered first");
+    // A request without a mode is an `upsert` import: nobody becomes left.
+    linked_student(&h, "a1", "68000900", "active").await;
     let to = upload_without_mode(&b, &csv(0..3)).await;
     let id = to.strip_prefix("/admin/roster/").unwrap();
-    assert_eq!(import_text(&h, id, "mode").await, "full");
+    assert_eq!(import_text(&h, id, "mode").await, "upsert");
+    assert_eq!(counts(&h, id).await["preview"]["will_become_left"], 0);
 }
 
 #[tokio::test]

@@ -166,6 +166,7 @@ async fn a_body_over_the_one_pdf_cap_is_refused_before_it_is_read() {
     let mut parts = vec![
         t("title_th", "x"),
         t("body_th", "x"),
+        t("scope", "everyone"),
         f("pdf1", "a.pdf", big),
     ];
     for n in 1..=4 {

@@ -164,10 +164,21 @@ pub async fn previewed(b: &Browser<'_>, name: &str, bytes: &[u8], mode: &str) ->
     import_id(&r)
 }
 
-/// Confirms import `id` (after loading its page for the token).
+/// Confirms import `id` (after loading its page for the token), typing
+/// "ยืนยัน" in case its reach asks for it (#120).
 pub async fn confirm(b: &Browser<'_>, id: &str) -> TestResponse {
+    confirm_typed(b, id, Some(TYPED_WORD)).await
+}
+
+/// "ยืนยัน", form-encoded.
+pub const TYPED_WORD: &str = "%E0%B8%A2%E0%B8%B7%E0%B8%99%E0%B8%A2%E0%B8%B1%E0%B8%99";
+
+/// Confirms import `id` with `typed` (form-encoded) as the typed
+/// confirmation, or without the field.
+pub async fn confirm_typed(b: &Browser<'_>, id: &str, typed: Option<&str>) -> TestResponse {
     b.get(&format!("/admin/roster/{id}")).await;
-    b.post(&format!("/admin/roster/{id}/confirm"), "").await
+    let form = typed.map(|t| format!("typed={t}")).unwrap_or_default();
+    b.post(&format!("/admin/roster/{id}/confirm"), &form).await
 }
 
 /// Ticks (moving the clock a minute each time) until no Job is due or

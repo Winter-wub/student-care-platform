@@ -66,7 +66,9 @@ async fn the_estimate_shows_used_of_the_cap_with_a_quota() {
     let b = app.browser();
     b.login("officer@sealbay.example", PASSWORD).await;
     assert_eq!(b.get("/admin/announcements/new").await.status, 200);
-    let c = b.post("/admin/announcements/audience", "").await;
+    let c = b
+        .post("/admin/announcements/audience", "scope=everyone")
+        .await;
     assert_eq!(c.status, 200);
     assert!(c.body.contains("ใช้ไปแล้ว 245/300 เดือนนี้"), "{}", c.body);
     // 245 of 300 is past 80 %: the Officer's pages carry the banner.

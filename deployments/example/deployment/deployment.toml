@@ -99,12 +99,13 @@ lock_minutes = 30
 # Import modes (#79): `full` makes Students missing from the file "left" (the
 # file is the whole roster), `upsert` only adds and updates. The form offers
 # `modes`, preselects `default_mode`, and a request without a mode uses it.
-# Both lines show today's defaults. A Deployment whose files are one cohort
+# Both lines show the defaults: `upsert` is preselected, so a full replace is
+# a deliberate choice (#120). A Deployment whose files are one cohort
 # each would set modes = ["upsert"] and default_mode = "upsert", so Staff
 # cannot revoke the other cohorts' Links by leaving the default choice.
 [roster]
 modes        = ["full", "upsert"]
-default_mode = "full"
+default_mode = "upsert"
 student_code = "รหัสนักศึกษา"
 display_name = "ชื่อ-สกุล"
 email        = "อีเมล"

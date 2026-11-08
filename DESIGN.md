@@ -16,6 +16,7 @@ colors:
   approved-ink: "#145c36"
   refused-wash: "#fdecec"
   refused-ink: "#8a1c1c"
+  refused-press: "#6f1515"
   caution-wash: "#fff3d6"
   caution-ink: "#6b4a00"
   caution-meter: "#c98a00"
@@ -70,6 +71,12 @@ components:
   button-secondary:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.harbour-teal}"
+    rounded: "{rounded.control}"
+    padding: "0 20px"
+    height: "48px"
+  button-danger:
+    backgroundColor: "{colors.refused-ink}"
+    textColor: "{colors.on-brand}"
     rounded: "{rounded.control}"
     padding: "0 20px"
     height: "48px"
@@ -145,7 +152,7 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 
 ### Status
 - **Approved Wash / Approved Ink** (#e5f5ec / #145c36): success flashes, "done" buttons, active Links, the meter under its limit.
-- **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips.
+- **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips, and the danger button's fill. **Refused Press** (#6f1515) is the danger button's hover.
 - **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
 
 ### Text palette (#113)
@@ -219,6 +226,7 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Shape:** gently rounded (10px), at least 48 × 48 px, label 600 weight.
 - **Primary:** Harbour Teal (the brand) fill with white text, 0 20px padding.
 - **Secondary:** Paper fill with brand text and a brand border.
+- **Danger:** Refused Ink fill with white text (9.3:1), for an action in proportion to its reach: one that sends to every Student or makes many of them left (#120). The label names the reach ("ยืนยัน: 20 คนจะพ้นสภาพ", "ส่งถึงทุกคน 50 คน"). It never follows the brand, hovers darker (#6f1515) and has its own solid 3px Refused Ink focus ring at a 2px offset, so a red institution colour cannot hide it. Use `ui::danger_button`; a broad action above its threshold also asks Staff to type the reach, checked on the server.
 - **Done:** Approved Wash with Approved Ink, for completed states such as an acknowledgement.
 - **Link button:** text only and underlined, for low-weight actions inside lists.
 - **Focus:** a 3px ring in the brand colour at 35% alpha, 1px offset.

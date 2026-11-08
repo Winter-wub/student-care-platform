@@ -37,11 +37,12 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     v.page(StatusCode::OK, &title, body)
 }
 
-/// The modes the form offers: the allowed ones, `full` first, the
-/// Deployment's default preselected.
+/// The modes the form offers: the allowed ones, `upsert` first (#120: a
+/// full replace is a deliberate choice), the Deployment's default
+/// preselected.
 fn upload_form(v: &View<'_>) -> Markup {
     let roster = &v.s.config.roster;
-    let offered = ["full", "upsert"]
+    let offered = ["upsert", "full"]
         .into_iter()
         .filter(|m| roster.allows_mode(m));
     html! {

@@ -299,7 +299,7 @@ impl Default for RetentionConfig {
 impl DeploymentConfig {
     /// Parses and checks `deployment.toml`.
     pub fn from_toml(src: &str) -> crate::Result<Self> {
-        let c: Self = toml::from_str(src).map_err(|e| crate::Error::Invalid(e.to_string()))?;
+        let mut c: Self = toml::from_str(src).map_err(|e| crate::Error::Invalid(e.to_string()))?;
         c.utc_offset_minutes()?;
         if !(4..=9).contains(&c.otp.digits) || c.otp.max_attempts == 0 {
             return Err(crate::Error::Invalid(

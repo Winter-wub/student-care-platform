@@ -205,23 +205,38 @@ impl World {
         Ok(format!("import {id}: unchanged {after:?}"))
     }
 
-    /// Staff send an announcement needing acknowledgement to year 1.
+    /// Staff send an announcement needing acknowledgement to year 1: the
+    /// group chosen explicitly, then the review step (#120) confirms it.
     pub async fn announce(&self) -> R<String> {
         self.c
             .get("/admin/announcements/new")
             .await?
             .expect(200, "create form")?;
         let form = format!(
-            "title_th={}&body_th={}&require_ack=1&attr.year=1&when=now&do=confirm",
+            "title_th={}&body_th={}&require_ack=1&scope=groups&attr.year=1&when=now&do=confirm",
             urlencode("ปฐมนิเทศ (e2e)"),
             urlencode("ทดสอบส่งประกาศจาก just e2e กรุณากดรับทราบ")
         );
-        let to = self
+        let review = self
             .c
             .post("/admin/announcements/new", &form)
             .await?
             .redirect("create")?;
-        let id = to.rsplit('/').next().unwrap_or_default().to_string();
+        let id = review
+            .strip_prefix("/admin/announcements/")
+            .and_then(|r| r.strip_suffix("/review"))
+            .ok_or_else(|| format!("not the review step: {review}"))?
+            .to_string();
+        let page = self.c.get(&review).await?.expect(200, "review")?;
+        ensure(page.body.contains("ตรวจก่อนส่ง"), "the review step")?;
+        let to = self
+            .c
+            .post(
+                &format!("/admin/announcements/{id}/confirm"),
+                "version=0&reviewed=1",
+            )
+            .await?
+            .redirect("confirm")?;
         self.c.get(&to).await?.expect(200, "detail")?;
         *self.announcement.lock().unwrap_or_else(|p| p.into_inner()) = id.clone();
         Ok(format!("announcement {id}"))
