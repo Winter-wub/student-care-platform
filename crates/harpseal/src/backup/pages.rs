@@ -67,7 +67,11 @@ pub(crate) async fn read_pages(
 ) -> Result<()> {
     let mut after: Option<Vec<Value>> = None;
     loop {
-        let page = read_page(db, t, now, after.as_deref(), PAGE).await?;
+        let range = Range {
+            after: after.as_deref(),
+            upto: None,
+        };
+        let page = read_page(db, t, now, range, PAGE, &[]).await?;
         if !f(&page.rows, page.skip)? || page.rows.len() < PAGE {
             return Ok(());
         }
@@ -75,26 +79,44 @@ pub(crate) async fn read_pages(
     }
 }
 
+/// Keys a page is read between.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Range<'a> {
+    /// Rows after this key (from the start when `None`: a rowid can be
+    /// `i64::MIN`, so the first page has no lower bound).
+    pub(crate) after: Option<&'a [Value]>,
+    /// Rows up to this key, included (to the end when `None`).
+    pub(crate) upto: Option<&'a [Value]>,
+}
+
 /// The next (at most) `limit` rows of `t` a dump at `now` keeps, in key
-/// order, after the key `after` (from the start when `None`: a rowid can
-/// be `i64::MIN`, so the first page has no lower bound). Fewer than
-/// `limit` rows means the table is done.
+/// order, in `range`. Fewer than `limit` rows means the range is done.
+/// `extra` is SQL selected ahead of the row (and counted in
+/// [`Page::skip`]), each as `"__hs_<n>"`.
 pub(crate) async fn read_page(
     db: &dyn Db,
     t: &Table,
     now: i64,
-    after: Option<&[Value]>,
+    range: Range<'_>,
     limit: usize,
+    extra: &[String],
 ) -> Result<Page> {
     let pk = t.pk_columns();
-    let (head, key, skip): (String, Vec<String>, usize) = if pk.is_empty() {
-        let head = format!("SELECT rowid AS {ROWID}, * FROM {}", quote(&t.name));
-        (head, vec![ROWID.to_string()], 1)
+    let lead: String = extra
+        .iter()
+        .enumerate()
+        .map(|(i, e)| format!("{e} AS \"__hs_{i}\", "))
+        .collect();
+    let rowid = pk.is_empty();
+    let (head, key, skip): (String, Vec<String>, usize) = if rowid {
+        let head = format!("SELECT {lead}rowid AS {ROWID}, * FROM {}", quote(&t.name));
+        (head, vec![ROWID.to_string()], extra.len() + 1)
     } else {
-        let head = format!("SELECT * FROM {}", quote(&t.name));
-        (head, pk.iter().map(|c| c.to_string()).collect(), 0)
+        let head = format!("SELECT {lead}* FROM {}", quote(&t.name));
+        let key = pk.iter().map(|c| c.to_string()).collect();
+        (head, key, extra.len())
     };
-    let order = if skip == 1 {
+    let order = if rowid {
         "rowid".to_string()
     } else {
         key.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ")
@@ -105,18 +127,19 @@ pub(crate) async fn read_page(
         conds.push(fl.sql.to_string());
         params.extend(fl.params.iter().cloned());
     }
-    if let Some(last) = after {
-        if last.len() != key.len() {
+    for (bound, op) in [(range.after, ">"), (range.upto, "<=")] {
+        let Some(k) = bound else { continue };
+        if k.len() != key.len() {
             return Err(Error::Invalid(format!(
                 "backup of table {}: a resume point of {} values for a key of {}",
                 t.name,
-                last.len(),
+                k.len(),
                 key.len()
             )));
         }
-        let marks = vec!["?"; last.len()].join(", ");
-        conds.push(format!("({order}) > ({marks})"));
-        params.extend(last.iter().cloned());
+        let marks = vec!["?"; k.len()].join(", ");
+        conds.push(format!("({order}) {op} ({marks})"));
+        params.extend(k.iter().cloned());
     }
     let cond = if conds.is_empty() {
         String::new()
@@ -134,7 +157,7 @@ pub(crate) async fn read_page(
         .iter()
         .filter_map(|k| rows.columns.iter().position(|c| c == k))
         .collect();
-    if skip == 0 {
+    if !rowid {
         let null = rows.rows.iter().any(|r| {
             idx.iter()
                 .any(|&i| matches!(r.get(i), None | Some(Value::Null)))

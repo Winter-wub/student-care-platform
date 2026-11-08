@@ -85,6 +85,10 @@ async fn finished(h: &Harness) -> (FileStoreBackup, Manifest) {
             .any(|k| k.ends_with(".progress.json")),
         "the progress is gone"
     );
+    assert!(
+        !h.files().keys().iter().any(|k| k.contains(".check/")),
+        "the saved key hashes are gone"
+    );
     (b, m)
 }
 

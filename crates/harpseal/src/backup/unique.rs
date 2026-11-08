@@ -168,6 +168,53 @@ pub(super) async fn uniques(db: &dyn Db, t: &Table) -> Result<Vec<Unique>> {
     Ok(out)
 }
 
+impl Unique {
+    /// The SQL a dump selects beside a row to key it on this index: each
+    /// term, then the index's `WHERE` when it is partial.
+    pub(super) fn select(&self) -> Vec<String> {
+        let mut out: Vec<String> = match &self.plain {
+            Some(cols) => cols.iter().map(|c| quote(c)).collect(),
+            None => self.terms.iter().map(|t| format!("({t})")).collect(),
+        };
+        if let Some(f) = &self.filter {
+            out.push(format!("({f})"));
+        }
+        out
+    }
+
+    /// The row's key on this index from the values of [`Unique::select`],
+    /// hashed (first 8 bytes of a SHA-256, never 0); 0 when the row has no
+    /// key (a `NULL` term, or outside a partial index's `WHERE`).
+    pub(super) fn hash(&self, values: &[Value]) -> u64 {
+        let n = self.terms.len();
+        if self.filter.is_some() {
+            let kept = values
+                .get(n)
+                .and_then(Value::as_i64)
+                .is_some_and(|k| k != 0);
+            if !kept {
+                return 0;
+            }
+        }
+        let Some(k) = values.get(..n).and_then(|v| key(v, &self.colls)) else {
+            return 0;
+        };
+        use sha2::{Digest, Sha256};
+        let d = Sha256::digest(format!("{}\u{1f}{k}", self.name).as_bytes());
+        let mut first = [0u8; 8];
+        first.copy_from_slice(&d[..8]);
+        u64::from_le_bytes(first).max(1)
+    }
+}
+
+/// The `UNIQUE` indexes of `t` other than its primary key: what a dump
+/// checks across the rows it read (a keyset read never repeats a key).
+pub(super) async fn secondary(db: &dyn Db, t: &Table) -> Result<Vec<Unique>> {
+    let mut all = uniques(db, t).await?;
+    all.retain(|u| u.name != "PRIMARY KEY");
+    Ok(all)
+}
+
 /// `v` as a key part under `coll`, `None` for `NULL` (never collides).
 fn part(v: &Value, coll: &str) -> Option<String> {
     let s = match v {

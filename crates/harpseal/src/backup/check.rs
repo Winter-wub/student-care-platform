@@ -123,7 +123,8 @@ pub(crate) async fn read_table(
             mt.name, mt.rows
         )));
     }
-    let mut rows = Vec::with_capacity(usize::try_from(mt.rows).unwrap_or(0));
+    // Grown part by part: a hand-edited row count reserves nothing.
+    let mut rows = Vec::new();
     for (i, part) in mt.parts.iter().enumerate() {
         let expected = part_entry(&mt.name, i);
         if part.entry != expected {
@@ -161,7 +162,9 @@ fn decode_entry(
         )));
     }
     let bad = |line: usize, m: String| Error::Invalid(format!("backup {entry} line {line}: {m}"));
-    let mut rows = Vec::with_capacity(usize::try_from(expect).unwrap_or(0));
+    // At most one row per line, whatever the manifest claims.
+    let lines = bytes.iter().filter(|b| **b == b'\n').count() + 1;
+    let mut rows = Vec::with_capacity(usize::try_from(expect).unwrap_or(0).min(lines));
     for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
         if line.is_empty() {
             continue;

@@ -12,7 +12,7 @@ without stopping (#78):
 enabled = true            # default; false stops the schedule only
 schedule = "0 2 * * *"    # cron, in utc_offset (default 02:00)
 retention_days = 30       # default
-part_mb = 8               # default: a table part ends past this size
+part_mb = 8               # default (at most 32): a table part ends past this size
 part_rows = 20000         # default: a table part ends at this many rows
 max_export_cells = 150000 # default: "Download all data" limit
 ```
@@ -45,13 +45,15 @@ until it has read 50,000 rows, written 32 MB, copied 200 files or made
 minute later. **Any table size backs up** (#88, backup format 2): a
 table is written in parts, `tables/<table>.ndjson`, then
 `tables/<table>/00001.ndjson`, `00002`, …, each ending at `part_rows`
-rows (20,000: 40 queries), once it passes `part_mb` (8 MB, by at most
-one page of rows), or where a run's budget ran out; the next run reads
-on after the last key of the last part. One part at a time is built in
-memory, held about three times over while it is written to R2, so a run
-stays well inside a Worker's 128 MB whatever the table's size. Raise
-`part_mb` on a native server if you want fewer, larger parts; on Workers
-keep it at 8 or below. Before it writes a part, a run saves its progress
+rows (20,000: 40 queries), once it passes `part_mb` (8 MB, by about one
+row: pages shrink to the bytes left once a row's size is known), or
+where a run's budget ran out; the next run reads on after the last key
+of the last part. One part at a time is built in memory, held about three
+times over while it is written to R2, so a run stays well inside a
+Worker's 128 MB whatever the table's size. Raise `part_mb` on a native
+server if you want fewer, larger parts (at most 32); on Workers keep it
+at 8 or below. Each part lists the files its own rows name (copied once
+the tables are done). Before it writes a part, a run saves its progress
 naming that part, so a run that dies (and is retried, or fails and is
 pruned) leaves no part behind that nothing names.
 
@@ -69,11 +71,27 @@ may not be in it. What the backup does promise:
   that others reference except a Role (its grants go with it), so every
   reference resolves; grants of a Role deleted during the backup are
   dropped by the restore, as the delete would have done;
-- `restore` checks keys and references **before it writes anything**,
-  every `UNIQUE` index included, partial ones too (a Student who unlinks
-  and links again during the backup can leave two live Links in it): a
-  backup that would not insert cleanly is refused with a report, never
-  half-restored. Take the next night's backup then.
+- a table read over several runs, minutes apart, is checked before the
+  backup moves on: when its rows are all written, its keys on every
+  `UNIQUE` index (partial ones too) are compared across all its parts.
+  A Student who unlinks and links again between two runs would leave two
+  live Links in the backup; the part holding the stale row is then read
+  again over its key range, as the database has it now, until no key
+  repeats. The hashes compared (8 bytes per row per index) are kept
+  between runs under `backups/<UTC time>.check/` and deleted when the
+  table is done. If keys still repeat after three re-reads, the run fails
+  with the table and index named (retried, then emailed), so **a backup
+  marked done always restores**;
+- `restore` checks keys and references again **before it writes
+  anything**: a backup that would not insert cleanly (hand-edited, or
+  from an older build) is refused with a report, never half-restored.
+
+**Restore memory.** `harpseal restore` runs natively only (never in a
+Worker) and holds every row of the backup in memory while it checks keys
+and references before writing: plan on about **7 times the size of the
+`tables/` entries** (measured: 32 MB of NDJSON, 400,000 rows, took
+about 210 MB more at its peak, an in-memory database included), plus the
+largest file. A backup with 1 GB of tables wants a machine with 8 GB.
 
 **Retention.** After each successful backup, runs started more than
 `retention_days` ago (finished or failed) are deleted with their objects,

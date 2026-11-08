@@ -107,6 +107,11 @@ fn progress_key(prefix: &str) -> String {
     format!("{}.progress.json", prefix.trim_end_matches('/'))
 }
 
+/// The key of a run's saved key hashes `name` (#88), next to its backup.
+fn check_key(prefix: &str, name: &str) -> String {
+    format!("{}.check/{name}", prefix.trim_end_matches('/'))
+}
+
 /// `n` bytes for people: `512 B`, `1.5 MB`.
 fn human_bytes(n: i64) -> String {
     const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];

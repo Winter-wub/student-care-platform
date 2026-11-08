@@ -10,15 +10,17 @@
 //! next step goes on from there), so a step holds at most one part in
 //! memory, however large the table.
 
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use super::dump::applied_migrations;
-use super::parts::Cursor;
+use super::parts::{Cursor, sidecar};
 use super::schema::{self, Table};
 use super::{
     BackupSink, DumpReport, FORMAT, MANIFEST, Manifest, ManifestFile, ManifestMigration,
-    ManifestTable, file_entry, part_entry, sha256_hex,
+    ManifestPart, ManifestTable, file_entry, part_entry, sha256_hex,
 };
 use crate::config::BackupConfig;
 use crate::{Deployment, Error, Result};
@@ -41,10 +43,15 @@ pub(crate) struct DumpProgress {
     /// inside it: its parts so far and the key they end at.
     #[serde(default)]
     pub(crate) cursor: Option<Cursor>,
-    /// FileStore keys the written rows name, sorted, unique.
+    /// FileStore keys named by tables written before table parts (a run
+    /// started by an older build); now each part lists its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) keys: Vec<String>,
-    /// Objects copied so far, in `keys` order.
+    /// Objects copied so far, in [`DumpProgress::object_keys`] order.
     pub(crate) files: Vec<ManifestFile>,
+    /// Saved key hashes (`settle.rs`) of tables finished, to delete.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) stale: Vec<String>,
     /// Bytes written so far (entries, not counting the manifest).
     pub(crate) bytes: u64,
 }
@@ -112,13 +119,41 @@ impl Spent {
     }
 }
 
-/// Saves the progress in the middle of a step, before it writes an entry
-/// the saved progress does not name yet, so an abandoned backup can always
-/// be deleted entry by entry ([`DumpProgress::entries`]).
+/// Where a run keeps its state between steps: the progress, saved in the
+/// middle of a step before it writes an entry the saved progress does not
+/// name yet (so an abandoned backup can always be deleted entry by entry,
+/// [`DumpProgress::entries`]), and the key hashes a table's check needs
+/// in a later step (`settle.rs`), outside the backup.
 #[async_trait]
 pub(crate) trait Checkpoint: Send + Sync {
     /// Stores `p` where the next step will read it.
     async fn save(&self, p: &DumpProgress) -> Result<()>;
+    /// Stores the key hashes `name` ([`super::parts::sidecar`]).
+    async fn put_check(&self, name: &str, bytes: Vec<u8>) -> Result<()>;
+    /// The key hashes `name`, if stored.
+    async fn get_check(&self, name: &str) -> Result<Option<Vec<u8>>>;
+    /// Deletes the key hashes `name` (missing is not an error).
+    async fn delete_check(&self, name: &str) -> Result<()>;
+}
+
+/// A dump in one step (`harpseal backup`, tests): nothing to save between
+/// steps, so nothing is kept.
+pub(crate) struct Local;
+
+#[async_trait]
+impl Checkpoint for Local {
+    async fn save(&self, _: &DumpProgress) -> Result<()> {
+        Ok(())
+    }
+    async fn put_check(&self, _: &str, _: Vec<u8>) -> Result<()> {
+        Ok(())
+    }
+    async fn get_check(&self, _: &str) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+    async fn delete_check(&self, _: &str) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// What a step ended with.
@@ -162,6 +197,7 @@ impl DumpProgress {
             cursor: None,
             keys: Vec::new(),
             files: Vec::new(),
+            stale: Vec::new(),
             bytes: 0,
         })
     }
@@ -179,9 +215,45 @@ impl DumpProgress {
         names.extend(self.next_entry());
         let left = self.order.iter().skip(self.tables.len() + 1);
         names.extend(left.map(|t| part_entry(t, 0)));
-        names.extend(self.keys.iter().map(|k| file_entry(k)));
+        names.extend(self.object_keys().iter().map(|k| file_entry(k)));
         names.push(MANIFEST.to_string());
         names
+    }
+
+    /// The saved key hashes this run may have left (`settle.rs`): those of
+    /// finished tables not yet deleted, and the table being written's.
+    pub(crate) fn checks(&self) -> Vec<String> {
+        let mut names = self.stale.clone();
+        if let (Some(c), Some(t)) = (&self.cursor, self.order.get(self.tables.len())) {
+            names.extend((0..=c.parts.len()).map(|i| sidecar(t, i)));
+        }
+        names
+    }
+
+    /// Every FileStore key the written rows name, each once, in table and
+    /// part order: the objects to copy.
+    pub(crate) fn object_keys(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
+        let mut parts: Vec<&ManifestPart> = self.tables.iter().flat_map(|t| &t.parts).collect();
+        if let Some(c) = &self.cursor {
+            parts.extend(&c.parts);
+        }
+        let named = parts.into_iter().flat_map(|p| &p.files);
+        self.keys
+            .iter()
+            .chain(named)
+            .filter(|k| seen.insert(k.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    /// Deletes the saved key hashes of finished tables.
+    async fn sweep(&mut self, checkpoint: &dyn Checkpoint, spent: &mut Spent) -> Result<()> {
+        for name in std::mem::take(&mut self.stale) {
+            checkpoint.delete_check(&name).await?;
+            spent.used += 1;
+        }
+        Ok(())
     }
 
     /// The part the dump writes next, if a table is left.
@@ -193,18 +265,20 @@ impl DumpProgress {
 
     /// Dumps tables, then objects, until `budget` runs out or the backup
     /// is complete. Idempotent per entry: a step re-run after a crash
-    /// rewrites the same entries. With `checkpoint`, saves the progress
-    /// before writing a part it does not name (see [`Checkpoint`]).
+    /// rewrites the same entries. Saves the progress through `checkpoint`
+    /// before writing a part it does not name, and the key hashes a later
+    /// step needs (see [`Checkpoint`]).
     pub(crate) async fn step(
         &mut self,
         d: &Deployment,
         sink: &mut dyn BackupSink,
         budget: Budget,
-        checkpoint: Option<&dyn Checkpoint>,
+        checkpoint: &dyn Checkpoint,
     ) -> Result<Step> {
         let s = d.services();
         let db = s.db.as_ref();
         let mut spent = Spent::default();
+        self.sweep(checkpoint, &mut spent).await?;
         // The part the saved progress names as next.
         let mut named = self.next_entry();
         let tables_before = self.tables.len();
@@ -240,7 +314,8 @@ impl DumpProgress {
         if budget.pause_before_files && self.tables.len() > tables_before {
             return Ok(Step::More);
         }
-        while let Some(key) = self.keys.get(self.files.len()).cloned() {
+        let keys = self.object_keys();
+        while let Some(key) = keys.get(self.files.len()).cloned() {
             // A copy is a read and a write.
             let room = spent.used + 2 <= budget.queries;
             if spent.worked && (spent.over(&budget, 0) || !room) {
@@ -274,6 +349,7 @@ impl DumpProgress {
             self.files.push(file);
             spent.files += 1;
         }
+        self.sweep(checkpoint, &mut spent).await?;
         self.finish(d, sink).await.map(Step::Done)
     }
 

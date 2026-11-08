@@ -257,3 +257,68 @@ async fn a_format_1_backup_still_restores() {
         "{r:?}"
     );
 }
+
+#[tokio::test]
+async fn a_part_ends_near_part_mb_and_lists_the_files_of_its_rows() {
+    let h = Harness::new();
+    let d = h
+        .builder()
+        .config(config("[backup]\npart_mb = 1\n"))
+        .module(harpseal::modules::announcements::Announcements)
+        .build()
+        .unwrap();
+    let (h, app) = populated_as(h, d).await;
+    // 300 Tags of about 10 KB each: 3 MB of NDJSON.
+    h.db()
+        .execute(harpseal::Statement::new(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 300) \
+             INSERT INTO tag (id, name, created_at) \
+             SELECT printf('tag-%03d', i), hex(randomblob(5000)), 1 FROM n",
+        ))
+        .await
+        .unwrap();
+    let mut b = MemoryBackup::new();
+    let report = backup::dump(app.deployment(), &mut b).await.unwrap();
+    let tag = report
+        .manifest
+        .tables
+        .iter()
+        .find(|t| t.name == "tag")
+        .unwrap();
+    assert!(tag.parts.len() >= 3, "{} parts", tag.parts.len());
+    for p in &tag.parts {
+        assert_eq!(p.bytes, b.entries[&p.entry].len() as u64);
+        // Past 1 MB by at most about a row.
+        assert!(
+            p.bytes <= 1024 * 1024 + 30_000,
+            "{}: {} bytes",
+            p.entry,
+            p.bytes
+        );
+    }
+    let import = report
+        .manifest
+        .tables
+        .iter()
+        .find(|t| t.name == "roster_import")
+        .unwrap();
+    let named: Vec<&String> = import.parts.iter().flat_map(|p| &p.files).collect();
+    assert_eq!(named.len(), 1, "{named:?}");
+    assert!(report.manifest.files.iter().any(|f| &f.key == named[0]));
+}
+
+#[tokio::test]
+async fn a_format_2_table_with_parts_and_its_own_sha256_is_refused() {
+    let (_h, app) = split().await;
+    let mut b = MemoryBackup::new();
+    backup::dump(app.deployment(), &mut b).await.unwrap();
+    let mut m = manifest(&b);
+    m["tables"][0]["sha256"] = Json::from("0".repeat(64));
+    set_manifest(&mut b, &m);
+    let (_, d) = fresh(TINY);
+    let r = backup::load(&d, &b, &LoadOptions::new()).await;
+    assert!(
+        matches!(&r, Err(Error::Invalid(m)) if m.contains("both parts and a sha256")),
+        "{r:?}"
+    );
+}

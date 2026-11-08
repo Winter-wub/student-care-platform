@@ -1,8 +1,7 @@
 //! [`dump`]: the database and the FileStore objects it references, to a
 //! [`BackupSink`].
 
-use super::progress::{Budget, DumpProgress, Step};
-use super::schema::{Table, quote};
+use super::progress::{Budget, DumpProgress, Local, Step};
 use super::{BackupSink, DumpReport, ManifestMigration};
 use crate::port_types::{Statement, Value};
 use crate::{Db, Deployment, Error, Result};
@@ -17,29 +16,10 @@ use crate::{Db, Deployment, Error, Result};
 pub async fn dump(d: &Deployment, sink: &mut dyn BackupSink) -> Result<DumpReport> {
     let mut progress = DumpProgress::start(d).await?;
     let budget = Budget::unlimited(&d.config().backup);
-    match progress.step(d, sink, budget, None).await? {
+    match progress.step(d, sink, budget, &Local).await? {
         Step::Done(report) => Ok(report),
         Step::More => Err(Error::Invalid("an unlimited dump stopped early".into())),
     }
-}
-
-/// The FileStore keys `t`'s `file_key` / `*_file_key` columns name.
-pub(super) async fn file_keys(db: &dyn Db, t: &Table) -> Result<Vec<String>> {
-    let mut keys = Vec::new();
-    for col in t.file_key_columns() {
-        let found = db
-            .query(Statement::new(format!(
-                "SELECT DISTINCT {c} AS k FROM {t} WHERE {c} IS NOT NULL",
-                c = quote(col),
-                t = quote(&t.name)
-            )))
-            .await?;
-        keys.extend(found.rows.iter().filter_map(|r| match r.first() {
-            Some(Value::Text(k)) if !k.is_empty() => Some(k.clone()),
-            _ => None,
-        }));
-    }
-    Ok(keys)
 }
 
 /// The `migration` table in applied (insertion) order.

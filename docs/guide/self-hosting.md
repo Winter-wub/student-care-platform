@@ -187,6 +187,12 @@ own ports and writes:
   the FileStore is listed as `missing` with a warning; the backup still
   succeeds.
 
+**Upgrading past #88:** `[backup] max_table_rows` and `max_table_mb` are
+gone (tables are split into parts instead); a `deployment.toml` that
+still sets them refuses to boot, naming the key: delete those lines, or
+use `part_rows` / `part_mb`. A restore holds the whole backup in memory,
+about 7 times its `tables/` size: see [Backups](backups.md).
+
 It writes to `DIR.partial` and renames it to `DIR` at the end, so `DIR` only
 ever holds a finished backup (`DIR/` is the same: the temporary
 directory is always next to `DIR`, not in it). `DIR` must be new or empty.

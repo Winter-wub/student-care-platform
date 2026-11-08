@@ -7,7 +7,7 @@
 use serde_json::json;
 
 use super::store::{self, Run};
-use super::{DAY_MS, progress_key};
+use super::{DAY_MS, check_key, progress_key};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::backup::progress::DumpProgress;
 use crate::backup::{FileStoreBackup, MANIFEST, Manifest};
@@ -27,6 +27,9 @@ pub(super) async fn expired(d: &Deployment, job: &Job) -> Result<usize> {
     for r in &runs {
         let backup = FileStoreBackup::new(s.files.clone(), r.prefix.clone());
         backup.delete(&entries(s, r).await?).await?;
+        for name in checks(s, r).await? {
+            s.files.delete(&check_key(&r.prefix, &name)).await?;
+        }
         s.files.delete(&progress_key(&r.prefix)).await?;
         let gone = Statement::new("DELETE FROM backup_run WHERE id = ? AND state <> 'running'")
             .bind(r.id.as_str());
@@ -47,6 +50,17 @@ pub(super) async fn expired(d: &Deployment, job: &Job) -> Result<usize> {
         s.db.batch(vec![gone, audit]).await?;
     }
     Ok(runs.len())
+}
+
+/// The key hashes `r` may have left (#88): none once it finished (a run
+/// deletes them before its manifest), else those its saved progress names.
+async fn checks(s: &Services, r: &Run) -> Result<Vec<String>> {
+    let Some(raw) = s.files.get(&progress_key(&r.prefix)).await? else {
+        return Ok(Vec::new());
+    };
+    let p: DumpProgress = serde_json::from_slice(&raw)
+        .map_err(|e| Error::Invalid(format!("backup progress of {}: {e}", r.prefix)))?;
+    Ok(p.checks())
 }
 
 /// Every entry `r` wrote or may have written: from its manifest when it

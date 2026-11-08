@@ -18,7 +18,7 @@ use serde_json::{Value as Json, json};
 
 use super::notify::{self, Failure};
 use super::store::{self, Run};
-use super::{KIND, PREFIX, progress_key, prune, stamp};
+use super::{KIND, PREFIX, check_key, progress_key, prune, stamp};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::backup::FileStoreBackup;
 use crate::backup::progress::{Budget, Checkpoint, DumpProgress, Step};
@@ -50,17 +50,33 @@ fn budget(d: &Deployment) -> Budget {
     }
 }
 
-/// Saves a run's progress in the middle of a step (before a part the saved
-/// progress does not name is written).
+/// A run's state between steps, in the FileStore next to its backup: the
+/// progress (`<prefix>.progress.json`, saved also in the middle of a step,
+/// before a part it does not name is written) and the key hashes of a
+/// table being checked (`<prefix>.check/<table>/<n>.keys`).
 struct SaveTo<'a> {
     d: &'a Deployment,
     key: &'a str,
+    prefix: &'a str,
 }
 
 #[async_trait::async_trait]
 impl Checkpoint for SaveTo<'_> {
     async fn save(&self, p: &DumpProgress) -> Result<()> {
         save(self.d, self.key, p).await
+    }
+    async fn put_check(&self, name: &str, bytes: Vec<u8>) -> Result<()> {
+        let key = check_key(self.prefix, name);
+        let files = &self.d.services().files;
+        files.put(&key, bytes, "application/octet-stream").await
+    }
+    async fn get_check(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        let key = check_key(self.prefix, name);
+        self.d.services().files.get(&key).await
+    }
+    async fn delete_check(&self, name: &str) -> Result<()> {
+        let key = check_key(self.prefix, name);
+        self.d.services().files.delete(&key).await
     }
 }
 /// Database queries and FileStore calls one step may make (see [`budget`]).
@@ -211,11 +227,12 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
         }
         None => return Err(Error::Invalid(format!("backup progress {key} is missing"))),
     };
-    let checkpoint = SaveTo { d, key: &key };
-    match progress
-        .step(d, &mut sink, budget(d), Some(&checkpoint))
-        .await?
-    {
+    let checkpoint = SaveTo {
+        d,
+        key: &key,
+        prefix: &r.prefix,
+    };
+    match progress.step(d, &mut sink, budget(d), &checkpoint).await? {
         Step::More => {
             save(d, &key, &progress).await?;
             if store::advance(s, id, progress.bytes).await? {

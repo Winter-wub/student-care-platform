@@ -5,7 +5,7 @@
 //! enabled = true            # default true
 //! schedule = "0 2 * * *"    # cron, in the Deployment's utc_offset (default 02:00)
 //! retention_days = 30       # default 30
-//! part_mb = 8               # default 8: a table part ends past this size
+//! part_mb = 8               # default 8, at most 32: a table part ends past this size
 //! part_rows = 20000         # default 20,000: a table part ends at this many rows
 //! max_export_cells = 150000 # default 150,000: "Download all data" limit
 //! ```
@@ -33,7 +33,8 @@ pub struct BackupConfig {
     /// NDJSON passes this many MB (by at most one page of 500 rows). One
     /// part is built in memory at a time, held about three times over while
     /// it is written to R2, and a Worker has 128 MB: default 8. Any table
-    /// size is backed up; this bounds the memory, not the table.
+    /// size is backed up; this bounds the memory, not the table. At most
+    /// 32 (about 96 MB held while written, near a Worker's limit).
     pub part_mb: u32,
     /// A part ends at this many rows: default 20,000, that is 40 D1
     /// queries of 500 rows, well inside one step's 350 subrequests (a step
@@ -61,6 +62,9 @@ impl Default for BackupConfig {
     }
 }
 
+/// The largest `[backup] part_mb`.
+const MAX_PART_MB: u32 = 32;
+
 impl BackupConfig {
     /// Refuses a schedule outside the cron subset and a retention of 0.
     pub(crate) fn check(&self) -> crate::Result<()> {
@@ -71,6 +75,12 @@ impl BackupConfig {
             return Err(crate::Error::Invalid(
                 "[backup] retention_days, part_mb and part_rows must be at least 1".into(),
             ));
+        }
+        if self.part_mb > MAX_PART_MB {
+            return Err(crate::Error::Invalid(format!(
+                "[backup] part_mb is {}, at most {MAX_PART_MB}: a part is built in memory",
+                self.part_mb
+            )));
         }
         Ok(())
     }
@@ -94,6 +104,7 @@ mod tests {
             "[backup]\nretention_days = 0",
             "[backup]\npart_mb = 0",
             "[backup]\npart_rows = 0",
+            "[backup]\npart_mb = 33",
             // The pre-#88 size refusal is gone, and its keys with it.
             "[backup]\nmax_table_rows = 3",
             "[backup]\nkeep_days = 3",
