@@ -11,7 +11,7 @@ use harpseal::{
 
 use crate::FakeChannel;
 use crate::hooks::Hook;
-use crate::render::render;
+use crate::render::{refused, refused_url, render};
 
 /// `retry_after_secs` of the failure [`FakeChannel::fail_next_batch_at`]
 /// injects.
@@ -149,6 +149,9 @@ impl FakeChannel {
                     receipts,
                     Error::Unsupported(Capability::SendAttachment),
                 );
+            }
+            if refused_url(msg) {
+                return BatchReceipt::partial(receipts, refused());
             }
             let mut parts = render(msg, profile.limits(), locale);
             if parts.is_empty() {

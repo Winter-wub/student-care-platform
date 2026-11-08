@@ -52,6 +52,7 @@ pub mod backup;
 pub mod modules;
 pub mod password;
 pub mod render;
+pub mod rich_text;
 pub mod sheet;
 pub mod ui;
 

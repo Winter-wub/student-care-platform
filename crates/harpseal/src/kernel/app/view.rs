@@ -7,11 +7,17 @@ use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, PreEscaped, html};
 
 use super::session::AppVisitor;
-use super::{ACK_SUFFIX, sdk::Sdks};
+use super::{ACK_SUFFIX, external, sdk::Sdks};
 use crate::PageState;
 use crate::kernel::students::{channel_label, format_ms};
 use crate::kernel::text::Texts;
 use crate::modules::announcements::StudentAnnouncement;
+use crate::rich_text;
+
+/// The body has a link (the page then loads [`external::script`]).
+fn has_links(body: &str) -> bool {
+    !rich_text::parse(body).links().is_empty()
+}
 
 /// Pinned LIFF SDK (LINE's "edge/2" channel).
 pub(crate) const LIFF_SDK: &str = "https://static.line-scdn.net/liff/edge/2/sdk.js";
@@ -269,6 +275,7 @@ pub(crate) fn home(s: &PageState, t: &Texts, v: &AppVisitor, h: &Home<'_>) -> Re
                     ul class="app-news" {
                         @for a in news { li id=(format!("a-{}", a.id)) { (item(s, t, v, a)) } }
                     }
+                    (external::script(s, &v.channel, news.iter().any(|a| has_links(&a.body))))
                 }
             }
         }
@@ -290,7 +297,7 @@ fn item(s: &PageState, t: &Texts, v: &AppVisitor, a: &StudentAnnouncement) -> Ma
         details {
             summary {
                 h3 { (a.title) }
-                p class="clamp" { (a.body) }
+                p class="clamp" { (rich_text::plain(&a.body)) }
                 div class="app-meta" {
                     span { (date(s, a.at)) }
                     @if a.needs_ack() { span class="app-wait" { (t.t("kernel.app.waiting")) } }
@@ -298,7 +305,7 @@ fn item(s: &PageState, t: &Texts, v: &AppVisitor, a: &StudentAnnouncement) -> Ma
                 }
             }
             div class="full" {
-                p class="app-body" { (a.body) }
+                (rich_text::html(&a.body))
                 (ack_part(t, v, a))
             }
         }
@@ -355,9 +362,10 @@ pub(crate) fn detail(
             article class="card" {
                 h1 { (a.title) }
                 p class="muted" { (date(s, a.at)) }
-                p class="app-body" { (a.body) }
+                (rich_text::html(&a.body))
                 (ack_part(t, v, a))
             }
+            (external::script(s, &v.channel, has_links(&a.body)))
         }
     };
     let title = if let Some(key) = gone {

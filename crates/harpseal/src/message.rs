@@ -79,6 +79,17 @@ pub enum Button {
         /// Path appended to the Channel's Mini App URL, e.g. `/app`.
         path: String,
     },
+    /// Opens a web page outside the chat (#108). Build it with
+    /// [`Button::url`], which refuses anything but an `https:` URL
+    /// ([`crate::render::link_url`]); adapters check again and show a
+    /// visible line instead of a button they refuse.
+    #[non_exhaustive]
+    Url {
+        /// What the Student sees.
+        label: String,
+        /// The `https:` URL opened.
+        url: String,
+    },
 }
 
 impl Button {
@@ -96,17 +107,43 @@ impl Button {
             path: path.into(),
         }
     }
+    /// A URL button; refuses a URL that is not `https:`, has user info,
+    /// unsafe characters or more than [`crate::render::URL_MAX`] bytes
+    /// ([`crate::render::link_url`]).
+    pub fn url(label: impl Into<String>, url: impl Into<String>) -> crate::Result<Self> {
+        let url = url.into();
+        if !crate::render::link_url(&url) {
+            return Err(crate::Error::Invalid(
+                "a URL button needs an https: URL".into(),
+            ));
+        }
+        Ok(Button::Url {
+            label: label.into(),
+            url,
+        })
+    }
     /// The label, whatever the kind.
     pub fn label(&self) -> &str {
         match self {
-            Button::Action { label, .. } | Button::MiniApp { label, .. } => label,
+            Button::Action { label, .. }
+            | Button::MiniApp { label, .. }
+            | Button::Url { label, .. } => label,
         }
     }
     /// The Action id, for Action buttons.
     pub fn action_id(&self) -> Option<&ActionId> {
         match self {
             Button::Action { action, .. } => Some(action),
-            Button::MiniApp { .. } => None,
+            Button::MiniApp { .. } | Button::Url { .. } => None,
+        }
+    }
+    /// The URL, for a URL button whose URL passes
+    /// [`crate::render::link_url`] (what an adapter renders); `None` for
+    /// other kinds and for a URL it must refuse.
+    pub fn safe_url(&self) -> Option<&str> {
+        match self {
+            Button::Url { url, .. } if crate::render::link_url(url) => Some(url),
+            _ => None,
         }
     }
 }
@@ -339,45 +376,4 @@ impl MenuKey {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn action_id_bounds() {
-        assert!(ActionId::new("").is_err());
-        assert!(ActionId::new("a".repeat(64)).is_ok());
-        assert!(ActionId::new("a".repeat(65)).is_err());
-    }
-
-    #[test]
-    fn menu_keys_from_locales() {
-        let key = |tag: &str| MenuKey::for_locale(&Locale::new(tag)).map(|k| k.0);
-        assert_eq!(key("th").unwrap(), "th");
-        assert_eq!(key("zh-hant").unwrap(), "zhhant");
-        assert_eq!(key("zh-Hant").unwrap(), "zhhant");
-        assert_eq!(key("pt_BR").unwrap(), "ptbr");
-        assert!(key("").is_err());
-        assert!(key("locked").is_err());
-        assert!(key("x-a-very-long-private-tag").is_err());
-        assert!(key("th.u").is_err());
-    }
-
-    #[test]
-    fn menu_key_bounds() {
-        assert!(MenuKey::new("th").is_ok());
-        assert!(MenuKey::new("a".repeat(16)).is_ok());
-        assert!(MenuKey::new("a".repeat(17)).is_err());
-        assert!(MenuKey::new("").is_err());
-        assert!(MenuKey::new("TH").is_err());
-        assert!(MenuKey::new("zh-hant").is_err());
-        assert!(MenuKey::new("locked").is_err(), "reserved");
-        assert_eq!(MenuKey::locked().as_str(), MenuKey::LOCKED);
-        let m = Menu::new(Vec::new());
-        assert_eq!(m.key(), None);
-        let m = m.with_key(MenuKey::locked());
-        assert_eq!(m.key().map(MenuKey::as_str), Some("locked"));
-        assert_eq!((m.revision(), m.salt()), (0, None));
-        let m = m.with_revision(3).with_salt("0a1b2c3d");
-        assert_eq!((m.revision(), m.salt()), (3, Some("0a1b2c3d")));
-    }
-}
+mod tests;

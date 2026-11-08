@@ -184,6 +184,24 @@ from a spreadsheet paste are ignored. The list is saved with the announcement
 Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
+The body (up to 2,000 characters, as before) takes a small format (#108):
+`**bold**`, `*italic*`, lines starting `- ` (bullets) or `1. ` (numbered),
+`[text](https://…)` links and bare `https://…` URLs. Only `https:` links
+with a plain host count (no `http:`, `javascript:`, `data:`, user info or
+quotes, at most 1,000 bytes); anything else, and any HTML, stays text as
+typed. Emphasis and links stay on one line; lists do not nest. The form's
+toolbar (B, I, •, 1., 🔗) inserts the syntax (without script the help line
+shows it), and "ตัวอย่างในมินิแอป" shows the body exactly as the Mini App
+does, refreshed as Staff type (`POST /admin/announcements/preview`). The Mini
+App shows the format; a link opens outside the chat app
+(`liff.openWindow({ external: true })` on LINE, `Telegram.WebApp.openLink`
+on Telegram, else a new window with `rel="noopener noreferrer"`). In chat
+the Card body is plain text (markup removed, link text kept, list markers
+as typed) and the Card adds a URL button for each of the body's first two
+distinct links, labelled with the link text (cut to 40 characters); the
+"ข่าวล่าสุด" list shows the plain text only. A body without the format looks
+exactly as before; one that happens to contain `*word*`, a `- ` or `1. `
+line, or a link in brackets now shows formatted.
 The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`. LINE cannot edit a sent
 message: tick "แจ้งผู้รับว่ามีการแก้ไข" when saving the edit of a sent

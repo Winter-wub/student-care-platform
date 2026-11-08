@@ -33,6 +33,16 @@ fn mini_app(label: &str, path: &str) -> Button {
     }
 }
 
+/// A `Button::Url` with any URL, past [`Button::url`]'s check (#108): what
+/// only code inside the Core could build, so adapter tests can show they
+/// refuse it. Not a first-slice sample.
+pub fn raw_url_button(label: &str, url: &str) -> Button {
+    Button::Url {
+        label: label.into(),
+        url: url.into(),
+    }
+}
+
 fn news(n: u32, title: &str, body: &str) -> Card {
     Card {
         title: title.into(),

@@ -85,14 +85,20 @@ pub(super) async fn page(
 
 /// A plain preview of the Card as a Student sees it.
 pub(crate) fn preview(v: &View<'_>, title: &str, body: &str, ack: bool) -> Markup {
+    // As the chat Card shows it (#108): plain text, the first links as
+    // URL buttons.
+    let doc = crate::rich_text::parse(body);
     html! {
         div class="card preview" aria-label=(v.t("announcements.form.preview")) {
             p class="muted" { (v.t("announcements.form.preview")) }
             div class="bubble" {
                 strong { (title) }
-                p { (body) }
+                p { (doc.plain()) }
                 @if ack { span class="btn secondary" { (v.t("announcements.card.ack")) } " " }
                 span class="btn secondary" { (v.t("announcements.card.open")) }
+                @for l in doc.first_links(super::chat::URL_BUTTONS) {
+                    " " span class="btn secondary" title=(l.url) { (l.text) }
+                }
             }
         }
     }

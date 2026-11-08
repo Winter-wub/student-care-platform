@@ -120,7 +120,8 @@ fn notice(b: &Button, cx: &RenderCx) -> Value {
     json!({ "type": "text", "text": mini_app_unavailable(cx, label), "size": "xs", "wrap": true, "color": "#888888" })
 }
 
-/// Postback for Actions, URI to the Mini App; `None` when no Mini App URL.
+/// Postback for Actions, URI to the Mini App or to a URL button's page;
+/// `None` when no Mini App URL or a refused URL.
 fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
     match b {
         Button::Action { label, action } => Some(json!({
@@ -131,6 +132,11 @@ fn action_object(b: &Button, cx: &RenderCx, label_max: usize) -> Option<Value> {
         })),
         Button::MiniApp { label, path } => cx
             .mini_app_url(path)
+            .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
+        // A URI action outside LINE; a URL that is not https is refused
+        // and shows as the visible notice instead.
+        Button::Url { label, .. } => b
+            .safe_url()
             .map(|uri| json!({ "type": "uri", "label": truncate(label, label_max), "uri": uri })),
         // #[non_exhaustive]: an unknown kind renders as the visible notice.
         _ => None,

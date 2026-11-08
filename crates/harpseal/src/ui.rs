@@ -22,7 +22,7 @@ use crate::{CurrentStaff, Error, PageState};
 pub const CSS: &str = include_str!("ui.css");
 /// Bump the query string when `ui.css` changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=9";
+const CSS_HREF: &str = "/static/app.css?v=10";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

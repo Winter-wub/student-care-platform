@@ -47,7 +47,22 @@ impl Limits {
     };
 }
 
-/// The objects `msg` becomes under `limits`.
+/// A URL button the Fake refuses, as the real adapters do: one whose URL
+/// is not https ([`Button::safe_url`]). Built by hand inside the Core
+/// only; [`Button::url`] never makes one.
+pub(crate) fn refused_url(msg: &Message) -> bool {
+    msg.buttons()
+        .iter()
+        .any(|b| matches!(b, Button::Url { .. }) && b.safe_url().is_none())
+}
+
+/// The error a refused URL button sends back.
+pub(crate) fn refused() -> harpseal::Error {
+    harpseal::Error::Invalid("a URL button needs an https: URL".into())
+}
+
+/// The objects `msg` becomes under `limits`. A URL button is kept as it
+/// is (recorded; the platform would show it as a link button).
 pub(crate) fn render(msg: &Message, limits: Limits, locale: &Locale) -> Vec<Message> {
     match msg {
         Message::Text(t) => split_text(t, limits.text)

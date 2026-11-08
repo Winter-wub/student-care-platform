@@ -72,6 +72,48 @@ pub fn split_text(s: &str, max: usize) -> Vec<String> {
     out
 }
 
+/// Longest URL in bytes a `Button::Url` or a body link carries: LINE's
+/// URI action limit (<https://developers.line.biz/en/reference/messaging-api/#uri-action>),
+/// the stricter of the two Channels.
+pub const URL_MAX: usize = 1000;
+
+/// `https://host[:port][/…]`: a host of letters, digits, `.` and `-`, no
+/// user info, no spaces. The check `[settings]` URLs have always had.
+pub fn https_url(v: &str) -> bool {
+    let Some(rest) = v.strip_prefix("https://") else {
+        return false;
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let (host, port) = match authority.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (authority, None),
+    };
+    let host_ok = !host.is_empty()
+        && !host.starts_with(['.', '-'])
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let port_ok = port.is_none_or(|p| p.parse::<u16>().is_ok_and(|n| n > 0));
+    host_ok && port_ok && !tail.chars().any(char::is_whitespace)
+}
+
+/// A URL a Student may be sent to (a `Button::Url`, a link in a body):
+/// [`https_url`], at most [`URL_MAX`] bytes, and only printable ASCII
+/// without `"`, `'`, `<`, `>`, `\`, `` ` ``, `^`, `{`, `|`, `}` (a pasted
+/// URL is percent-encoded; anything else stays plain text).
+pub fn link_url(v: &str) -> bool {
+    v.len() <= URL_MAX
+        && https_url(v)
+        && v.bytes().all(|b| {
+            b.is_ascii_graphic()
+                && !matches!(
+                    b,
+                    b'"' | b'\'' | b'<' | b'>' | b'\\' | b'`' | b'^' | b'{' | b'|' | b'}'
+                )
+        })
+}
+
 /// Every Action id a Message carries, in order. Renderers must emit each
 /// of them exactly once (tests check this: no Action is dropped silently).
 pub fn action_ids(msg: &Message) -> Vec<String> {
@@ -127,6 +169,30 @@ mod tests {
         assert_eq!(parts[0], "ก".repeat(70));
         assert!(parts.iter().all(|p| char_len(p) <= 100));
         assert_eq!(split_text("abc", 100), vec!["abc".to_string()]);
+    }
+
+    #[test]
+    fn link_urls_are_https_only() {
+        assert!(link_url("https://reg.seal-bay.invalid/exam?term=2#room"));
+        assert!(link_url("https://seal-bay.invalid:8443/a%E0%B8%81"));
+        for bad in [
+            "http://seal-bay.invalid/",
+            "HTTPS://seal-bay.invalid/",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "https://user@seal-bay.invalid/",
+            "https://seal-bay.invalid\\@evil.invalid/",
+            "https://seal-bay.invalid/\"onmouseover=x",
+            "https://seal-bay.invalid/<script>",
+            "https://seal-bay.invalid/ก",
+            "https://seal-bay.invalid/a b",
+            "https:///path",
+            "https://",
+        ] {
+            assert!(!link_url(bad), "{bad}");
+        }
+        let long = format!("https://seal-bay.invalid/{}", "a".repeat(URL_MAX));
+        assert!(!link_url(&long));
     }
 
     #[test]

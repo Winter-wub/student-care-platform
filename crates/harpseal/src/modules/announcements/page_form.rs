@@ -13,7 +13,7 @@ use super::form::{Fields, MAX_BODY, MAX_TITLE};
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
-use super::{page_count, page_detail, page_notice, page_pick, service};
+use super::{page_count, page_detail, page_editor, page_notice, page_pick, service};
 use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
@@ -212,7 +212,9 @@ fn form_page(
                 }
                 div class="field" {
                     label for="body_th" { (v.t("announcements.form.body")) }
+                    (page_editor::toolbar(v, "body_th"))
                     textarea id="body_th" name="body_th" required maxlength=(MAX_BODY) rows="5" { (f.body_th) }
+                    (page_editor::help(v))
                 }
             }
             fieldset {
@@ -224,7 +226,9 @@ fn form_page(
                 }
                 div class="field" {
                     label for="body_en" { (v.t("announcements.form.body")) }
+                    (page_editor::toolbar(v, "body_en"))
                     textarea id="body_en" name="body_en" maxlength=(MAX_BODY) rows="5" { (f.body_en) }
+                    (page_editor::help(v))
                 }
             }
             @if !sent {
@@ -298,6 +302,7 @@ fn form_page(
                     (page_count::placeholder(v))
                 }
             }
+            (page_editor::preview(v, f))
             (page_detail::preview(v, &f.title_th, &f.body_th, f.require_ack))
             div class="actions" {
                 @if row.is_none() {
@@ -311,6 +316,7 @@ fn form_page(
                 }
             }
         }
+        (page_editor::script())
     };
     v.page(status, &title, body)
 }
