@@ -45,11 +45,21 @@ pub const ROSTER: &str = "รหัสนักศึกษา,ชื่อ-ส�
     68010002,แมวน้ำ อ่าวซีล,s68010002@student.sealbay.example,2\r\n\
     68010003,ปลาดาว หาดทราย,s68010003@student.sealbay.example,3\r\n";
 
+/// The test configuration with `extra` TOML appended (a `[backup]`
+/// table, say).
+pub fn config(extra: &str) -> DeploymentConfig {
+    DeploymentConfig::from_toml(&format!("{CONFIG}\n{extra}")).unwrap()
+}
+
 /// The test Deployment on `services` (wrapping `h`'s), not migrated.
 pub fn deployment_with(h: &Harness, services: harpseal::Services) -> Deployment {
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
+    deployment_extra(h, services, "")
+}
+
+/// [`deployment_with`], its configuration with `extra` appended.
+pub fn deployment_extra(h: &Harness, services: harpseal::Services, extra: &str) -> Deployment {
     h.builder()
-        .config(config)
+        .config(config(extra))
         .runtime(services)
         .module(Announcements)
         .build()
@@ -58,9 +68,8 @@ pub fn deployment_with(h: &Harness, services: harpseal::Services) -> Deployment 
 
 /// The test Deployment on `h`'s Services, not migrated.
 pub fn deployment(h: &Harness) -> Deployment {
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
     h.builder()
-        .config(config)
+        .config(config(""))
         .module(Announcements)
         .build()
         .unwrap()
@@ -73,7 +82,13 @@ pub async fn populated() -> (Harness, TestApp) {
 
 /// [`populated`] on `h`, whose database may already hold migrations.
 pub async fn populated_on(h: Harness) -> (Harness, TestApp) {
-    let app = h.boot(deployment(&h)).await;
+    let d = deployment(&h);
+    populated_as(h, d).await
+}
+
+/// [`populated`] as Deployment `d` (on `h`'s database).
+pub async fn populated_as(h: Harness, d: Deployment) -> (Harness, TestApp) {
+    let app = h.boot(d).await;
     let d = app.deployment();
     let ctx = RequestCtx::cli();
     let officer = Actor::Staff(h.create_staff(OFFICER, PASSWORD, &["Officer"]).await);

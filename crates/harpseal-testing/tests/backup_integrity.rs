@@ -116,7 +116,7 @@ async fn a_restored_deployment_dumps_the_same_entries() {
     for (a, b) in one.manifest.tables.iter().zip(&two.manifest.tables) {
         assert_eq!((&a.name, &a.columns, &a.sql), (&b.name, &b.columns, &b.sql));
         if a.name != "audit_log" {
-            assert_eq!((a.rows, &a.sha256), (b.rows, &b.sha256), "{}", a.name);
+            assert_eq!((a.rows, &a.parts), (b.rows, &b.parts), "{}", a.name);
         }
     }
 }

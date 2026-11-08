@@ -1,5 +1,5 @@
 //! The checks [`super::load`] runs before it writes anything: migrations,
-//! columns, and each table entry's hash, count and values.
+//! columns, and each table part's name, hash, count and values.
 
 use std::collections::BTreeMap;
 
@@ -7,7 +7,7 @@ use serde_json::Value as Json;
 
 use super::schema::Table;
 use super::value::decode;
-use super::{ManifestMigration, ManifestTable, sha256_hex, table_entry};
+use super::{BackupSource, ManifestMigration, ManifestTable, part_entry, sha256_hex, table_entry};
 use crate::port_types::Value;
 use crate::{Error, Migration, Result};
 
@@ -100,17 +100,71 @@ pub(crate) fn check_columns(mt: &ManifestTable, current: &[Table]) -> Result<()>
     Ok(())
 }
 
-/// The rows of `mt` from its entry's `bytes`, in manifest column order,
-/// after checking the bytes' SHA-256 and the row count.
-pub(crate) fn decode_table(mt: &ManifestTable, bytes: &[u8]) -> Result<Vec<Vec<Value>>> {
-    let entry = table_entry(&mt.name);
-    if sha256_hex(bytes) != mt.sha256 {
+/// The rows of `mt`, in manifest column order, read from `source` part by
+/// part in order (format 1: its one entry). Refuses, before anything is
+/// written, a part out of place (each must be [`part_entry`] of its
+/// index, so parts listed in another order or under another table's name
+/// are refused), parts whose rows do not add up to the table's, and any
+/// entry missing, not matching its SHA-256 or its row count, or holding a
+/// row that does not decode.
+pub(crate) async fn read_table(
+    source: &dyn BackupSource,
+    mt: &ManifestTable,
+) -> Result<Vec<Vec<Value>>> {
+    if mt.parts.is_empty() {
+        let entry = table_entry(&mt.name);
+        let bytes = source.read(&entry).await?;
+        return decode_entry(mt, &entry, &mt.sha256, mt.rows, &bytes);
+    }
+    let sum: u64 = mt.parts.iter().map(|p| p.rows).sum();
+    if sum != mt.rows {
+        return Err(Error::Invalid(format!(
+            "backup table {}: its parts hold {sum} rows, the manifest says {}",
+            mt.name, mt.rows
+        )));
+    }
+    // Grown part by part: a hand-edited row count reserves nothing.
+    let mut rows = Vec::new();
+    for (i, part) in mt.parts.iter().enumerate() {
+        let expected = part_entry(&mt.name, i);
+        if part.entry != expected {
+            return Err(Error::Invalid(format!(
+                "backup table {}: part {} is {}, expected {expected} (parts out of order?)",
+                mt.name,
+                i + 1,
+                part.entry
+            )));
+        }
+        let bytes = source.read(&part.entry).await?;
+        rows.extend(decode_entry(
+            mt,
+            &part.entry,
+            &part.sha256,
+            part.rows,
+            &bytes,
+        )?);
+    }
+    Ok(rows)
+}
+
+/// The rows of `entry` (of table `mt`) from its `bytes`, in manifest
+/// column order, after checking the bytes' SHA-256 and the row count.
+fn decode_entry(
+    mt: &ManifestTable,
+    entry: &str,
+    sha256: &str,
+    expect: u64,
+    bytes: &[u8],
+) -> Result<Vec<Vec<Value>>> {
+    if sha256_hex(bytes) != sha256 {
         return Err(Error::Invalid(format!(
             "backup {entry} does not match its SHA-256 in the manifest"
         )));
     }
     let bad = |line: usize, m: String| Error::Invalid(format!("backup {entry} line {line}: {m}"));
-    let mut rows = Vec::with_capacity(mt.rows as usize);
+    // At most one row per line, whatever the manifest claims.
+    let lines = bytes.iter().filter(|b| **b == b'\n').count() + 1;
+    let mut rows = Vec::with_capacity(usize::try_from(expect).unwrap_or(0).min(lines));
     for (i, line) in bytes.split(|b| *b == b'\n').enumerate() {
         if line.is_empty() {
             continue;
@@ -129,11 +183,10 @@ pub(crate) fn decode_table(mt: &ManifestTable, bytes: &[u8]) -> Result<Vec<Vec<V
             .collect::<Result<Vec<Value>>>()?;
         rows.push(row);
     }
-    if rows.len() as u64 != mt.rows {
+    if rows.len() as u64 != expect {
         return Err(Error::Invalid(format!(
-            "backup {entry} has {} rows, the manifest says {}",
-            rows.len(),
-            mt.rows
+            "backup {entry} has {} rows, the manifest says {expect}",
+            rows.len()
         )));
     }
     Ok(rows)
@@ -167,6 +220,7 @@ mod tests {
             name: "permit".into(),
             rows: 0,
             sha256: String::new(),
+            parts: Vec::new(),
             columns: cols.iter().map(|c| c.to_string()).collect(),
             sql: String::new(),
         }

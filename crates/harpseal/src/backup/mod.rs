@@ -4,7 +4,7 @@
 //!
 //! [`dump`] writes named entries to a [`BackupSink`]; [`load`] reads them
 //! back from a [`BackupSource`]. The `harpseal backup` / `restore` commands
-//! use a directory; tests use [`MemoryBackup`]. A backup (format 1) holds:
+//! use a directory; tests use [`MemoryBackup`]. A backup (format 2) holds:
 //!
 //! - `manifest.json`: a [`Manifest`]: format, Deployment name, when it was
 //!   taken, the applied migrations in order, each table's columns, row
@@ -12,8 +12,16 @@
 //!   SHA-256.
 //!   Each table's entry is pinned by its SHA-256 too, so the manifest's
 //!   own hash (recorded by the restore's audit row) pins the whole backup.
-//! - `tables/<table>.ndjson`: one JSON object per row, every column, in
-//!   primary-key order (`rowid` order for a table without a primary key).
+//! - each table's rows in one or more **parts** (#88), in order:
+//!   `tables/<table>.ndjson`, then `tables/<table>/00001.ndjson`,
+//!   `tables/<table>/00002.ndjson`, …; one JSON object per row, every
+//!   column, in primary-key order (`rowid` order for a table without a
+//!   primary key) across the parts. A part ends at `[backup] part_rows`
+//!   rows or once it passes `part_mb`, or where a nightly Job step ended,
+//!   so no step holds more than a part in memory. Each part is pinned by
+//!   its SHA-256 and row count. Format 1 (before #88) is the same with
+//!   one entry per table, pinned by `sha256` on the table; a restore reads
+//!   both.
 //!   Live Verification challenges are left out (see `pages.rs`). Values
 //!   keep their SQLite type: `null`, integers as `42`, reals as `3.0`, text
 //!   as strings, blobs as `{"$blob": "<base64>"}`.
@@ -57,11 +65,16 @@
 //! migrations so they run over the restored rows. See [`load`].
 
 mod check;
+mod cursor;
 mod dump;
+mod hashes;
 mod load;
+mod manifest;
 mod pages;
+mod parts;
 pub(crate) mod progress;
 pub(crate) mod schema;
+mod settle;
 mod store;
 mod unique;
 mod value;
@@ -71,17 +84,21 @@ pub(crate) mod xlsx;
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 
 use crate::audit::RequestCtx;
 use crate::{Error, Result};
 
 pub use dump::dump;
 pub use load::load;
+pub use manifest::{
+    Manifest, ManifestFile, ManifestMigration, ManifestPart, ManifestTable, part_entry,
+};
+pub(crate) use manifest::{file_entry, table_entry};
 pub use store::FileStoreBackup;
 
-/// The backup format this build writes and reads.
-pub const FORMAT: u32 = 1;
+/// The backup format this build writes. It reads this one and format 1
+/// (one entry per table, no parts).
+pub const FORMAT: u32 = 2;
 /// Name of the manifest entry.
 pub const MANIFEST: &str = "manifest.json";
 /// Rows read per query, and statements per insert batch.
@@ -134,89 +151,6 @@ impl BackupSource for MemoryBackup {
             .cloned()
             .ok_or_else(|| Error::Invalid(format!("backup entry {name} is missing")))
     }
-}
-
-/// `manifest.json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct Manifest {
-    /// [`FORMAT`].
-    pub format: u32,
-    /// The Deployment's `name` from `deployment.toml`.
-    pub deployment: String,
-    /// When the dump started, ms UTC.
-    pub taken_at: i64,
-    /// When it finished, ms UTC.
-    pub finished_at: i64,
-    /// The `migration` table, in applied order.
-    pub migrations: Vec<ManifestMigration>,
-    /// Every table dumped, by name.
-    pub tables: Vec<ManifestTable>,
-    /// Every FileStore object referenced, by key.
-    pub files: Vec<ManifestFile>,
-}
-
-impl Manifest {
-    /// Reads and parses `manifest.json`; refuses another format.
-    pub async fn read(source: &dyn BackupSource) -> Result<(Manifest, Vec<u8>)> {
-        let raw = source.read(MANIFEST).await?;
-        let m: Manifest = serde_json::from_slice(&raw)
-            .map_err(|e| Error::Invalid(format!("backup {MANIFEST}: {e}")))?;
-        if m.format != FORMAT {
-            return Err(Error::Invalid(format!(
-                "backup format {} is not supported (this build reads format {FORMAT})",
-                m.format
-            )));
-        }
-        Ok((m, raw))
-    }
-}
-
-/// One applied migration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ManifestMigration {
-    /// Owning Module (`kernel` for the Kernel).
-    pub module: String,
-    /// File name without extension.
-    pub name: String,
-    /// SHA-256 of its text, as in the `migration` table.
-    pub checksum: String,
-}
-
-/// One dumped table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ManifestTable {
-    /// Table name; its rows are in `tables/<name>.ndjson`.
-    pub name: String,
-    /// Rows dumped.
-    pub rows: u64,
-    /// SHA-256 of the entry's exact bytes.
-    pub sha256: String,
-    /// Every column, in table order.
-    pub columns: Vec<String>,
-    /// `sqlite_master.sql` when the dump was taken.
-    pub sql: String,
-}
-
-/// One FileStore object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[non_exhaustive]
-pub struct ManifestFile {
-    /// The FileStore key, as stored in the rows.
-    pub key: String,
-    /// Entry name of its bytes (`files/<sha256 of key>`).
-    pub entry: String,
-    /// Size, absent when missing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bytes: Option<u64>,
-    /// SHA-256 of the bytes, absent when missing.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sha256: Option<String>,
-    /// The FileStore had no object under this key when the dump ran.
-    #[serde(default)]
-    pub missing: bool,
 }
 
 /// What [`dump`] wrote.
@@ -310,14 +244,4 @@ pub struct LoadReport {
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     crate::id::hex(&Sha256::digest(bytes))
-}
-
-/// Entry name of a table's rows.
-pub(crate) fn table_entry(table: &str) -> String {
-    format!("tables/{table}.ndjson")
-}
-
-/// Entry name of the object stored under `key`.
-pub(crate) fn file_entry(key: &str) -> String {
-    format!("files/{}", sha256_hex(key.as_bytes()))
 }

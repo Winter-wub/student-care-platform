@@ -1,5 +1,5 @@
 //! Backups in the back office (#78): the nightly Job that writes a backup
-//! (format 1, ADR-0008) to the FileStore, its retention, failure emails,
+//! (format 2, ADR-0008) to the FileStore, its retention, failure emails,
 //! the Admin page that lists and downloads them, and "Download all data"
 //! as an Excel workbook.
 //!
@@ -105,6 +105,11 @@ pub(crate) fn stamp(ms: i64) -> String {
 /// The key of a run's resume point, next to (not inside) its backup.
 fn progress_key(prefix: &str) -> String {
     format!("{}.progress.json", prefix.trim_end_matches('/'))
+}
+
+/// The key of a run's saved key hashes `name` (#88), next to its backup.
+fn check_key(prefix: &str, name: &str) -> String {
+    format!("{}.check/{name}", prefix.trim_end_matches('/'))
 }
 
 /// `n` bytes for people: `512 B`, `1.5 MB`.

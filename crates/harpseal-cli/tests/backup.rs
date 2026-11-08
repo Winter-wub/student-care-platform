@@ -166,3 +166,36 @@ fn backup_and_restore_command_lines() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_table_in_parts_is_written_and_read_as_nested_files() {
+    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
+                [backup]\npart_rows = 1\n";
+    let config = || harpseal::DeploymentConfig::from_toml(toml).unwrap();
+    let h = Harness::new();
+    let d = h.builder().config(config()).build().unwrap();
+    for i in 0..3 {
+        let line = format!(
+            "staff create --admin --email root{i}@sealbay.example --password kelp-forest-at-dawn --force"
+        );
+        cli(&d, &line).await.unwrap();
+    }
+    let dir = temp_dir("parts");
+    let text = cli(&d, &format!("backup {}", dir.display())).await.unwrap();
+    assert!(text.contains("table staff: 3 rows"), "{text}");
+    for part in [
+        "tables/staff.ndjson",
+        "tables/staff/00001.ndjson",
+        "tables/staff/00002.ndjson",
+    ] {
+        assert!(dir.join(part).is_file(), "{part}");
+    }
+
+    let fresh = Harness::new();
+    let d2 = fresh.builder().config(config()).build().unwrap();
+    let text = cli(&d2, &format!("restore {}", dir.display()))
+        .await
+        .unwrap();
+    assert!(text.contains("table staff: 3 rows"), "{text}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

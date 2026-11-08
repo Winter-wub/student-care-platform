@@ -172,18 +172,28 @@ cargo run -p harpseal-example-native --bin harpseal -- restore ./backups/2026-11
 `backup DIR` reads the database and the FileStore through the Deployment's
 own ports and writes:
 
-- `manifest.json`: format `1`, the Deployment name, `taken_at` and
+- `manifest.json`: format `2`, the Deployment name, `taken_at` and
   `finished_at` (ms UTC), the applied migrations in order, each table's
-  columns, row count, `CREATE` SQL and the SHA-256 of its entry, and each
+  columns, row count, `CREATE` SQL and its parts in order (each part's
+  entry, row count and SHA-256), and each
   FileStore object's key, size and SHA-256 (so the manifest's own hash,
   recorded on restore, pins the whole backup);
-- `tables/<table>.ndjson`: every row of every table (except `migration`),
-  one JSON object per line, values typed (`42`, `3.0`, strings, `null`,
-  blobs as `{"$blob": "<base64>"}`);
+- `tables/<table>.ndjson`, then `tables/<table>/00001.ndjson`, … for a
+  table larger than one part (`[backup] part_rows`, `part_mb`): every row
+  of every table (except `migration`), one JSON object per line, in key
+  order across the parts, values typed (`42`, `3.0`, strings, `null`,
+  blobs as `{"$blob": "<base64>"}`). `restore` reads format 2 and the
+  format 1 of older builds (one `tables/<table>.ndjson` per table);
 - `files/<sha256 of the key>`: every object a `file_key` column points at
   (today the roster files of `roster_import`). An object already gone from
   the FileStore is listed as `missing` with a warning; the backup still
   succeeds.
+
+**Upgrading past #88:** `[backup] max_table_rows` and `max_table_mb` are
+gone (tables are split into parts instead); a `deployment.toml` that
+still sets them refuses to boot, naming the key: delete those lines, or
+use `part_rows` / `part_mb`. A restore holds the whole backup in memory,
+about 7 times its `tables/` size: see [Backups](backups.md).
 
 It writes to `DIR.partial` and renames it to `DIR` at the end, so `DIR` only
 ever holds a finished backup (`DIR/` is the same: the temporary

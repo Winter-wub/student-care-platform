@@ -1,5 +1,5 @@
 //! The nightly backup Job (#78): it runs on `[backup] schedule`, writes
-//! backup format 1 to the FileStore over several Job runs, restores with
+//! backup format 2 to the FileStore over several Job runs, restores with
 //! `backup::load`, and deletes backups past `[backup] retention_days`
 //! (with their objects) only after a successful backup.
 

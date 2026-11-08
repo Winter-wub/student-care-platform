@@ -12,8 +12,8 @@ without stopping (#78):
 enabled = true            # default; false stops the schedule only
 schedule = "0 2 * * *"    # cron, in utc_offset (default 02:00)
 retention_days = 30       # default
-max_table_mb = 24         # default: largest table, as NDJSON
-max_table_rows = 150000   # default
+part_mb = 8               # default (at most 32): a table part ends past this size
+part_rows = 20000         # default: a table part ends at this many rows
 max_export_cells = 150000 # default: "Download all data" limit
 ```
 
@@ -38,30 +38,31 @@ the Deployment must survive losing it. Each backup holds a full copy of
 the files, so the storage needed is about `retention_days` times the
 database and files together; the Backups page shows the total.
 
-**Steps and limits.** One Job run dumps whole tables until it has read
-50,000 rows, written 32 MB, copied 200 files or made 350 database queries
-and FileStore calls, saves where it stands
-as `backups/<UTC time>.progress.json` and hands over to the next run a
-minute later; a table that would overrun a run gets a run of its own. A
-table is one entry built in memory (format 1 has no table parts), held
-about three times over while it is written to R2, and read 500 rows per
-D1 query, so before reading a table the Job counts its rows and estimates
-its NDJSON size, and **fails the run naming the table** when it is over
-`max_table_rows` (150,000: 300 queries, so the table fits one step) or `max_table_mb` (24 MB: about 72 MB of a Worker's 128 MB).
-On Workers there is no fallback inside the Deployment for such a table
-yet: the nightly backup keeps refusing until backups can split tables
-(#88). Meanwhile back the database up with
-`npx wrangler@4 d1 export <database> --remote --output backup.sql`, which
-does **not** copy the files in R2 (copy those with R2's own tools). On a
-native server, `harpseal backup` has no such limit, and both settings can
-be raised freely.
+**Steps and limits.** One Job run reads tables 500 rows per D1 query
+until it has read 50,000 rows, written 32 MB, copied 200 files or made
+350 database queries and FileStore calls, saves where it stands as
+`backups/<UTC time>.progress.json` and hands over to the next run a
+minute later. **Any table size backs up** (#88, backup format 2): a
+table is written in parts, `tables/<table>.ndjson`, then
+`tables/<table>/00001.ndjson`, `00002`, …, each ending at `part_rows`
+rows (20,000: 40 queries), once it passes `part_mb` (8 MB, by about one
+row: pages shrink to the bytes left once a row's size is known), or
+where a run's budget ran out; the next run reads on after the last key
+of the last part. One part at a time is built in memory, held about three
+times over while it is written to R2, so a run stays well inside a
+Worker's 128 MB whatever the table's size. Raise `part_mb` on a native
+server if you want fewer, larger parts (at most 32); on Workers keep it
+at 8 or below. Each part lists the files its own rows name (copied once
+the tables are done). Before it writes a part, a run saves its progress
+naming that part, so a run that dies (and is retried, or fails and is
+pruned) leaves no part behind that nothing names.
 
 **Consistency while the Deployment runs.** D1 has no transactions, so the
 tables are not one point in time: a row written during the backup may or
 may not be in it. What the backup does promise:
 
-- each table entry is pinned by its SHA-256 and row count in the manifest,
-  and the manifest records `taken_at` and `finished_at`;
+- each table part is pinned by its SHA-256 and row count in the manifest,
+  in order, and the manifest records `taken_at` and `finished_at`;
 - a table is read in primary-key order, each page after the last key read,
   so a row deleted and re-inserted under the same key during the backup
   (a roster import replacing Tags, an edited announcement text) is in it
@@ -70,11 +71,46 @@ may not be in it. What the backup does promise:
   that others reference except a Role (its grants go with it), so every
   reference resolves; grants of a Role deleted during the backup are
   dropped by the restore, as the delete would have done;
-- `restore` checks keys and references **before it writes anything**,
-  every `UNIQUE` index included, partial ones too (a Student who unlinks
-  and links again during the backup can leave two live Links in it): a
-  backup that would not insert cleanly is refused with a report, never
-  half-restored. Take the next night's backup then.
+- a table read over several runs, minutes apart, is checked before the
+  backup moves on: when its rows are all written, its keys on every
+  `UNIQUE` index (partial ones too) are compared across all its parts.
+  A Student who unlinks and links again between two runs would leave two
+  live Links in the backup; the part holding the stale row is then read
+  again over its key range, as the database has it now, until no key
+  repeats. Each row's key is kept as an 8-byte hash per index, saved
+  between runs under `backups/<UTC time>.check/` (one object per run
+  that stopped inside the table, so the check reads one object per run,
+  not one per part) and deleted when the table is done. At its peak the
+  check holds about **16 bytes per row per `UNIQUE` index** (the hashes
+  and a sorted copy of one index's), so a Worker's 128 MB takes a table
+  of roughly 4 to 5 million rows per index. If keys still repeat after
+  three re-reads, the whole keys are compared (a hash collision passes)
+  and a real repeat fails the run with the table and index named
+  (retried, then emailed). A part re-read must stay near a part: when
+  more than twice `part_rows` rows (or twice `part_mb`) were written
+  into its key range meanwhile (a large roster import under keys that
+  are not in time order, say), the run fails naming the table rather
+  than hold them all in memory; the next night's backup starts over. So
+  **a backup marked done restores** as far as the Kernel's tables go: a
+  Module table whose foreign key is `ON DELETE SET NULL` (or `RESTRICT`,
+  or none) can still hold a child of a row deleted during the backup,
+  which the restore refuses, as it drops only `ON DELETE CASCADE`
+  orphans;
+- `restore` checks keys and references again **before it writes
+  anything**: a backup that would not insert cleanly (hand-edited, or
+  from an older build) is refused with a report, never half-restored.
+
+**Progress size.** The saved progress lists every part written so far
+with the FileStore keys its rows name, and every object copied: it grows
+with the number of parts and of objects, as the manifest does (each key
+once per part that names it), and is rewritten before each new part.
+
+**Restore memory.** `harpseal restore` runs natively only (never in a
+Worker) and holds every row of the backup in memory while it checks keys
+and references before writing: plan on about **7 times the size of the
+`tables/` entries** (measured: 32 MB of NDJSON, 400,000 rows, took
+about 210 MB more at its peak, an in-memory database included), plus the
+largest file. A backup with 1 GB of tables wants a machine with 8 GB.
 
 **Retention.** After each successful backup, runs started more than
 `retention_days` ago (finished or failed) are deleted with their objects,

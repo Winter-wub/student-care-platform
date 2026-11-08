@@ -167,7 +167,7 @@ A unit of deferred or scheduled work stored in the database and run by the Kerne
 _Avoid_: cron, task, queue message
 
 **Backup** (ชุดสำรองข้อมูล):
-A copy of a Deployment's database and files, in backup format 1, that `harpseal restore` loads into an empty Deployment. A Job takes one every night into the Deployment's own file storage and keeps them for a set number of days; `harpseal backup` takes one by hand. "Download all data" (an Excel workbook without secrets) is a data export, not a Backup: it cannot be restored.
+A copy of a Deployment's database and files, in the backup format of ADR-0008 (format 2: each table in ordered parts), that `harpseal restore` loads into an empty Deployment. A Job takes one every night into the Deployment's own file storage and keeps them for a set number of days; `harpseal backup` takes one by hand. "Download all data" (an Excel workbook without secrets) is a data export, not a Backup: it cannot be restored.
 _Avoid_: dump, snapshot, export
 
 **Setting** (ค่าตั้งค่า):
