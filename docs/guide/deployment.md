@@ -293,6 +293,7 @@ add no logic of their own:
 | `harpseal::modules::announcements::create_draft(d, &NewAnnouncement, actor, ctx)` | `announcements.send` | `announcement.create` |
 | `harpseal::modules::announcements::confirm(d, id, version, actor, ctx)` | `announcements.send` | `announcement.send` / `.schedule` |
 | `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.setting.edit` | `setting.update` |
+| `d.settings().save(key, value, actor, ctx)` ([settings](settings.md#saving-from-code)) | the Setting's own; none for `Actor::System` / `Actor::Job` | `setting.update` |
 
 `RequestCtx::cli().seeded()` adds `"seed": true` to the `after` of every
 audit row written with it, so demo data stays distinguishable

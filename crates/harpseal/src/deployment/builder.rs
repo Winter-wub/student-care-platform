@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+mod checks;
+
 use super::routes::Routes;
 use super::{Deployment, Registry, Route};
 use crate::config::DeploymentConfig;
@@ -89,6 +91,7 @@ impl DeploymentBuilder {
         let kernel: Box<dyn Module> = Box::new(Kernel);
         let mut collected = Collected::default();
         let mut names: Vec<&'static str> = Vec::new();
+        checks::module_names(&self.modules)?;
         for m in std::iter::once(&kernel).chain(self.modules.iter()) {
             if names.contains(&m.name()) {
                 return Err(BuildError::DuplicateModule(m.name().into()));
@@ -107,7 +110,7 @@ impl DeploymentBuilder {
             collected.schedules.push(s);
         }
         let mut catalog = collected.catalog;
-        check_toml_texts(&config, &catalog)?;
+        checks::toml_texts(&config, &catalog)?;
         config.apply_texts(&mut catalog);
         check_menu_texts(&collected.menu, &catalog)?;
         check_menu_keys(&catalog)?;
@@ -199,6 +202,7 @@ impl Default for Collected {
 impl Collected {
     fn absorb(&mut self, r: ModuleRegistrar) -> Result<(), BuildError> {
         let module = r.module;
+        checks::kernel_namespace(&r)?;
         for (id, h) in r.actions {
             if self.actions.contains_key(&id) {
                 return Err(BuildError::DuplicateAction(id));
@@ -381,18 +385,4 @@ fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::NavItem> {
         .collect();
     items.sort_by_key(|n| n.order);
     items
-}
-
-/// `[texts]` may only override keys some Module declares: a typo would
-/// otherwise be ignored silently.
-fn check_toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result<(), BuildError> {
-    for (locale, entries) in &config.texts {
-        if let Some(key) = entries.keys().find(|k| !catalog.knows(k)) {
-            return Err(BuildError::UnknownText {
-                source: format!("deployment.toml [texts.{locale}]"),
-                key: key.clone(),
-            });
-        }
-    }
-    Ok(())
 }

@@ -1,7 +1,8 @@
 //! The example's Fees bank account (#75): a Module setting Finance edits
 //! on `/admin/settings` and the Student sees on "My fees" in the Mini App.
 //! Administrators hold `kernel.setting.edit` but not the setting's own
-//! Permission: they see it read-only.
+//! Permission: they see it read-only. The account has no default (#103):
+//! Students see "not set" until Finance saves one.
 
 use example_deployment::{Secrets, builder, fees};
 use harpseal::Statement;
@@ -87,10 +88,29 @@ async fn finance_changes_the_bank_account_the_student_sees_next() {
     assert!(home.contains("href=\"/app/fees\""), "{home}");
     let page = student.get(fees::student::PATH).await.body;
     assert!(page.contains("12,500.00 บาท"), "{page}");
-    assert!(page.contains("ธนาคารทะเลใส สาขาอ่าวแมวน้ำ"));
-    assert!(page.contains(">000-0-00000-0</strong>"), "{page}");
+    assert!(!page.contains("ธนาคารทะเลใส"), "{page}");
+    assert!(
+        page.contains("id=\"not-set\""),
+        "no account saved yet: {page}"
+    );
 
     let finance = signed_in(&h, &app, "Finance").await;
+    // The page tells Finance it is not set, not that a saved value failed.
+    let admin_page = finance.get("/admin/settings").await.body;
+    assert!(
+        admin_page.contains("id=\"setting-fees-bank_account-unset\""),
+        "{admin_page}"
+    );
+    assert!(!admin_page.contains("flash err"), "not a failed check");
+    assert_eq!(
+        save(&finance, fees::BANK_ACCOUNT, "123-4-56789-0")
+            .await
+            .status,
+        303
+    );
+    let page = student.get(fees::student::PATH).await.body;
+    assert!(page.contains(">123-4-56789-0</strong>"), "{page}");
+    assert!(page.contains("ธนาคารทะเลใส สาขาอ่าวแมวน้ำ"));
     assert_eq!(
         save(&finance, fees::BANK_NAME, "ธนาคารอ่าวคราม สาขาหาดทราย")
             .await
@@ -136,8 +156,8 @@ async fn the_account_number_takes_digits_only_and_a_bad_row_shows_not_set() {
     assert_eq!(page.status, 200);
     assert!(page.body.contains("ยังไม่ได้ตั้งค่า"), "{}", page.body);
     assert!(
-        !page.body.contains("000-0-00000-0"),
-        "not the default account"
+        !page.body.contains("0-54321-0-000"),
+        "not the broken account"
     );
 }
 
@@ -160,13 +180,8 @@ async fn an_administrator_sees_the_bank_account_but_cannot_change_it() {
         )
         .await;
     assert_eq!(r.status, 403);
-    let account = app
-        .deployment()
-        .settings()
-        .text(fees::BANK_ACCOUNT)
-        .await
-        .unwrap();
-    assert_eq!(account, "000-0-00000-0");
+    let account = app.deployment().settings().text(fees::BANK_ACCOUNT).await;
+    assert!(matches!(account, Err(harpseal::Error::SettingNotSet(_))));
 }
 
 #[tokio::test]

@@ -3,7 +3,8 @@
 //! bank account to pay into, the Module settings [`super::BANK_NAME`] and
 //! [`super::BANK_ACCOUNT`] read fresh on every view, so a change on
 //! `/admin/settings` shows on the next open. A saved value that fails its
-//! check shows "not set", never a default account.
+//! check, or one nobody has saved yet ([`super::BANK_ACCOUNT`] has no
+//! default), shows "not set", never a placeholder account.
 //!
 //! Like "My info", the handler takes [`AppStudent`] and nothing else from
 //! the request: no URL or form value can show another Student's balance.

@@ -15,7 +15,7 @@ pub use super::setting_kind::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind};
 use crate::error::BuildError;
 use crate::manifest::{Catalog, Permission};
 use crate::port_types::{Statement, Value};
-use crate::{Error, Result, Services};
+use crate::{Actor, Error, RequestCtx, Result, Services};
 
 /// One declared setting.
 #[derive(Debug, Clone)]
@@ -23,7 +23,8 @@ pub(crate) struct SettingSpec {
     pub(crate) module: &'static str,
     pub(crate) key: &'static str,
     pub(crate) kind: SettingKind,
-    pub(crate) default: &'static str,
+    /// `None`: no default, the setting is unset until its first save.
+    pub(crate) default: Option<&'static str>,
     pub(crate) permission: &'static str,
     pub(crate) label_key: &'static str,
     pub(crate) help_key: &'static str,
@@ -41,8 +42,7 @@ impl ModuleRegistrar {
     /// `build()` refuses ([`crate::BuildError::InvalidSetting`]) a key
     /// that does not start with the Module's name and `.`, holds anything
     /// but `a-z`, `0-9`, `_` and `.`, is longer than 64 bytes or declared
-    /// twice, starts with `kernel.` (outside the Kernel) or is also a
-    /// catalog text key; a `default` its `kind` refuses; an undeclared
+    /// twice or is also a catalog text key; a `default` its `kind` refuses; an undeclared
     /// `permission`; and a label or help key without a text in the default
     /// Locale. See `docs/guide/settings.md`.
     pub fn setting(
@@ -50,6 +50,36 @@ impl ModuleRegistrar {
         key: &'static str,
         kind: SettingKind,
         default: &'static str,
+        permission: &'static str,
+        label_key: &'static str,
+        help_key: &'static str,
+    ) -> &mut Self {
+        self.declare(key, kind, Some(default), permission, label_key, help_key)
+    }
+
+    /// Like [`ModuleRegistrar::setting`] but with no default (#103): for a
+    /// value no placeholder can stand in for, such as the bank account
+    /// Students pay into. Reading it returns [`Error::SettingNotSet`]
+    /// until the first save, and `/admin/settings` shows it as "not set
+    /// yet". Everything else (the checks at `build()`, the Permission,
+    /// the audit row) is as for `setting`; the first save's audit row has
+    /// a `null` value before.
+    pub fn setting_without_default(
+        &mut self,
+        key: &'static str,
+        kind: SettingKind,
+        permission: &'static str,
+        label_key: &'static str,
+        help_key: &'static str,
+    ) -> &mut Self {
+        self.declare(key, kind, None, permission, label_key, help_key)
+    }
+
+    fn declare(
+        &mut self,
+        key: &'static str,
+        kind: SettingKind,
+        default: Option<&'static str>,
         permission: &'static str,
         label_key: &'static str,
         help_key: &'static str,
@@ -155,7 +185,8 @@ impl Settings {
     }
 
     /// The value of `key`: the saved one, or the default when none is
-    /// saved. An undeclared key is an [`Error::Invalid`] (a programming
+    /// saved ([`Error::SettingNotSet`] for a setting declared without a
+    /// default, until its first save). An undeclared key is an [`Error::Invalid`] (a programming
     /// error). A saved value that no longer passes its kind's check (a
     /// restored row, a Module that changed the kind or a check tightened
     /// since) is [`Error::SettingNotSet`], never the default in its place,
@@ -168,13 +199,78 @@ impl Settings {
             .spec(key)
             .ok_or_else(|| Error::Invalid(format!("no Module declares setting `{key}`")))?;
         let value = match self.stored(key).await? {
-            None => spec.default.to_string(),
+            None => match spec.default {
+                Some(d) => d.to_string(),
+                None => return Err(Error::SettingNotSet(key.to_string())),
+            },
             Some((v, _, _)) => match spec.kind.check(&v) {
                 Ok(ok) if ok == v => v,
                 _ => return Err(Error::SettingNotSet(key.to_string())),
             },
         };
         Ok(SettingValue::of(spec.kind, value))
+    }
+
+    /// Saves `value` as the value of `key`: for a Deployment's seed, CLI
+    /// or Job code that must set a Setting (#103), through the very path
+    /// of `/admin/settings`. The kind's check applies and the value is
+    /// stored as the check returns it; a compare-and-set write and its
+    /// `setting.update` audit row (value before, `null` while unset, and
+    /// after) go in one batch. Saving the value a setting already has
+    /// writes nothing.
+    ///
+    /// `actor` decides the Permission check: Staff must be active and hold
+    /// the setting's own Permission (a CLI cannot bypass Roles, as with
+    /// `roster::upload`), [`Actor::System`] and [`Actor::Job`] are the
+    /// Deployment's own code and need none, and a Student is
+    /// [`Error::Forbidden`]. An undeclared key or a value the kind refuses
+    /// is [`Error::Invalid`]; a row changed by someone else meanwhile is
+    /// [`Error::Conflict`] (nothing written).
+    pub async fn save(
+        &self,
+        key: &str,
+        value: &str,
+        actor: &Actor,
+        ctx: &RequestCtx,
+    ) -> Result<()> {
+        let spec = self
+            .spec(key)
+            .ok_or_else(|| Error::Invalid(format!("no Module declares setting `{key}`")))?;
+        match actor {
+            Actor::Staff(_) => {
+                crate::auth::roles::require(&self.services, actor, spec.permission).await?;
+            }
+            Actor::System | Actor::Job(_) => {}
+            _ => {
+                return Err(Error::Forbidden {
+                    permission: spec.permission.to_string(),
+                });
+            }
+        }
+        let value = spec
+            .kind
+            .check(value)
+            .map_err(|why| Error::Invalid(format!("setting `{key}`: {why}")))?;
+        let stored = self.stored(key).await?.map(|(v, _, _)| v);
+        let before = stored.as_deref().or(spec.default);
+        if before == Some(value.as_str()) {
+            return Ok(());
+        }
+        let saved = crate::kernel::admin::write_setting(
+            &self.services,
+            actor,
+            spec,
+            &value,
+            stored.as_deref(),
+            ctx,
+        );
+        if saved.await? {
+            Ok(())
+        } else {
+            Err(Error::Conflict(format!(
+                "setting `{key}` changed meanwhile"
+            )))
+        }
     }
 
     /// The value of `key` as text, whatever its kind.
@@ -260,19 +356,18 @@ fn invalid(spec: &SettingSpec, others: &[SettingSpec]) -> Option<String> {
     if !k.bytes().all(chars) {
         return Some("the key may hold only a-z, 0-9, `_` and `.`".into());
     }
-    // A Module named `kernel.x` must not reach the Kernel's own rows
-    // (the Consent version, `kernel.backup.notified`, …).
-    if spec.module != crate::kernel::NAME && k.starts_with("kernel.") {
-        return Some("only the Kernel declares `kernel.` keys".into());
-    }
+    // No Module but the Kernel can start with `kernel.` (`build()` refuses
+    // the name first), so the prefix rule above keeps Modules off the
+    // Kernel's own rows (`kernel.backup.notified`, …).
     if k == crate::kernel::text::CONSENT_VERSION_KEY {
         return Some("the Consent version is not a Module setting".into());
     }
     if others.iter().any(|o| o.key == k) {
         return Some("declared twice".into());
     }
-    match spec.kind.check(spec.default) {
-        Ok(v) if v == spec.default => None,
+    let default = spec.default?;
+    match spec.kind.check(default) {
+        Ok(v) if v == default => None,
         Ok(_) => Some("the default must be stored as is (trimmed, LF line breaks)".into()),
         Err(why) => Some(format!("the default is refused by its kind ({why})")),
     }

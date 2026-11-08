@@ -26,6 +26,16 @@ pub(super) const TEXTS: &[E] = th_en![
         "Default"
     ),
     (
+        "kernel.admin.module_settings.unset_value",
+        "ยังไม่ได้ตั้งค่า",
+        "Not set yet"
+    ),
+    (
+        "kernel.admin.module_settings.unset_text",
+        "ยังไม่ได้ตั้งค่า จนกว่าผู้มีสิทธิ์จะบันทึกค่านี้ นักศึกษาจะเห็นว่ายังไม่ได้ตั้งค่า",
+        "Not set yet. Until Staff holding its Permission save a value, Students see it as not set."
+    ),
+    (
         "kernel.admin.module_settings.updated",
         "แก้ไขล่าสุด",
         "Last changed"

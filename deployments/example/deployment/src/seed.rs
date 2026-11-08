@@ -6,7 +6,10 @@
 //!
 //! It imports the 50-Student roster ([`ROSTER_CSV`], upsert mode, applied
 //! at once by running the import Jobs), creates 3 draft announcements and
-//! 1 scheduled a week ahead, and overrides 2 texts. Re-running adds
+//! 1 scheduled a week ahead, overrides 2 texts and saves the fees bank
+//! account ([`BANK_ACCOUNT`], a fictional number, as the system through
+//! [`harpseal::Settings::save`]: no Staff holds `fees.bank_account.edit`
+//! but Finance). Re-running adds
 //! nothing twice: the import is an upsert, announcements are matched by
 //! their Thai title, and a text that already has any override (the seed's
 //! or one an Administrator customised) is left alone. It is refused on a
@@ -25,6 +28,8 @@ use harpseal::audience::Audience;
 use harpseal::modules::announcements::{self, NewAnnouncement};
 use harpseal::roster::{self, Confirmed, Uploaded};
 use harpseal::{Actor, Deployment, RequestCtx, Statement};
+
+use crate::fees;
 
 /// The example roster: 50 fictional Students (`data/roster.csv`).
 pub const ROSTER_CSV: &[u8] = include_bytes!("../../data/roster.csv");
@@ -53,6 +58,9 @@ pub const TEXT_OVERRIDES: [(&str, &str, &str); 2] = [
     ),
 ];
 
+/// The fees bank account the seed saves (fictional).
+pub const BANK_ACCOUNT: &str = "000-1-23456-7";
+
 /// Most ticks spent waiting for the roster import to finish.
 const MAX_TICKS: usize = 100;
 
@@ -71,6 +79,9 @@ pub struct SeedReport {
     /// Text overrides written now (0 on a re-run, and for every text that
     /// already had an override).
     pub texts_written: usize,
+    /// Module settings saved now (0 on a re-run, and for every setting
+    /// that already has a valid value).
+    pub settings_written: usize,
 }
 
 impl std::fmt::Display for SeedReport {
@@ -78,12 +89,13 @@ impl std::fmt::Display for SeedReport {
         write!(
             f,
             "seeded as {}: roster import {} ({} Students), {} announcements created, \
-             {} texts written",
+             {} texts and {} settings written",
             self.acting_as,
             self.import_id,
             self.students,
             self.announcements_created,
-            self.texts_written
+            self.texts_written,
+            self.settings_written
         )
     }
 }
@@ -178,13 +190,32 @@ pub async fn seed(
             texts_written += 1;
         }
     }
+    let settings_written = bank_account(d, &ctx).await?;
     Ok(SeedReport {
         acting_as,
         import_id,
         students: count(d, "SELECT count(*) FROM student").await?,
         announcements_created,
         texts_written,
+        settings_written,
     })
+}
+
+/// Saves [`BANK_ACCOUNT`] unless the setting already has a value (the
+/// seed's or one Finance saved): 1 if written, else 0. The audit row is
+/// the system's, marked as seed data.
+async fn bank_account(d: &Deployment, ctx: &RequestCtx) -> Result<usize, SeedError> {
+    let settings = d.settings();
+    match settings.get(fees::BANK_ACCOUNT).await {
+        Ok(_) => Ok(0),
+        Err(harpseal::Error::SettingNotSet(_)) => {
+            settings
+                .save(fees::BANK_ACCOUNT, BANK_ACCOUNT, &Actor::System, ctx)
+                .await?;
+            Ok(1)
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Whether `key` in `locale` already has a `setting` row (any value).

@@ -25,12 +25,46 @@ A Setting holds one value for the whole Deployment, not one per Locale
 
 - a key that is not `<module name>.<name>` (a-z, 0-9, `_`, `.`, at most
   64 bytes), or declared twice;
-- a `kernel.` key from any Module but the Kernel (a Module named
-  `kernel.backup` cannot reach the Kernel's `kernel.backup.notified`);
+- a Module named `kernel` or `kernel.…`, or a Permission, Action id,
+  Action prefix or text key starting with `kernel.` from any Module but
+  the Kernel (`BuildError::KernelNamespace`, naming the key). A Module
+  named `kernel.backup` could otherwise reach the Kernel's
+  `kernel.backup.notified`;
 - a key that is also a catalog text key: give the label its own key;
 - a default its kind refuses or would change (it must be stored as is);
 - an undeclared Permission, and a label or help key without a text in
   the default Locale.
+
+## With no default
+
+Some values have no sensible placeholder: a bank account Students would
+pay into. Declare it without a default (#103) and Students never see a
+made-up value:
+
+```rust
+r.setting_without_default(
+    "fees.bank_account",
+    SettingKind::AccountNumber,
+    "fees.bank_account.edit",
+    "fees.bank_account_label",
+    "fees.bank_account_help",
+);
+```
+
+- `settings.get/text/number(key)` return `Error::SettingNotSet(key)` until
+  the first save, then the saved value. Show "not set" for this error
+  only, as for a saved value that fails its check.
+- `/admin/settings` marks it "not set yet" (a chip, and for read-only
+  Staff a line saying so). That differs from a saved value failing its
+  check, which keeps its red "no longer passes its check" flag. Staff with
+  the Permission save it like any other Setting; the first save's audit
+  row has `null` as the value before.
+- A backup carries it as it is: no row is unset, a row is set.
+- Every `build()` check above applies, except the default's.
+
+Existing Settings with a default behave as before. `setting(..)` is
+unchanged; a separate method keeps every current Module compiling and the
+call self-describing (an `Option` default would break each caller).
 
 ## Kinds
 
@@ -84,13 +118,34 @@ appears in the navigation for Staff who can see at least one:
   text and `number(key)` an `i64`.
 - Each read goes to the database, so a change shows on the next page view
   or Job run.
-- `Error::SettingNotSet(key)` when the saved value fails its kind's check
+- `Error::SettingNotSet(key)` for a Setting with no default that nobody
+  has saved yet, and when the saved value fails its kind's check
   (a restored row, a kind or check changed since). Such a value is never
   replaced by the default, which could show Students an outdated bank
   account: show "not set" for this error only.
 - `Error::Invalid` for an undeclared key or `number` on another kind (a
   programming error), and any other error (the database) as is: answer
   both as a failure, never as "not set" (the example answers 500).
+
+## Saving from code
+
+A Deployment's demo seed, CLI or Job sets a Setting through
+`Settings::save`, not by writing the `setting` table:
+
+```rust
+d.settings()
+    .save("fees.bank_account", "123-4-56789-0", &Actor::System, &RequestCtx::cli().seeded())
+    .await?;
+```
+
+It applies the kind's check (a refused value is `Error::Invalid`, nothing
+written), stores the value as the check returns it and writes the same
+`setting.update` audit row in the same batch as `/admin/settings`. The
+same value again writes nothing; a row someone else changed meanwhile is
+`Error::Conflict`. The actor decides the Permission check: `Actor::Staff`
+must be active and hold the Setting's own Permission, `Actor::System` and
+`Actor::Job` are the Deployment's own code and need none, and
+`Actor::Student` is `Error::Forbidden`.
 
 ## Storage and backups
 
@@ -103,9 +158,11 @@ of the table.
 ## The example
 
 The Fees Module (`deployments/example/deployment/src/fees.rs`) declares
-`fees.bank_name` (`Text`) and `fees.bank_account` (`AccountNumber`), both
-edited with `fees.bank_account.edit`, which only the `Finance` Role holds
+`fees.bank_name` (`Text`, with a default) and `fees.bank_account`
+(`AccountNumber`, no default), both edited with `fees.bank_account.edit`, which only the `Finance` Role holds
 (Administrators see them read-only). The Student's Mini App page
 `/app/fees` (`fees/student.rs`) shows them beside the Student's own
-outstanding balance, or "not set" when a saved value fails its check
-(`Error::SettingNotSet`); any other error is a 500.
+outstanding balance, or "not set" while the account is unset or a saved
+value fails its check (`Error::SettingNotSet`); any other error is a 500.
+`harpseal seed-example` saves a fictional account with `Settings::save` as
+the system (not overwriting one Finance saved).

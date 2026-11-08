@@ -69,7 +69,15 @@ pub(super) async fn write(
     let relink =
         |gate: &str| crate::kernel::menu::on_save(d, &stored, key, locale, Some(&value), gate);
     let done = settings::save(
-        s, actor, key, locale, &value, expected, before, ctx, &relink,
+        s,
+        actor,
+        key,
+        locale,
+        &value,
+        expected,
+        Some(before),
+        ctx,
+        &relink,
     )
     .await?;
     Ok(Written::Saved(done))
