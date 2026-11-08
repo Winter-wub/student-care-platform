@@ -20,7 +20,7 @@ use serde_json::json;
 
 use super::store;
 use crate::audit::{self, Actor, RequestCtx, Target};
-use crate::backup::{FileStoreBackup, MANIFEST, Manifest, file_entry, table_entry};
+use crate::backup::{FileStoreBackup, Manifest};
 use crate::kernel::admin::view::View;
 use crate::{AppState, CurrentStaff, Error, FileStore, Result};
 
@@ -61,14 +61,7 @@ pub(super) async fn tar(
         Ok(m) => m,
         Err(e) => return v.error(&e),
     };
-    let mut names: VecDeque<String> = VecDeque::from([MANIFEST.to_string()]);
-    names.extend(m.tables.iter().map(|t| table_entry(&t.name)));
-    names.extend(
-        m.files
-            .iter()
-            .filter(|f| !f.missing)
-            .map(|f| file_entry(&f.key)),
-    );
+    let names: VecDeque<String> = m.entries().into();
     let dir = run
         .prefix
         .trim_end_matches('/')

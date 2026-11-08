@@ -4,7 +4,7 @@
 //!
 //! [`dump`] writes named entries to a [`BackupSink`]; [`load`] reads them
 //! back from a [`BackupSource`]. The `harpseal backup` / `restore` commands
-//! use a directory; tests use [`MemoryBackup`]. A backup (format 1) holds:
+//! use a directory; tests use [`MemoryBackup`]. A backup (format 2) holds:
 //!
 //! - `manifest.json`: a [`Manifest`]: format, Deployment name, when it was
 //!   taken, the applied migrations in order, each table's columns, row
@@ -12,8 +12,16 @@
 //!   SHA-256.
 //!   Each table's entry is pinned by its SHA-256 too, so the manifest's
 //!   own hash (recorded by the restore's audit row) pins the whole backup.
-//! - `tables/<table>.ndjson`: one JSON object per row, every column, in
-//!   primary-key order (`rowid` order for a table without a primary key).
+//! - each table's rows in one or more **parts** (#88), in order:
+//!   `tables/<table>.ndjson`, then `tables/<table>/00001.ndjson`,
+//!   `tables/<table>/00002.ndjson`, …; one JSON object per row, every
+//!   column, in primary-key order (`rowid` order for a table without a
+//!   primary key) across the parts. A part ends at `[backup] part_rows`
+//!   rows or once it passes `part_mb`, or where a nightly Job step ended,
+//!   so no step holds more than a part in memory. Each part is pinned by
+//!   its SHA-256 and row count. Format 1 (before #88) is the same with
+//!   one entry per table, pinned by `sha256` on the table; a restore reads
+//!   both.
 //!   Live Verification challenges are left out (see `pages.rs`). Values
 //!   keep their SQLite type: `null`, integers as `42`, reals as `3.0`, text
 //!   as strings, blobs as `{"$blob": "<base64>"}`.
@@ -60,6 +68,7 @@ mod check;
 mod dump;
 mod load;
 mod pages;
+mod parts;
 pub(crate) mod progress;
 pub(crate) mod schema;
 mod store;
@@ -80,8 +89,9 @@ pub use dump::dump;
 pub use load::load;
 pub use store::FileStoreBackup;
 
-/// The backup format this build writes and reads.
-pub const FORMAT: u32 = 1;
+/// The backup format this build writes. It reads this one and format 1
+/// (one entry per table, no parts).
+pub const FORMAT: u32 = 2;
 /// Name of the manifest entry.
 pub const MANIFEST: &str = "manifest.json";
 /// Rows read per query, and statements per insert batch.
@@ -162,13 +172,35 @@ impl Manifest {
         let raw = source.read(MANIFEST).await?;
         let m: Manifest = serde_json::from_slice(&raw)
             .map_err(|e| Error::Invalid(format!("backup {MANIFEST}: {e}")))?;
-        if m.format != FORMAT {
+        if m.format != 1 && m.format != FORMAT {
             return Err(Error::Invalid(format!(
-                "backup format {} is not supported (this build reads format {FORMAT})",
+                "backup format {} is not supported (this build reads formats 1 and {FORMAT})",
                 m.format
             )));
         }
+        if m.format == 1
+            && let Some(t) = m.tables.iter().find(|t| !t.parts.is_empty())
+        {
+            return Err(Error::Invalid(format!(
+                "backup {MANIFEST}: table {} has parts, which format 1 does not have",
+                t.name
+            )));
+        }
         Ok((m, raw))
+    }
+
+    /// Every entry the manifest names: itself, each table's parts and
+    /// each object that was not missing.
+    pub fn entries(&self) -> Vec<String> {
+        let mut names = vec![MANIFEST.to_string()];
+        names.extend(self.tables.iter().flat_map(ManifestTable::entries));
+        names.extend(
+            self.files
+                .iter()
+                .filter(|f| !f.missing)
+                .map(|f| file_entry(&f.key)),
+        );
+        names
     }
 }
 
@@ -188,16 +220,46 @@ pub struct ManifestMigration {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ManifestTable {
-    /// Table name; its rows are in `tables/<name>.ndjson`.
+    /// Table name; its rows are in [`ManifestTable::parts`], or, without
+    /// parts (format 1), in `tables/<name>.ndjson`.
     pub name: String,
-    /// Rows dumped.
+    /// Rows dumped, in all its parts.
     pub rows: u64,
-    /// SHA-256 of the entry's exact bytes.
+    /// Format 1: SHA-256 of the one entry's exact bytes. Empty (and not
+    /// written) when the table has parts.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub sha256: String,
+    /// Format 2: the table's parts, in order; part `n` is entry
+    /// [`part_entry`]`(name, n)`. Empty in format 1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ManifestPart>,
     /// Every column, in table order.
     pub columns: Vec<String>,
     /// `sqlite_master.sql` when the dump was taken.
     pub sql: String,
+}
+
+impl ManifestTable {
+    /// The entries holding its rows, in order.
+    pub fn entries(&self) -> Vec<String> {
+        if self.parts.is_empty() {
+            vec![table_entry(&self.name)]
+        } else {
+            self.parts.iter().map(|p| p.entry.clone()).collect()
+        }
+    }
+}
+
+/// One part of a table (format 2): a run of its rows, in key order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ManifestPart {
+    /// Entry name: [`part_entry`] of the table and the part's index.
+    pub entry: String,
+    /// Rows in it.
+    pub rows: u64,
+    /// SHA-256 of its exact bytes.
+    pub sha256: String,
 }
 
 /// One FileStore object.
@@ -312,9 +374,20 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     crate::id::hex(&Sha256::digest(bytes))
 }
 
-/// Entry name of a table's rows.
+/// Entry name of a table's rows in format 1, and of its first part.
 pub(crate) fn table_entry(table: &str) -> String {
     format!("tables/{table}.ndjson")
+}
+
+/// Entry name of part `n` of `table` (from 0): the first is the format-1
+/// name, so a table of one part is laid out as in format 1; the others
+/// are `tables/<table>/<n, five digits>.ndjson`.
+pub fn part_entry(table: &str, n: usize) -> String {
+    if n == 0 {
+        table_entry(table)
+    } else {
+        format!("tables/{table}/{n:05}.ndjson")
+    }
 }
 
 /// Entry name of the object stored under `key`.

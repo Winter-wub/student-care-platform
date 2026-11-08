@@ -5,8 +5,8 @@
 //! enabled = true            # default true
 //! schedule = "0 2 * * *"    # cron, in the Deployment's utc_offset (default 02:00)
 //! retention_days = 30       # default 30
-//! max_table_mb = 24         # default 24: largest table the Job dumps
-//! max_table_rows = 150000   # default 150,000
+//! part_mb = 8               # default 8: a table part ends past this size
+//! part_rows = 20000         # default 20,000: a table part ends at this many rows
 //! max_export_cells = 150000 # default 150,000: "Download all data" limit
 //! ```
 
@@ -29,18 +29,16 @@ pub struct BackupConfig {
     /// successful backup (never the newest successful one). Default 30,
     /// at least 1.
     pub retention_days: u32,
-    /// The largest table the Job dumps, in MB of NDJSON (estimated before
-    /// reading it). A table is one entry built in memory (format 1 has no
-    /// table parts yet, #88), and a Worker has 128 MB, with the entry held
-    /// about three times over while it is written to R2: default 24. A
-    /// larger table fails the run, naming it. On Workers there is no other
-    /// way yet (see the Backups guide); on a native server raise it, or use
-    /// `harpseal backup`.
-    pub max_table_mb: u32,
-    /// The most rows of one table the Job dumps: default 150,000, that is
-    /// 300 D1 queries of 500 rows, so the table fits one step's 350
-    /// subrequests. Larger fails the run like `max_table_mb`.
-    pub max_table_rows: u64,
+    /// A table is backed up in parts (#88, format 2); a part ends once its
+    /// NDJSON passes this many MB (by at most one page of 500 rows). One
+    /// part is built in memory at a time, held about three times over while
+    /// it is written to R2, and a Worker has 128 MB: default 8. Any table
+    /// size is backed up; this bounds the memory, not the table.
+    pub part_mb: u32,
+    /// A part ends at this many rows: default 20,000, that is 40 D1
+    /// queries of 500 rows, well inside one step's 350 subrequests (a step
+    /// that runs out ends its part early anyway).
+    pub part_rows: u64,
     /// The most cells (rows × exported columns, all tables) "Download all
     /// data" builds; above it the page refuses before building anything.
     /// The workbook is built in memory at about 200 bytes per cell
@@ -56,8 +54,8 @@ impl Default for BackupConfig {
             enabled: true,
             schedule: "0 2 * * *".into(),
             retention_days: 30,
-            max_table_mb: 24,
-            max_table_rows: 150_000,
+            part_mb: 8,
+            part_rows: 20_000,
             max_export_cells: 150_000,
         }
     }
@@ -69,10 +67,9 @@ impl BackupConfig {
         crate::jobs::cron::parse(&self.schedule).map_err(|e| {
             crate::Error::Invalid(format!("[backup] schedule `{}`: {e}", self.schedule))
         })?;
-        if self.retention_days == 0 || self.max_table_mb == 0 || self.max_table_rows == 0 {
+        if self.retention_days == 0 || self.part_mb == 0 || self.part_rows == 0 {
             return Err(crate::Error::Invalid(
-                "[backup] retention_days, max_table_mb and max_table_rows must be at least 1"
-                    .into(),
+                "[backup] retention_days, part_mb and part_rows must be at least 1".into(),
             ));
         }
         Ok(())
@@ -91,14 +88,14 @@ mod tests {
         assert!(c.backup.enabled);
         assert_eq!(c.backup.schedule, "0 2 * * *");
         assert_eq!(c.backup.retention_days, 30);
-        assert_eq!(
-            (c.backup.max_table_mb, c.backup.max_table_rows),
-            (24, 150_000)
-        );
+        assert_eq!((c.backup.part_mb, c.backup.part_rows), (8, 20_000));
         for bad in [
             "[backup]\nschedule = \"@daily\"",
             "[backup]\nretention_days = 0",
-            "[backup]\nmax_table_mb = 0",
+            "[backup]\npart_mb = 0",
+            "[backup]\npart_rows = 0",
+            // The pre-#88 size refusal is gone, and its keys with it.
+            "[backup]\nmax_table_rows = 3",
             "[backup]\nkeep_days = 3",
         ] {
             assert!(

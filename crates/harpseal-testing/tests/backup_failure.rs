@@ -137,27 +137,6 @@ async fn a_run_that_stops_moving_is_failed_by_its_watch() {
 }
 
 #[tokio::test]
-async fn a_table_over_the_limit_fails_the_run_naming_it() {
-    let h = Harness::new();
-    let toml = "name = \"Seal Bay University\"\ndefault_locale = \"th\"\n\
-                utc_offset = \"+07:00\"\n[backup]\nmax_table_rows = 3\n";
-    let config = harpseal::DeploymentConfig::from_toml(toml).unwrap();
-    let app = h.boot(h.builder().config(config).build().unwrap()).await;
-    admin(&h, &app).await;
-    for i in 0..4 {
-        let email = format!("staff{i}@sealbay.example");
-        h.create_staff(&email, PASSWORD, &[]).await;
-    }
-    through_retries(&h, &app, NIGHT).await;
-    let row = query(h.db().as_ref(), "SELECT state, error FROM backup_run").await;
-    assert_eq!(row.rows[0][0].as_text(), Some("failed"));
-    let error = row.rows[0][1].as_text().unwrap();
-    assert!(error.contains("over the nightly backup's limit"), "{error}");
-    assert!(error.contains("harpseal backup"), "{error}");
-    assert!(error.contains("table "), "{error}");
-}
-
-#[tokio::test]
 async fn a_retention_failure_after_a_good_backup_is_told_apart() {
     let (h, app) = populated().await;
     let b = admin(&h, &app).await;

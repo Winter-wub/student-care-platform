@@ -12,8 +12,8 @@ without stopping (#78):
 enabled = true            # default; false stops the schedule only
 schedule = "0 2 * * *"    # cron, in utc_offset (default 02:00)
 retention_days = 30       # default
-max_table_mb = 24         # default: largest table, as NDJSON
-max_table_rows = 150000   # default
+part_mb = 8               # default: a table part ends past this size
+part_rows = 20000         # default: a table part ends at this many rows
 max_export_cells = 150000 # default: "Download all data" limit
 ```
 
@@ -38,30 +38,29 @@ the Deployment must survive losing it. Each backup holds a full copy of
 the files, so the storage needed is about `retention_days` times the
 database and files together; the Backups page shows the total.
 
-**Steps and limits.** One Job run dumps whole tables until it has read
-50,000 rows, written 32 MB, copied 200 files or made 350 database queries
-and FileStore calls, saves where it stands
-as `backups/<UTC time>.progress.json` and hands over to the next run a
-minute later; a table that would overrun a run gets a run of its own. A
-table is one entry built in memory (format 1 has no table parts), held
-about three times over while it is written to R2, and read 500 rows per
-D1 query, so before reading a table the Job counts its rows and estimates
-its NDJSON size, and **fails the run naming the table** when it is over
-`max_table_rows` (150,000: 300 queries, so the table fits one step) or `max_table_mb` (24 MB: about 72 MB of a Worker's 128 MB).
-On Workers there is no fallback inside the Deployment for such a table
-yet: the nightly backup keeps refusing until backups can split tables
-(#88). Meanwhile back the database up with
-`npx wrangler@4 d1 export <database> --remote --output backup.sql`, which
-does **not** copy the files in R2 (copy those with R2's own tools). On a
-native server, `harpseal backup` has no such limit, and both settings can
-be raised freely.
+**Steps and limits.** One Job run reads tables 500 rows per D1 query
+until it has read 50,000 rows, written 32 MB, copied 200 files or made
+350 database queries and FileStore calls, saves where it stands as
+`backups/<UTC time>.progress.json` and hands over to the next run a
+minute later. **Any table size backs up** (#88, backup format 2): a
+table is written in parts, `tables/<table>.ndjson`, then
+`tables/<table>/00001.ndjson`, `00002`, …, each ending at `part_rows`
+rows (20,000: 40 queries), once it passes `part_mb` (8 MB, by at most
+one page of rows), or where a run's budget ran out; the next run reads
+on after the last key of the last part. One part at a time is built in
+memory, held about three times over while it is written to R2, so a run
+stays well inside a Worker's 128 MB whatever the table's size. Raise
+`part_mb` on a native server if you want fewer, larger parts; on Workers
+keep it at 8 or below. Before it writes a part, a run saves its progress
+naming that part, so a run that dies (and is retried, or fails and is
+pruned) leaves no part behind that nothing names.
 
 **Consistency while the Deployment runs.** D1 has no transactions, so the
 tables are not one point in time: a row written during the backup may or
 may not be in it. What the backup does promise:
 
-- each table entry is pinned by its SHA-256 and row count in the manifest,
-  and the manifest records `taken_at` and `finished_at`;
+- each table part is pinned by its SHA-256 and row count in the manifest,
+  in order, and the manifest records `taken_at` and `finished_at`;
 - a table is read in primary-key order, each page after the last key read,
   so a row deleted and re-inserted under the same key during the backup
   (a roster import replacing Tags, an edited announcement text) is in it

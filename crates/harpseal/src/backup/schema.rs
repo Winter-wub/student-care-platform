@@ -187,34 +187,6 @@ fn fires_on_insert(sql: &str) -> bool {
     words.windows(2).any(|w| w == ["INSERT", "ON"])
 }
 
-/// Rows in `t` and the bytes of its values (text and blobs by length,
-/// numbers by their text), in one scan: what a dump of it will hold.
-pub(crate) async fn size(db: &dyn Db, t: &Table) -> Result<(u64, u64)> {
-    let bytes: Vec<String> = t
-        .columns
-        .iter()
-        .map(|c| format!("total(length(CAST({} AS BLOB)))", quote(&c.name)))
-        .collect();
-    let sum = if bytes.is_empty() {
-        "0".to_string()
-    } else {
-        bytes.join(" + ")
-    };
-    let rows = db
-        .query(Statement::new(format!(
-            "SELECT count(*) AS n, {sum} AS b FROM {}",
-            quote(&t.name)
-        )))
-        .await?;
-    let n = rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0).max(0) as u64;
-    let b = match rows.get(0, "b") {
-        Some(Value::Real(x)) => *x as u64,
-        Some(Value::Integer(i)) => (*i).max(0) as u64,
-        _ => 0,
-    };
-    Ok((n, b))
-}
-
 /// Rows in `table`.
 pub(crate) async fn count(db: &dyn Db, table: &str) -> Result<u64> {
     let rows = db

@@ -21,32 +21,46 @@ use super::store::{self, Run};
 use super::{KIND, PREFIX, progress_key, prune, stamp};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::backup::FileStoreBackup;
-use crate::backup::progress::{Budget, DumpProgress, Step};
+use crate::backup::progress::{Budget, Checkpoint, DumpProgress, Step};
 use crate::delivery::Timestamp;
 use crate::manifest::Job;
 use crate::port_types::{Statement, Value};
 use crate::{Deployment, Error, JobContext, Result};
 
 /// What one Job run may dump before it saves and hands over (well inside
-/// a Worker's CPU, memory and subrequest limits), and the largest table it
-/// accepts (`[backup] max_table_mb`, `max_table_rows`).
+/// a Worker's CPU, memory and subrequest limits), with tables in parts
+/// as `[backup] part_mb` and `part_rows` size them (#88): any table size
+/// is backed up, over as many runs as it takes, holding one part at a
+/// time in memory.
 ///
 /// **Subrequests.** A Worker invocation may make 1,000, and one tick runs
-/// up to 25 Jobs in a single invocation. A step stops before a table or
+/// up to 25 Jobs in a single invocation. A step stops before a page or
 /// object would take its own queries past [`STEP_QUERIES`]; with the run's
 /// bookkeeping (about ten more) and, on the first step only, the schema
 /// read (two per table), a step stays near 400, leaving at least 550 for
 /// the other Jobs of its tick.
 fn budget(d: &Deployment) -> Budget {
-    let b = &d.config().backup;
     Budget {
         rows: 50_000,
         bytes: 32 * 1024 * 1024,
         files: 200,
         queries: STEP_QUERIES,
-        max_table_rows: b.max_table_rows,
-        max_table_bytes: u64::from(b.max_table_mb) * 1024 * 1024,
         pause_before_files: true,
+        ..Budget::unlimited(&d.config().backup)
+    }
+}
+
+/// Saves a run's progress in the middle of a step (before a part the saved
+/// progress does not name is written).
+struct SaveTo<'a> {
+    d: &'a Deployment,
+    key: &'a str,
+}
+
+#[async_trait::async_trait]
+impl Checkpoint for SaveTo<'_> {
+    async fn save(&self, p: &DumpProgress) -> Result<()> {
+        save(self.d, self.key, p).await
     }
 }
 /// Database queries and FileStore calls one step may make (see [`budget`]).
@@ -197,7 +211,11 @@ async fn step(d: &Deployment, id: &str, job: &Job) -> Result<()> {
         }
         None => return Err(Error::Invalid(format!("backup progress {key} is missing"))),
     };
-    match progress.step(d, &mut sink, budget(d)).await? {
+    let checkpoint = SaveTo { d, key: &key };
+    match progress
+        .step(d, &mut sink, budget(d), Some(&checkpoint))
+        .await?
+    {
         Step::More => {
             save(d, &key, &progress).await?;
             if store::advance(s, id, progress.bytes).await? {

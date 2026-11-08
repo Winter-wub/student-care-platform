@@ -10,7 +10,7 @@ use super::store::{self, Run};
 use super::{DAY_MS, progress_key};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::backup::progress::DumpProgress;
-use crate::backup::{FileStoreBackup, MANIFEST, Manifest, file_entry, table_entry};
+use crate::backup::{FileStoreBackup, MANIFEST, Manifest};
 use crate::manifest::Job;
 use crate::port_types::Statement;
 use crate::{Deployment, Error, Result, Services};
@@ -56,10 +56,7 @@ pub(super) async fn entries(s: &Services, r: &Run) -> Result<Vec<String>> {
     let backup = FileStoreBackup::new(s.files.clone(), r.prefix.clone());
     if s.files.get(&backup.key(MANIFEST)).await?.is_some() {
         let (m, _) = Manifest::read(&backup).await?;
-        let mut names = vec![MANIFEST.to_string()];
-        names.extend(m.tables.iter().map(|t| table_entry(&t.name)));
-        names.extend(m.files.iter().map(|f| file_entry(&f.key)));
-        return Ok(names);
+        return Ok(m.entries());
     }
     let Some(raw) = s.files.get(&progress_key(&r.prefix)).await? else {
         return Ok(Vec::new());

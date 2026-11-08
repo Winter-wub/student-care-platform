@@ -4,12 +4,11 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use super::check::{backed_migrations, check_columns, decode_table};
+use super::check::{backed_migrations, check_columns, read_table};
 use super::schema::{self, Table, quote};
 use super::verify::{Decoded, verify};
 use super::{
     BackupSource, LoadOptions, LoadReport, Manifest, ManifestFile, PAGE, file_entry, sha256_hex,
-    table_entry,
 };
 use crate::audit::{self, Actor};
 use crate::port_types::{Statement, Value};
@@ -27,7 +26,8 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 /// **Checks, before any row is written** (a refusal leaves the data as it
 /// was; step 2 may create tables in an empty database):
 ///
-/// 1. reads `manifest.json` (format 1 only) and checks each FileStore key;
+/// 1. reads `manifest.json` (format 2, or format 1 from before table
+///    parts) and checks each FileStore key;
 /// 2. checks, per Module, that the backup's migrations are the first of
 ///    that Module's here (same names and checksums, in order), and applies
 ///    just those ([`crate::migrate`], without the `[roles]` seed: the Roles
@@ -37,9 +37,10 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 ///    only when the database was already ahead of the backup), and that no
 ///    table of the backup has an `INSERT` trigger (refused: the inserts
 ///    would set it off once per row);
-/// 4. reads every table entry and FileStore object, checking each against
-///    its SHA-256 in the manifest and the row counts; the decoded rows stay
-///    in memory until they are inserted;
+/// 4. reads every table's parts in order and every FileStore object,
+///    checking each part's name, SHA-256 and row count against the
+///    manifest (a part missing, corrupted or out of order refuses); the
+///    decoded rows stay in memory until they are inserted;
 /// 5. checks the rows insert cleanly (`verify.rs`): no repeated primary or
 ///    `UNIQUE` key, and every foreign key resolves among the rows; a row
 ///    orphaned through an `ON DELETE CASCADE` key (its parent was deleted
@@ -123,8 +124,7 @@ pub async fn load(
     }
     let mut decoded: BTreeMap<String, Decoded<'_>> = BTreeMap::new();
     for mt in &manifest.tables {
-        let bytes = source.read(&table_entry(&mt.name)).await?;
-        let rows = decode_table(mt, &bytes)?;
+        let rows = read_table(source, mt).await?;
         let columns = &mt.columns;
         decoded.insert(mt.name.clone(), Decoded { columns, rows });
     }
