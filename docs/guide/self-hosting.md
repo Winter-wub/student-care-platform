@@ -230,7 +230,9 @@ the restore too**, so no tick or request writes in between. It:
    once per restored row);
 4. checks every table entry and every file against its SHA-256 and row
    count in the manifest, and every file key;
-5. refuses when any table has rows, unless `--force`;
+5. refuses when any table has rows, unless `--force`; with it, also empties
+   `role_seed` when the backup predates it, so the next `migrate` treats
+   the restored Roles as an upgrade, not as edits;
 6. puts each file back under its key (as `application/octet-stream`);
 7. inserts the rows parents first; the last batch also writes the audit row
    `backup.restore` (manifest SHA-256, counts, what `--force` deleted),

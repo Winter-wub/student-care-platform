@@ -1,8 +1,10 @@
 //! `[roles]` is seeded once (#110): an Administrator's edits on
 //! `/admin/roles` survive `migrate`, a pair new to the TOML still arrives
 //! (once), a database from before the rule is upgraded without a grant or a
-//! removal of its own, a deleted TOML Role stays deleted, and a restored
-//! backup keeps what was seeded.
+//! removal of its own, a deleted TOML Role stays deleted (and a Role Admin
+//! creates under its name inherits nothing), a restored backup keeps what
+//! was seeded, and a forced restore of a backup from before `role_seed`
+//! takes the upgrade path. Racing writers: `roles_seed_races.rs`.
 
 mod admin_support;
 mod support;
@@ -195,18 +197,74 @@ async fn a_deleted_toml_role_stays_deleted_and_a_new_name_is_created() {
     assert_eq!(flash(&admin), "ok:kernel.admin.roles.deleted");
 
     // Even with a Permission new to it in the TOML.
-    let d = with_roles(&h, |c| {
-        reader_with_usage(c).replace(
-            "[texts.th]",
-            "Auditor = [\"kernel.audit.view\"]\n\n[texts.th]",
-        )
-    });
+    let d = with_roles(&h, with_auditor);
     let created = audits(&h, "role.create").await;
     d.migrate().await.unwrap();
     d.migrate().await.unwrap();
     assert_eq!(role_id(&h, "Reader").await, None);
     assert_eq!(perms(&h, "Auditor").await, ["kernel.audit.view"]);
     assert_eq!(audits(&h, "role.create").await, created + 1);
+
+    // A Role Admin creates under the deleted name gets none of the TOML's
+    // Permissions: they were recorded while the name had no Role.
+    admin
+        .post("/admin/roles", "name=Reader&permission=kernel.audit.view")
+        .await;
+    assert_eq!(flash(&admin), "ok:kernel.admin.roles.created");
+    d.migrate().await.unwrap();
+    assert_eq!(perms(&h, "Reader").await, ["kernel.audit.view"]);
+}
+
+/// `CONFIG` with Reader also listing `kernel.usage.view` and a new Role.
+fn with_auditor(c: &str) -> String {
+    reader_with_usage(c).replace(
+        "[texts.th]",
+        "Auditor = [\"kernel.audit.view\"]\n\n[texts.th]",
+    )
+}
+
+#[tokio::test]
+async fn a_forced_restore_of_a_backup_from_before_role_seed_takes_the_upgrade_path() {
+    // A Deployment still at Kernel migration 0016, on the first TOML.
+    let old = Harness::new();
+    let d_old = with_roles(&old, str::to_string);
+    d_old.migrate().await.unwrap();
+    for sql in [
+        "DROP TABLE role_seed",
+        "DELETE FROM migration WHERE module = 'kernel' AND name = '0017_role_seed'",
+    ] {
+        old.db().execute(Statement::new(sql)).await.unwrap();
+    }
+    let mut b = MemoryBackup::new();
+    backup::dump(&d_old, &mut b).await.unwrap();
+    assert!(!b.entries.contains_key("tables/role_seed.ndjson"));
+
+    // The target is seeded with a TOML that grew since: Reader got a
+    // Permission, Auditor is new.
+    let h = Harness::new();
+    h.clock().advance_minutes(24 * 60);
+    let d = with_roles(&h, with_auditor);
+    d.migrate().await.unwrap();
+    backup::load(&d, &b, &LoadOptions::new().force(true))
+        .await
+        .unwrap();
+    let left = h
+        .db()
+        .query(Statement::new("SELECT 1 FROM role_seed"))
+        .await
+        .unwrap();
+    assert!(
+        left.is_empty(),
+        "the target's seed record is gone with its Roles"
+    );
+
+    h.clock().advance_minutes(24 * 60);
+    d.migrate().await.unwrap();
+    assert_eq!(
+        perms(&h, "Reader").await,
+        ["kernel.student.view", "kernel.usage.view"]
+    );
+    assert_eq!(perms(&h, "Auditor").await, ["kernel.audit.view"]);
 }
 
 #[tokio::test]

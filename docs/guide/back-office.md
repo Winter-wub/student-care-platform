@@ -47,7 +47,11 @@ there is not re-created; only a Role name new to `[roles]` is. Each grant the
 seed really makes is audited (`role.create` or `role.update`, actor
 `system`), except on a new Deployment's first `migrate`, which installs the
 Roles into an empty database. Removing a Permission or a Role from `[roles]` changes nothing in
-the database: do that on the Roles page. The first `migrate` of a database
+the database: do that on the Roles page. A Role created on the Roles page before
+`[roles]` lists its name gets that entry's Permissions on the next `migrate`.
+A Module removed and later added back does not re-grant its Permissions to
+Roles seeded with them before; any taken away meanwhile, grant again on the
+Roles page. The first `migrate` of a database
 created before this rule records every `[roles]` pair it already holds, and
 grants the ones it lacks, as every `migrate` before did.
 

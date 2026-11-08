@@ -18,6 +18,13 @@ use crate::{Deployment, Error, Result};
 /// (#78), so backups taken after the one restored stay listed and pruned.
 const KEPT_ON_RESTORE: [&str; 1] = ["backup_run"];
 
+/// Tables that record what the target's own `migrate` did with the
+/// Deployment's config, emptied by a forced restore of a backup that does
+/// not have them (taken before their migration): kept, they would describe
+/// a database that is gone. `role_seed` (#110): the restored Roles take the
+/// upgrade path on the next `migrate` instead of passing for deleted.
+const RESET_WHEN_ABSENT: [&str; 1] = ["role_seed"];
+
 /// The session tables `drop_sessions` empties.
 const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 
@@ -62,7 +69,9 @@ const SESSION_TABLES: [&str; 2] = ["staff_session", "app_session"];
 ///    `security_event`, `consent`), deletes every row of every table in the
 ///    backup (children first) and re-creates those triggers from their
 ///    saved SQL. Tables absent from the backup, and the schema, are left
-///    as they are. The counts deleted and the newest deleted audit row go
+///    as they are, but `role_seed` (#110), when the backup predates it, is
+///    emptied in the same batch, so the next `migrate` takes the restored
+///    Roles through its upgrade path. The counts deleted and the newest deleted audit row go
 ///    into the restore's audit row;
 /// 9. inserts the rows parents first (foreign keys hold on rusqlite) in
 ///    batches of [`PAGE`] statements. The last batch also writes the audit
@@ -178,7 +187,14 @@ pub async fn load(
     let order = schema::dependency_order(&in_backup);
     let newest_deleted_audit = if opts.force && !deleted.is_empty() {
         let newest = newest_audit(d).await?;
-        wipe(d, &order).await?;
+        let mut emptied = order.clone();
+        emptied.extend(
+            RESET_WHEN_ABSENT
+                .iter()
+                .filter(|t| !names.iter().any(|n| n == *t) && current.iter().any(|c| c.name == **t))
+                .map(|t| t.to_string()),
+        );
+        wipe(d, &emptied).await?;
         newest
     } else {
         deleted.clear();
@@ -325,8 +341,9 @@ async fn newest_audit(d: &Deployment) -> Result<Option<serde_json::Value>> {
     }))
 }
 
-/// One batch: lift the `DELETE` guards, empty the tables children first,
-/// put the guards back. Fails as a whole, leaving the triggers in place.
+/// One batch: lift the `DELETE` guards, empty the tables children first
+/// (`order` is parents first; a table appended after them references none
+/// of them), put the guards back. Fails as a whole, leaving the triggers in place.
 async fn wipe(d: &Deployment, order: &[String]) -> Result<()> {
     let db = d.services().db.as_ref();
     let triggers = schema::delete_triggers(db, order).await?;
