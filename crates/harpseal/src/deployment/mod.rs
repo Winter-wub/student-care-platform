@@ -150,13 +150,14 @@ impl Deployment {
     }
 
     /// Applies every pending migration to this Deployment's `Db`, then
-    /// merges `[roles]` into the Roles tables (add-only). Running it again
-    /// is a no-op.
+    /// seeds `[roles]` into the Roles tables: only the Roles and (Role,
+    /// Permission) pairs no `migrate` has seeded before, so an
+    /// Administrator's edits survive it (#110). Running it again is a no-op.
     pub async fn migrate(&self) -> Result<MigrationReport> {
         let now = self.services.now_ms();
         let mut report =
             crate::migrate::migrate(self.services.db.as_ref(), self.migrations(), now).await?;
-        report.notices = crate::auth::roles::seed(&self.services, &self.config.roles).await?;
+        report.notices = crate::auth::seed_roles(&self.services, &self.config.roles).await?;
         Ok(report)
     }
 

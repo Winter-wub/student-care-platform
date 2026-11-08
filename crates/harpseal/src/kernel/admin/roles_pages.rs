@@ -2,8 +2,8 @@
 //! grouped by Module (the part of the id before the first `.`), the create
 //! form, and `/admin/roles/{id}` to edit a Role's Permissions or delete an
 //! unused Role. Roles from `[roles]` are in the same table and editable;
-//! the page notes that the next `migrate` grants their TOML Permissions
-//! again.
+//! `[roles]` is seeded once (#110), so the page notes that an edit sticks
+//! and a later `migrate` grants only Permissions new to the TOML.
 
 use std::collections::BTreeMap;
 

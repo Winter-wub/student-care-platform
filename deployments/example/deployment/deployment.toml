@@ -19,7 +19,10 @@ primary_color = "#0b5cad"
 id_pattern = '########'
 
 # Initial Roles: Role -> Permission ids. Every id must be declared by the
-# Kernel or a Module; build() fails otherwise. Unlinking a Student's chat
+# Kernel or a Module; build() fails otherwise. Seeded once: a migrate grants
+# each Role/Permission pair the first time it sees it, so a Permission
+# removed (or a Role deleted) at /admin/roles stays that way, and one added
+# here later still arrives. Unlinking a Student's chat
 # account is `kernel.link.revoke`; `kernel.link.manage` is Manual Link only.
 # A Role that lists only the old `kernel.link.manage` is granted both (it
 # covered both before); to give Student Affairs unlink without Manual Link,

@@ -1,8 +1,8 @@
 //! Administrators' writes on Roles (the `/admin/roles` pages, #27):
 //! create, edit Permissions, delete. Roles from `[roles]` live in the same
-//! table (seeded add-only on every `migrate`), so they are edited the same
-//! way; the next `migrate` grants their TOML Permissions again and
-//! re-creates a deleted TOML Role.
+//! table and are edited the same way; `[roles]` is seeded once
+//! ([`super::role_seed`]), so a later `migrate` neither grants a removed
+//! Permission again nor re-creates a deleted Role.
 //!
 //! Each write is one `Db::batch` gated on its own audit row, like
 //! [`super::staff_admin`].

@@ -58,8 +58,10 @@ cargo run -p harpseal-example-native --bin harpseal -- \
 `--password-stdin` reads the password from standard input instead (at least 12
 characters; it is then not temporary). `--admin` is refused once any Staff
 exists unless `--force` is given; `--role NAME` grants other Roles. Roles come
-from `[roles]` in `deployment.toml`, merged into the database on every migrate
-(add-only), plus Roles created in the database.
+from `[roles]` in `deployment.toml`, seeded once (each Role and each
+Role/Permission pair on the first migrate that sees it; see
+[the back office](back-office.md)), plus Roles created in
+the database.
 
 Sessions are 12 hours sliding and 7 days absolute; 5 wrong passwords in a row
 lock the account for 15 minutes. The session cookie is `Secure`: browsers

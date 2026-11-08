@@ -139,7 +139,7 @@ async fn roles_are_created_edited_and_deleted_only_when_unused() {
 }
 
 #[tokio::test]
-async fn a_toml_role_is_editable_and_says_migrate_adds_its_permissions_back() {
+async fn a_toml_role_is_editable_and_its_edit_survives_migrate() {
     let (h, app) = boot().await;
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
     let id = text(&h, "SELECT id FROM role WHERE name = ?", "Reader", "id")
@@ -154,7 +154,7 @@ async fn a_toml_role_is_editable_and_says_migrate_adds_its_permissions_back() {
     );
     admin.post(&format!("/admin/roles/{id}"), &body).await;
     assert_eq!(flash(&admin), "ok:kernel.admin.saved");
-    // A migrate keeps the addition (add-only seed).
+    // A migrate keeps the addition.
     app.deployment().migrate().await.unwrap();
     let perms = harpseal::role_permissions(app.deployment().services(), "Reader")
         .await
