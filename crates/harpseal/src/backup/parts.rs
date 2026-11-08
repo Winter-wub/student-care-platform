@@ -1,6 +1,8 @@
 //! Table parts (#88, format 2): [`Writer::table`] dumps one table as
 //! ordered parts, each its own entry pinned by SHA-256 and row count, so
-//! memory is bounded by the part size and not the table size.
+//! the rows held are bounded by the part size and not the table size. The
+//! key check at the table's end (`settle.rs`) is the one exception: about
+//! 16 bytes per row per `UNIQUE` index at its peak.
 //!
 //! A table is read page by page by key (`pages.rs`). A part ends at
 //! [`Budget::part_rows`] rows (its pages are cut to fit exactly) or once
@@ -22,47 +24,22 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
+
+use super::cursor::decode_key;
+pub(crate) use super::cursor::{Cursor, sidecar};
 
 use super::pages::{Range, read_page};
 use super::progress::{Budget, Checkpoint, DumpProgress, Spent};
 use super::schema::Table;
 use super::unique::{Unique, secondary};
-use super::value::{decode, encode};
+use super::value::encode;
 use super::{BackupSink, ManifestPart, ManifestTable, PAGE, part_entry, sha256_hex};
 use crate::port_types::{Rows, Value};
 use crate::{Db, Error, Result};
 
 /// Rows of the first page of a table in a step, before their size is known.
 const FIRST_PAGE: u64 = 50;
-
-/// Where the table being dumped stands between two steps.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Cursor {
-    /// Key of the last row of the parts written, as backup JSON values
-    /// (`value.rs`); `None` before the first part.
-    pub(crate) after: Option<Vec<Json>>,
-    /// The parts written so far, in order.
-    pub(crate) parts: Vec<ManifestPart>,
-    /// The key each part ends at (`None` for an empty part), so a part can
-    /// be read again over the same range.
-    #[serde(default)]
-    pub(crate) ends: Vec<Option<Vec<Json>>>,
-    /// Every row is written; what is left is the `UNIQUE` check.
-    #[serde(default)]
-    pub(crate) written: bool,
-    /// Parts to read again before the check (saved before any is
-    /// rewritten, so a crash mid-way reads them again).
-    #[serde(default)]
-    pub(crate) dirty: Vec<usize>,
-    /// Times the check found repeated keys and parts were read again.
-    #[serde(default)]
-    pub(crate) rounds: u32,
-    /// Whether key hashes of its parts were saved for a later step.
-    #[serde(default)]
-    pub(crate) sidecars: bool,
-}
 
 /// One step's hold on the dump while it writes a table.
 pub(super) struct Writer<'a> {
@@ -89,6 +66,12 @@ pub(super) struct Tab<'t> {
     pub(super) hashes: BTreeMap<usize, Vec<u64>>,
     /// Parts whose hashes this step computed (saved if it stops early).
     pub(super) fresh: BTreeSet<usize>,
+    /// [`super::hashes::signature`] of `uniq`.
+    pub(super) sig: String,
+    /// Keep each row's whole key too (`settle.rs`, before it fails).
+    pub(super) full: bool,
+    /// Whole keys per part (`uniq.len()` per row), kept while `full`.
+    pub(super) keys: BTreeMap<usize, Vec<Option<String>>>,
     /// Bytes per row of the last page, to size the next one.
     avg_row: u64,
 }
@@ -99,18 +82,8 @@ struct Held {
     bytes: Vec<u8>,
     rows: u64,
     hashes: Vec<u64>,
+    keys: Vec<Option<String>>,
     files: BTreeSet<String>,
-}
-
-/// Name of the saved key hashes of part `n` of `table`.
-pub(crate) fn sidecar(table: &str, n: usize) -> String {
-    format!("{table}/{n:05}.keys")
-}
-
-fn decode_key(key: &Option<Vec<Json>>) -> Result<Option<Vec<Value>>> {
-    key.as_ref()
-        .map(|k| k.iter().map(decode).collect::<Result<Vec<_>>>())
-        .transpose()
 }
 
 impl Writer<'_> {
@@ -123,6 +96,7 @@ impl Writer<'_> {
         self.spent.used += 1 + 2 * uniq.len() as u64;
         let extra: Vec<String> = uniq.iter().flat_map(Unique::select).collect();
         let widths = uniq.iter().map(|u| u.select().len()).collect();
+        let sig = super::hashes::signature(&uniq);
         let mut tab = Tab {
             t,
             now,
@@ -131,6 +105,9 @@ impl Writer<'_> {
             widths,
             hashes: BTreeMap::new(),
             fresh: BTreeSet::new(),
+            sig,
+            full: false,
+            keys: BTreeMap::new(),
             avg_row: 0,
         };
         let mut cursor = self.progress.cursor.take().unwrap_or_default();
@@ -144,9 +121,11 @@ impl Writer<'_> {
             return Ok(false);
         }
         let p = &mut *self.progress;
-        if cursor.sidecars {
+        if !tab.uniq.is_empty() {
+            // Every step's hashes, and one a step may have saved before
+            // it died.
             p.stale
-                .extend((0..cursor.parts.len()).map(|i| sidecar(&t.name, i)));
+                .extend((0..=cursor.segments).map(|k| sidecar(&t.name, k)));
         }
         p.tables.push(ManifestTable {
             name: t.name.clone(),
@@ -162,7 +141,8 @@ impl Writer<'_> {
     /// Whether `need` more subrequests (and the saved hashes) fit the step,
     /// or the step has done nothing yet.
     pub(super) fn room(&self, tab: &Tab<'_>, need: u64, held: u64) -> bool {
-        let keep = tab.fresh.len() as u64 + 1;
+        // The hashes saved if the step stops here, and one to spare.
+        let keep = if tab.uniq.is_empty() { 1 } else { 2 };
         let fits = self.spent.used + need + keep <= self.budget.queries;
         !self.spent.worked || (fits && !self.spent.over(self.budget, held))
     }
@@ -224,17 +204,9 @@ impl Writer<'_> {
         cursor: &mut Cursor,
         i: usize,
     ) -> Result<()> {
-        let end = cursor.ends.get(i).cloned().ok_or_else(|| {
-            Error::Invalid(format!(
-                "backup of table {}: part {i} has no end key",
-                tab.t.name
-            ))
-        })?;
-        let upto = decode_key(&end)?;
-        let after = match i {
-            0 => None,
-            _ => decode_key(&cursor.ends[i - 1])?,
-        };
+        let (after, upto) = cursor
+            .range_of(i)
+            .map_err(|e| Error::Invalid(format!("backup of table {}: {e}", tab.t.name)))?;
         let mut held = Held::default();
         let mut from = after;
         while upto.is_some() {
@@ -271,8 +243,11 @@ impl Writer<'_> {
         for row in &page.rows {
             let mut at = 0;
             for (u, w) in tab.uniq.iter().zip(&tab.widths) {
-                held.hashes
-                    .push(u.hash(row.get(at..at + w).unwrap_or_default()));
+                let values = row.get(at..at + w).unwrap_or_default();
+                held.hashes.push(u.hash(values));
+                if tab.full {
+                    held.keys.push(u.key(values));
+                }
                 at += w;
             }
             for &i in &files {
@@ -339,6 +314,9 @@ impl Writer<'_> {
             tab.hashes.insert(i, held.hashes);
             tab.fresh.insert(i);
         }
+        if tab.full {
+            tab.keys.insert(i, held.keys);
+        }
         Ok(())
     }
 
@@ -346,17 +324,20 @@ impl Writer<'_> {
     /// computed (for the check at the table's end) and hands the cursor
     /// to the progress.
     pub(super) async fn stop(&mut self, tab: &Tab<'_>, cursor: &mut Cursor) -> Result<()> {
-        for &i in &tab.fresh {
-            let (Some(part), Some(hashes)) = (cursor.parts.get(i), tab.hashes.get(&i)) else {
-                continue;
-            };
-            let mut bytes = part.sha256.as_bytes().to_vec();
-            bytes.extend(hashes.iter().flat_map(|h| h.to_le_bytes()));
-            self.checkpoint
-                .put_check(&sidecar(&tab.t.name, i), bytes)
-                .await?;
+        let parts: Vec<(usize, &str, &[u64])> = tab
+            .fresh
+            .iter()
+            .filter_map(|&i| {
+                let part = cursor.parts.get(i)?;
+                Some((i, part.sha256.as_str(), tab.hashes.get(&i)?.as_slice()))
+            })
+            .collect();
+        if !parts.is_empty() {
+            let bytes = super::hashes::encode(&tab.sig, &parts, tab.uniq.len());
+            let name = sidecar(&tab.t.name, cursor.segments);
+            self.checkpoint.put_check(&name, bytes).await?;
             self.spent.used += 1;
-            cursor.sidecars = true;
+            cursor.segments += 1;
         }
         self.progress.cursor = Some(std::mem::take(cursor));
         Ok(())

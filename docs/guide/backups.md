@@ -77,14 +77,33 @@ may not be in it. What the backup does promise:
   A Student who unlinks and links again between two runs would leave two
   live Links in the backup; the part holding the stale row is then read
   again over its key range, as the database has it now, until no key
-  repeats. The hashes compared (8 bytes per row per index) are kept
-  between runs under `backups/<UTC time>.check/` and deleted when the
-  table is done. If keys still repeat after three re-reads, the run fails
-  with the table and index named (retried, then emailed), so **a backup
-  marked done always restores**;
+  repeats. Each row's key is kept as an 8-byte hash per index, saved
+  between runs under `backups/<UTC time>.check/` (one object per run
+  that stopped inside the table, so the check reads one object per run,
+  not one per part) and deleted when the table is done. At its peak the
+  check holds about **16 bytes per row per `UNIQUE` index** (the hashes
+  and a sorted copy of one index's), so a Worker's 128 MB takes a table
+  of roughly 4 to 5 million rows per index. If keys still repeat after
+  three re-reads, the whole keys are compared (a hash collision passes)
+  and a real repeat fails the run with the table and index named
+  (retried, then emailed). A part re-read must stay near a part: when
+  more than twice `part_rows` rows (or twice `part_mb`) were written
+  into its key range meanwhile (a large roster import under keys that
+  are not in time order, say), the run fails naming the table rather
+  than hold them all in memory; the next night's backup starts over. So
+  **a backup marked done restores** as far as the Kernel's tables go: a
+  Module table whose foreign key is `ON DELETE SET NULL` (or `RESTRICT`,
+  or none) can still hold a child of a row deleted during the backup,
+  which the restore refuses, as it drops only `ON DELETE CASCADE`
+  orphans;
 - `restore` checks keys and references again **before it writes
   anything**: a backup that would not insert cleanly (hand-edited, or
   from an older build) is refused with a report, never half-restored.
+
+**Progress size.** The saved progress lists every part written so far
+with the FileStore keys its rows name, and every object copied: it grows
+with the number of parts and of objects, as the manifest does (each key
+once per part that names it), and is rewritten before each new part.
 
 **Restore memory.** `harpseal restore` runs natively only (never in a
 Worker) and holds every row of the backup in memory while it checks keys

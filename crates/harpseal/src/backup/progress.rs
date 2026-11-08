@@ -225,7 +225,7 @@ impl DumpProgress {
     pub(crate) fn checks(&self) -> Vec<String> {
         let mut names = self.stale.clone();
         if let (Some(c), Some(t)) = (&self.cursor, self.order.get(self.tables.len())) {
-            names.extend((0..=c.parts.len()).map(|i| sidecar(t, i)));
+            names.extend((0..=c.segments).map(|k| sidecar(t, k)));
         }
         names
     }

@@ -116,36 +116,8 @@ pub(crate) async fn read_page(
         let key = pk.iter().map(|c| c.to_string()).collect();
         (head, key, extra.len())
     };
-    let order = if rowid {
-        "rowid".to_string()
-    } else {
-        key.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ")
-    };
-    let mut conds = Vec::new();
-    let mut params = Vec::new();
-    if let Some(fl) = kept_rows(&t.name, now) {
-        conds.push(fl.sql.to_string());
-        params.extend(fl.params.iter().cloned());
-    }
-    for (bound, op) in [(range.after, ">"), (range.upto, "<=")] {
-        let Some(k) = bound else { continue };
-        if k.len() != key.len() {
-            return Err(Error::Invalid(format!(
-                "backup of table {}: a resume point of {} values for a key of {}",
-                t.name,
-                k.len(),
-                key.len()
-            )));
-        }
-        let marks = vec!["?"; k.len()].join(", ");
-        conds.push(format!("({order}) {op} ({marks})"));
-        params.extend(k.iter().cloned());
-    }
-    let cond = if conds.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", conds.join(" AND "))
-    };
+    let order = order_of(rowid, &key);
+    let (cond, params) = condition(t, now, range, &key, &order)?;
     let sql = format!("{head}{cond} ORDER BY {order} LIMIT {limit}");
     let rows = db
         .query(Statement {
@@ -177,4 +149,70 @@ pub(crate) async fn read_page(
             .collect()
     });
     Ok(Page { rows, skip, last })
+}
+
+/// The `ORDER BY` of a keyset read.
+fn order_of(rowid: bool, key: &[String]) -> String {
+    if rowid {
+        "rowid".to_string()
+    } else {
+        key.iter().map(|c| quote(c)).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// ` WHERE …` (or nothing) of a read of `range` at `now`, and its values.
+fn condition(
+    t: &Table,
+    now: i64,
+    range: Range<'_>,
+    key: &[String],
+    order: &str,
+) -> Result<(String, Vec<Value>)> {
+    let mut conds = Vec::new();
+    let mut params = Vec::new();
+    if let Some(fl) = kept_rows(&t.name, now) {
+        conds.push(fl.sql.to_string());
+        params.extend(fl.params.iter().cloned());
+    }
+    for (bound, op) in [(range.after, ">"), (range.upto, "<=")] {
+        let Some(k) = bound else { continue };
+        if k.len() != key.len() {
+            return Err(Error::Invalid(format!(
+                "backup of table {}: a resume point of {} values for a key of {}",
+                t.name,
+                k.len(),
+                key.len()
+            )));
+        }
+        let marks = vec!["?"; k.len()].join(", ");
+        conds.push(format!("({order}) {op} ({marks})"));
+        params.extend(k.iter().cloned());
+    }
+    let cond = if conds.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", conds.join(" AND "))
+    };
+    Ok((cond, params))
+}
+
+/// Rows of `t` in `range` a dump at `now` keeps: what a re-read of that
+/// range would hold.
+pub(crate) async fn count_range(db: &dyn Db, t: &Table, now: i64, range: Range<'_>) -> Result<u64> {
+    let pk = t.pk_columns();
+    let rowid = pk.is_empty();
+    let key: Vec<String> = if rowid {
+        vec!["rowid".to_string()]
+    } else {
+        pk.iter().map(|c| c.to_string()).collect()
+    };
+    let order = order_of(rowid, &key);
+    let (cond, params) = condition(t, now, range, &key, &order)?;
+    let rows = db
+        .query(Statement {
+            sql: format!("SELECT count(*) AS n FROM {}{cond}", quote(&t.name)).into(),
+            params,
+        })
+        .await?;
+    Ok(rows.get(0, "n").and_then(Value::as_i64).unwrap_or(0).max(0) as u64)
 }

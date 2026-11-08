@@ -65,7 +65,9 @@
 //! migrations so they run over the restored rows. See [`load`].
 
 mod check;
+mod cursor;
 mod dump;
+mod hashes;
 mod load;
 mod manifest;
 mod pages;

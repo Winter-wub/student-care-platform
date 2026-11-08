@@ -181,3 +181,88 @@ async fn a_backup_with_two_live_links_is_refused_by_the_partial_unique_index() {
         count.rows
     );
 }
+
+/// The FileStore of `h`, failing the second `put` of a key ending in
+/// `when` (the rewrite of a part read again).
+struct FailRewrite {
+    files: Arc<dyn FileStore>,
+    when: &'static str,
+    puts: Mutex<u32>,
+}
+
+#[async_trait]
+impl FileStore for FailRewrite {
+    async fn put(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<()> {
+        if key.ends_with(self.when) {
+            let n = {
+                let mut puts = self.puts.lock().unwrap();
+                *puts += 1;
+                *puts
+            };
+            if n == 2 {
+                return Err(harpseal::Error::Platform(format!(
+                    "the Worker died writing {key}"
+                )));
+            }
+        }
+        self.files.put(key, bytes, content_type).await
+    }
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        self.files.get(key).await
+    }
+    async fn delete(&self, key: &str) -> Result<()> {
+        self.files.delete(key).await
+    }
+}
+
+#[tokio::test]
+async fn a_step_that_dies_between_marking_a_part_and_rewriting_it_reads_it_again() {
+    let (h, _app) = populated().await;
+    let db = h.db();
+    many_links(db.as_ref()).await;
+    let files = Arc::new(FailRewrite {
+        files: Arc::new(h.files().clone()),
+        when: "/tables/link.ndjson",
+        puts: Mutex::new(0),
+    });
+    let mut services = h.services();
+    services.db = Arc::new(Relinking {
+        inner: db.clone(),
+        done: Mutex::new(false),
+    });
+    services.files = files.clone();
+    let d = deployment_with(&h, services);
+    h.clock().set_ms(NIGHT);
+    let key = format!("backups/{}.progress.json", stamp_of(NIGHT));
+    let mut marked = None;
+    for _ in 0..10 {
+        let _ = d.tick(Timestamp(h.clock().now_ms())).await;
+        h.clock().advance_minutes(1);
+        if *files.puts.lock().unwrap() == 2 && marked.is_none() {
+            // The rewrite died: the saved progress names the part to read.
+            let raw = h.files().get(&key).await.unwrap().unwrap();
+            let p: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+            marked = Some(p["cursor"].clone());
+        }
+    }
+    let cursor = marked.expect("the rewrite was attempted and died");
+    assert_eq!(cursor["dirty"], serde_json::json!([0]), "{cursor}");
+    assert_eq!(cursor["written"], true);
+    let state = query(db.as_ref(), "SELECT state FROM backup_run").await;
+    assert_eq!(state.rows[0][0].as_text(), Some("done"));
+    assert!(*files.puts.lock().unwrap() >= 3, "rewritten on the retry");
+
+    let files: Arc<dyn FileStore> = Arc::new(h.files().clone());
+    let source = FileStoreBackup::new(files, format!("backups/{}/", stamp_of(NIGHT)));
+    let fresh = Harness::new();
+    backup::load(&deployment(&fresh), &source, &LoadOptions::new())
+        .await
+        .unwrap();
+    let live = query(
+        fresh.db().as_ref(),
+        "SELECT id FROM link WHERE student_id = 'st-0001' AND status <> 'revoked'",
+    )
+    .await;
+    assert_eq!(live.rows.len(), 1);
+    assert_eq!(live.rows[0][0].as_text(), Some("l-9999"));
+}

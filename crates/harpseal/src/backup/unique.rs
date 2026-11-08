@@ -186,17 +186,7 @@ impl Unique {
     /// hashed (first 8 bytes of a SHA-256, never 0); 0 when the row has no
     /// key (a `NULL` term, or outside a partial index's `WHERE`).
     pub(super) fn hash(&self, values: &[Value]) -> u64 {
-        let n = self.terms.len();
-        if self.filter.is_some() {
-            let kept = values
-                .get(n)
-                .and_then(Value::as_i64)
-                .is_some_and(|k| k != 0);
-            if !kept {
-                return 0;
-            }
-        }
-        let Some(k) = values.get(..n).and_then(|v| key(v, &self.colls)) else {
+        let Some(k) = self.key(values) else {
             return 0;
         };
         use sha2::{Digest, Sha256};
@@ -204,6 +194,25 @@ impl Unique {
         let mut first = [0u8; 8];
         first.copy_from_slice(&d[..8]);
         u64::from_le_bytes(first).max(1)
+    }
+}
+
+impl Unique {
+    /// The row's whole key on this index from the values of
+    /// [`Unique::select`], as compared under the terms' collations; `None`
+    /// when it has none.
+    pub(super) fn key(&self, values: &[Value]) -> Option<String> {
+        let n = self.terms.len();
+        if self.filter.is_some() {
+            let kept = values
+                .get(n)
+                .and_then(Value::as_i64)
+                .is_some_and(|k| k != 0);
+            if !kept {
+                return None;
+            }
+        }
+        values.get(..n).and_then(|v| key(v, &self.colls))
     }
 }
 
