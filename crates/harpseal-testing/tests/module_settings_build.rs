@@ -24,7 +24,7 @@ impl Module for Bad {
 #[test]
 fn build_refuses_a_wrong_declaration() {
     use SettingKind::*;
-    let cases: [(Declare, &str); 7] = [
+    let cases: [(Declare, &str); 8] = [
         (
             |r| {
                 r.messages(&[CatalogEntry::new("bad.n", "th", "ข้อความ")]);
@@ -58,6 +58,12 @@ fn build_refuses_a_wrong_declaration() {
         ),
         (
             |r| {
+                r.setting_without_default("bad.n", Text, "bad.nope", "bad.label", "bad.label");
+            },
+            "permission",
+        ),
+        (
+            |r| {
                 r.setting("bad.n", Text, "x", "bad.edit", "bad.label", "bad.help");
             },
             "bad.help",
@@ -81,34 +87,4 @@ fn build_refuses_a_wrong_declaration() {
             "{err}"
         );
     }
-}
-
-/// A Module whose name starts like a Kernel key.
-struct KernelLike;
-
-impl Module for KernelLike {
-    fn name(&self) -> &'static str {
-        "kernel.backup"
-    }
-    fn register(&self, r: &mut ModuleRegistrar) {
-        r.permission(Permission::new("kernel.backup.x", "Edit"))
-            .messages(&[CatalogEntry::new("kernel.backup.label", "th", "ป้าย")])
-            .setting(
-                "kernel.backup.notified",
-                SettingKind::Text,
-                "x",
-                "kernel.backup.x",
-                "kernel.backup.label",
-                "kernel.backup.label",
-            );
-    }
-}
-
-#[test]
-fn only_the_kernel_declares_kernel_keys() {
-    let h = Harness::new();
-    let Err(err) = h.builder().module(KernelLike).build() else {
-        panic!("a Module reached the Kernel's `kernel.backup.notified` row");
-    };
-    assert!(err.to_string().contains("only the Kernel"), "{err}");
 }

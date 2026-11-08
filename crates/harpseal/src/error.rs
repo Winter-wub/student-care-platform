@@ -286,6 +286,18 @@ pub enum BuildError {
         /// What is wrong with it.
         reason: String,
     },
+    /// A Module claims the Kernel's namespace: its name is `kernel` or
+    /// starts with `kernel.`, or one of its Permissions, Actions or text
+    /// keys starts with `kernel.`. Only the Kernel declares those (#103).
+    KernelNamespace {
+        /// The Module.
+        module: String,
+        /// What it declared: `name`, `permission`, `action`, `action
+        /// prefix` or `text key`.
+        what: &'static str,
+        /// The name or key as declared.
+        key: String,
+    },
     /// A route path axum cannot mount: it must start with `/`, must not use
     /// the old `:param` / `*rest` syntax, and a public route must not be
     /// under `/admin`.
@@ -327,6 +339,10 @@ impl core::fmt::Display for BuildError {
             } => write!(
                 f,
                 "module `{module}` declares setting `{key}` wrongly: {reason}"
+            ),
+            BuildError::KernelNamespace { module, what, key } => write!(
+                f,
+                "module `{module}` declares {what} `{key}`: `kernel` and `kernel.` names are reserved for the Kernel"
             ),
             BuildError::MiniAppUnavailable { module, channel } => write!(
                 f,

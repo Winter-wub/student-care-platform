@@ -117,14 +117,19 @@ fn duplicate_action_id_across_modules() {
 }
 
 #[test]
-fn duplicate_permission_with_the_kernel() {
+fn a_permission_of_the_kernel_namespace_is_refused() {
     let h = Harness::new();
     let b = h.builder().module(module("dup", |r| {
         r.permission(Permission::new("kernel.student.view", "again"));
     }));
+    // Not a mere duplicate (#103): the whole `kernel.` namespace is the Kernel's.
     assert_eq!(
         build_err(b),
-        BuildError::DuplicatePermission("kernel.student.view".into())
+        BuildError::KernelNamespace {
+            module: "dup".into(),
+            what: "permission",
+            key: "kernel.student.view".into()
+        }
     );
 }
 
@@ -269,7 +274,14 @@ fn duplicate_module_name() {
 fn a_module_may_not_call_itself_kernel() {
     let h = Harness::new();
     let b = h.builder().module(module("kernel", |_| {}));
-    assert_eq!(build_err(b), BuildError::DuplicateModule("kernel".into()));
+    assert_eq!(
+        build_err(b),
+        BuildError::KernelNamespace {
+            module: "kernel".into(),
+            what: "name",
+            key: "kernel".into()
+        }
+    );
 }
 
 #[test]

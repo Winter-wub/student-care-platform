@@ -23,8 +23,9 @@
 //! [`BANK_NAME`] and the account number [`BANK_ACCOUNT`] (digits, `-` and
 //! spaces only, so no hidden character can change what Students copy),
 //! edited on `/admin/settings` only with [`BANK_ACCOUNT_EDIT`] (not with
-//! `kernel.setting.edit` alone) and shown
-//! on the Student's Mini App page [`student::PATH`].
+//! `kernel.setting.edit` alone) and shown on the Student's Mini App page
+//! [`student::PATH`]. The account has no default (#103): Students see
+//! "not set" until Finance saves one (the demo seed saves a fictional one).
 
 pub mod read;
 pub mod student;
@@ -51,7 +52,7 @@ pub const IMPORT: &str = "fees.import";
 pub const JOB: &str = "fees.import";
 /// The setting: the bank and branch Students pay at (fictional default).
 pub const BANK_NAME: &str = "fees.bank_name";
-/// The setting: the account number Students pay into (fictional default).
+/// The setting: the account number Students pay into (no default).
 pub const BANK_ACCOUNT: &str = "fees.bank_account";
 /// The only Permission that edits [`BANK_ACCOUNT`].
 pub const BANK_ACCOUNT_EDIT: &str = "fees.bank_account.edit";
@@ -85,10 +86,11 @@ impl Module for Fees {
             "fees.bank_name_label",
             "fees.bank_name_help",
         )
-        .setting(
+        // No default (#103): no placeholder account for Students to pay
+        // into; "not set" shows until Finance saves the real one.
+        .setting_without_default(
             BANK_ACCOUNT,
             SettingKind::AccountNumber,
-            "000-0-00000-0",
             BANK_ACCOUNT_EDIT,
             "fees.bank_account_label",
             "fees.bank_account_help",

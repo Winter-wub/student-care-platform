@@ -245,7 +245,7 @@ pub(super) async fn save(
     locale: &str,
     value: &str,
     expected: Option<&str>,
-    before: &str,
+    before: Option<&str>,
     ctx: &RequestCtx,
     then: Then<'_>,
 ) -> Result<bool> {
@@ -361,7 +361,7 @@ pub(super) async fn set_version(
         "",
         value,
         expected,
-        before,
+        Some(before),
         ctx,
         &|_| Ok(Vec::new()),
     )

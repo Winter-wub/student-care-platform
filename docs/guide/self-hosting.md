@@ -83,7 +83,7 @@ acting as the oldest active Administrator (or `--as EMAIL`):
 
 ```sh
 cargo run -p harpseal-example-native --bin harpseal -- seed-example [--as EMAIL] [--force]
-# seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts written
+# seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts and 1 settings written
 ```
 
 **Demo databases only.** While it waits for the roster import it runs
@@ -98,7 +98,9 @@ upsert mode, applied at once by running the import Jobs), creates three
 draft announcements and one scheduled a week ahead, and overrides
 `kernel.flow.welcome` in Thai and English, unless that text already has an
 override (an Administrator's customisation is never overwritten). Every audit row it writes names
-that Administrator and carries `"seed": true`. Running it again adds
+that Administrator and carries `"seed": true`; the one exception is the
+fees bank account, saved as the system with `Deployment::save_setting_as_system` (no Administrator
+holds `fees.bank_account.edit`). Running it again adds
 nothing; it refuses a database that already has Students unless `--force`,
 and it never creates Staff or writes a password. `just seed` runs
 `migrate`, `staff create --admin` (the temporary password is printed once;

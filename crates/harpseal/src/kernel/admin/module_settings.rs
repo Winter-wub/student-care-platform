@@ -20,7 +20,7 @@ use serde::Deserialize;
 use super::settings;
 use super::view::View;
 use crate::module::{SettingKind, SettingSpec, Settings};
-use crate::{Actor, AppState, CurrentStaff, RequestCtx};
+use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result, Services};
 
 /// The page, under `/admin`.
 pub(crate) const PATH: &str = "/settings";
@@ -107,8 +107,8 @@ fn card(
 ) -> Markup {
     let key = spec.key;
     let id = format!("setting-{}", key.replace('.', "-"));
-    let current = stored.as_ref().map_or(spec.default, |(v, _, _)| v.as_str());
-    let shown = err.map_or(current, |(_, value, _)| value);
+    let current = stored.as_ref().map(|(v, _, _)| v.as_str()).or(spec.default);
+    let shown = err.map_or(current.unwrap_or(""), |(_, value, _)| value);
     let can = v.staff.can(spec.permission);
     // A saved value its kind now refuses (a restored row, a tightened
     // check): Students get "not set" until it is saved again.
@@ -120,6 +120,8 @@ fn card(
             h3 { (v.t(spec.label_key)) " "
                 @if stored.is_some() {
                     span class="chip override" { (v.t("kernel.admin.module_settings.saved_value")) }
+                } @else if current.is_none() {
+                    span class="chip" id=(format!("{id}-unset")) { (v.t("kernel.admin.module_settings.unset_value")) }
                 } @else {
                     span class="chip" { (v.t("kernel.admin.module_settings.default_value")) }
                 }
@@ -147,10 +149,12 @@ fn card(
                     button type="submit" { (v.t("kernel.admin.save")) }
                 }
             } @else {
-                @if spec.kind == SettingKind::MultilineText {
-                    pre class="setting-value" { (current) }
-                } @else {
-                    p class="setting-value" { strong { (current) } }
+                @match current {
+                    None => { p class="setting-value muted" { (v.t("kernel.admin.module_settings.unset_text")) } }
+                    Some(current) if spec.kind == SettingKind::MultilineText => {
+                        pre class="setting-value" { (current) }
+                    }
+                    Some(current) => { p class="setting-value" { strong { (current) } } }
                 }
                 p class="muted" { (v.t("kernel.admin.module_settings.read_only")) " " code { (spec.permission) } }
             }
@@ -184,6 +188,24 @@ fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {
             input id=(id) name="value" type="text" required maxlength=(max) value=(value) aria-invalid=[bad];
         },
     }
+}
+
+/// Writes `value` as the value of `spec` if the row still holds
+/// `expected` (`None` = no row), with the audit row `setting.update`
+/// (before = the stored value, else the default, else `null`) in the same
+/// batch. `false` when the row changed meanwhile. The one write path of
+/// the page and of [`Settings::save`].
+pub(crate) async fn write(
+    s: &Services,
+    actor: &Actor,
+    spec: &SettingSpec,
+    value: &str,
+    expected: Option<&str>,
+    ctx: &RequestCtx,
+) -> Result<bool> {
+    let none = |_: &str| Ok(Vec::new());
+    let before = expected.or(spec.default);
+    settings::save(s, actor, spec.key, "", value, expected, before, ctx, &none).await
 }
 
 /// One setting's form.
@@ -228,23 +250,11 @@ pub(super) async fn submit(
             return render(&v, &all, Some((spec.key, &raw, why))).await;
         }
     };
-    let before = expected.unwrap_or(spec.default);
-    if value == before {
+    if Some(value.as_str()) == expected.or(spec.default) {
         return v.redirect(&back, true, "kernel.admin.saved");
     }
     let actor = Actor::staff(&staff);
-    let none = |_: &str| Ok(Vec::new());
-    let saved = settings::save(
-        &s.services,
-        &actor,
-        spec.key,
-        "",
-        &value,
-        expected,
-        before,
-        &ctx,
-        &none,
-    );
+    let saved = write(&s.services, &actor, &spec, &value, expected, &ctx);
     match saved.await {
         Ok(true) => v.redirect(&back, true, "kernel.admin.saved"),
         Ok(false) => v.redirect(&back, false, "kernel.admin.conflict"),

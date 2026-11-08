@@ -66,6 +66,7 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
         ),
         (50, 4, 2)
     );
+    assert_eq!(first.settings_written, 1, "the fees bank account");
     let once = counts(&h).await;
     assert_eq!(once[..5], [50, 50, 4, 1, 2]);
     assert!(
@@ -78,9 +79,11 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
 
     let again = seed(d, None, true).await.unwrap();
     assert_eq!((again.announcements_created, again.texts_written), (0, 0));
+    assert_eq!(again.settings_written, 0, "a saved account is left alone");
     assert_eq!(counts(&h).await, once, "a forced re-run adds nothing");
 
-    // Every audit row of the seed names the Administrator and is marked.
+    // Every audit row of the seed but the bank account's (the system's,
+    // below) names the Administrator and is marked.
     let marked = format!(
         "SELECT count(*) FROM audit_log WHERE actor_kind = 'staff' AND actor_id = '{admin}' \
          AND request_id = 'cli' AND json_extract(after, '$.seed') = 1"
@@ -92,6 +95,20 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
     // Two uploads and confirms, four creates, one schedule, two texts.
     assert_eq!(int(&h, &marked).await, 4 + 4 + 1 + 2);
     assert_eq!(int(&h, &unmarked).await, 0);
+
+    // The bank account: saved through `save_setting_as_system`, one
+    // audit row marked as seed data, the value before `null`; Students see
+    // it where they saw "not set".
+    let account = d
+        .settings()
+        .text(example_deployment::fees::BANK_ACCOUNT)
+        .await;
+    assert_eq!(account.unwrap(), example_deployment::seed::BANK_ACCOUNT);
+    let audit = "SELECT count(*) FROM audit_log WHERE action = 'setting.update' \
+                 AND actor_kind = 'system' AND target_id = 'fees.bank_account:' \
+                 AND json_extract(before, '$.value') IS NULL \
+                 AND json_extract(after, '$.seed') = 1";
+    assert_eq!(int(&h, audit).await, 1);
 }
 
 #[tokio::test]
