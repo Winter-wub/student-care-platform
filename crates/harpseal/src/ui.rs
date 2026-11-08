@@ -145,17 +145,21 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
 /// `modules::announcements::create_draft`) failed, as the Core's pages
 /// answer: [`Error::Forbidden`] gets the same 403 page the back-office
 /// guard shows a Staff member without the route's Permission (naming the
-/// Permission missing), anything else a 500 page that never shows the
-/// error text (it may name a column). Check the form yourself first: an
+/// Permission missing); [`Error::Conflict`] (the row changed since the
+/// page showed it, e.g. a stale `version` to `confirm`) a 409 page asking
+/// to reload; anything else a 500 page that never shows the error text (it
+/// may name a column). Check the form yourself first: an
 /// [`Error::Invalid`] here is a 500 too.
 pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response {
-    if let Error::Forbidden { permission } = e.root() {
-        return crate::auth::forbidden(s, staff, permission);
-    }
-    let text = s.catalog.t(&staff.locale, "kernel.auth.error");
-    let body = html! { div class="card" { p { (text) } } };
+    let (status, key) = match e.root() {
+        Error::Forbidden { permission } => return crate::auth::forbidden(s, staff, permission),
+        Error::Conflict(_) => (StatusCode::CONFLICT, "kernel.auth.conflict"),
+        _ => (StatusCode::INTERNAL_SERVER_ERROR, "kernel.auth.error"),
+    };
+    let text = s.catalog.t(&staff.locale, key);
+    let body = html! { div class="card" { p role="alert" { (text) } } };
     let page = back_office(s, staff, &text, body);
-    (StatusCode::INTERNAL_SERVER_ERROR, Html(page.into_string())).into_response()
+    (status, Html(page.into_string())).into_response()
 }
 
 /// A page with the brand bar and no navigation (sign-in, errors).

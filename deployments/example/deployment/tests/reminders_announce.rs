@@ -128,6 +128,20 @@ async fn the_reminder_page_drafts_an_announcement_to_the_pasted_students_as_that
     let r = post(&b, "/admin/reminders/announce", "ids=").await;
     assert_eq!(r.status, 422);
     assert_eq!(app.count("SELECT count(*) FROM announcement").await, 1);
+
+    // More than the Core's hand-picked limit: refused before the Audience.
+    let over: Vec<String> = (0..=harpseal::audience::MAX_STUDENTS)
+        .map(|n| format!("{:08}", 68_020_000 + n))
+        .collect();
+    let r = post(
+        &b,
+        "/admin/reminders/announce",
+        &format!("ids={}", over.join("%0A")),
+    )
+    .await;
+    assert_eq!(r.status, 422, "{}", r.body);
+    assert!(r.body.contains("2,000"), "{}", r.body);
+    assert_eq!(app.count("SELECT count(*) FROM announcement").await, 1);
 }
 
 #[tokio::test]

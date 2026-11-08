@@ -16,6 +16,17 @@ impl PageState {
     /// member's Permission and audits the write as them, exactly as the
     /// Core page does.
     ///
+    /// The Deployment's own methods (`save_setting_as_system`, the `send*`
+    /// family, `run_job`, `tick`, `migrate`, …) check no Permission and act
+    /// as the system. They are for the Deployment's own code (a seed, the
+    /// CLI, a runtime), not for Staff actions: for a Staff action call a
+    /// service that takes an [`crate::Actor`]
+    /// (`modules::announcements::create_draft`, [`crate::Settings::save`],
+    /// …). Such a service checks the Actor it is given, so
+    /// [`crate::Actor::staff`] is only as honest as the Module building it:
+    /// a page builds it from the signed-in [`crate::CurrentStaff`], a Job
+    /// rebuilds it from the Staff id its page saved in the payload.
+    ///
     /// Use the borrow within the request. Do not clone the Deployment
     /// into anything that outlives it (a `static`, a Module field, a
     /// spawned task kept after the answer): the Deployment owns the

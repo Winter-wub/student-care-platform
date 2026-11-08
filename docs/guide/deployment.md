@@ -312,10 +312,15 @@ audits the write with the request's address, user agent and request id, as
 the Core page does. The route's own Permission is not enough: a Staff member
 who may open `/admin/reminders` but lacks `announcements.send` is refused.
 `ui::service_error` answers that refusal with the same 403 page the Core
-page shows.
+page shows, a `Conflict` (the row changed meanwhile) with a 409 page asking
+to reload, and anything else with a 500 page that hides the error text.
 
 ```rust
-use harpseal::audience::{Audience, parse_student_ids};
+use axum::Form;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Redirect, Response};
+use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{Actor, AppState, CurrentStaff, RequestCtx, ui};
 
@@ -325,9 +330,13 @@ async fn announce(
     ctx: RequestCtx,
     Form(form): Form<Vec<(String, String)>>,
 ) -> Response {
-    let ids = parse_student_ids(field(&form, "ids"));
-    if ids.is_empty() {
-        // No list is no filter: the draft would go to everyone.
+    let ids = form
+        .iter()
+        .find(|(name, _)| name == "ids")
+        .map(|(_, v)| parse_student_ids(v))
+        .unwrap_or_default();
+    // No list is no filter (everyone); over MAX_STUDENTS the Core refuses.
+    if ids.is_empty() || ids.len() > MAX_STUDENTS {
         return StatusCode::UNPROCESSABLE_ENTITY.into_response();
     }
     let mut audience = Audience::everyone();

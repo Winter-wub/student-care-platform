@@ -17,7 +17,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
-use harpseal::audience::{Audience, parse_student_ids};
+use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
     Actor, AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale,
@@ -55,6 +55,16 @@ const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("reminders.announce", "en", "Draft an announcement to them"),
     CatalogEntry::new("reminders.no_ids", "th", "กรุณาใส่รหัสนักศึกษาอย่างน้อยหนึ่งคน"),
     CatalogEntry::new("reminders.no_ids", "en", "Enter at least one student ID."),
+    CatalogEntry::new(
+        "reminders.too_many_ids",
+        "th",
+        "ร่างประกาศได้ครั้งละไม่เกิน 2,000 คน",
+    ),
+    CatalogEntry::new(
+        "reminders.too_many_ids",
+        "en",
+        "Draft for at most 2,000 Students at a time.",
+    ),
 ];
 
 /// The reminder, in Thai and English, under `key`.
@@ -270,10 +280,16 @@ async fn announce(
         .find(|(n, _)| n == "ids")
         .map(|(_, v)| parse_student_ids(v))
         .unwrap_or_default();
-    // An empty list would be no filter at all: everyone.
-    if ids.is_empty() {
+    // An empty list would be no filter at all: everyone. Over
+    // MAX_STUDENTS the Core refuses the Audience.
+    let refused = match ids.len() {
+        0 => Some("reminders.no_ids"),
+        n if n > MAX_STUDENTS => Some("reminders.too_many_ids"),
+        _ => None,
+    };
+    if let Some(key) = refused {
         let title = s.catalog.t(&staff.locale, "reminders.title");
-        let text = s.catalog.t(&staff.locale, "reminders.no_ids");
+        let text = s.catalog.t(&staff.locale, key);
         let body = html! { section class="card" { h1 { (title) } p role="alert" { (text) } } };
         let page = ui::back_office(&s, &staff, &title, body);
         return (StatusCode::UNPROCESSABLE_ENTITY, Html(page.into_string())).into_response();
