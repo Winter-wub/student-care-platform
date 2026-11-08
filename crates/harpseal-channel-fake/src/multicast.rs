@@ -8,7 +8,7 @@ use harpseal::{
 };
 
 use crate::record::{Call, Sent};
-use crate::render::render;
+use crate::render::{refused, refused_url, render};
 use crate::{FakeChannel, FakeProfile};
 
 /// Recipients per multicast request by default (LINE's limit).
@@ -36,6 +36,9 @@ impl Multicast for FakeChannel {
         key: &str,
     ) -> BatchReceipt {
         self.run_before_send();
+        if msgs.iter().any(refused_url) {
+            return BatchReceipt::partial(Vec::new(), refused());
+        }
         let limits = self.profile.limits();
         let size = self.profile.request_size();
         let mut s = self.lock();

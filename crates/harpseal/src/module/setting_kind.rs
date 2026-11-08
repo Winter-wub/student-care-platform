@@ -91,7 +91,7 @@ impl SettingKind {
                 .ok_or("kernel.admin.module_settings.err_number"),
             SettingKind::Date if date(&v) => Ok(v),
             SettingKind::Date => Err("kernel.admin.module_settings.err_date"),
-            SettingKind::Url if https_url(&v) => Ok(v),
+            SettingKind::Url if crate::render::https_url(&v) => Ok(v),
             SettingKind::Url => Err("kernel.admin.module_settings.err_url"),
             SettingKind::AccountNumber if account(&v) => Ok(v),
             SettingKind::AccountNumber => Err("kernel.admin.module_settings.err_account"),
@@ -153,27 +153,6 @@ fn date(v: &str) -> bool {
         _ => return false,
     };
     y >= 1 && (1..=days).contains(&d)
-}
-
-/// `https://host[:port][/…]`: a host of letters, digits, `.` and `-`, no
-/// user info, no spaces.
-fn https_url(v: &str) -> bool {
-    let Some(rest) = v.strip_prefix("https://") else {
-        return false;
-    };
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let (authority, tail) = rest.split_at(end);
-    let (host, port) = match authority.split_once(':') {
-        Some((h, p)) => (h, Some(p)),
-        None => (authority, None),
-    };
-    let host_ok = !host.is_empty()
-        && !host.starts_with(['.', '-'])
-        && host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
-    let port_ok = port.is_none_or(|p| p.parse::<u16>().is_ok_and(|n| n > 0));
-    host_ok && port_ok && !tail.chars().any(char::is_whitespace)
 }
 
 #[cfg(test)]

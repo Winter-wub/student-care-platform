@@ -24,6 +24,7 @@
 //! [`crate::ModuleRegistrar::mini_app_link`] lists it on the home ([`links`]).
 
 mod exchange;
+mod external;
 mod launch;
 mod limit;
 mod links;

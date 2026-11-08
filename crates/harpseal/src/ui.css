@@ -257,7 +257,14 @@ form.inline { display: inline-flex; margin: 0; }
 .app-news .full { padding: 0 var(--gutter) var(--gutter); }
 .app-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
   gap: 8px; margin-top: 8px; font-size: .875rem; color: var(--muted); }
-.app-body { white-space: pre-line; }
+.app-body { white-space: pre-line; overflow-wrap: anywhere; }
+/* The body format (#108): lists, links. */
+.app-body ul, .app-body ol { margin: 4px 0; padding-left: 1.5em; white-space: normal; }
+.app-body li { white-space: pre-line; }
+.app-body a { color: var(--brand); text-decoration: underline; }
+.md-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.md-toolbar button { min-width: var(--tap); padding: 4px 10px; }
+.mini-preview { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-top: 8px; background: #fff; }
 .app-ack { margin: 12px 0 0; }
 .app-ack button { width: 100%; }
 .app-acked { display: flex; align-items: center; justify-content: center; min-height: var(--tap);

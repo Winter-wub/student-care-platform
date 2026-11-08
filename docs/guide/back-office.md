@@ -195,6 +195,34 @@ from a spreadsheet paste are ignored. The list is saved with the announcement
 Before rolling back to a build without hand-picked lists, cancel or pause every
 scheduled hand-picked announcement: an older build ignores the list and would
 send it to the remaining filters, possibly everyone.
+The body (up to 2,000 characters, as before) takes a small format (#108):
+`**bold**`, `*italic*`, lines starting `- ` (bullets) or a number from 1
+to 99 and `. ` (numbered, shown with the number typed; `2567. …` is a
+paragraph), `[text](https://…)` links and bare `https://…` URLs. Only
+`https:` links that LINE and Telegram both accept count: a host of two or
+more labels (each up to 63 bytes, the last not all digits, 253 bytes in
+all), no user info, no quotes, brackets or spaces, valid `%XX`
+escapes, one `#` at most, at most 1,000 bytes; parentheses inside a
+`[text](…)` URL must balance. Anything else, `http:`, `javascript:` and
+`data:` included, and any HTML, stays text as typed. Emphasis and links
+stay on one line; lists do not nest. A link's text loses invisible
+characters; one with nothing visible left (`[](https://…)`) shows the URL's
+host. For a body over 2,000 characters the preview shows "ยาวเกิน 2,000
+ตัวอักษร" instead (a request over 128 KB is refused with 413). The form's
+toolbar (B, I, •, 1., 🔗) inserts the syntax (without script the help line
+shows it), and "ตัวอย่างในมินิแอป" shows the body exactly as the Mini App
+does, refreshed as Staff type (`POST /admin/announcements/preview`). The Mini
+App shows the format; a link opens outside the chat app
+(`liff.openWindow({ external: true })` on LINE once LIFF is ready,
+`Telegram.WebApp.openLink` on Telegram, else the link opens a new window
+itself with `rel="noopener noreferrer"`). In chat
+the Card body is plain text (markup removed, link text kept, list markers
+as typed) and the Card adds a URL button for each of the body's first two
+distinct links, labelled with the link text (cut to 40 characters,
+invisible characters removed, the host when nothing is left); the
+"ข่าวล่าสุด" list shows the plain text only. A body without the format looks
+exactly as before; one that happens to contain `*word*`, a `- ` or `1. `
+line, or a link in brackets now shows formatted.
 The detail page shows acknowledged / in Audience and every
 delivery; edits reach Telegram through `EditMessage`. LINE cannot edit a sent
 message: tick "แจ้งผู้รับว่ามีการแก้ไข" when saving the edit of a sent

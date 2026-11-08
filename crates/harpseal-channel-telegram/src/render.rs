@@ -4,12 +4,15 @@
 //! `chat_id` is added by `send`. Degrade rules: `docs/prototypes/message-render.md`.
 
 use harpseal::render::{
-    MENU_MORE_ACTION, RenderCx, char_len, file_link, mini_app_unavailable, more_label, split_text,
-    truncate,
+    MENU_MORE_ACTION, RenderCx, char_len, file_link, label_or_host, link_unavailable,
+    mini_app_unavailable, more_label, split_text, truncate,
 };
 use harpseal::{ActionId, Attachment, Button, Card, Choices, Menu, Message};
 use serde_json::{Value, json};
 
+/// Ours, not Telegram's (the Bot API states no button text limit): a URL
+/// button's label is cut like LINE's Flex button label.
+pub const URL_LABEL_MAX: usize = 40;
 /// <https://core.telegram.org/bots/api#sendmessage> (1-4096 chars after entity parsing)
 pub const TEXT_MAX: usize = 4096;
 /// <https://core.telegram.org/bots/api#inlinekeyboardbutton>
@@ -106,14 +109,22 @@ fn choices(c: &Choices, cx: &RenderCx) -> Vec<Value> {
     out
 }
 
-/// Appends a visible line for each Mini App button that cannot render.
+/// Appends a visible line for each Mini App button that cannot render
+/// and each URL button refused (not https).
 fn with_notices(text: &str, buttons: &[Button], cx: &RenderCx) -> String {
     let mut out = text.to_string();
     for b in buttons {
-        if let Button::MiniApp { label, .. } = b
-            && cx.mini_app_base_url.is_none()
-        {
-            out.push_str(&format!("\n\n{}", mini_app_unavailable(cx, label)));
+        let line = match b {
+            Button::MiniApp { label, .. } if cx.mini_app_base_url.is_none() => {
+                Some(mini_app_unavailable(cx, label))
+            }
+            Button::Url { label, .. } if b.safe_url().is_none() => {
+                Some(link_unavailable(cx, label))
+            }
+            _ => None,
+        };
+        if let Some(line) = line {
+            out.push_str(&format!("\n\n{line}"));
         }
     }
     out
@@ -128,6 +139,11 @@ fn button(b: &Button, cx: &RenderCx) -> Option<Value> {
         Button::MiniApp { label, path } => cx
             .mini_app_url(path)
             .map(|url| json!({ "text": label, "web_app": { "url": url } })),
+        // An inline `url` button; a URL that is not https is refused (the
+        // notice line above stands in for it).
+        Button::Url { label, .. } => b
+            .safe_url()
+            .map(|url| json!({ "text": truncate(&label_or_host(label, url), URL_LABEL_MAX), "url": url })),
         // #[non_exhaustive]: a kind this adapter does not know yet.
         _ => None,
     }

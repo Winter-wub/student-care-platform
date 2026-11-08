@@ -52,6 +52,7 @@ mod outcome;
 mod page_actions;
 mod page_count;
 mod page_detail;
+mod page_editor;
 mod page_form;
 mod page_list;
 mod page_notice;
@@ -141,6 +142,7 @@ impl Module for Announcements {
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
+        .messages(page_editor::EDITOR)
         .menu_entry(latest, chat::on_latest)
         .action_prefix(ACK_PREFIX, chat::on_ack)
         .mini_app_button(MINI_APP_PATH)
@@ -172,6 +174,13 @@ fn pages(r: &mut ModuleRegistrar) {
         get(page_form::new_page).post(page_form::new_post),
     )
     .back_office(send, "/announcements/audience", post(page_count::fragment))
+    .back_office(
+        send,
+        "/announcements/preview",
+        post(page_editor::fragment).layer(axum::extract::DefaultBodyLimit::max(
+            page_editor::PREVIEW_MAX_BYTES,
+        )),
+    )
     .back_office(
         send,
         "/announcements/pick",

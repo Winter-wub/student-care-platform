@@ -72,6 +72,170 @@ pub fn split_text(s: &str, max: usize) -> Vec<String> {
     out
 }
 
+/// Longest URL in bytes a `Button::Url` or a body link carries: LINE's
+/// URI action limit (<https://developers.line.biz/en/reference/messaging-api/#uri-action>),
+/// the stricter of the two Channels.
+pub const URL_MAX: usize = 1000;
+
+/// `https://host[:port][/…]`: a host of letters, digits, `.` and `-`, no
+/// user info, no spaces. The check `[settings]` URLs have always had.
+pub fn https_url(v: &str) -> bool {
+    let Some(rest) = v.strip_prefix("https://") else {
+        return false;
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let (host, port) = match authority.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (authority, None),
+    };
+    let host_ok = !host.is_empty()
+        && !host.starts_with(['.', '-'])
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let port_ok = port.is_none_or(|p| p.parse::<u16>().is_ok_and(|n| n > 0));
+    host_ok && port_ok && !tail.chars().any(char::is_whitespace)
+}
+
+/// A URL a Student may be sent to (a `Button::Url`, a link in a body),
+/// one LINE and Telegram both accept: [`https_url`], at most [`URL_MAX`]
+/// bytes, only printable ASCII without `"`, `'`, `<`, `>`, `\`, `` ` ``,
+/// `^`, `{`, `|`, `}`, `[`, `]`; every `%` followed by two hex digits; at
+/// most one `#`; a host of two or more non-empty labels, none starting or
+/// ending with `-`. A pasted URL is percent-encoded; anything else stays
+/// plain text (no button), so a Push is never refused for a URL.
+pub fn link_url(v: &str) -> bool {
+    v.len() <= URL_MAX
+        && https_url(v)
+        && v.bytes().all(|b| {
+            b.is_ascii_graphic()
+                && !matches!(
+                    b,
+                    b'"' | b'\''
+                        | b'<'
+                        | b'>'
+                        | b'\\'
+                        | b'`'
+                        | b'^'
+                        | b'{'
+                        | b'|'
+                        | b'}'
+                        | b'['
+                        | b']'
+                )
+        })
+        && v.matches('#').count() <= 1
+        && percent_escapes_ok(v)
+        && host_labels_ok(v)
+}
+
+/// Every `%` starts a `%XX` escape.
+fn percent_escapes_ok(v: &str) -> bool {
+    let b = v.as_bytes();
+    b.iter().enumerate().all(|(i, &c)| {
+        c != b'%'
+            || (b.get(i + 1).is_some_and(u8::is_ascii_hexdigit)
+                && b.get(i + 2).is_some_and(u8::is_ascii_hexdigit))
+    })
+}
+
+/// A host of 253 bytes at most and two or more labels, none empty, over
+/// 63 bytes, or starting or ending with `-`; the last label not all
+/// digits (no bare IPv4 address).
+fn host_labels_ok(v: &str) -> bool {
+    let host = url_host(v);
+    let labels: Vec<&str> = host.split('.').collect();
+    host.len() <= 253
+        && labels.len() >= 2
+        && labels
+            .iter()
+            .all(|l| !l.is_empty() && l.len() <= 63 && !l.starts_with('-') && !l.ends_with('-'))
+        && labels
+            .last()
+            .is_some_and(|l| !l.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The host of an `https://` URL (no port, no path); `""` for anything
+/// else. A link label falls back to it.
+pub fn url_host(v: &str) -> &str {
+    let Some(rest) = v.strip_prefix("https://") else {
+        return "";
+    };
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    authority.split(':').next().unwrap_or_default()
+}
+
+/// Whether `c` is a Unicode format character (general category Cf): the
+/// soft hyphen, Arabic number signs, zero-width and joiner characters,
+/// bidi marks, embeddings, overrides and isolates, invisible operators,
+/// the BOM, interlinear annotation marks, tag characters.
+pub fn is_format_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{0600}'..='\u{0605}'
+            | '\u{061C}'
+            | '\u{06DD}'
+            | '\u{070F}'
+            | '\u{0890}'..='\u{0891}'
+            | '\u{08E2}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{110BD}'
+            | '\u{110CD}'
+            | '\u{13430}'..='\u{1343F}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0001}'
+            | '\u{E0020}'..='\u{E007F}'
+    )
+}
+
+/// Whether `c` shows nothing in a label: a format character
+/// ([`is_format_char`]) or a blank filler (Hangul fillers U+115F, U+1160,
+/// U+3164, U+FFA0, the Braille blank U+2800).
+pub fn is_invisible(c: char) -> bool {
+    is_format_char(c)
+        || matches!(
+            c,
+            '\u{115F}' | '\u{1160}' | '\u{3164}' | '\u{FFA0}' | '\u{2800}'
+        )
+}
+
+/// `s` as a button or link label: invisible characters ([`is_invisible`])
+/// removed, the line and paragraph separators (U+2028, U+2029) turned
+/// into spaces. It may come out blank; [`label_or_host`] never does.
+pub fn clean_label(s: &str) -> String {
+    s.chars()
+        .filter(|&c| !is_invisible(c))
+        .map(|c| {
+            if matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+/// [`clean_label`] of `label`, or the host of `url` when that is blank: a
+/// URL button never has an empty label (LINE and Telegram refuse the
+/// whole message for one).
+pub fn label_or_host(label: &str, url: &str) -> String {
+    let clean = clean_label(label);
+    if clean.trim().is_empty() {
+        url_host(url).to_string()
+    } else {
+        clean
+    }
+}
+
 /// Every Action id a Message carries, in order. Renderers must emit each
 /// of them exactly once (tests check this: no Action is dropped silently).
 pub fn action_ids(msg: &Message) -> Vec<String> {
@@ -88,6 +252,16 @@ pub fn mini_app_unavailable(cx: &RenderCx, label: &str) -> String {
         format!("(“{label}” ยังเปิดในช่องทางนี้ไม่ได้ ติดต่อเจ้าหน้าที่หากต้องการข้อมูลนี้)")
     } else {
         format!("(“{label}” cannot be opened on this channel yet; ask Staff for it.)")
+    }
+}
+
+/// The line an adapter shows instead of a URL button it refuses (a URL
+/// that is not https; only code inside the Core can build one).
+pub fn link_unavailable(cx: &RenderCx, label: &str) -> String {
+    if cx.is_thai() {
+        format!("(ลิงก์ “{label}” เปิดไม่ได้)")
+    } else {
+        format!("(The link “{label}” cannot be opened.)")
     }
 }
 
@@ -127,6 +301,57 @@ mod tests {
         assert_eq!(parts[0], "ก".repeat(70));
         assert!(parts.iter().all(|p| char_len(p) <= 100));
         assert_eq!(split_text("abc", 100), vec!["abc".to_string()]);
+    }
+
+    #[test]
+    fn link_urls_are_https_only() {
+        assert!(link_url("https://reg.seal-bay.invalid/exam?term=2#room"));
+        assert!(link_url("https://seal-bay.invalid:8443/a%E0%B8%81"));
+        assert!(link_url(&format!("https://{}.invalid/", "a".repeat(63))));
+        for bad in [
+            "http://seal-bay.invalid/",
+            "HTTPS://seal-bay.invalid/",
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "https://user@seal-bay.invalid/",
+            "https://seal-bay.invalid\\@evil.invalid/",
+            "https://seal-bay.invalid/\"onmouseover=x",
+            "https://seal-bay.invalid/<script>",
+            "https://seal-bay.invalid/ก",
+            "https://seal-bay.invalid/a b",
+            "https:///path",
+            "https://",
+            "https://localhost/",
+            "https://seal-bay./",
+            "https://a..invalid/",
+            "https://-seal.invalid/",
+            "https://seal-.invalid/",
+            "https://seal-bay.invalid/a%zz",
+            "https://seal-bay.invalid/a%4",
+            "https://seal-bay.invalid/a#b#c",
+            "https://seal-bay.invalid/[x]",
+            "https://192.168.1.1/",
+            "https://seal.123/",
+            format!("https://{}.invalid/", "a".repeat(64)).as_str(),
+            format!("https://{}invalid/", "abcdefghi.".repeat(26)).as_str(),
+        ] {
+            assert!(!link_url(bad), "{bad}");
+        }
+        let long = format!("https://seal-bay.invalid/{}", "a".repeat(URL_MAX));
+        assert!(!link_url(&long));
+    }
+
+    #[test]
+    fn format_chars_leave_labels() {
+        let l = "\u{202E}ตาราง\u{200B}สอบ\u{2066}x\u{FEFF}";
+        assert_eq!(clean_label(l), "ตารางสอบx");
+        assert_eq!(clean_label("ปกติ"), "ปกติ");
+        assert_eq!(clean_label("a\u{2028}b\u{2029}c"), "a b c");
+        let blank = "\u{3164}\u{115F}\u{1160}\u{2800}\u{200B} ";
+        assert_eq!(clean_label(blank).trim(), "");
+        let url = "https://reg.seal-bay.invalid:8443/x";
+        assert_eq!(label_or_host(blank, url), "reg.seal-bay.invalid");
+        assert_eq!(label_or_host("ตาราง", url), "ตาราง");
     }
 
     #[test]

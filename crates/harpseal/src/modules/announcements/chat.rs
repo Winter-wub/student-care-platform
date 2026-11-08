@@ -19,8 +19,14 @@ pub fn detail_path(id: &str) -> String {
     format!("{MINI_APP_PATH}/{id}")
 }
 
-/// The Card of announcement `id` in `locale` (Thai fallback): title, body,
-/// "รับทราบ" when `ack`, "เปิดดูรายละเอียด".
+/// Most URL buttons a pushed Card carries (#108).
+pub(crate) const URL_BUTTONS: usize = 2;
+
+/// The Card of announcement `id` in `locale` (Thai fallback): title, the
+/// body as plain text ([`crate::rich_text`]: markup removed, link text
+/// kept), "รับทราบ" when `ack`, "เปิดดูรายละเอียด", then a URL button for
+/// each of the body's first [`URL_BUTTONS`] distinct links, labelled with
+/// the link text (each adapter cuts it to its limit).
 pub(crate) fn card(
     catalog: &Catalog,
     locale: &Locale,
@@ -29,6 +35,7 @@ pub(crate) fn card(
     ack: bool,
 ) -> Result<Card> {
     let (title, body) = texts.pick(locale);
+    let doc = crate::rich_text::parse(body);
     let mut buttons = Vec::new();
     if ack {
         buttons.push(Button::action(
@@ -40,9 +47,12 @@ pub(crate) fn card(
         catalog.t(locale, "announcements.card.open"),
         detail_path(id),
     ));
+    for link in doc.first_links(URL_BUTTONS) {
+        buttons.push(Button::url(link.text, link.url)?);
+    }
     Ok(Card {
         title: title.to_string(),
-        body: body.to_string(),
+        body: doc.plain(),
         buttons,
     })
 }
@@ -191,7 +201,8 @@ pub(crate) async fn on_latest(cx: ActionContext) -> Result<Vec<Message>> {
         ));
         cards.push(Card {
             title: a.title.clone(),
-            body: a.body.clone(),
+            // Plain text (#108): markup removed, link text kept.
+            body: crate::rich_text::plain(&a.body),
             buttons,
         });
     }

@@ -22,6 +22,21 @@ adapter whose Menu is a shared platform object retires only versions that
 carry the Deployment's salt (`Menu::salt`), and answers
 `MenuRetire::Pending` until the platform confirms nobody is left on them.
 
+## URL buttons
+
+`Button::url(label, url)` opens a web page outside the chat (#108). It
+refuses anything but an `https:` URL (`harpseal::render::link_url`). LINE
+renders a `uri` action (Flex button label 40, quick reply 20), Telegram an
+inline keyboard `url` button (label cut to 40), the Fake Channel records it.
+An adapter checks every URL again before rendering (the real guard: a
+test fixture or a `&mut Button` can get past the constructor) and, for one
+that fails, sends no button and shows "(ลิงก์ “label” เปิดไม่ได้)" instead;
+the Fake Channel fails the send with `Error::Invalid`. Labels lose their
+invisible characters (bidi controls, zero-width, blank fillers), and a
+label left blank becomes the URL's host, so no message is refused for an
+empty label. Rules in
+`docs/adr/0003-semantic-message-model.md`.
+
 ## Mini App (LIFF and Telegram Web App)
 
 The Announcements Module sends Mini App buttons, so a Deployment with it
