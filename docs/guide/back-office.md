@@ -227,9 +227,10 @@ line, or a link in brackets now shows formatted.
 **Images (#109).** The create and edit forms take up to 4 images per
 announcement (slots 1 to 4): JPEG or PNG only, told by their bytes and
 named as what they are (a PNG named `.jpg`, a JPEG without a frame header,
-an SVG, a GIF or text is refused), at most 1 MB and 4096 pixels a side
-(16 megapixels) each, never re-encoded or resized. The form warns, without
-refusing, when the image on the chat Card is over 1024 pixels a side:
+an SVG, a GIF or text is refused), at most 1 MB, 4096 pixels a side
+and 16 megapixels each (so 4096 x 4096 is refused), never re-encoded or resized. The form warns, without
+refusing, when the image on a chat Card (Thai or English) is over 1024
+pixels a side:
 LINE may not show a larger Flex hero. A Thai hint next
 to the slots names the limits and asks Staff to shrink large images first
 and never to put personal data in an image: each one is served on a public
@@ -245,7 +246,9 @@ files removed or replaced are deleted from the FileStore. Once sent, Cards
 already delivered show the old image, so it stays served on its own URL
 (marked superseded, no longer on the pages or new Cards) until the
 announcement is retracted or expires; it is kept after that, as nothing
-purges announcements yet. An edit of a sent one edits its
+purges announcements yet. On a sent announcement the form says so next to
+"ลบรูปนี้": an image removed for personal data needs the announcement
+retracted. An edit of a sent one edits its
 Cards where the Channel can (Telegram) whenever the images change; the edit
 notice follows the text alone. A retracted announcement keeps its images,
 as it keeps its text: Staff still see them on its page.

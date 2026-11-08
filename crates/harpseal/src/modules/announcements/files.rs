@@ -212,7 +212,10 @@ pub(crate) struct Staged {
     rows: Vec<NewRow>,
     emptied: Vec<u8>,
     /// Supersede instead of delete: the announcement was sent, and Cards
-    /// already delivered show the old files.
+    /// already delivered show the old files. Superseded rows are not
+    /// capped: only Staff holding `announcements.send` make them, one per
+    /// slot per audited edit, each file at most 1 MB; a cap would block
+    /// the edit that removes an image showing personal data.
     keep_old: bool,
     /// Objects of the files this save deletes (not sent yet only).
     old_keys: Vec<String>,
@@ -280,12 +283,23 @@ impl Staged {
         } else {
             "DELETE FROM announcement_file WHERE".to_string()
         };
+        // A delete only while nothing was delivered: whatever the page saw,
+        // the batch itself refuses to delete a sent announcement's file.
+        let unsent = if self.keep_old {
+            ""
+        } else {
+            " AND EXISTS (SELECT 1 FROM announcement WHERE id = ? \
+             AND status IN ('draft', 'scheduled'))"
+        };
         let mut out = Vec::new();
         for n in &self.emptied {
             let sql = cond(&format!(
-                "{empty} announcement_id = ? AND kind = 'image' AND n = ? AND superseded_at IS NULL"
+                "{empty} announcement_id = ? AND kind = 'image' AND n = ? \
+                 AND superseded_at IS NULL{unsent}"
             ));
-            out.push(with_gate(Statement::new(sql).bind(id).bind(i64::from(*n))));
+            let st = Statement::new(sql).bind(id).bind(i64::from(*n));
+            let st = if self.keep_old { st } else { st.bind(id) };
+            out.push(with_gate(st));
         }
         for r in &self.rows {
             let sql = cond(

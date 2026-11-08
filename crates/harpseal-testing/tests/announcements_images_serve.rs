@@ -168,6 +168,9 @@ async fn replaced_on_a_sent_one_stays_served_until_retracted() {
     let id = create_parts(&b, "x", vec![f("image1", "a.png", png(20, 13))]).await;
     send_now(&w, &b, &id).await;
     let old = token(&w, &id, "1").await;
+    // The form says a removed image stays reachable until the retract.
+    let edit = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
+    assert!(edit.contains("ยังเปิดได้จากลิงก์เดิม"), "{edit}");
     let r = edit_parts(&w, &b, &id, "x", vec![f("image1", "b.png", png(40, 26))]).await;
     assert_eq!(r.status, 303, "{}", r.body);
     drain(&w).await;

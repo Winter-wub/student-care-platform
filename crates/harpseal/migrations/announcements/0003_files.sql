@@ -17,7 +17,7 @@
 -- announcement is sent and live. A replaced file gets a new token, so a
 -- platform's cached copy of the old one is never shown for the new one.
 CREATE TABLE announcement_file (
-    token TEXT PRIMARY KEY,
+    token TEXT NOT NULL PRIMARY KEY,
     announcement_id TEXT NOT NULL REFERENCES announcement (id),
     kind TEXT NOT NULL CHECK (kind IN ('image', 'pdf')),
     n INTEGER NOT NULL CHECK (n BETWEEN 1 AND 9),

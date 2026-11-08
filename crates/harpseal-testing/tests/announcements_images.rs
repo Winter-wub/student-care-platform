@@ -63,6 +63,7 @@ async fn refused_files_name_the_limit_they_broke_in_thai() {
         (f("image1", "wide.png", png(4097, 10)), PIXELS),
         (f("image1", "tall.jpg", jpeg(10, 4097)), PIXELS),
         (f("image1", "huge.png", png(4096, 4097)), PIXELS),
+        (f("image1", "square.png", png(4096, 4096)), PIXELS),
         // A JPEG with no start-of-frame: not an image we can size.
         (
             f("image1", "noframe.jpg", vec![0xFF, 0xD8, 0xFF, 0xD9]),
@@ -92,6 +93,7 @@ async fn refused_files_name_the_limit_they_broke_in_thai() {
 
 const PIXELS: &str = "รูปใหญ่เกิน 4096 พิกเซลต่อด้าน หรือเกิน 16 ล้านพิกเซล";
 const HERO_LARGE: &str = "LINE อาจไม่แสดงรูปบนการ์ด";
+const REMOVE_SENT: &str = "จนกว่าจะถอนประกาศหรือประกาศหมดอายุ";
 
 #[tokio::test]
 async fn a_hero_over_1024_pixels_is_saved_with_a_warning() {
@@ -110,8 +112,23 @@ async fn a_hero_over_1024_pixels_is_saved_with_a_warning() {
     assert_eq!(stored(&w, &id).await.len(), 2, "saved, not refused");
     let edit = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
     assert!(edit.contains(HERO_LARGE), "{edit}");
+    assert!(!edit.contains(REMOVE_SENT), "a draft deletes at once");
     let detail = b.get(&format!("/admin/announcements/{id}")).await.body;
     assert!(detail.contains(HERO_LARGE));
+    // The English body's Card shows its own first image: checked too.
+    let r = edit_parts(
+        &w,
+        &b,
+        &id,
+        "ห้อง 3105",
+        vec![t("title_en", "Room change"), t("body_en", "![](image:2)")],
+    )
+    .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let edit = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
+    assert!(edit.contains(HERO_LARGE), "the English Card's hero");
+    let r = edit_parts(&w, &b, &id, "ห้อง 3105", vec![]).await;
+    assert_eq!(r.status, 303, "{}", r.body);
     // The hero within 1024 px: no warning (slot 2 not placed any more).
     let r = edit_parts(&w, &b, &id, "ห้อง 3105", vec![t("image2_remove", "1")]).await;
     assert_eq!(r.status, 303, "{}", r.body);

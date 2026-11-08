@@ -71,6 +71,20 @@ pub(crate) const TEXTS: &[E] = &[
     E::new("announcements.images.remove", "th", "ลบรูปนี้"),
     E::new("announcements.images.remove", "en", "Remove this image"),
     E::new(
+        "announcements.images.remove_sent",
+        "th",
+        "ประกาศนี้ส่งแล้ว: รูปที่ลบจะหายจากหน้าและการ์ดใหม่ แต่ยังเปิดได้จากลิงก์เดิม\
+         ในการ์ดที่ส่งไปแล้ว จนกว่าจะถอนประกาศหรือประกาศหมดอายุ \
+         ถ้ารูปมีข้อมูลส่วนตัว ให้ถอนประกาศ",
+    ),
+    E::new(
+        "announcements.images.remove_sent",
+        "en",
+        "This announcement was sent: a removed image leaves the pages and new Cards, \
+         but its old link in the Cards already delivered still opens it until the \
+         announcement is retracted or expires. If it shows personal data, retract the announcement.",
+    ),
+    E::new(
         "announcements.images.bad_type",
         "th",
         "รับเฉพาะรูป JPEG หรือ PNG ที่นามสกุลไฟล์ตรงกับชนิดรูป (ไม่รับ SVG, GIF หรือไฟล์อื่น)",
@@ -273,7 +287,8 @@ impl<S: Send + Sync> FromRequest<S> for Posted {
 pub(super) fn field(
     v: &View<'_>,
     images: &[Stored],
-    body_th: &str,
+    bodies: &[&str],
+    sent: bool,
     reselect: bool,
     err: &dyn Fn(&str) -> Markup,
 ) -> Markup {
@@ -281,7 +296,7 @@ pub(super) fn field(
         fieldset class="announcement-images" {
             legend { (v.t("announcements.images.legend")) }
             p class="hint" { (v.t("announcements.images.hint")) }
-            (hero_warning(v, images, body_th))
+            (hero_warning(v, images, bodies))
             p class="muted" { (v.t("announcements.images.place")) }
             @if v.s.config.public_url.is_none() {
                 p class="muted" { (v.t("announcements.images.no_public_url")) }
@@ -301,6 +316,12 @@ pub(super) fn field(
                             input type="checkbox" name=(format!("{name}_remove")) value="1";
                             " " (v.t("announcements.images.remove"))
                         }
+                        // Removed from a sent one, it stays on its URL for
+                        // the Cards already delivered (Staff may be
+                        // removing it for personal data: say so).
+                        @if sent {
+                            p class="field-warning" { (v.t("announcements.images.remove_sent")) }
+                        }
                     }
                     input id=(name) type="file" name=(name) accept="image/jpeg,image/png";
                 }
@@ -309,12 +330,15 @@ pub(super) fn field(
     }
 }
 
-/// A warning, never a refusal, when the image the chat Card shows is over
+/// A warning, never a refusal, when the image a chat Card shows (for any
+/// of the `bodies`: each Locale places its own first image) is over
 /// [`HERO_SIDE`] pixels a side: LINE's Flex image limit (#109).
-pub(super) fn hero_warning(v: &View<'_>, images: &[Stored], body_th: &str) -> Markup {
-    let large = super::files::hero(images, body_th)
-        .and_then(|f| f.size)
-        .is_some_and(|(w, h)| w > HERO_SIDE || h > HERO_SIDE);
+pub(super) fn hero_warning(v: &View<'_>, images: &[Stored], bodies: &[&str]) -> Markup {
+    let large = bodies.iter().any(|body| {
+        super::files::hero(images, body)
+            .and_then(|f| f.size)
+            .is_some_and(|(w, h)| w > HERO_SIDE || h > HERO_SIDE)
+    });
     html! {
         @if large { p class="field-warning" role="status" { (v.t("announcements.images.hero_large")) } }
     }

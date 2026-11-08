@@ -287,7 +287,7 @@ fn form_page(
                     (page_editor::help(v))
                 }
             }
-            (form_images::field(v, form.images, &f.body_th, form.reselect, &err))
+            (form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect, &err))
             @if !sent {
                 label class="check" {
                     input type="checkbox" name="require_ack" value="1" checked[f.require_ack];

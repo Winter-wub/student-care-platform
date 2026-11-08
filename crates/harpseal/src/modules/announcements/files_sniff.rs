@@ -58,8 +58,9 @@ pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Option<(ImageType, (u32, u
 
 /// Longest side an image may have, in pixels.
 pub(crate) const MAX_SIDE: u32 = 4096;
-/// Most pixels an image may have (16 MP, 4096 x 4096).
-pub(crate) const MAX_PIXELS: u64 = 4096 * 4096;
+/// Most pixels an image may have (16 MP): below [`MAX_SIDE`] squared, so
+/// a 4096 x 4096 image is refused while 4096 x 3906 is taken.
+pub(crate) const MAX_PIXELS: u64 = 16_000_000;
 /// Longest side of a Flex hero LINE shows (larger: a warning, #109).
 pub(crate) const HERO_SIDE: u32 = 1024;
 
@@ -162,7 +163,8 @@ pub(crate) mod tests {
             sniff(&jpeg(800, 520), "room.JPG").map(|x| x.0),
             Some(ImageType::Jpeg)
         );
-        assert!(size_ok((4096, 4096)) && size_ok((4096, 1)));
+        assert!(size_ok((4096, 3906)) && size_ok((4096, 1)));
+        assert!(!size_ok((4096, 4096)), "16.8 MP: over 16 MP");
         assert!(!size_ok((4097, 10)) && !size_ok((10, 4097)));
     }
 

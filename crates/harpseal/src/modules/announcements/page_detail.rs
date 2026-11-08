@@ -77,7 +77,7 @@ pub(super) async fn page(
             (hand_picked(&v, &row))
             (actions(&v, &row))
             (texts_card(&texts))
-            (images_card(&v, &images, texts.pick(&crate::message::Locale::th()).1))
+            (images_card(&v, &images, &texts))
             (counts(&v, &st))
             (fragment)
         };
@@ -191,13 +191,14 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
 
 /// The saved images (#109), through the back-office route: Staff see them
 /// whatever the status (a draft, a retracted one).
-fn images_card(v: &View<'_>, images: &[super::files::Stored], body_th: &str) -> Markup {
+fn images_card(v: &View<'_>, images: &[super::files::Stored], texts: &Texts) -> Markup {
+    let bodies: Vec<&str> = texts.0.values().map(|(_, b)| b.as_str()).collect();
     let label = v.t("announcements.images.slot");
     html! {
         @if !images.is_empty() {
             div class="card" {
                 p class="muted" { (v.t("announcements.images.legend")) }
-                (super::form_images::hero_warning(v, images, body_th))
+                (super::form_images::hero_warning(v, images, &bodies))
                 @for f in images {
                     figure {
                         (f.img(true).markup(&format!("{label} {}", f.n)))
