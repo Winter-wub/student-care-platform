@@ -31,13 +31,14 @@ fn url_buttons_take_https_only() {
     let raw = Button::Url {
         label: "x".into(),
         url: "javascript:alert(1)".into(),
+        external: false,
     };
     assert_eq!(raw.safe_url(), None);
 }
 
 #[test]
 fn menu_keys_from_locales() {
-    let key = |tag: &str| MenuKey::for_locale(&Locale::new(tag)).map(|k| k.0);
+    let key = |tag: &str| MenuKey::for_locale(&Locale::new(tag)).map(|k| k.as_str().to_string());
     assert_eq!(key("th").unwrap(), "th");
     assert_eq!(key("zh-hant").unwrap(), "zhhant");
     assert_eq!(key("zh-Hant").unwrap(), "zhhant");

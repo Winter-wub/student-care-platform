@@ -1,9 +1,10 @@
-//! Inline pieces of one line: bold, italic, links, text. The parse is
+//! Inline pieces of one line: bold, italic, colour, links, images, text.
+//! The parse is
 //! linear in the line's length: closers are found through
 //! [`super::scan::Scan`], which never rescans what a failed opener read.
 
-use super::Link;
 use super::scan::{Scan, step};
+use super::{Colour, Link};
 
 /// One piece of a line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,13 @@ pub enum Inline {
     Bold(Vec<Inline>),
     /// `*…*`.
     Italic(Vec<Inline>),
+    /// `{red}…{/red}` (#113): text in a colour of the palette.
+    Colour {
+        /// The colour.
+        colour: Colour,
+        /// What it colours.
+        content: Vec<Inline>,
+    },
     /// `[text](https://…)` or a bare `https://…`.
     Link {
         /// The text shown.
@@ -33,11 +41,12 @@ pub enum Inline {
 }
 
 /// What may open inside the current piece: a kind never nests in itself,
-/// and a link's text is plain.
+/// and a link's text is plain. Nesting stops at four levels.
 #[derive(Clone, Copy)]
 struct Allow {
     bold: bool,
     italic: bool,
+    colour: bool,
     link: bool,
 }
 
@@ -48,13 +57,14 @@ pub(super) fn parse(line: &str) -> Vec<Inline> {
         Allow {
             bold: true,
             italic: true,
+            colour: true,
             link: true,
         },
     )
 }
 
-/// One pass over `s`; a Bold or Italic parses its content (a disjoint
-/// slice) one level down, at most three levels.
+/// One pass over `s`; a Bold, Italic or Colour parses its content (a
+/// disjoint slice) one level down, at most four levels.
 fn parse_with(s: &str, allow: Allow) -> Vec<Inline> {
     let mut scan = Scan::new(s);
     let mut out = Vec::new();
@@ -89,6 +99,20 @@ fn parse_with(s: &str, allow: Allow) -> Vec<Inline> {
             };
             out.push(Inline::Italic(parse_with(&s[i + 1..end], inner)));
             i = end + 1;
+            continue;
+        }
+        if allow.colour
+            && ch == '{'
+            && let Some((colour, from, close)) = scan.colour(i)
+        {
+            flush(&mut text, &mut out);
+            let inner = Allow {
+                colour: false,
+                ..allow
+            };
+            let content = parse_with(&s[from..close], inner);
+            out.push(Inline::Colour { colour, content });
+            i = close + colour.close().len();
             continue;
         }
         if allow.link
@@ -143,7 +167,9 @@ pub(super) fn plain(pieces: &[Inline]) -> String {
     for p in pieces {
         match p {
             Inline::Text(t) => out.push_str(t),
-            Inline::Bold(c) | Inline::Italic(c) => out.push_str(&plain(c)),
+            Inline::Bold(c) | Inline::Italic(c) | Inline::Colour { content: c, .. } => {
+                out.push_str(&plain(c));
+            }
             Inline::Link { text, .. } => out.push_str(text),
             Inline::Image { .. } => {}
         }
@@ -155,7 +181,9 @@ pub(super) fn plain(pieces: &[Inline]) -> String {
 pub(super) fn links(pieces: &[Inline], out: &mut Vec<Link>) {
     for p in pieces {
         match p {
-            Inline::Bold(c) | Inline::Italic(c) => links(c, out),
+            Inline::Bold(c) | Inline::Italic(c) | Inline::Colour { content: c, .. } => {
+                links(c, out);
+            }
             Inline::Link { text, url } => out.push(Link {
                 text: text.clone(),
                 url: url.clone(),
@@ -169,7 +197,9 @@ pub(super) fn links(pieces: &[Inline], out: &mut Vec<Link>) {
 pub(super) fn images(pieces: &[Inline], out: &mut Vec<u8>) {
     for p in pieces {
         match p {
-            Inline::Bold(c) | Inline::Italic(c) => images(c, out),
+            Inline::Bold(c) | Inline::Italic(c) | Inline::Colour { content: c, .. } => {
+                images(c, out);
+            }
             Inline::Image { n, .. } => out.push(*n),
             Inline::Text(_) | Inline::Link { .. } => {}
         }

@@ -140,7 +140,9 @@ async fn a_hero_over_1024_pixels_is_saved_with_a_warning() {
 async fn a_body_over_the_limit_is_refused_before_it_is_read() {
     let w = boot_public().await;
     let b = signed_in(&w, "Officer").await;
-    let huge = vec![0u8; 5 * 1024 * 1024];
+    // Over the form's cap (15,204,352 bytes: 4 images of 1 MiB, one PDF of
+    // 10 MiB, 512 KiB; #113).
+    let huge = vec![0u8; 15 * 1024 * 1024];
     let r = post_parts(
         &b,
         "/admin/announcements/new",

@@ -10,8 +10,10 @@ use super::{Block, Doc, Inline, Item};
 
 impl Doc {
     /// The body as HTML: `<p class="app-body">` for a body without lists
-    /// (exactly the markup a plain body always had), else
-    /// `<div class="app-body">` holding the text runs and `<ul>`/`<ol>`.
+    /// or headings (exactly the markup a plain body always had), else
+    /// `<div class="app-body">` holding the text runs, `<ul>`/`<ol>` and
+    /// the headings (`##` an `<h2>`, `###` an `<h3>`, #113). A colour is a
+    /// `<span>` with the colour's class ([`super::Colour::class`]).
     /// Line breaks are kept as text (`white-space: pre-line`). A link opens
     /// a new window (`target="_blank" rel="noopener noreferrer"`) and
     /// carries `data-ext`, which the Mini App's script turns into the
@@ -78,6 +80,8 @@ fn blocks(blocks: &[Block], img: Imgs<'_>) -> Markup {
                         (pieces(line, img))
                     }
                 }
+                Block::Heading { level: 2, content } => { h2 class="app-h" { (pieces(content, img)) } }
+                Block::Heading { content, .. } => { h3 class="app-h" { (pieces(content, img)) } }
                 Block::Bullets(items) => { ul { (list(items, img)) } }
                 Block::Numbered(items) => { ol { (list(items, img)) } }
             }
@@ -97,6 +101,9 @@ fn pieces(ps: &[Inline], img: Imgs<'_>) -> Markup {
                 Inline::Text(t) => { (t) }
                 Inline::Bold(c) => { strong { (pieces(c, img)) } }
                 Inline::Italic(c) => { em { (pieces(c, img)) } }
+                Inline::Colour { colour, content } => {
+                    span class=(colour.class()) { (pieces(content, img)) }
+                }
                 Inline::Link { text, url } => {
                     a href=(url) target="_blank" rel="noopener noreferrer" data-ext { (text) }
                 }

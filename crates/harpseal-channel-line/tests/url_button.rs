@@ -125,3 +125,53 @@ fn format_characters_leave_url_labels() {
     let out = render::message(&msg, &cx());
     assert_eq!(footer(&out[0])[0]["action"]["label"], "ตารางสอบ");
 }
+
+#[test]
+fn an_external_url_opens_the_phones_browser() {
+    // #113: a PDF button opens outside LINE's in-app browser.
+    let pdf =
+        "https://students.seal-bay.invalid/announcements/files/0123456789abcdef0123456789abcdef";
+    for (url, want) in [
+        (pdf.to_string(), format!("{pdf}?openExternalBrowser=1")),
+        (URL.to_string(), format!("{URL}&openExternalBrowser=1")),
+        (
+            format!("{pdf}#page=2"),
+            format!("{pdf}?openExternalBrowser=1#page=2"),
+        ),
+    ] {
+        let msg = Message::Card(Card {
+            image: None,
+            title: "ตารางสอบ".into(),
+            body: "ไฟล์แนบ".into(),
+            buttons: vec![
+                Button::url("ตารางสอบ.pdf", &url).unwrap().external(),
+                Button::url("เว็บคณะ", &url).unwrap(),
+            ],
+        });
+        let out = render::message(&msg, &cx());
+        let f = footer(&out[0]);
+        assert_eq!(f[0]["action"]["uri"], want.as_str());
+        // A URL button not marked external is left as it is.
+        assert_eq!(f[1]["action"]["uri"], url.as_str());
+    }
+}
+
+#[test]
+fn an_external_url_pushed_past_the_limit_is_left_out() {
+    // 1,000 bytes passes `Button::url`; with `?openExternalBrowser=1` it
+    // is over LINE's limit, so no button (the visible notice instead).
+    let base = "https://students.seal-bay.invalid/announcements/files/";
+    let url = format!("{base}{}", "a".repeat(1000 - base.len()));
+    assert_eq!(url.len(), 1000);
+    let msg = Message::Card(Card {
+        image: None,
+        title: "ตารางสอบ".into(),
+        body: "ไฟล์แนบ".into(),
+        buttons: vec![Button::url("ตารางสอบ.pdf", &url).unwrap().external()],
+    });
+    let out = render::message(&msg, &cx());
+    let text = out[0].to_string();
+    assert!(!text.contains("openExternalBrowser"), "{text}");
+    assert!(!text.contains(&url), "{text}");
+    assert!(text.contains("ตารางสอบ.pdf"), "the notice names it: {text}");
+}

@@ -21,8 +21,8 @@ pub(crate) struct Draft {
     /// Editing a sent announcement: notify its recipients on Channels that
     /// cannot edit (LINE) with one Push each (#77). Ignored otherwise.
     pub(crate) notify: bool,
-    /// Images to add, replace or remove (#109).
-    pub(crate) images: super::files::ImageEdits,
+    /// Images (#109) and PDFs (#113) to add, replace or remove.
+    pub(crate) files: super::files::FileEdits,
 }
 
 impl Draft {
@@ -37,8 +37,8 @@ impl Draft {
         if self.notify {
             j["notify"] = true.into();
         }
-        if !self.images.is_empty() {
-            j["images"] = self.images.summary();
+        if !self.files.is_empty() {
+            j["images"] = self.files.summary();
         }
         j
     }

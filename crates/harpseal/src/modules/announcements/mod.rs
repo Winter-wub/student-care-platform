@@ -37,7 +37,9 @@
 //!   images per announcement in `announcement_file` and the FileStore;
 //!   served publicly at `/announcements/files/<token>` only while it is
 //!   sent and live; the first is the chat
-//!   Card's image, and the Mini App shows each in place.
+//!   Card's image, and the Mini App shows each in place. Up to 3 PDFs
+//!   (#113) of 10 MB each the same way: the Mini App lists them with
+//!   their names and sizes, and the first is a URL button on the Card.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **From code**: [`create_draft`] and [`confirm`] take the same path as
@@ -49,10 +51,14 @@ mod chat;
 mod deliver;
 mod draft;
 mod files;
+mod files_pdf;
+mod files_pdf_scan;
 mod files_serve;
 mod files_sniff;
+mod files_stage;
 mod form;
 mod form_images;
+mod form_pdfs;
 mod gate;
 mod maint;
 mod maint_chunk;
@@ -157,6 +163,7 @@ impl Module for Announcements {
         .messages(texts::FORM)
         .messages(page_editor::EDITOR)
         .messages(form_images::TEXTS)
+        .messages(form_pdfs::TEXTS)
         .menu_entry(latest, chat::on_latest)
         .action_prefix(ACK_PREFIX, chat::on_ack)
         .mini_app_button(MINI_APP_PATH)
@@ -173,8 +180,9 @@ impl Module for Announcements {
     }
 }
 
-/// The create / edit form takes images (#109): its body may hold
-/// [`files::MAX_IMAGES`] of [`files::MAX_IMAGE_BYTES`]; a larger request is
+/// The create / edit form takes images (#109) and PDFs (#113): its body
+/// may hold [`files::MAX_IMAGES`] of [`files::MAX_IMAGE_BYTES`] and
+/// [`files::MAX_PDFS`] of [`files::MAX_PDF_BYTES`]; a larger request is
 /// refused before it is read.
 fn upload(path: &'static str) -> crate::module::UploadSpec {
     crate::module::UploadSpec {

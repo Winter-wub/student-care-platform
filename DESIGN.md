@@ -20,6 +20,11 @@ colors:
   caution-ink: "#6b4a00"
   caution-meter: "#c98a00"
   over-meter: "#c62828"
+  text-red: "#b42318"
+  text-orange: "#b54708"
+  text-green: "#067647"
+  text-blue: "#175cd3"
+  text-grey: "#475467"
 typography:
   headline:
     fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
@@ -142,6 +147,17 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 - **Approved Wash / Approved Ink** (#e5f5ec / #145c36): success flashes, "done" buttons, active Links, the meter under its limit.
 - **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips.
 - **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
+
+### Text palette (#113)
+The only colours Staff can give text in an Announcement body (`{red}…{/red}`), as CSS classes `tc-red` … `tc-grey`. Fixed, never per Deployment, never a free hex. Each passes 4.5:1 on Paper and on Counter Mist; there is no dark theme, so a dark surface would need its own set. Colour adds emphasis, never meaning alone: coloured text is also semi-bold (600), and links keep their underline so Text Blue is never read as a link.
+
+| Token | Hex | On Paper #ffffff | On Counter Mist #f4f6f8 |
+|---|---|---|---|
+| text-red | #b42318 | 6.57:1 | 6.07:1 |
+| text-orange | #b54708 | 5.43:1 | 5.01:1 |
+| text-green | #067647 | 5.69:1 | 5.25:1 |
+| text-blue | #175cd3 | 5.99:1 | 5.53:1 |
+| text-grey | #475467 | 7.69:1 | 7.10:1 |
 
 ### Named Rules
 **The Letterhead Rule.** The institution colour lives on the letterhead (top bar) and on the one action that moves the work forward. It never fills large areas or decorates.

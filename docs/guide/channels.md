@@ -24,7 +24,22 @@ carry the Deployment's salt (`Menu::salt`), and answers
 
 ## URL buttons
 
-`Button::url(label, url)` opens a web page outside the chat (#108). It
+`Button::url(label, url)` opens a web page outside the chat (#108). An
+Announcement's Card uses it for the body's links and, with `public_url`
+set, for its first PDF (#113), at most 2 URL buttons in all.
+
+The PDF button is marked `Button::external` (prefer the phone's own
+browser). LINE appends `openExternalBrowser=1` to its URL, so it opens in
+Safari or Chrome rather than LINE's in-app browser: a PDF served with the
+`Content-Security-Policy: sandbox` header shows blank in WebKit before
+Safari 18.4, which iOS in-app browsers use. Telegram has no such switch:
+an inline `url` button opens the link in Telegram's in-app browser or the
+system browser, as the Student set in Telegram, and on iOS older than
+18.4 the in-app view may show the PDF blank; its share menu opens it in
+Safari. Phone test (owner, before go-live), on iOS < 18.4, iOS >= 18.4
+and Android: tap the PDF button in LINE (the phone's browser opens it, its
+Thai name kept) and in Telegram (note whether it shows), then open it from
+the Mini App list. It
 refuses anything but an `https:` URL (`harpseal::render::link_url`). LINE
 renders a `uri` action (Flex button label 40, quick reply 20), Telegram an
 inline keyboard `url` button (label cut to 40), the Fake Channel records it.

@@ -8,7 +8,7 @@ use serde_json::json;
 use super::deliver::{deliver_key, parent_job};
 pub(crate) use super::draft::Draft;
 use super::draft::{changed_locales, text_rows};
-use super::files::{self, IMAGE};
+use super::files;
 use super::gate::{GATED, JobReq, bump, cas, load_err};
 use super::notice::notice_key;
 use super::store;
@@ -18,7 +18,7 @@ use crate::port_types::Statement;
 use crate::{Deployment, Error, Result};
 
 /// Creates a draft; returns its id. Audit `announcement.create`. Takes
-/// the draft: its image bytes move to the FileStore.
+/// the draft: its file bytes move to the FileStore.
 pub(crate) async fn create(
     d: &Deployment,
     mut draft: Draft,
@@ -27,7 +27,7 @@ pub(crate) async fn create(
 ) -> Result<String> {
     let s = d.services();
     let summary = draft.summary();
-    let images = std::mem::take(&mut draft.images);
+    let images = std::mem::take(&mut draft.files);
     let draft = &draft;
     draft.audience.check(&d.config().roster)?;
     let id = s.new_id()?;
@@ -87,7 +87,7 @@ pub(crate) async fn update(
 ) -> Result<()> {
     let s = d.services();
     let summary = draft.summary();
-    let images = std::mem::take(&mut draft.images);
+    let images = std::mem::take(&mut draft.files);
     let draft = &draft;
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
@@ -106,7 +106,8 @@ pub(crate) async fn update(
         jobs.push(parent_job(id, row.round, next, Some(at)));
     }
     // Only Cards whose visible text changed are edited (and notified);
-    // a change of images edits every Card (its image may change, #109)
+    // a change of files edits every Card (its image or PDF button may
+    // change, #109, #113)
     // but notifies no one: the notice follows the text alone.
     let locales = if row.status == "sent" {
         changed_locales(&store::texts(s, id).await?, draft)
@@ -139,7 +140,7 @@ pub(crate) async fn update(
             run_at: None,
         });
     }
-    let existing = files::list(s, id, IMAGE).await?;
+    let existing = files::list(s, id).await?;
     let sent = row.status == "sent";
     let staged = files::stage(s, id, images, &existing, sent).await?;
     let old_key = deliver_key(id, row.round, version);

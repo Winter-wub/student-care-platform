@@ -263,6 +263,26 @@ form.inline { display: inline-flex; margin: 0; }
 .app-body ul, .app-body ol { margin: 4px 0; padding-left: 1.5em; white-space: normal; }
 .app-body li { white-space: pre-line; }
 .app-body a { color: var(--brand); text-decoration: underline; }
+/* Headings and the text colours (#113): a fixed palette, each at least
+   4.5:1 on #ffffff and on #f4f6f8 (DESIGN.md "Text palette"). */
+.app-body .app-h { white-space: normal; margin: 12px 0 4px; line-height: 1.4; }
+.app-body h2.app-h { font-size: 1.125rem; }
+.app-body h3.app-h { font-size: 1rem; }
+.tc-red { color: #b42318; }
+.tc-orange { color: #b54708; }
+.tc-green { color: #067647; }
+.tc-blue { color: #175cd3; }
+.tc-grey { color: #475467; }
+/* Colour adds emphasis, never meaning alone: coloured text is also
+   semi-bold, so it stands out without colour; links keep their underline,
+   so blue text is not taken for a link. */
+.tc-red, .tc-orange, .tc-green, .tc-blue, .tc-grey { font-weight: 600; }
+/* PDF attachments (#113): name and size, one per line. */
+.app-files { list-style: none; margin: 8px 0 0; padding: 0; }
+.app-files li { margin: 4px 0; }
+.app-files a { display: inline-flex; align-items: center; min-height: var(--tap); color: var(--brand); text-decoration: underline; }
+.app-files .size { color: var(--muted); font-size: .875rem; }
+.md-toolbar .swatch { font-weight: 700; }
 .md-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .md-toolbar button { min-width: var(--tap); padding: 4px 10px; }
 .app-img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: var(--radius); }
