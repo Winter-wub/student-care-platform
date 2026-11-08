@@ -343,10 +343,11 @@ fn images_are_placed_by_slot() {
             Inline::Bold(vec![img("b", 3)])
         ]
     );
-    let doc = parse("![a](image:2)\nข้อความ ![b](image:1)\n- ![c](image:4)");
+    let doc = parse("![a](image:2)\nข้อความ ![b](image:1)\n- ![c](image:4)\n- ข้อ");
     assert_eq!(doc.images(), vec![2, 1, 4]);
-    // Chat: an image line goes away whole; text around an image stays.
-    assert_eq!(doc.plain(), "ข้อความ \n- ");
+    // Chat: an image line or list item goes away whole (no empty bullet);
+    // text around an image stays.
+    assert_eq!(doc.plain(), "ข้อความ \n- ข้อ");
     assert!(!doc.is_plain());
     // Not an image: no slot 0, two digits, other schemes, spaces.
     for s in [

@@ -167,6 +167,7 @@ td.icons { flex-wrap: wrap; }
 .facts dd { margin: 0 0 8px; }
 @media (min-width: 640px) { .facts { grid-template-columns: 10rem minmax(0, 1fr); } .facts dd { margin: 0; } }
 .chip.override { background: #fff3d6; color: #6b4a00; }
+.field-warning { color: #8a5a00; font-weight: 600; margin: 6px 0 0; }
 .field-error { color: var(--err-ink); font-weight: 600; margin: 6px 0 0; }
 [aria-invalid="true"] { border-color: var(--err-ink); }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }

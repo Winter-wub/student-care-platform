@@ -40,20 +40,32 @@ impl ImageType {
 
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
-/// The type of `bytes` when it is a PNG or a JPEG whose name says the same
-/// (`.png`; `.jpg` or `.jpeg`; any case), and its width and height when
-/// the header gives them. A PNG named `.jpg`, an SVG, a GIF or text is
-/// `None`.
-pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Option<(ImageType, Option<(u32, u32)>)> {
+/// The type of `bytes` and its width and height, when it is a PNG with
+/// its `IHDR` or a JPEG with a start-of-frame segment, named as what it is
+/// (`.png`; `.jpg` or `.jpeg`; any case). A PNG named `.jpg`, a JPEG
+/// without a frame, an SVG, a GIF or text is `None`.
+pub(crate) fn sniff(bytes: &[u8], file_name: &str) -> Option<(ImageType, (u32, u32))> {
     let name = file_name.to_ascii_lowercase();
     if bytes.starts_with(PNG_MAGIC) && name.ends_with(".png") {
-        return Some((ImageType::Png, png_size(bytes)));
+        return Some((ImageType::Png, png_size(bytes)?));
     }
     let jpeg_name = name.ends_with(".jpg") || name.ends_with(".jpeg");
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) && jpeg_name {
-        return Some((ImageType::Jpeg, jpeg_size(bytes)));
+        return Some((ImageType::Jpeg, jpeg_size(bytes)?));
     }
     None
+}
+
+/// Longest side an image may have, in pixels.
+pub(crate) const MAX_SIDE: u32 = 4096;
+/// Most pixels an image may have (16 MP, 4096 x 4096).
+pub(crate) const MAX_PIXELS: u64 = 4096 * 4096;
+/// Longest side of a Flex hero LINE shows (larger: a warning, #109).
+pub(crate) const HERO_SIDE: u32 = 1024;
+
+/// Whether `(w, h)` is within [`MAX_SIDE`] and [`MAX_PIXELS`].
+pub(crate) fn size_ok((w, h): (u32, u32)) -> bool {
+    w <= MAX_SIDE && h <= MAX_SIDE && u64::from(w) * u64::from(h) <= MAX_PIXELS
 }
 
 fn be16(b: &[u8], at: usize) -> Option<u32> {
@@ -140,21 +152,18 @@ pub(crate) mod tests {
     fn png_and_jpeg_with_their_sizes() {
         assert_eq!(
             sniff(&png(1040, 676), "map.PNG"),
-            Some((ImageType::Png, Some((1040, 676))))
+            Some((ImageType::Png, (1040, 676)))
         );
         assert_eq!(
             sniff(&jpeg(800, 520), "room.jpeg"),
-            Some((ImageType::Jpeg, Some((800, 520))))
+            Some((ImageType::Jpeg, (800, 520)))
         );
         assert_eq!(
             sniff(&jpeg(800, 520), "room.JPG").map(|x| x.0),
             Some(ImageType::Jpeg)
         );
-        // A JPEG with no frame header: taken, size unknown.
-        assert_eq!(
-            sniff(&[0xFF, 0xD8, 0xFF, 0xD9], "x.jpg"),
-            Some((ImageType::Jpeg, None))
-        );
+        assert!(size_ok((4096, 4096)) && size_ok((4096, 1)));
+        assert!(!size_ok((4097, 10)) && !size_ok((10, 4097)));
     }
 
     #[test]
@@ -170,13 +179,16 @@ pub(crate) mod tests {
             (b"RIFF\0\0\0\0WEBPVP8 ".to_vec(), "x.jpg"),
             (b"hello".to_vec(), "notes.png"),
             (Vec::new(), "empty.png"),
+            // A JPEG with no frame header, a PNG whose IHDR is missing.
+            (vec![0xFF, 0xD8, 0xFF, 0xD9], "x.jpg"),
+            (b"\x89PNG\r\n\x1a\n\0\0\0\x0dIDAT".to_vec(), "x.png"),
         ] {
             assert_eq!(sniff(&bytes, name), None, "{name}");
         }
     }
 
     #[test]
-    fn a_hostile_jpeg_header_ends_the_walk() {
+    fn a_hostile_jpeg_header_ends_the_walk_and_is_refused() {
         // Zero-length segment, a truncated SOF, a length past the end.
         for b in [
             vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x00],
@@ -184,7 +196,7 @@ pub(crate) mod tests {
             vec![0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 1, 2],
             vec![0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xFF],
         ] {
-            assert_eq!(sniff(&b, "x.jpg"), Some((ImageType::Jpeg, None)));
+            assert_eq!(sniff(&b, "x.jpg"), None);
         }
     }
 }

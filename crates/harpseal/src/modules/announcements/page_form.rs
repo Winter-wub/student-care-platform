@@ -24,7 +24,7 @@ type Errors = Vec<(&'static str, &'static str)>;
 /// The draft of `f` with the posted images, or every problem of both.
 fn with_images(
     draft: Result<service::Draft, Errors>,
-    posted: &Posted,
+    posted: &mut Posted,
 ) -> Result<service::Draft, Errors> {
     match (draft, posted.image_edits()) {
         (Ok(mut d), Ok(images)) => {
@@ -33,7 +33,7 @@ fn with_images(
         }
         (Err(mut a), Err(b)) => {
             a.extend(b);
-            Err(a)
+            Err(super::form::unique(a))
         }
         (Err(e), Ok(_)) | (Ok(_), Err(e)) => Err(e),
     }
@@ -53,24 +53,25 @@ pub(super) async fn new_post(
     State(s): State<AppState>,
     staff: CurrentStaff,
     ctx: RequestCtx,
-    posted: Posted,
+    mut posted: Posted,
 ) -> Response {
     let v = View::new(&s, &staff);
     let f = Fields::from_pairs(&posted.pairs);
     let d = s.deployment.as_ref();
     let draft = f.draft(&d.config().roster, v.offset(), d.services().now_ms());
-    let draft = match with_images(draft, &posted) {
+    let had_files = posted.had_files();
+    let draft = match with_images(draft, &mut posted) {
         Ok(draft) => draft,
         Err(errors) => {
             let form = Form {
-                reselect: posted.had_files(),
+                reselect: had_files,
                 ..Form::new(None, &f)
             };
             return form_page(&v, StatusCode::UNPROCESSABLE_ENTITY, &form, &errors, None);
         }
     };
     let actor = Actor::staff(&staff);
-    let id = match service::create(d, &draft, &actor, &ctx).await {
+    let id = match service::create(d, draft, &actor, &ctx).await {
         Ok(id) => id,
         Err(e) => return v.error(&e),
     };
@@ -123,7 +124,7 @@ pub(super) async fn edit_post(
     staff: CurrentStaff,
     ctx: RequestCtx,
     Path(id): Path<String>,
-    posted: Posted,
+    mut posted: Posted,
 ) -> Response {
     let v = View::new(&s, &staff);
     let d = s.deployment.as_ref();
@@ -145,7 +146,8 @@ pub(super) async fn edit_post(
         f.when = "now".into();
     }
     let now = d.services().now_ms();
-    let mut draft = with_images(f.draft(&d.config().roster, v.offset(), now), &posted);
+    let had_files = posted.had_files();
+    let mut draft = with_images(f.draft(&d.config().roster, v.offset(), now), &mut posted);
     // #77: a notice needs an announcement open now and after this save
     // (Students could not open it otherwise) and a changed text (else it
     // would only cost Pushes); a box ticked in vain is an error, not a
@@ -175,7 +177,7 @@ pub(super) async fn edit_post(
                 .unwrap_or_default();
             let form = Form {
                 images: &images,
-                reselect: posted.had_files(),
+                reselect: had_files,
                 ..Form::new(Some(&row), &f)
             };
             return form_page(
@@ -189,7 +191,7 @@ pub(super) async fn edit_post(
     };
     let version = f.version.unwrap_or(-1);
     let actor = Actor::staff(&staff);
-    match service::update(d, &id, version, &draft, &actor, &ctx).await {
+    match service::update(d, &id, version, draft, &actor, &ctx).await {
         Ok(()) => v.redirect(&detail(&id), true, "announcements.flash.updated"),
         Err(Error::Conflict(_)) => v.redirect(&detail(&id), false, "announcements.flash.conflict"),
         Err(Error::Invalid(_)) => {
@@ -285,7 +287,7 @@ fn form_page(
                     (page_editor::help(v))
                 }
             }
-            (form_images::field(v, form.images, form.reselect, &err))
+            (form_images::field(v, form.images, &f.body_th, form.reselect, &err))
             @if !sent {
                 label class="check" {
                     input type="checkbox" name="require_ack" value="1" checked[f.require_ack];

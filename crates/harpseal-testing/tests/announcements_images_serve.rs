@@ -145,22 +145,61 @@ async fn expired_is_404() {
 }
 
 #[tokio::test]
-async fn removed_by_edit_is_404_and_its_object_deleted() {
+async fn removed_from_a_draft_is_404_and_its_object_deleted() {
     let w = boot_public().await;
-    roster(&w).await;
     let b = signed_in(&w, "Officer").await;
     let id = create_parts(&b, "x", vec![f("image1", "a.png", png(20, 13))]).await;
-    send_now(&w, &b, &id).await;
     let tok = token(&w, &id, "1").await;
     let r = edit_parts(&w, &b, &id, "x", vec![t("image1_remove", "1")]).await;
     assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(
-        get(&w, &format!("/announcements/files/{tok}")).await.status,
-        404
-    );
     let staff = b
         .get(&format!("/admin/announcements/{id}/files/{tok}"))
         .await;
     assert_eq!(staff.status, 404);
     assert!(w.h.files().keys().is_empty());
+    assert_eq!(count(&w, "SELECT count(*) FROM announcement_file").await, 0);
+}
+
+#[tokio::test]
+async fn replaced_on_a_sent_one_stays_served_until_retracted() {
+    let w = boot_public().await;
+    roster(&w).await;
+    let b = signed_in(&w, "Officer").await;
+    let id = create_parts(&b, "x", vec![f("image1", "a.png", png(20, 13))]).await;
+    send_now(&w, &b, &id).await;
+    let old = token(&w, &id, "1").await;
+    let r = edit_parts(&w, &b, &id, "x", vec![f("image1", "b.png", png(40, 26))]).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    drain(&w).await;
+    let new = token(&w, &id, "1").await;
+    assert_ne!(old, new);
+    // Cards already delivered still point at the old one.
+    let (old_path, new_path) = (
+        format!("/announcements/files/{old}"),
+        format!("/announcements/files/{new}"),
+    );
+    assert_eq!(get(&w, &old_path).await.bytes, png(20, 13));
+    assert_eq!(get(&w, &new_path).await.bytes, png(40, 26));
+    let superseded = count(
+        &w,
+        "SELECT count(*) FROM announcement_file WHERE superseded_at IS NOT NULL",
+    )
+    .await;
+    assert_eq!(superseded, 1);
+    // The Mini App shows the current one only.
+    assert_eq!(stored(&w, &id).await.len(), 1);
+
+    b.get(&format!("/admin/announcements/{id}")).await;
+    let v = version(&w, &id).await;
+    let r = b
+        .post(
+            &format!("/admin/announcements/{id}/retract"),
+            &format!("version={v}&confirm=yes"),
+        )
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(get(&w, &old_path).await.status, 404);
+    assert_eq!(get(&w, &new_path).await.status, 404);
+    // Kept (no purge yet): both objects are still in the FileStore.
+    assert_eq!(w.h.files().keys().len(), 2);
 }

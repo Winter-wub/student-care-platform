@@ -60,6 +60,14 @@ async fn refused_files_name_the_limit_they_broke_in_thai() {
         ),
         (f("image1", "big.png", big), "รูปใหญ่เกิน 1 MB"),
         (f("image5", "fifth.png", png(10, 10)), "แนบรูปได้ไม่เกิน 4 รูป"),
+        (f("image1", "wide.png", png(4097, 10)), PIXELS),
+        (f("image1", "tall.jpg", jpeg(10, 4097)), PIXELS),
+        (f("image1", "huge.png", png(4096, 4097)), PIXELS),
+        // A JPEG with no start-of-frame: not an image we can size.
+        (
+            f("image1", "noframe.jpg", vec![0xFF, 0xD8, 0xFF, 0xD9]),
+            bad_type,
+        ),
     ] {
         let mut parts = base();
         parts.push(file);
@@ -69,8 +77,46 @@ async fn refused_files_name_the_limit_they_broke_in_thai() {
         assert!(r.body.contains("เลือกไฟล์อีกครั้ง"), "files are lost: say so");
         assert!(r.body.contains("ห้อง 3105"), "the text comes back");
     }
+    // One slot posted twice: refused as too many, not a server error; and
+    // each message once, however many files broke it.
+    let mut parts = base();
+    parts.push(f("image1", "a.png", png(10, 10)));
+    parts.push(f("image1", "b.png", png(10, 10)));
+    parts.push(f("image9", "c.png", png(10, 10)));
+    let r = post_parts(&b, "/admin/announcements/new", &parts).await;
+    assert_eq!(r.status, 422);
+    assert_eq!(r.body.matches("แนบรูปได้ไม่เกิน 4 รูป").count(), 1, "{}", r.body);
     assert_eq!(count(&w, "SELECT count(*) FROM announcement").await, 0);
     assert!(w.h.files().keys().is_empty(), "nothing stored");
+}
+
+const PIXELS: &str = "รูปใหญ่เกิน 4096 พิกเซลต่อด้าน หรือเกิน 16 ล้านพิกเซล";
+const HERO_LARGE: &str = "LINE อาจไม่แสดงรูปบนการ์ด";
+
+#[tokio::test]
+async fn a_hero_over_1024_pixels_is_saved_with_a_warning() {
+    let w = boot_public().await;
+    let b = signed_in(&w, "Officer").await;
+    // Slot 2 is placed first, so it is the hero; slot 1 is small.
+    let id = create_parts(
+        &b,
+        "![](image:2)",
+        vec![
+            f("image1", "small.png", png(1000, 650)),
+            f("image2", "big.jpg", jpeg(2000, 1300)),
+        ],
+    )
+    .await;
+    assert_eq!(stored(&w, &id).await.len(), 2, "saved, not refused");
+    let edit = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
+    assert!(edit.contains(HERO_LARGE), "{edit}");
+    let detail = b.get(&format!("/admin/announcements/{id}")).await.body;
+    assert!(detail.contains(HERO_LARGE));
+    // The hero within 1024 px: no warning (slot 2 not placed any more).
+    let r = edit_parts(&w, &b, &id, "ห้อง 3105", vec![t("image2_remove", "1")]).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let edit = b.get(&format!("/admin/announcements/{id}/edit")).await.body;
+    assert!(!edit.contains(HERO_LARGE));
 }
 
 #[tokio::test]
@@ -163,7 +209,7 @@ async fn without_public_url_the_card_has_no_image_and_the_mini_app_still_shows_i
 }
 
 #[tokio::test]
-async fn an_edit_replaces_and_removes_images_and_deletes_their_objects() {
+async fn an_edit_replaces_and_removes_images_deleting_objects_only_before_sending() {
     let w = boot_public().await;
     roster(&w).await;
     let b = signed_in(&w, "Officer").await;
@@ -218,9 +264,11 @@ async fn an_edit_replaces_and_removes_images_and_deletes_their_objects() {
             harpseal::Message::Card(c) if c.image.as_ref().is_some_and(|i| i.url.ends_with(&newest)))),
         "{edited:?}"
     );
-    assert_eq!(w.h.files().keys().len(), 1);
-    let gone = app_get(&w, &format!("/announcements/files/{}", after[0].1)).await;
-    assert_eq!(gone, 404, "the replaced token is dead");
+    // Cards already delivered still show the replaced image: superseded,
+    // still served, its object kept.
+    assert_eq!(w.h.files().keys().len(), 2);
+    let old = app_get(&w, &format!("/announcements/files/{}", after[0].1)).await;
+    assert_eq!(old, 200, "the replaced image of a sent one stays served");
 }
 
 /// The status of an anonymous `GET path`.

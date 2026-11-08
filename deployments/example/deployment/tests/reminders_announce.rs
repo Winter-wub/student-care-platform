@@ -22,6 +22,7 @@ fn secrets() -> Secrets {
 /// Karn, Mali and Niran (fictional), on the roster.
 async fn boot(h: &Harness) -> TestApp {
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");

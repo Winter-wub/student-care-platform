@@ -133,13 +133,14 @@ pub async fn edit_parts(
     post_parts(b, &path, &parts).await
 }
 
-/// `(n, token, file_key)` of every image of `id`, by slot.
+/// `(n, token, file_key)` of every current image of `id` (not superseded),
+/// by slot.
 pub async fn stored(w: &World, id: &str) -> Vec<(String, String, String)> {
     let rows = texts(
         w,
         &format!(
             "SELECT n || '|' || token || '|' || file_key FROM announcement_file \
-             WHERE announcement_id = '{id}' ORDER BY n"
+             WHERE announcement_id = '{id}' AND superseded_at IS NULL ORDER BY n"
         ),
     )
     .await;

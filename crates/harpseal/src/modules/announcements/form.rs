@@ -38,6 +38,19 @@ pub(crate) struct Fields {
     pub(crate) submit: String,
 }
 
+/// `errors` with each (field, key) once, in first-seen order.
+pub(crate) fn unique(
+    errors: Vec<(&'static str, &'static str)>,
+) -> Vec<(&'static str, &'static str)> {
+    let mut out: Vec<(&'static str, &'static str)> = Vec::with_capacity(errors.len());
+    for e in errors {
+        if !out.contains(&e) {
+            out.push(e);
+        }
+    }
+    out
+}
+
 fn split(s: &str) -> impl Iterator<Item = String> + '_ {
     s.split(',')
         .map(|v| v.trim().to_string())
@@ -192,8 +205,7 @@ impl Fields {
             errors.push(("audience", "announcements.form.bad_audience"));
         }
         if !errors.is_empty() {
-            errors.dedup();
-            return Err(errors);
+            return Err(unique(errors));
         }
         let mut texts = vec![(
             "th".to_string(),

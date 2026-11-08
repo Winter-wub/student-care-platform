@@ -22,8 +22,8 @@
 //!   `javascript:`, `data:` or `http:` URL, stays text exactly as typed.
 //! - `![alt](image:N)` (#109) places image `N` (one digit, 1 to 9) of the
 //!   body's owner there; where no such image exists it shows nothing. In
-//!   chat ([`Doc::plain`]) an image is left out, and a line that held only
-//!   images is left out whole. The alt is never a link and loses invisible
+//!   chat ([`Doc::plain`]) an image is left out, and a line or list item
+//!   that held only images is left out whole. The alt is never a link and loses invisible
 //!   characters; every output escapes it.
 //! - Anything unmatched (`**` without a partner, a lone `[`) is text. HTML
 //!   is never interpreted: every output escapes it.
@@ -149,6 +149,7 @@ impl Doc {
                 Block::Bullets(items) | Block::Numbered(items) => lines.extend(
                     items
                         .iter()
+                        .filter(|i| !inline::only_images(&i.content))
                         .map(|i| format!("{}{}", i.marker, inline::plain(&i.content))),
                 ),
             }

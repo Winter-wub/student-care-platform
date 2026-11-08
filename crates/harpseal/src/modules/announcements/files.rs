@@ -8,8 +8,19 @@
 //! - **Token**: 16 bytes from the Random port as 32 hex characters, the
 //!   public path `/announcements/files/<token>`.
 //! - **Writes**: objects are put before the database batch that lists
-//!   them (and deleted again when the batch fails or loses its race); the
-//!   objects of files an edit removed or replaced are deleted after it.
+//!   them. After the batch, whatever it reported, the keys it touched are
+//!   re-read and only the objects no row lists are deleted
+//!   ([`Staged::settle`]): a batch that committed but answered an error
+//!   keeps its files.
+//! - **Edits**: before sending (draft, scheduled) a removed or replaced
+//!   file's row and object are deleted. Once sent, Cards already delivered
+//!   show it: its row is marked `superseded_at` and it stays served (same
+//!   token, same live check) until the announcement is retracted or
+//!   expires. Pages and new Cards use the current files only.
+//! - **Purge**: none yet. A retracted or expired announcement keeps its
+//!   rows and objects, served to no one.
+
+use std::collections::BTreeMap;
 
 use super::files_sniff::ImageType;
 use super::gate::GATED;
@@ -92,14 +103,42 @@ pub(crate) fn stored_at(rows: &crate::port_types::Rows, i: usize) -> Stored {
     }
 }
 
-/// The files of announcement `id` of `kind`, by slot.
+/// The current files (not superseded) of announcement `id` of `kind`, by
+/// slot.
 pub(crate) async fn list(s: &Services, id: &str, kind: &str) -> Result<Vec<Stored>> {
     let sql = format!(
         "SELECT {COLUMNS} FROM announcement_file f WHERE f.announcement_id = ? AND f.kind = ? \
-         ORDER BY f.n"
+         AND f.superseded_at IS NULL ORDER BY f.n"
     );
     let rows = s.db.query(Statement::new(sql).bind(id).bind(kind)).await?;
     Ok((0..rows.len()).map(|i| stored_at(&rows, i)).collect())
+}
+
+/// [`list`] for many announcements in one query per 90 ids (D1 binds at
+/// most 100), by announcement id.
+pub(crate) async fn list_many(
+    s: &Services,
+    ids: &[&str],
+    kind: &str,
+) -> Result<BTreeMap<String, Vec<Stored>>> {
+    let mut out: BTreeMap<String, Vec<Stored>> = BTreeMap::new();
+    for chunk in ids.chunks(90) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT {COLUMNS} FROM announcement_file f WHERE f.kind = ? \
+             AND f.superseded_at IS NULL AND f.announcement_id IN ({marks}) \
+             ORDER BY f.announcement_id, f.n"
+        );
+        let st = chunk
+            .iter()
+            .fold(Statement::new(sql).bind(kind), |st, id| st.bind(*id));
+        let rows = s.db.query(st).await?;
+        for i in 0..rows.len() {
+            let f = stored_at(&rows, i);
+            out.entry(f.announcement_id.clone()).or_default().push(f);
+        }
+    }
+    Ok(out)
 }
 
 /// The image in slot `n` of `images`.
@@ -124,12 +163,13 @@ pub(crate) fn unplaced<'a>(images: &'a [Stored], body: &str) -> Vec<&'a Stored> 
     images.iter().filter(|f| !placed.contains(&f.n)).collect()
 }
 
-/// A new image from the form, already sniffed.
+/// A new image from the form, already sniffed (its size is always known:
+/// the sniff refuses an image without one).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewImage {
     pub(crate) n: u8,
     pub(crate) kind: ImageType,
-    pub(crate) size: Option<(u32, u32)>,
+    pub(crate) size: (u32, u32),
     pub(crate) bytes: Vec<u8>,
 }
 
@@ -153,110 +193,149 @@ impl ImageEdits {
     }
 }
 
-/// A save's images, staged: the objects already put, the statements that
-/// list them, and the objects to delete once the save committed.
-#[derive(Debug, Default)]
-pub(crate) struct Staged {
-    rows: Vec<(NewImage, String, String)>,
-    emptied: Vec<u8>,
-    /// Objects of the files this save removes or replaces.
-    pub(crate) old_keys: Vec<String>,
+/// One new file, staged: its object is in the FileStore; the bytes are
+/// not kept.
+#[derive(Debug)]
+struct NewRow {
+    n: u8,
+    kind: ImageType,
+    size: (u32, u32),
+    bytes: i64,
+    token: String,
+    key: String,
 }
 
-/// Puts the objects of `edits` for announcement `id`, whose images are
-/// `existing` now.
+/// A save's images, staged: the objects already put, the statements that
+/// list them, and the keys to settle once the save is over.
+#[derive(Debug, Default)]
+pub(crate) struct Staged {
+    rows: Vec<NewRow>,
+    emptied: Vec<u8>,
+    /// Supersede instead of delete: the announcement was sent, and Cards
+    /// already delivered show the old files.
+    keep_old: bool,
+    /// Objects of the files this save deletes (not sent yet only).
+    old_keys: Vec<String>,
+}
+
+/// Puts the objects of `edits` (the bytes moved, not copied) for
+/// announcement `id`, whose current images are `existing`. With `sent`,
+/// the files removed or replaced stay listed and served, superseded
+/// ([`Staged::statements`]).
 pub(crate) async fn stage(
     s: &Services,
     id: &str,
-    edits: &ImageEdits,
+    edits: ImageEdits,
     existing: &[Stored],
+    sent: bool,
 ) -> Result<Staged> {
-    let mut staged = Staged::default();
+    let mut staged = Staged {
+        keep_old: sent,
+        ..Staged::default()
+    };
     for n in edits.remove.iter().chain(edits.put.iter().map(|p| &p.n)) {
-        if let Some(old) = slot(existing, *n)
-            && !staged.emptied.contains(n)
-        {
+        if staged.emptied.contains(n) {
+            continue;
+        }
+        staged.emptied.push(*n);
+        if let Some(old) = slot(existing, *n).filter(|_| !sent) {
             staged.old_keys.push(old.file_key.clone());
         }
-        if !staged.emptied.contains(n) {
-            staged.emptied.push(*n);
-        }
     }
-    for img in &edits.put {
+    for img in edits.put {
         let token = s.random_hex(TOKEN_BYTES)?;
         let key = format!("announcement-file/{id}/{token}.{}", img.kind.ext());
-        if let Err(e) = s
-            .files
-            .put(&key, img.bytes.clone(), img.kind.content_type())
-            .await
-        {
-            staged.discard(s).await;
+        let bytes = img.bytes.len() as i64;
+        if let Err(e) = s.files.put(&key, img.bytes, img.kind.content_type()).await {
+            staged.settle(s).await;
             return Err(e);
         }
-        staged.rows.push((img.clone(), token, key));
+        staged.rows.push(NewRow {
+            n: img.n,
+            kind: img.kind,
+            size: img.size,
+            bytes,
+            token,
+            key,
+        });
     }
     Ok(staged)
 }
 
 impl Staged {
-    /// The statements: empty every slot touched, then list the new files;
-    /// each gated on `gate` when given (an edit's compare-and-set).
+    /// The statements: empty every slot touched (delete the row, or mark it
+    /// superseded once sent), then list the new files; each gated on
+    /// `gate` when given (an edit's compare-and-set).
     pub(crate) fn statements(&self, id: &str, gate: Option<&str>, now: i64) -> Vec<Statement> {
-        let cond = |sql: String| match gate {
+        let cond = |sql: &str| match gate {
             Some(_) => format!("{sql} AND {GATED}"),
-            None => sql,
+            None => sql.to_string(),
         };
         let with_gate = |st: Statement| match gate {
             Some(g) => st.bind(g),
             None => st,
         };
+        let empty = if self.keep_old {
+            format!("UPDATE announcement_file SET superseded_at = {now} WHERE")
+        } else {
+            "DELETE FROM announcement_file WHERE".to_string()
+        };
         let mut out = Vec::new();
         for n in &self.emptied {
-            let sql = cond(
-                "DELETE FROM announcement_file WHERE announcement_id = ? AND kind = 'image' \
-                 AND n = ?"
-                    .into(),
-            );
+            let sql = cond(&format!(
+                "{empty} announcement_id = ? AND kind = 'image' AND n = ? AND superseded_at IS NULL"
+            ));
             out.push(with_gate(Statement::new(sql).bind(id).bind(i64::from(*n))));
         }
-        for (img, token, key) in &self.rows {
+        for r in &self.rows {
             let sql = cond(
                 "INSERT INTO announcement_file (announcement_id, kind, n, content_type, \
                  size_bytes, width, height, file_name, token, file_key, created_at) \
-                 SELECT ?, 'image', ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE 1"
-                    .into(),
+                 SELECT ?, 'image', ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE 1",
             );
-            let (w, h) = img.size.unzip();
             let st = Statement::new(sql)
                 .bind(id)
-                .bind(i64::from(img.n))
-                .bind(img.kind.content_type())
-                .bind(img.bytes.len() as i64)
-                .bind(w.map(i64::from))
-                .bind(h.map(i64::from))
-                .bind(format!("image-{}.{}", img.n, img.kind.ext()))
-                .bind(token.as_str())
-                .bind(key.as_str())
+                .bind(i64::from(r.n))
+                .bind(r.kind.content_type())
+                .bind(r.bytes)
+                .bind(i64::from(r.size.0))
+                .bind(i64::from(r.size.1))
+                .bind(format!("image-{}.{}", r.n, r.kind.ext()))
+                .bind(r.token.as_str())
+                .bind(r.key.as_str())
                 .bind(now);
             out.push(with_gate(st));
         }
         out
     }
 
-    /// The save failed: delete the objects put for it.
-    pub(crate) async fn discard(&self, s: &Services) {
-        for (_, _, key) in &self.rows {
-            // Unlisted, so never served; a failed delete leaves bytes only.
-            let _ = s.files.delete(key).await;
-        }
-    }
-
-    /// The save committed: delete the objects it removed or replaced.
-    pub(crate) async fn finish(&self, s: &Services) {
-        for key in &self.old_keys {
-            // The row is gone, so the object is never served again; a
-            // failed delete leaves bytes only.
-            let _ = s.files.delete(key).await;
+    /// After the save, whatever its result (a batch may commit and still
+    /// report an error): re-reads which of the keys it touched are listed,
+    /// and deletes the objects of those that are not (new files of a save
+    /// that did not commit, files a committed save deleted). When the
+    /// re-read fails, nothing is deleted: an unlisted object is never
+    /// served, a deleted listed one would be lost.
+    pub(crate) async fn settle(&self, s: &Services) {
+        let keys: Vec<&str> = self
+            .rows
+            .iter()
+            .map(|r| r.key.as_str())
+            .chain(self.old_keys.iter().map(String::as_str))
+            .collect();
+        for chunk in keys.chunks(90) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let sql = format!("SELECT file_key FROM announcement_file WHERE file_key IN ({marks})");
+            let st = chunk.iter().fold(Statement::new(sql), |st, k| st.bind(*k));
+            let Ok(rows) = s.db.query(st).await else {
+                return;
+            };
+            let listed: Vec<String> = (0..rows.len())
+                .map(|i| text(&rows, i, "file_key"))
+                .collect();
+            for key in chunk.iter().filter(|k| !listed.iter().any(|l| l == *k)) {
+                // A failed delete leaves bytes only: the key is unlisted.
+                let _ = s.files.delete(key).await;
+            }
         }
     }
 }

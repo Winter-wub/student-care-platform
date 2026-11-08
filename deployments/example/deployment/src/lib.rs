@@ -141,16 +141,17 @@ impl Module for Contact {
 
 /// Everything but the Fake Channel: config, Services, LINE, Telegram,
 /// email OTP and the Modules. Tests add the harness's Fake Channel.
-pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
+/// Refuses a `HARPSEAL_PUBLIC_URL` that is set but not an https origin.
+pub fn builder(services: Services, secrets: Secrets) -> Result<DeploymentBuilder, StartError> {
     let mut config = config();
-    // `deployment` refuses a value that is not an https origin.
-    if let Ok(url) = PublicUrl::new(&secrets.public_url) {
-        config.public_url = Some(url);
+    if !secrets.public_url.trim().is_empty() {
+        config.public_url =
+            Some(PublicUrl::new(&secrets.public_url).map_err(StartError::PublicUrl)?);
     }
     let otp = EmailOtp::new(config.otp.clone());
     let http = services.http.clone();
     let clock = services.clock.clone();
-    Deployment::builder()
+    Ok(Deployment::builder()
         .config(config)
         .runtime(services)
         .channel(LineChannel::new(secrets.line, http.clone()))
@@ -161,7 +162,7 @@ pub fn builder(services: Services, secrets: Secrets) -> DeploymentBuilder {
         .module(Contact)
         .module(my_info::MyInfo)
         .module(fees::Fees)
-        .module(reminders::Reminders)
+        .module(reminders::Reminders))
 }
 
 /// Why [`deployment`] refused to start.
@@ -205,9 +206,6 @@ pub fn deployment_with_fake(
     secrets: Secrets,
 ) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
-    if !secrets.public_url.trim().is_empty() {
-        PublicUrl::new(&secrets.public_url).map_err(StartError::PublicUrl)?;
-    }
     // With real credentials, refuse now rather than at the first Inbound.
     secrets.line.check_menu_images().map_err(|e| {
         let why = match e {
@@ -221,7 +219,7 @@ pub fn deployment_with_fake(
             menu_images::UNLOCKED_VAR
         ))
     })?;
-    let d = builder(services, secrets)
+    let d = builder(services, secrets)?
         .channel(fake.clone())
         .build()
         .map_err(StartError::Build)?;

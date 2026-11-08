@@ -17,14 +17,18 @@ use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::port_types::Statement;
 use crate::{Deployment, Error, Result};
 
-/// Creates a draft; returns its id. Audit `announcement.create`.
+/// Creates a draft; returns its id. Audit `announcement.create`. Takes
+/// the draft: its image bytes move to the FileStore.
 pub(crate) async fn create(
     d: &Deployment,
-    draft: &Draft,
+    mut draft: Draft,
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<String> {
     let s = d.services();
+    let summary = draft.summary();
+    let images = std::mem::take(&mut draft.images);
+    let draft = &draft;
     draft.audience.check(&d.config().roster)?;
     let id = s.new_id()?;
     let now = s.now_ms();
@@ -39,7 +43,7 @@ pub(crate) async fn create(
             "announcement.create",
             Some(&Target::new(NAME, &id)),
             None,
-            Some(draft.summary()),
+            Some(summary),
             ctx,
         )?,
         Statement::new(
@@ -56,13 +60,13 @@ pub(crate) async fn create(
         .bind(now),
     ];
     stmts.extend(text_rows(&id, draft, None));
-    let staged = files::stage(s, &id, &draft.images, &[]).await?;
+    let staged = files::stage(s, &id, images, &[], false).await?;
     stmts.extend(staged.statements(&id, None, now));
-    if let Err(e) = s.db.batch(stmts).await {
-        staged.discard(s).await;
-        return Err(e);
-    }
-    Ok(id)
+    let done = s.db.batch(stmts).await;
+    // Settled by what is listed, not by the result: a batch can commit
+    // and still report an error.
+    staged.settle(s).await;
+    done.map(|_| id)
 }
 
 /// Edits announcement `id` seen at `version`. A draft or a schedule
@@ -77,11 +81,14 @@ pub(crate) async fn update(
     d: &Deployment,
     id: &str,
     version: i64,
-    draft: &Draft,
+    mut draft: Draft,
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<()> {
     let s = d.services();
+    let summary = draft.summary();
+    let images = std::mem::take(&mut draft.images);
+    let draft = &draft;
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
     let now = s.now_ms();
@@ -106,7 +113,7 @@ pub(crate) async fn update(
     } else {
         Vec::new()
     };
-    let edit_locales = if row.status == "sent" && !draft.images.is_empty() {
+    let edit_locales = if row.status == "sent" && !images.is_empty() {
         draft.texts.iter().map(|(l, _, _)| l.clone()).collect()
     } else {
         locales.clone()
@@ -133,7 +140,8 @@ pub(crate) async fn update(
         });
     }
     let existing = files::list(s, id, IMAGE).await?;
-    let staged = files::stage(s, id, &draft.images, &existing).await?;
+    let sent = row.status == "sent";
+    let staged = files::stage(s, id, images, &existing, sent).await?;
     let old_key = deliver_key(id, row.round, version);
     let audience = serde_json::to_string(&draft.audience).unwrap_or_else(|_| "{}".into());
     let changes = |gate: &str| {
@@ -197,17 +205,15 @@ pub(crate) async fn update(
         &row,
         from,
         "announcement.update",
-        draft.summary(),
+        summary,
         actor,
         ctx,
         changes,
         jobs,
     )
     .await;
-    match &done {
-        Ok(()) => staged.finish(s).await,
-        Err(_) => staged.discard(s).await,
-    }
+    // Settled by what is listed, not by the result (see `create`).
+    staged.settle(s).await;
     done
 }
 

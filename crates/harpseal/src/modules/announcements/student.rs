@@ -93,9 +93,12 @@ pub async fn list_for_student(
         .bind(student)
         .bind(limit);
     let rows = s.db.query(stmt).await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for i in 0..rows.len() {
-        out.push(with_images(s, read(&rows, i)).await?);
+    let mut out: Vec<StudentAnnouncement> = (0..rows.len()).map(|i| read(&rows, i)).collect();
+    // Their images in one query, not one per announcement.
+    let ids: Vec<&str> = out.iter().map(|a| a.id.as_str()).collect();
+    let mut images = super::files::list_many(s, &ids, super::files::IMAGE).await?;
+    for a in &mut out {
+        a.images = images.remove(&a.id).unwrap_or_default();
     }
     Ok(out)
 }

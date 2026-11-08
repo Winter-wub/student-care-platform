@@ -16,6 +16,7 @@ fn secrets() -> Secrets {
 
 async fn boot(h: &Harness) -> TestApp {
     let d = builder(h.services(), secrets())
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");

@@ -16,7 +16,7 @@ use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 
 use super::files::{ImageEdits, MAX_IMAGE_BYTES, MAX_IMAGES, NewImage, Stored, slot};
-use super::files_sniff::sniff;
+use super::files_sniff::{HERO_SIDE, size_ok, sniff};
 use super::view::View;
 use crate::manifest::CatalogEntry as E;
 
@@ -102,6 +102,28 @@ pub(crate) const TEXTS: &[E] = &[
         "en",
         "The files chosen were not saved: choose them again.",
     ),
+    E::new(
+        "announcements.images.too_many_pixels",
+        "th",
+        "รูปใหญ่เกิน 4096 พิกเซลต่อด้าน หรือเกิน 16 ล้านพิกเซล ย่อรูปแล้วอัปโหลดใหม่",
+    ),
+    E::new(
+        "announcements.images.too_many_pixels",
+        "en",
+        "Over 4096 pixels a side or 16 megapixels: shrink the image and upload it again.",
+    ),
+    E::new(
+        "announcements.images.hero_large",
+        "th",
+        "รูปแรก (รูปบนการ์ดในแชท) ใหญ่เกิน 1024 พิกเซลต่อด้าน LINE อาจไม่แสดงรูปบนการ์ด \
+         ควรย่อให้ไม่เกิน 1024×1024",
+    ),
+    E::new(
+        "announcements.images.hero_large",
+        "en",
+        "The first image (on the chat Card) is over 1024 pixels a side: LINE may not show it. \
+         Shrink it to 1024×1024 at most.",
+    ),
     E::new("announcements.editor.image", "th", "รูปภาพ"),
     E::new("announcements.editor.image", "en", "Image"),
 ];
@@ -123,13 +145,15 @@ pub(super) struct Posted {
 }
 
 impl Posted {
-    /// Whether any file was chosen (lost when the form comes back).
+    /// Whether any file was chosen (lost when the form comes back); ask
+    /// before [`Posted::image_edits`] moves them out.
     pub(super) fn had_files(&self) -> bool {
         !self.files.is_empty()
     }
 
-    /// The image edits, or every problem as (field, catalog key).
-    pub(super) fn image_edits(&self) -> Result<ImageEdits, Vec<(&'static str, &'static str)>> {
+    /// The image edits, the files' bytes moved out (the form keeps its
+    /// text fields), or every problem as (field, catalog key), each once.
+    pub(super) fn image_edits(&mut self) -> Result<ImageEdits, Vec<(&'static str, &'static str)>> {
         let mut edits = ImageEdits::default();
         let mut errors = Vec::new();
         for (k, _) in &self.pairs {
@@ -140,22 +164,28 @@ impl Posted {
         if self.files.len() > SLOTS.len() {
             errors.push(("images", "announcements.images.too_many"));
         }
-        for f in &self.files {
-            let Some(n) = slot_of(&f.field) else {
+        let mut seen: Vec<u8> = Vec::new();
+        for f in std::mem::take(&mut self.files) {
+            // An unknown slot, or one posted twice: more than the form has.
+            let Some(n) = slot_of(&f.field).filter(|n| !seen.contains(n)) else {
                 errors.push(("images", "announcements.images.too_many"));
                 continue;
             };
+            seen.push(n);
             let field = SLOTS[usize::from(n - 1)];
             if f.bytes.len() > MAX_IMAGE_BYTES {
                 errors.push((field, "announcements.images.too_big"));
                 continue;
             }
             match sniff(&f.bytes, &f.file_name) {
+                Some((_, size)) if !size_ok(size) => {
+                    errors.push((field, "announcements.images.too_many_pixels"));
+                }
                 Some((kind, size)) => edits.put.push(NewImage {
                     n,
                     kind,
                     size,
-                    bytes: f.bytes.clone(),
+                    bytes: f.bytes,
                 }),
                 None => errors.push((field, "announcements.images.bad_type")),
             }
@@ -168,8 +198,7 @@ impl Posted {
         if errors.is_empty() {
             Ok(edits)
         } else {
-            errors.dedup();
-            Err(errors)
+            Err(super::form::unique(errors))
         }
     }
 
@@ -244,6 +273,7 @@ impl<S: Send + Sync> FromRequest<S> for Posted {
 pub(super) fn field(
     v: &View<'_>,
     images: &[Stored],
+    body_th: &str,
     reselect: bool,
     err: &dyn Fn(&str) -> Markup,
 ) -> Markup {
@@ -251,6 +281,7 @@ pub(super) fn field(
         fieldset class="announcement-images" {
             legend { (v.t("announcements.images.legend")) }
             p class="hint" { (v.t("announcements.images.hint")) }
+            (hero_warning(v, images, body_th))
             p class="muted" { (v.t("announcements.images.place")) }
             @if v.s.config.public_url.is_none() {
                 p class="muted" { (v.t("announcements.images.no_public_url")) }
@@ -275,5 +306,16 @@ pub(super) fn field(
                 }
             }
         }
+    }
+}
+
+/// A warning, never a refusal, when the image the chat Card shows is over
+/// [`HERO_SIDE`] pixels a side: LINE's Flex image limit (#109).
+pub(super) fn hero_warning(v: &View<'_>, images: &[Stored], body_th: &str) -> Markup {
+    let large = super::files::hero(images, body_th)
+        .and_then(|f| f.size)
+        .is_some_and(|(w, h)| w > HERO_SIDE || h > HERO_SIDE);
+    html! {
+        @if large { p class="field-warning" role="status" { (v.t("announcements.images.hero_large")) } }
     }
 }

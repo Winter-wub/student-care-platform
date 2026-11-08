@@ -58,6 +58,7 @@ async fn boot(h: &Harness, api: &LineApi, secrets: Secrets) -> TestApp {
     let mut services = h.services();
     services.http = Arc::new(api.clone());
     let d = builder(services, secrets)
+        .unwrap()
         .channel(h.fake_channel())
         .build()
         .unwrap();
