@@ -82,7 +82,8 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
     assert_eq!(again.settings_written, 0, "a saved account is left alone");
     assert_eq!(counts(&h).await, once, "a forced re-run adds nothing");
 
-    // Every audit row of the seed names the Administrator and is marked.
+    // Every audit row of the seed but the bank account's (the system's,
+    // below) names the Administrator and is marked.
     let marked = format!(
         "SELECT count(*) FROM audit_log WHERE actor_kind = 'staff' AND actor_id = '{admin}' \
          AND request_id = 'cli' AND json_extract(after, '$.seed') = 1"
@@ -95,7 +96,7 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
     assert_eq!(int(&h, &marked).await, 4 + 4 + 1 + 2);
     assert_eq!(int(&h, &unmarked).await, 0);
 
-    // The bank account: saved through `Settings::save` as the system, one
+    // The bank account: saved through `save_setting_as_system`, one
     // audit row marked as seed data, the value before `null`; Students see
     // it where they saw "not set".
     let account = d

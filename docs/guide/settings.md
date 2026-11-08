@@ -29,7 +29,8 @@ A Setting holds one value for the whole Deployment, not one per Locale
   Action prefix or text key starting with `kernel.` from any Module but
   the Kernel (`BuildError::KernelNamespace`, naming the key). A Module
   named `kernel.backup` could otherwise reach the Kernel's
-  `kernel.backup.notified`;
+  `kernel.backup.notified`. Job kinds and Menu keys under `kernel.` are
+  deliberately not guarded;
 - a key that is also a catalog text key: give the label its own key;
 - a default its kind refuses or would change (it must be stored as is);
 - an undeclared Permission, and a label or help key without a text in
@@ -129,23 +130,36 @@ appears in the navigation for Staff who can see at least one:
 
 ## Saving from code
 
-A Deployment's demo seed, CLI or Job sets a Setting through
-`Settings::save`, not by writing the `setting` table:
+Never write the `setting` table directly. Two calls share the page's
+path (the kind's check, the stored value as the check returns it, and the
+same `setting.update` audit row in the same batch):
+
+- `Settings::save(key, value, &Actor::Staff(id), &ctx)` is for Module code
+  acting for a Staff member. The actor must be an active Staff member
+  holding the Setting's own Permission, whoever calls; the system, a Job
+  and a Student are `Error::Forbidden`. `Settings` is handed to every
+  page and Job (including Student Mini App pages), so it can never write
+  as the system.
+- `Deployment::save_setting_as_system(key, value, &ctx)` is for the code
+  that holds the `Deployment`: a demo seed or the CLI. Module pages and
+  Jobs never get a `Deployment`, so they cannot call it. The audit row's
+  actor is `system`; `RequestCtx::cli().seeded()` adds `"seed": true`.
 
 ```rust
-d.settings()
-    .save("fees.bank_account", "123-4-56789-0", &Actor::System, &RequestCtx::cli().seeded())
-    .await?;
+d.save_setting_as_system(
+    "fees.bank_account",
+    "123-4-56789-0",
+    &RequestCtx::cli().seeded(),
+)
+.await?;
 ```
 
-It applies the kind's check (a refused value is `Error::Invalid`, nothing
-written), stores the value as the check returns it and writes the same
-`setting.update` audit row in the same batch as `/admin/settings`. The
-same value again writes nothing; a row someone else changed meanwhile is
-`Error::Conflict`. The actor decides the Permission check: `Actor::Staff`
-must be active and hold the Setting's own Permission, `Actor::System` and
-`Actor::Job` are the Deployment's own code and need none, and
-`Actor::Student` is `Error::Forbidden`.
+Both: a value the kind refuses, or an undeclared key, is `Error::Invalid`
+(nothing written); the value a Setting already has writes nothing. There
+is no expected value: a save replaces whatever is stored when the call
+reads it, so sequential saves are last write wins, and a row changed by
+someone else between that read and the write is `Error::Conflict` (nothing
+written; read and retry).
 
 ## Storage and backups
 
@@ -164,5 +178,5 @@ The Fees Module (`deployments/example/deployment/src/fees.rs`) declares
 `/app/fees` (`fees/student.rs`) shows them beside the Student's own
 outstanding balance, or "not set" while the account is unset or a saved
 value fails its check (`Error::SettingNotSet`); any other error is a 500.
-`harpseal seed-example` saves a fictional account with `Settings::save` as
-the system (not overwriting one Finance saved).
+`harpseal seed-example` saves a fictional account with
+`Deployment::save_setting_as_system` (not overwriting one Finance saved).

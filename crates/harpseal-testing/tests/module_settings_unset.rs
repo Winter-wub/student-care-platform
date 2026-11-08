@@ -1,13 +1,18 @@
 //! A Module setting with no default (#103): `ModuleRegistrar::
 //! setting_without_default` reads as `SettingNotSet` until the first save,
 //! `/admin/settings` shows "not set yet" (not the failed-check flag), a
-//! backup keeps it unset or set, and `Settings::save` is the public way to
-//! set one from a seed, the CLI or a Job: same check, same audit row.
+//! backup keeps it unset or set. `Settings::save` writes only as Staff
+//! holding the Setting's Permission (Module pages and Jobs hold a
+//! `Settings`, so they can never write as the system); a seed or the CLI
+//! uses `Deployment::save_setting_as_system`: same check, same audit row.
 
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::routing::get;
 use harpseal::backup::{self, LoadOptions, MemoryBackup};
 use harpseal::{
-    Actor, CatalogEntry, DeploymentConfig, Error, Module, ModuleRegistrar, Permission, RequestCtx,
-    SettingKind, Statement,
+    Actor, AppState, CatalogEntry, DeploymentConfig, Error, Job, JobContext, JobSpec, Module,
+    ModuleRegistrar, Permission, RequestCtx, SettingKind, Statement, Timestamp,
 };
 use harpseal_testing::{Browser, Harness, TEST_CONFIG, TestApp, urlencode};
 
@@ -47,8 +52,48 @@ impl Module for Gift {
                 EDIT,
                 "gift.label",
                 "gift.help",
-            );
+            )
+            .public("/gift/try", get(try_from_a_page))
+            .job(JobSpec::new("gift.try"), try_from_a_job);
     }
+}
+
+/// What a Module page can do with its `Settings`: save as the system, and
+/// as Staff it does not hold (no session at all here).
+async fn try_from_a_page(State(s): State<AppState>) -> StatusCode {
+    let ctx = RequestCtx::default();
+    let attempts = [
+        s.settings()
+            .save(ACCOUNT, "1-1-1", &Actor::System, &ctx)
+            .await,
+        s.settings()
+            .save(ACCOUNT, "2-2-2", &Actor::Student("s1".into()), &ctx)
+            .await,
+    ];
+    if attempts
+        .iter()
+        .all(|r| matches!(r, Err(Error::Forbidden { .. })))
+    {
+        StatusCode::FORBIDDEN
+    } else {
+        StatusCode::OK
+    }
+}
+
+/// The same from a Job, as `Actor::Job`; the outcome goes to `progress`.
+async fn try_from_a_job(cx: JobContext, job: Job) -> harpseal::Result<()> {
+    let r = cx
+        .settings()
+        .save(
+            ACCOUNT,
+            "3-3-3",
+            &Actor::Job(job.id.clone()),
+            &RequestCtx::default(),
+        )
+        .await;
+    let forbidden = matches!(r, Err(Error::Forbidden { .. }));
+    cx.progress(if forbidden { "forbidden" } else { "wrote" })
+        .await
 }
 
 fn config() -> DeploymentConfig {
@@ -184,24 +229,24 @@ async fn a_backup_keeps_unset_and_set() {
 }
 
 #[tokio::test]
-async fn the_public_save_checks_the_value_audits_and_checks_the_actor() {
+async fn the_system_entry_point_checks_the_value_and_audits_and_save_checks_the_actor() {
     let (h, app) = boot().await;
     let d = app.deployment();
     let s = d.settings();
     let ctx = RequestCtx::cli().seeded();
 
     // A bad value is refused and writes nothing.
-    let bad = s
-        .save(ACCOUNT, "\u{202E}0-54321", &Actor::System, &ctx)
+    let bad = d
+        .save_setting_as_system(ACCOUNT, "\u{202E}0-54321", &ctx)
         .await;
     assert!(matches!(bad, Err(Error::Invalid(_))), "{bad:?}");
-    let nope = s.save("gift.nope", "1", &Actor::System, &ctx).await;
+    let nope = d.save_setting_as_system("gift.nope", "1", &ctx).await;
     assert!(matches!(nope, Err(Error::Invalid(_))), "{nope:?}");
     assert_eq!(count(&h, AUDITS).await, 0);
     assert!(not_set(&s.text(ACCOUNT).await));
 
     // The system saves; the value is stored as the kind returns it.
-    s.save(ACCOUNT, " 123  4 56789-0 ", &Actor::System, &ctx)
+    d.save_setting_as_system(ACCOUNT, " 123  4 56789-0 ", &ctx)
         .await
         .unwrap();
     assert_eq!(s.text(ACCOUNT).await.unwrap(), "123 4 56789-0");
@@ -210,12 +255,12 @@ async fn the_public_save_checks_the_value_audits_and_checks_the_actor() {
                   AND json_extract(after, '$.seed') = 1 AND json_extract(before, '$.value') IS NULL";
     assert_eq!(count(&h, seeded).await, 1);
     // The same value again writes no second row.
-    s.save(ACCOUNT, "123 4 56789-0", &Actor::System, &ctx)
+    d.save_setting_as_system(ACCOUNT, "123 4 56789-0", &ctx)
         .await
         .unwrap();
     assert_eq!(count(&h, AUDITS).await, 1);
     // A setting with a default audits the default as the value before.
-    s.save(DEFAULTED, "ร่วมบริจาค", &Actor::System, &ctx)
+    d.save_setting_as_system(DEFAULTED, "ร่วมบริจาค", &ctx)
         .await
         .unwrap();
     let defaulted = "SELECT COUNT(*) AS n FROM audit_log WHERE target_id = 'gift.title:' \
@@ -243,4 +288,55 @@ async fn the_public_save_checks_the_value_audits_and_checks_the_actor() {
         .unwrap();
     assert_eq!(s.text(ACCOUNT).await.unwrap(), "9-8-7");
     assert_eq!(count(&h, AUDITS).await, 3);
+
+    // `Settings::save` never writes as the system or a Job, whoever calls.
+    for actor in [Actor::System, Actor::Job("j1".into())] {
+        let r = s.save(ACCOUNT, "5-5-5", &actor, &ctx).await;
+        assert!(
+            matches!(r, Err(Error::Forbidden { .. })),
+            "{actor:?}: {r:?}"
+        );
+    }
+    // A deactivated Staff member who held the Permission is refused too.
+    let gone = h
+        .create_staff("gone@sealbay.example", PASSWORD, &["Treasurer"])
+        .await;
+    let off =
+        Statement::new("UPDATE staff SET status = 'disabled' WHERE id = ?").bind(gone.as_str());
+    h.db().execute(off).await.unwrap();
+    let r = s.save(ACCOUNT, "5-5-5", &Actor::Staff(gone), &ctx).await;
+    assert!(matches!(r, Err(Error::Forbidden { .. })), "{r:?}");
+    assert_eq!(s.text(ACCOUNT).await.unwrap(), "9-8-7");
+    assert_eq!(count(&h, AUDITS).await, 3, "nothing written");
+}
+
+#[tokio::test]
+async fn module_pages_and_jobs_cannot_write_a_setting_as_the_system_or_a_job() {
+    let (h, app) = boot().await;
+    // A page (no session) saving as the system and as a Student: refused.
+    let page = app.browser().get("/gift/try").await;
+    assert_eq!(page.status, 403, "{}", page.body);
+    // A Job saving as `Actor::Job`: refused, and it reports it.
+    let d = app.deployment();
+    d.enqueue("gift.try", serde_json::json!({}), None)
+        .await
+        .unwrap();
+    let r = d.tick(Timestamp(h.clock().now_ms())).await.unwrap();
+    assert_eq!(r.failed, 0, "{:?}", r.errors);
+    let rows = h
+        .db()
+        .query(Statement::new(
+            "SELECT progress FROM job WHERE kind = 'gift.try'",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        rows.get(0, "progress").and_then(|v| v.as_text()),
+        Some("forbidden")
+    );
+    assert!(
+        not_set(&d.settings().text(ACCOUNT).await),
+        "nothing written"
+    );
+    assert_eq!(count(&h, AUDITS).await, 0);
 }

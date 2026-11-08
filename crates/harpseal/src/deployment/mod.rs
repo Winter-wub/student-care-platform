@@ -125,6 +125,23 @@ impl Deployment {
     pub fn settings(&self) -> crate::Settings {
         crate::Settings::new(self.services.clone(), self.registry.settings.clone())
     }
+    /// Saves a Module setting as the system (#103): for the code that holds
+    /// the `Deployment`, a seed or the CLI, never for Module code (pages
+    /// and Jobs only get [`crate::Settings`], whose `save` needs Staff with
+    /// the setting's Permission). The same kind check and `setting.update`
+    /// audit row as `/admin/settings`, with actor `system` and the
+    /// `ctx` (use `RequestCtx::cli().seeded()` for demo data). The same
+    /// value again writes nothing; a row changed meanwhile is
+    /// [`crate::Error::Conflict`]; an undeclared key or a refused value is
+    /// [`crate::Error::Invalid`].
+    pub async fn save_setting_as_system(
+        &self,
+        key: &str,
+        value: &str,
+        ctx: &crate::RequestCtx,
+    ) -> crate::Result<()> {
+        self.settings().save_as_system(key, value, ctx).await
+    }
     /// Kernel migrations first, then Modules in registration order.
     pub fn migrations(&self) -> &[Migration] {
         &self.registry.migrations

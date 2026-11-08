@@ -99,7 +99,7 @@ draft announcements and one scheduled a week ahead, and overrides
 `kernel.flow.welcome` in Thai and English, unless that text already has an
 override (an Administrator's customisation is never overwritten). Every audit row it writes names
 that Administrator and carries `"seed": true`; the one exception is the
-fees bank account, saved as the system with `Settings::save` (no Administrator
+fees bank account, saved as the system with `Deployment::save_setting_as_system` (no Administrator
 holds `fees.bank_account.edit`). Running it again adds
 nothing; it refuses a database that already has Students unless `--force`,
 and it never creates Staff or writes a password. `just seed` runs

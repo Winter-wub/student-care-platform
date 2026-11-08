@@ -211,21 +211,25 @@ impl Settings {
         Ok(SettingValue::of(spec.kind, value))
     }
 
-    /// Saves `value` as the value of `key`: for a Deployment's seed, CLI
-    /// or Job code that must set a Setting (#103), through the very path
-    /// of `/admin/settings`. The kind's check applies and the value is
-    /// stored as the check returns it; a compare-and-set write and its
-    /// `setting.update` audit row (value before, `null` while unset, and
-    /// after) go in one batch. Saving the value a setting already has
-    /// writes nothing.
+    /// Saves `value` as the value of `key` for `actor`, through the very
+    /// path of `/admin/settings` (#103), e.g. a customer Module's Staff
+    /// action. `actor` must be an active Staff member holding the
+    /// setting's own Permission, whoever calls: any other actor (the
+    /// system, a Job, a Student) is [`Error::Forbidden`]. `Settings` is
+    /// handed to every page and Job, so it can never write as the system;
+    /// a seed or CLI uses [`crate::Deployment::save_setting_as_system`],
+    /// which needs the `Deployment` itself.
     ///
-    /// `actor` decides the Permission check: Staff must be active and hold
-    /// the setting's own Permission (a CLI cannot bypass Roles, as with
-    /// `roster::upload`), [`Actor::System`] and [`Actor::Job`] are the
-    /// Deployment's own code and need none, and a Student is
-    /// [`Error::Forbidden`]. An undeclared key or a value the kind refuses
-    /// is [`Error::Invalid`]; a row changed by someone else meanwhile is
-    /// [`Error::Conflict`] (nothing written).
+    /// The kind's check applies and the value is stored as the check
+    /// returns it; the write and its `setting.update` audit row (value
+    /// before, `null` while unset, and after) go in one batch. Saving the
+    /// value a setting already has writes nothing.
+    ///
+    /// There is no expected value: the save replaces whatever is stored
+    /// when the call reads it, so sequential saves are last write wins. A
+    /// row changed by someone else between that read and the write is
+    /// [`Error::Conflict`] (nothing written; read and retry). An undeclared
+    /// key or a value the kind refuses is [`Error::Invalid`].
     pub async fn save(
         &self,
         key: &str,
@@ -233,20 +237,36 @@ impl Settings {
         actor: &Actor,
         ctx: &RequestCtx,
     ) -> Result<()> {
-        let spec = self
-            .spec(key)
-            .ok_or_else(|| Error::Invalid(format!("no Module declares setting `{key}`")))?;
-        match actor {
-            Actor::Staff(_) => {
-                crate::auth::roles::require(&self.services, actor, spec.permission).await?;
-            }
-            Actor::System | Actor::Job(_) => {}
-            _ => {
-                return Err(Error::Forbidden {
-                    permission: spec.permission.to_string(),
-                });
-            }
-        }
+        let spec = self.declared(key)?;
+        crate::auth::roles::require(&self.services, actor, spec.permission).await?;
+        self.write(spec, value, actor, ctx).await
+    }
+
+    /// [`Settings::save`] as [`Actor::System`], with no Permission check:
+    /// reached only through `Deployment::save_setting_as_system`.
+    pub(crate) async fn save_as_system(
+        &self,
+        key: &str,
+        value: &str,
+        ctx: &RequestCtx,
+    ) -> Result<()> {
+        let spec = self.declared(key)?;
+        self.write(spec, value, &Actor::System, ctx).await
+    }
+
+    fn declared(&self, key: &str) -> Result<&SettingSpec> {
+        self.spec(key)
+            .ok_or_else(|| Error::Invalid(format!("no Module declares setting `{key}`")))
+    }
+
+    async fn write(
+        &self,
+        spec: &SettingSpec,
+        value: &str,
+        actor: &Actor,
+        ctx: &RequestCtx,
+    ) -> Result<()> {
+        let key = spec.key;
         let value = spec
             .kind
             .check(value)

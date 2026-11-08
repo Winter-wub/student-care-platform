@@ -1,15 +1,16 @@
 //! `harpseal seed-example`: demo data for the fictional Seal Bay
 //! University, written through the same audited paths the back office
 //! uses ([`harpseal::roster`], [`harpseal::modules::announcements`],
-//! [`harpseal::texts`]) as an existing Administrator, with
-//! `RequestCtx::cli().seeded()` so every audit row carries `"seed": true`.
+//! [`harpseal::texts`]) as an existing Administrator (except the bank
+//! account below, which is the system's), with `RequestCtx::cli().seeded()`
+//! so every audit row carries `"seed": true`.
 //!
 //! It imports the 50-Student roster ([`ROSTER_CSV`], upsert mode, applied
 //! at once by running the import Jobs), creates 3 draft announcements and
 //! 1 scheduled a week ahead, overrides 2 texts and saves the fees bank
 //! account ([`BANK_ACCOUNT`], a fictional number, as the system through
-//! [`harpseal::Settings::save`]: no Staff holds `fees.bank_account.edit`
-//! but Finance). Re-running adds
+//! [`Deployment::save_setting_as_system`]: no Staff holds
+//! `fees.bank_account.edit` but Finance). Re-running adds
 //! nothing twice: the import is an upsert, announcements are matched by
 //! their Thai title, and a text that already has any override (the seed's
 //! or one an Administrator customised) is left alone. It is refused on a
@@ -68,7 +69,8 @@ const MAX_TICKS: usize = 100;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SeedReport {
-    /// The acting Administrator's email.
+    /// The acting Administrator's email. Every audit row names them except
+    /// the bank account's, which is the system's.
     pub acting_as: String,
     /// The roster import's id.
     pub import_id: String,
@@ -209,8 +211,7 @@ async fn bank_account(d: &Deployment, ctx: &RequestCtx) -> Result<usize, SeedErr
     match settings.get(fees::BANK_ACCOUNT).await {
         Ok(_) => Ok(0),
         Err(harpseal::Error::SettingNotSet(_)) => {
-            settings
-                .save(fees::BANK_ACCOUNT, BANK_ACCOUNT, &Actor::System, ctx)
+            d.save_setting_as_system(fees::BANK_ACCOUNT, BANK_ACCOUNT, ctx)
                 .await?;
             Ok(1)
         }
