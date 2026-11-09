@@ -30,19 +30,26 @@ fn by_module(perms: &[Permission]) -> BTreeMap<&str, Vec<&Permission>> {
     m
 }
 
-/// The heading Staff read for a Module's Permissions (#125): "ระบบหลัก"
-/// for the Kernel, else the title of the Module's first back-office page
-/// ("ประกาศข่าว"), else the Module's name.
+/// A Module as Staff know it (#125): "ระบบหลัก" for the Kernel, else the
+/// title of the Module's first back-office page ("ประกาศข่าว"), else its
+/// own `<module>.title` or `<module>.menu` text, else "ส่วนเสริม".
 pub(super) fn group_name(v: &View<'_>, module: &str) -> String {
     if module == crate::kernel::NAME {
         return v.t("kernel.admin.roles.group_kernel");
     }
     let prefix = format!("{module}.");
-    v.s.deployment
-        .nav_items()
+    if let Some(n) =
+        v.s.deployment
+            .nav_items()
+            .iter()
+            .find(|n| n.permission.starts_with(&prefix))
+    {
+        return v.t(n.title_key);
+    }
+    [format!("{module}.title"), format!("{module}.menu")]
         .iter()
-        .find(|n| n.permission.starts_with(&prefix))
-        .map_or_else(|| module.to_string(), |n| v.t(n.title_key))
+        .find(|k| v.s.catalog.knows(k))
+        .map_or_else(|| v.t("kernel.admin.texts.area_module"), |k| v.t(k))
 }
 
 /// Permission checkboxes named `permission`, grouped by Module, each
@@ -179,6 +186,20 @@ pub(super) async fn create(
     let Ok(clean) = role_admin::clean_name(&name) else {
         return render_list(&v, &name, &perms, Some("kernel.admin.roles.err_name"), bad).await;
     };
+    // A name another Role is already shown as (#125): Staff could not
+    // tell the two apart.
+    match roles::list(&s.services).await {
+        Ok(all)
+            if all
+                .iter()
+                .any(|r| r.name != clean && v.role(&r.name) == clean) =>
+        {
+            let key = Some("kernel.admin.roles.err_label");
+            return render_list(&v, &name, &perms, key, bad).await;
+        }
+        Ok(_) => {}
+        Err(e) => return v.error(&e),
+    }
     let Ok(perms) = role_admin::clean_permissions(s.deployment.permissions(), &perms) else {
         return render_list(
             &v,

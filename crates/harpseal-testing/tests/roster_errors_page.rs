@@ -66,3 +66,22 @@ async fn a_file_without_any_header_row_says_which_headers_it_needs() {
     assert!(row.contains(&format!("คอลัมน์ที่ต้องมี: {EXPECTED}")), "{row}");
     assert!(page.contains("id=\"expected-headers\""), "{page}");
 }
+
+#[tokio::test]
+async fn the_page_groups_row_numbers_and_the_csv_keeps_digits() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let mut file = csv(0..1100);
+    file.extend_from_slice("6800000X,นก,,,,MSC,1,\r\n".as_bytes());
+    let r = upload(&b, "big.csv", &file, "full").await;
+    let id = import_id(&r);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(
+        page.contains("data-label=\"แถว\">1,102</td>"),
+        "{}",
+        first_row(&page)
+    );
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("\n1102,รหัสนักศึกษา,"), "{report}");
+}

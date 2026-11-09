@@ -4,7 +4,7 @@
 mod admin_support;
 mod support;
 
-use admin_support::{audits, boot, email_of, hidden, htmx_get, rows, run, signed_in};
+use admin_support::{audits, boot, email_of, hidden, htmx_get, rows, run, signed_in, text};
 use harpseal_testing::urlencode;
 
 /// The officer renames s1 through the Students edit form.
@@ -205,4 +205,51 @@ async fn a_viewer_is_refused_every_manage_and_edit_route() {
     assert_eq!(r.status, 403);
     assert!(forbidden(&r.body, "kernel.audit.view"));
     assert_eq!(audits(&h, "audit.detail").await, 0);
+}
+
+/// The CLI's `role.create` targets the Role's id (#125), so the log links
+/// to `/admin/roles/{id}`; a row holding a Role's name (written before)
+/// is shown with its label and not linked.
+#[tokio::test]
+async fn a_role_target_links_by_id_and_an_old_name_target_does_not() {
+    let (h, app) = boot().await;
+    let ctx = harpseal::RequestCtx::cli();
+    let created = harpseal::ensure_role(
+        app.deployment().services(),
+        &harpseal::Actor::System,
+        "Auditors",
+        &["kernel.audit.view"],
+        &ctx,
+    )
+    .await
+    .unwrap();
+    assert!(created);
+    let id = text(&h, "SELECT id FROM role WHERE name = ?", "Auditors", "id")
+        .await
+        .unwrap();
+    let target = text(
+        &h,
+        "SELECT target_id FROM audit_log WHERE action = 'role.create' AND target_id = ?",
+        &id,
+        "target_id",
+    )
+    .await;
+    assert_eq!(target.as_deref(), Some(id.as_str()), "the Role's id");
+    run(
+        &h,
+        "INSERT INTO audit_log (id, at, actor_kind, action, target_kind, target_id) \
+         VALUES ('old-row', 1, 'system', 'role.create', 'role', 'Administrator')",
+    )
+    .await;
+    let (b, _) = signed_in(&h, &app, "Viewer").await;
+    let page = b.get("/admin/audit?action=role.create").await.body;
+    assert!(
+        page.contains(&format!("href=\"/admin/roles/{id}\"")),
+        "{page}"
+    );
+    assert!(
+        !page.contains("href=\"/admin/roles/Administrator\""),
+        "{page}"
+    );
+    assert!(page.contains("<span>บทบาท ผู้ดูแลระบบ</span>"), "{page}");
 }

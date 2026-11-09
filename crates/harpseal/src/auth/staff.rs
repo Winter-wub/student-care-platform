@@ -294,13 +294,15 @@ pub async fn ensure_role(
     if !exists.is_empty() {
         return Ok(false);
     }
-    let mut stmts = roles::ensure_role(services, name, permissions)?;
+    // The audit target is the new Role's id, as the Roles page writes it,
+    // so the entry links to `/admin/roles/{id}`.
+    let (id, mut stmts) = roles::ensure_role(services, name, permissions)?;
     let after = json!({ "name": name, "permissions": permissions });
     stmts.push(audit::entry(
         services,
         actor,
         "role.create",
-        Some(&Target::new("role", name)),
+        Some(&Target::new("role", id)),
         None,
         Some(after),
         ctx,

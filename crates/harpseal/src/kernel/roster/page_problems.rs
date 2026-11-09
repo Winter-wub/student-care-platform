@@ -38,13 +38,17 @@ const HEADER_REASONS: [&str; 3] = ["missing_header", "unexpected_header", "no_he
 /// The row as Staff read it: a problem with the whole file or sheet has no
 /// row (stored as 0), so it says "ทั้งไฟล์" or "ทั้งชีต" rather than "แถว 0"
 /// (#125).
-fn row(v: &View<'_>, p: &Problem) -> String {
+/// `grouped` writes the page's `1,234`; the CSV report keeps the digits
+/// (`1234`) so a spreadsheet reads them as a number.
+fn row(v: &View<'_>, p: &Problem, grouped: bool) -> String {
     if p.row == 0 && !p.sheet.is_empty() {
         v.t("kernel.roster.report_whole_sheet")
     } else if p.row == 0 {
         v.t("kernel.roster.report_whole_file")
-    } else {
+    } else if grouped {
         crate::ui::number(p.row)
+    } else {
+        p.row.to_string()
     }
 }
 
@@ -187,7 +191,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                         @if sheets {
                             td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
                         }
-                        td data-label=(v.t("kernel.roster.report_row")) { (row(v, p)) }
+                        td data-label=(v.t("kernel.roster.report_row")) { (row(v, p, true)) }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))
@@ -263,7 +267,7 @@ pub(super) async fn report(
     let head: Vec<&str> = head.iter().map(String::as_str).collect();
     let mut lines = vec![super::csv::line(&head)];
     for p in &problems {
-        let row = row(&v, p);
+        let row = row(&v, p, false);
         let reason = reason(&v, p);
         let column = column(p);
         let level = v.t(p.severity.key());

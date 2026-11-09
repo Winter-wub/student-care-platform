@@ -12,8 +12,8 @@ use serde::Deserialize;
 
 use super::settings::{self, Refused, TextRow};
 use super::texts_api::Written;
-use super::texts_areas::area;
-use super::view::View;
+use super::texts_areas::Areas;
+use super::view::{View, enc};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx};
 
 pub(super) fn source_chip(v: &View<'_>, r: &TextRow) -> Markup {
@@ -113,15 +113,24 @@ async fn render(
         Err(e) => return v.error(&e),
     };
     let locales = settings::locales(&v.s.catalog, &v.s.config);
-    let action = format!("/admin/texts/{key}");
+    let action = format!("/admin/texts/{}", enc(key));
     let l = |k: &str| v.t(k);
-    let shown = area(v, key);
-    let title = preview_short(&v.s.catalog.t(&v.staff.locale, key));
+    let shown = Areas::new(v).of(key);
+    // The title is the text in use (an edit included), in the Staff
+    // member's Locale when the page lists it.
+    let title_locale = locales
+        .iter()
+        .find(|l| **l == v.staff.locale.0)
+        .or(locales.first())
+        .cloned()
+        .unwrap_or_default();
+    let in_use = settings::row(&v.s.catalog, &v.s.config, &stored, key, &title_locale);
+    let title = preview_short(in_use.effective());
     let body = html! {
         p { a href="/admin/texts" { "← " (l("kernel.admin.texts.back")) } }
         h1 { (title) }
         p class="muted" { (l("kernel.admin.texts.shown_on")) " "
-            a href=(format!("/admin/texts?area={}", shown.id)) { (shown.name) } }
+            a href=(format!("/admin/texts?area={}", enc(&shown.id))) { (shown.name) } }
         @for loc in &locales {
             @let r = settings::row(&v.s.catalog, &v.s.config, &stored, key, loc);
             @let names = settings::placeholders(&r.base);
@@ -200,7 +209,7 @@ pub(super) async fn submit(
     Form(f): Form<TextForm>,
 ) -> Response {
     let v = View::new(&s, &staff);
-    let back = format!("/admin/texts/{key}");
+    let back = format!("/admin/texts/{}", enc(&key));
     let actor = Actor::staff(&staff);
     if f.op == "reset" {
         return reset(&s, &v, &key, &f, &actor, &ctx).await;
@@ -246,7 +255,7 @@ async fn reset(
     if !settings::editable(&s.catalog, key) || !locales.contains(&f.locale) {
         return v.not_found("/admin/texts");
     }
-    let back = format!("/admin/texts/{key}");
+    let back = format!("/admin/texts/{}", enc(key));
     let stored = match settings::settings(&s.services).await {
         Ok(r) => r,
         Err(e) => return v.error(&e),

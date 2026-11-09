@@ -25,17 +25,19 @@ pub(crate) fn label(catalog: &crate::Catalog, locale: &crate::Locale, name: &str
     }
 }
 
-/// Statements creating Role `name` if absent and granting `perms`.
+/// Statements creating Role `name` if absent and granting `perms`, with
+/// the id a new Role gets (an existing Role keeps its own).
 pub(crate) fn ensure_role(
     services: &Services,
     name: &str,
     perms: &[impl AsRef<str>],
-) -> Result<Vec<Statement>> {
+) -> Result<(String, Vec<Statement>)> {
+    let id = services.new_id()?;
     let mut stmts = vec![
         Statement::new(
             "INSERT INTO role (id, name, created_at) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING",
         )
-        .bind(services.new_id()?)
+        .bind(id.as_str())
         .bind(name)
         .bind(services.now_ms()),
     ];
@@ -49,7 +51,7 @@ pub(crate) fn ensure_role(
             .bind(name),
         );
     }
-    Ok(stmts)
+    Ok((id, stmts))
 }
 
 fn column(rows: &Rows) -> Vec<String> {

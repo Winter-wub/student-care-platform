@@ -91,3 +91,47 @@ fn a_label_for_a_role_or_locale_the_deployment_lacks_is_refused() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_new_role_named_like_another_roles_label_is_refused() {
+    let h = Harness::new();
+    let config = DeploymentConfig::from_toml(TOML).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    for name in ["ผู้ดูแลระบบ", "เจ้าหน้าที่ทั่วไป"]
+    {
+        let body = format!(
+            "name={}&permission=kernel.student.view",
+            harpseal_testing::urlencode(name)
+        );
+        let r = admin.post("/admin/roles", &body).await;
+        assert_eq!(r.status, 422, "{name}: {}", r.body);
+        assert!(
+            r.body.contains("มีบทบาทที่แสดงชื่อนี้อยู่แล้ว กรุณาตั้งชื่ออื่นที่ไม่ซ้ำ"),
+            "{}",
+            r.body
+        );
+    }
+    let roles = h
+        .db()
+        .query(harpseal::Statement::new("SELECT count(*) AS n FROM role"))
+        .await
+        .unwrap();
+    assert_eq!(
+        roles.get(0, "n").and_then(|v| v.as_i64()),
+        Some(2),
+        "nothing created"
+    );
+}
+
+#[tokio::test]
+async fn two_roles_shown_alike_on_the_staff_form_name_their_stored_names() {
+    let h = Harness::new();
+    let toml = TOML.replace("\"เจ้าหน้าที่ทั่วไป\"", "\"ผู้ดูแลระบบ\"");
+    let config = DeploymentConfig::from_toml(&toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let form = admin.get("/admin/staff/new").await.body;
+    assert!(form.contains("ผู้ดูแลระบบ (Administrator)"), "{form}");
+    assert!(form.contains("ผู้ดูแลระบบ (General Staff)"), "{form}");
+}

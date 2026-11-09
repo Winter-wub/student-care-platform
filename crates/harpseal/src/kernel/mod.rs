@@ -69,7 +69,7 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
         "kernel.backup.download",
         "Download a backup or all data (Administrator-equivalent: backups hold password hashes)",
     )
-    .thai("ดาวน์โหลดชุดสำรองหรือข้อมูลทั้งหมด (เทียบเท่าผู้ดูแลระบบ)"),
+    .thai("ดาวน์โหลดชุดสำรองหรือข้อมูลทั้งหมด (เทียบเท่าผู้ดูแลระบบ เพราะชุดสำรองมีรหัสผ่านที่เข้ารหัสไว้)"),
 ];
 
 const MIGRATIONS: &[(&str, &str)] = &[

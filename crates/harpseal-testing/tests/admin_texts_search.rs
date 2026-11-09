@@ -100,3 +100,58 @@ async fn texts_are_searched_by_text_page_or_key_and_filtered_by_page() {
         .body;
     assert!(areas(&r).is_empty() && r.contains("ไม่พบรายการ"), "{r}");
 }
+
+/// Texts the back office reads only from the catalog are not offered for
+/// editing (#125): a saved edit would never show. The emails stay.
+#[tokio::test]
+async fn labels_and_page_texts_are_not_offered_but_emails_are() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    for key in [
+        "kernel.role.Administrator",
+        "kernel.locale.th",
+        "kernel.backup.total",
+        "kernel.usage.metered",
+        "kernel.home.title",
+    ] {
+        let r = admin.get(&format!("/admin/texts/{key}")).await;
+        assert_eq!(r.status, 404, "{key} is offered");
+        let r = admin
+            .post(
+                &format!("/admin/texts/{key}"),
+                "locale=th&value=x&version=-&op=save",
+            )
+            .await;
+        assert_ne!(r.status, 303, "{key} was saved");
+    }
+    for key in ["kernel.backup.email_subject", "kernel.usage.email_body"] {
+        assert_eq!(
+            admin.get(&format!("/admin/texts/{key}")).await.status,
+            200,
+            "{key}"
+        );
+    }
+    let list = admin.get("/admin/texts").await.body;
+    for raw in [
+        "/admin/texts/kernel.role.",
+        "/admin/texts/kernel.locale.",
+        "/admin/texts/kernel.home.",
+    ] {
+        assert!(!list.contains(raw), "{raw} listed");
+    }
+}
+
+/// The edit page is titled by the text in use, an edit included.
+#[tokio::test]
+async fn the_edit_page_title_follows_an_edit() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let path = "/admin/texts/kernel.flow.welcome";
+    let body = format!(
+        "locale=th&value={}&version=-&op=save",
+        urlencode("ยินดีต้อนรับ ฉบับแก้ไข")
+    );
+    assert_eq!(admin.post(path, &body).await.status, 303);
+    let page = admin.get(path).await.body;
+    assert!(page.contains("<h1>ยินดีต้อนรับ ฉบับแก้ไข</h1>"), "{page}");
+}

@@ -10,9 +10,9 @@ use maud::{Markup, html};
 use serde::Deserialize;
 
 use super::settings::{self, TextRow};
-use super::texts_areas::{Area, area};
+use super::texts_areas::{Area, Areas};
 use super::texts_pages::{consent_card, source_chip};
-use super::view::{View, cut};
+use super::view::{View, cut, enc};
 use crate::{AppState, CurrentStaff};
 
 /// Longest preview of a text in the list, in characters.
@@ -62,6 +62,7 @@ pub(super) async fn list(
     };
     let locales = settings::locales(&s.catalog, &s.config);
     let needle = query.to_lowercase();
+    let mut area = Areas::new(&v);
     let all: Vec<Listed> = settings::keys(&s.catalog)
         .into_iter()
         .map(|k| {
@@ -69,12 +70,12 @@ pub(super) async fn list(
                 .iter()
                 .map(|l| settings::row(&s.catalog, &s.config, &stored, &k, l))
                 .collect();
-            (k.clone(), area(&v, &k), per)
+            (k.clone(), area.of(&k), per)
         })
         .collect();
     let mut areas: Vec<Area> = all.iter().map(|(_, a, _)| a.clone()).collect();
-    areas.sort_by(|a, b| a.name.cmp(&b.name));
-    areas.dedup();
+    areas.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    areas.dedup_by(|a, b| a.id == b.id);
     let rows: Vec<Listed> = all
         .into_iter()
         .filter(|(_, a, _)| q.area.is_empty() || a.id == q.area)
@@ -125,12 +126,12 @@ pub(super) async fn list(
 /// The texts grouped by page, each group a table with one column per
 /// Locale; the first Locale's text links to the edit page.
 fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>) -> Markup {
-    rows.sort_by(|a, b| (&a.1.name, &a.0).cmp(&(&b.1.name, &b.0)));
+    rows.sort_by(|a, b| (&a.1.name, &a.1.id, &a.0).cmp(&(&b.1.name, &b.1.id, &b.0)));
     let mut groups: Vec<(Area, Vec<Row>)> = Vec::new();
     let total = rows.len();
     for (key, a, per) in rows {
         match groups.last_mut() {
-            Some((last, list)) if *last == a => list.push((key, per)),
+            Some((last, list)) if last.id == a.id => list.push((key, per)),
             _ => groups.push((a, vec![(key, per)])),
         }
     }
@@ -152,7 +153,7 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>) -> Markup {
                                     @for (i, r) in per.iter().enumerate() {
                                         td data-label=(name(&r.locale)) {
                                             @if i == 0 {
-                                                a href=(format!("/admin/texts/{key}")) { (preview(r.effective())) }
+                                                a href=(format!("/admin/texts/{}", enc(key))) { (preview(r.effective())) }
                                             } @else {
                                                 span { (preview(r.effective())) }
                                             }

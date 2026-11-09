@@ -152,21 +152,12 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "Branding and menu images"
     ),
     (
-        "kernel.admin.texts.area_home",
-        "หน้าหลักของหลังบ้าน",
-        "Back-office home"
-    ),
-    (
         "kernel.admin.texts.area_usage",
         "การใช้งานและโควตา",
         "Usage and Quotas"
     ),
-    (
-        "kernel.admin.texts.area_roster",
-        "นำเข้ารายชื่อ",
-        "Roster import"
-    ),
     ("kernel.admin.texts.area_other", "ทั่วไป", "General"),
+    ("kernel.admin.texts.area_module", "ส่วนเสริม", "Add-on"),
     ("kernel.admin.texts.key", "คีย์", "Key"),
     ("kernel.admin.texts.back", "กลับไปที่ข้อความ", "Back to texts"),
     ("kernel.admin.texts.default", "ค่าตั้งต้น", "Default"),

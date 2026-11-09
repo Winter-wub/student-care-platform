@@ -94,14 +94,19 @@ pub(super) async fn new_form(State(s): State<AppState>, staff: CurrentStaff) -> 
 }
 
 /// Role checkboxes named `role` (the stored name), `held` checked, each
-/// labelled as Staff read it (#125).
+/// labelled as Staff read it (#125). When two Roles read the same (a
+/// `[texts]` label equal to another Role's), each also names its stored
+/// name, so the two stay apart.
 pub(super) fn role_boxes(v: &View<'_>, all: &[RoleRow], held: &[String]) -> Markup {
+    let labels: Vec<String> = all.iter().map(|r| v.role(&r.name)).collect();
+    let shared = |l: &String| labels.iter().filter(|x| *x == l).count() > 1;
     html! {
         fieldset class="checks" {
-            @for r in all {
+            @for (r, label) in all.iter().zip(&labels) {
                 label class="check" {
                     input type="checkbox" name="role" value=(r.name) checked[held.contains(&r.name)];
-                    " " (v.role(&r.name))
+                    " " (label)
+                    @if shared(label) && *label != r.name { " (" (r.name) ")" }
                 }
             }
         }

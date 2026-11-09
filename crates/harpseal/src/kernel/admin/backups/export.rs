@@ -74,8 +74,11 @@ async fn send(
             ("table_cells", most.as_str()),
         ];
         let text = fill(&v.t(key), &args);
-        let body =
-            html! { div class="card" id="export-too-big" data-table=(largest) { p { (text) } } };
+        // The table's name is a database name: in the details (#125).
+        let body = html! {
+            div class="card" id="export-too-big" data-table=(largest) { p { (text) } }
+            (crate::ui::technical(s, staff, html! { p class="code" { (largest) } }))
+        };
         return v.page(StatusCode::PAYLOAD_TOO_LARGE, &text, body);
     }
     let built = async {

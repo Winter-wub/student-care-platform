@@ -218,7 +218,7 @@ pub(crate) const FORM: &[E] = th_en![
     // {count}
     (
         "announcements.form.notify_reach",
-        "แจ้งได้สูงสุด {count} คน (ส่งข้อความ LINE ไม่เกิน {count} ข้อความ เฉพาะคนที่ข้อความในภาษาของตัวเองเปลี่ยน)",
+        "แจ้งได้สูงสุด {count} คน (ใช้ข้อความที่คิดค่าบริการไม่เกิน {count} ข้อความ เฉพาะคนที่ข้อความในภาษาของตัวเองเปลี่ยน)",
         "up to {count} recipients (at most {count} pushes: only those whose own language's text changes)"
     ),
     // {left}

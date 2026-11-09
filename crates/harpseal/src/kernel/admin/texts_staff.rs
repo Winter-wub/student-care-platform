@@ -180,6 +180,11 @@ pub(crate) const STAFF: &[E] = th_en![
         "A Role name is 1 to 64 characters"
     ),
     (
+        "kernel.admin.roles.err_label",
+        "มีบทบาทที่แสดงชื่อนี้อยู่แล้ว กรุณาตั้งชื่ออื่นที่ไม่ซ้ำ เช่น เติมชื่อหน่วยงานต่อท้าย",
+        "Another Role is already shown with this name. Choose a different name, such as one with the office's name added."
+    ),
+    (
         "kernel.admin.roles.err_taken",
         "มีบทบาทชื่อนี้อยู่แล้ว",
         "A Role with this name already exists"

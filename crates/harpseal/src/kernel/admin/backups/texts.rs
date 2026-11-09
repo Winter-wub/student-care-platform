@@ -48,17 +48,17 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "ข้อมูลแต่ละชุดอยู่คนละชีต ไม่รวมบันทึกการทำงานของระบบ งานเบื้องหลัง ข้อความขาออก รหัสผ่าน และข้อมูลลับอื่น ๆ ไฟล์นี้ใช้กู้คืนระบบไม่ได้",
         "One sheet per table, without the operational tables (logs, Jobs, outbound messages), password hashes, tokens and other secrets. Not a backup: it cannot be restored."
     ),
-    // {cells} {limit} {table} {table_cells}
+    // {cells} {limit} {table_cells} (the table's name is in the details)
     (
         "kernel.backup.export_too_big",
-        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ชุดที่ใหญ่ที่สุดคือ {table} ({table_cells} ช่อง) ให้ดาวน์โหลดชุดนั้นแยกจากรายการใน \"ข้อมูลทางเทคนิค\" หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
-        "The data has {cells} cells, over the Excel download's limit of {limit}. The largest table is {table} ({table_cells} cells): download it alone from the list under \"Technical details\", or ask your server administrator to raise the limit."
+        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ชุดข้อมูลที่ใหญ่ที่สุดมี {table_cells} ช่อง (ชื่อของชุดอยู่ใน \"ข้อมูลทางเทคนิค\" ท้ายหน้านี้) ให้ดาวน์โหลดชุดนั้นแยกจากหน้าสำรองข้อมูล หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
+        "The data has {cells} cells, over the Excel download's limit of {limit}. The largest table has {table_cells} cells (its name is under \"Technical details\" below): download it alone from the Backups page, or ask your server administrator to raise the limit."
     ),
-    // {table} {cells} {limit}
+    // {cells} {limit}
     (
         "kernel.backup.export_table_too_big",
-        "ชุดข้อมูล {table} มี {cells} ช่อง เกินขีดจำกัด {limit} ช่อง ให้ดาวน์โหลดชุดสำรองแทน หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
-        "Table {table} alone has {cells} cells, over the limit of {limit}. Download a backup instead, or ask your server administrator to raise the limit."
+        "ชุดข้อมูลนี้มี {cells} ช่อง เกินขีดจำกัด {limit} ช่อง ให้ดาวน์โหลดชุดสำรองแทน หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
+        "This table alone has {cells} cells, over the limit of {limit}. Download a backup instead, or ask your server administrator to raise the limit."
     ),
     (
         "kernel.backup.tables",

@@ -55,6 +55,21 @@ pub(super) const AUDIT: &[E] = th_en![
     ),
     // Actions.
     (
+        "kernel.admin.audit.action.module_upload",
+        "อัปโหลดไฟล์",
+        "Uploaded a file"
+    ),
+    (
+        "kernel.admin.audit.action.module_upload_confirm",
+        "ยืนยันนำเข้าไฟล์ที่อัปโหลด",
+        "Confirmed an uploaded file"
+    ),
+    (
+        "kernel.admin.audit.action.module_upload_cancel",
+        "ยกเลิกไฟล์ที่อัปโหลด",
+        "Cancelled an uploaded file"
+    ),
+    (
         "kernel.admin.audit.action.announcement_create",
         "สร้างประกาศ",
         "Created an announcement"

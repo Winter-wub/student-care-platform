@@ -31,6 +31,7 @@ mod texts;
 pub mod texts_api;
 mod texts_areas;
 mod texts_audit;
+mod texts_editable;
 mod texts_list;
 mod texts_pages;
 mod texts_staff;

@@ -436,7 +436,10 @@ disclosure.
   `fees.audit.import`); an action without a label shows as written.
 - **Texts** are listed under the page they show on, with a search (text,
   page or key) and a page filter. Each links by its Thai text; the key is
-  on the edit page's technical details.
+  on the edit page's technical details. The page lists only texts read
+  through the saved edits (chat, Mini App, notices and emails). Role,
+  Locale and audit labels, and the texts of the home, Backups and usage
+  pages, are read from the catalog alone: change them in `[texts]`.
 - **Roster errors** say "ทั้งไฟล์" or "ทั้งชีต" for a problem with no row.
   A header problem lists the headers the template expects, with a link to
   the template.
