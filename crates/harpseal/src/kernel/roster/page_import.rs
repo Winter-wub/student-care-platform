@@ -110,7 +110,7 @@ fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
     let p = &imp.counts.preview;
     let full = imp.mode == "full";
     html! {
-        @if p.warning { div class="warn" role="alert" { (v.t("kernel.roster.warning")) } }
+        @if p.warning { div class="warn" { (v.t("kernel.roster.warning")) } }
         (super::skipped::card(v, &imp.counts.skipped))
         (problems::warnings_card(v, imp))
         div class="card" {
@@ -139,7 +139,7 @@ fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
                 @if v.s.config.roster.allows_mode(&imp.mode) {
                     (reach::confirm_form(v, imp))
                 } @else {
-                    div class="warn" role="alert" { (v.t("kernel.roster.mode_no_longer")) }
+                    div class="warn" { (v.t("kernel.roster.mode_no_longer")) }
                 }
                 form method="post" action=(format!("{BASE}/{}/cancel", imp.id)) {
                     (v.staff.csrf_field())
@@ -196,7 +196,8 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
         return html! { (progress(v, imp)) (problems::warnings_card(v, imp)) };
     }
     html! {
-        div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
+        // Not a live region (#129): the flash already announced the refusal.
+        div class="warn" { (v.t("kernel.roster.refused")) }
         (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             h2 { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (crate::ui::number(f.total)) } }

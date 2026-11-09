@@ -100,17 +100,19 @@ impl<'a> View<'a> {
         html! { span class=(class) { (self.t(key)) } }
     }
 
-    /// One Channel's Link icon: ● active, ◐ unreachable, ○ none.
+    /// One Channel's Link: ● active, ◐ unreachable, ○ none, then the
+    /// Channel and the state in words (#129), so neither the glyph nor
+    /// its colour carries the state alone.
     pub(super) fn link_icon(&self, channel: &str, status: Option<&str>) -> Markup {
         let (glyph, class, key) = match status {
             Some("active") => ("●", "li li-active", "kernel.students.link_active"),
             Some("unreachable") => ("◐", "li li-unreachable", "kernel.students.link_unreachable"),
             _ => ("○", "li li-none", "kernel.students.link_none"),
         };
-        let label = format!("{}: {}", channel_label(channel), self.t(key));
         html! {
-            span class=(class) title=(label) aria-label=(label) {
-                span aria-hidden="true" { (glyph) } " " (channel_label(channel))
+            span class=(class) {
+                span aria-hidden="true" { (glyph) } " " (channel_label(channel)) ": "
+                span class="li-word" { (self.t(key)) }
             }
         }
     }

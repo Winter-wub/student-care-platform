@@ -9,7 +9,7 @@
   background: var(--card); color: var(--ink); border: 1px solid var(--line);
   border-radius: 10px; font-weight: 600;
 }
-.skip:focus { top: 8px; outline: 3px solid var(--brand); outline-offset: 2px; }
+.skip:focus { top: 8px; outline: 3px solid var(--focus); outline-offset: 2px; }
 main:focus { outline: none; }
 
 /* The bar holds the letterhead and who is signed in; the email hides on
@@ -36,7 +36,7 @@ main:focus { outline: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-here::before { content: "·"; margin-right: 10px; }
 .menu[open] > summary { border-bottom: 1px solid var(--line); }
-.menu > summary:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
+.menu > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
 .nav { padding: 4px 8px 12px; }
 .nav ul { list-style: none; margin: 0; padding: 0; }
 .nav a {
@@ -44,7 +44,7 @@ main:focus { outline: none; }
   border-radius: 10px; color: var(--ink); text-decoration: none;
 }
 .nav a:hover { background: var(--bg); }
-.nav a:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; }
+.nav a:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
 .nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); font-weight: 700; }
 .nav a[aria-current="page"]:hover { background: var(--brand); }
 .nav a[aria-current="page"]:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
@@ -81,7 +81,7 @@ main:focus { outline: none; }
 /* Not `.chip.warn`: the roster's `.warn` block would pad it. Its border
    (#a37200) is 4.0:1 on the Attention Wash, so the chip reads on a warn row. */
 .chip.caution { background: #fff3d6; color: #6b4a00; border: 1px solid #a37200; padding: 1px 9px; }
-.status-card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 1rem; }
+.status-card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: var(--step-title); }
 .status-card .fact { margin: 0; }
 .status-card .btn { justify-self: start; margin-top: 4px; }
 /* Three columns once main's content has room (about 1000 px with the
@@ -94,7 +94,7 @@ main:focus { outline: none; }
 /* "ข้อมูลทางเทคนิค": raw details behind a closed disclosure. */
 .tech { margin: 0 0 var(--gutter); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
 .tech > summary { padding: 0 var(--gutter); font-weight: 600; color: var(--muted); }
-.tech > summary:focus-visible { outline: 3px solid var(--brand); outline-offset: -3px; border-radius: var(--radius); }
+.tech > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; border-radius: var(--radius); }
 .tech-body { padding: 0 var(--gutter) var(--gutter); border-top: 1px solid var(--line); }
 .tech-body > :first-child { margin-top: 12px; }
 .tech-body .card { border: 0; padding: 0; margin: 12px 0 0; }

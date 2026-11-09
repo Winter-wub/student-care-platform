@@ -53,3 +53,27 @@ pub(super) fn prefilled(q: &[(String, String)]) -> Fields {
         ..Fields::default()
     }
 }
+
+/// The errors of `field` under one id, `err-<field>`, that the field's
+/// control or fieldset names with `aria-describedby` (#129). Not a live
+/// region: the form's summary above announces once.
+pub(super) fn field_errors(v: &View<'_>, errors: &[(&str, &str)], field: &str) -> Markup {
+    let mine: Vec<&str> = errors
+        .iter()
+        .filter(|(f, _)| *f == field)
+        .map(|(_, k)| *k)
+        .collect();
+    html! {
+        @if !mine.is_empty() {
+            div id=(format!("err-{field}")) { @for key in mine { p class="field-error" { (v.t(key)) } } }
+        }
+    }
+}
+
+/// `err-<field>` when `field` has an error, for `aria-describedby`.
+pub(super) fn described(errors: &[(&str, &str)], field: &str) -> Option<String> {
+    errors
+        .iter()
+        .any(|(f, _)| *f == field)
+        .then(|| format!("err-{field}"))
+}

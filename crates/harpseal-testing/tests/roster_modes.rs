@@ -157,7 +157,12 @@ async fn with_both_modes_and_an_upsert_default_a_full_preview_keeps_the_leave_wa
     assert!(page.contains("ทั้งทะเบียน"), "the preview names the mode");
     assert!(page.contains(r#"data-count="will_become_left""#), "{page}");
     assert!(page.contains("Old gone"), "{page}");
-    assert!(page.contains(r#"role="alert""#), "the warning stays");
+    // The warning stays; the flash announces the preview, so the warning
+    // is no second live region (#129).
+    assert!(
+        page.contains(r#"<div class="warn">ระวัง: จะมีนักศึกษาพ้นสภาพเกิน 20%"#),
+        "the warning stays: {page}"
+    );
 }
 
 #[tokio::test]

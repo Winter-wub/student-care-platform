@@ -1,0 +1,53 @@
+
+/* Type, contrast and access (#129). Appended after the shell and the
+   onboarding help (see `ui::CSS`). Measured, not eyeballed: every ratio
+   below is WCAG 2 relative luminance. */
+
+/* On the letterhead the ring is the bar's own ink: white (or Ledger Ink
+   on a light TOML colour), at least 4.5:1 on the brand. */
+.bar :focus-visible, .mini-bar :focus-visible, .nav a[aria-current="page"]:focus-visible {
+  outline-color: var(--brand-ink);
+}
+.nav a[aria-current="page"]:focus-visible { outline-offset: -5px; }
+
+/* Numbers line up in tables, facts, counts, meters and status cards. */
+table.rows td, .facts dd, .kv dd, .count, .pager, .usage, .status-card .fact,
+[data-count], .code { font-variant-numeric: tabular-nums; }
+
+/* Targets (WCAG 2.5.8): links in tables, lists, facts and the "back"
+   line are at least 24 px tall; a link inside a sentence keeps the
+   sentence's 1.6 line (25.6 px). Buttons and fields stay 48 px. */
+:where(.office main) :where(p, td, dd, li, .pager, .name) > a:not(.btn, .chip) {
+  display: inline-block; min-height: 24px; line-height: 1.6;
+}
+
+/* Checkboxes and radios: 20 px boxes in the brand, inside 48 px labels. */
+input[type="checkbox"], input[type="radio"] {
+  width: 20px; height: 20px; min-height: 0; flex: none; accent-color: var(--focus);
+}
+label.check input, label.choice input { width: 20px; height: 20px; }
+
+/* Status chips carry a 1px edge of at least 3:1 on Paper and on their
+   own wash: Approved #3d8a5f (4.2:1 / 3.7:1), Refused #c24141 (5.1:1 /
+   4.5:1), Caution #a37200 (4.2:1 / 3.8:1). Neutral chips are labels whose
+   words carry them; they stay borderless. */
+.chip.ok { border: 1px solid #3d8a5f; padding: 1px 9px; }
+.chip.err, .chip.over { border: 1px solid #c24141; padding: 1px 9px; }
+.chip.warn, .chip.override { border: 1px solid #a37200; padding: 1px 9px; }
+/* A long chip wraps instead of pushing the page sideways at 360 px. */
+.chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* A Link's state is a word as well as a glyph (#129). */
+.li-word { color: var(--ink); }
+.li-unreachable .li-word { color: #8a5a00; }
+.li-none .li-word { color: var(--muted); }
+
+/* Field errors sit under the field they describe (`aria-describedby`). */
+.field-error { overflow-wrap: anywhere; }
+
+/* Motion: the only thing that moves is the HTMX spinner's fade; with
+   reduced motion it appears and goes at once, so the state still shows. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { transition: none; }
+  html { scroll-behavior: auto; }
+}

@@ -258,6 +258,11 @@ pub(crate) const FORM: &[E] = th_en![
     ),
     ("announcements.form.tags", "ป้าย", "Tags"),
     (
+        "announcements.form.fix_errors",
+        "กรุณาแก้ช่องที่มีข้อผิดพลาดด้านล่าง",
+        "Please fix the fields marked below"
+    ),
+    (
         "announcements.form.include_unreachable",
         "นับบัญชีที่ติดต่อไม่ได้ด้วย (จะข้ามตอนส่ง)",
         "Count unreachable accounts too (skipped when sending)"

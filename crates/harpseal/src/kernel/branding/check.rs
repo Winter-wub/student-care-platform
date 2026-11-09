@@ -1,6 +1,7 @@
 //! The checks of `/admin/branding` (#114): the display name, the primary
 //! colour (`#rrggbb`, and white text on it readable: a WCAG 2 contrast of
-//! at least [`MIN_CONTRAST`]) and the logo (PNG or JPEG told by its bytes,
+//! at least [`MIN_CONTRAST`]; the focus ring and links derived from it are
+//! then readable too, `ui::brand`) and the logo (PNG or JPEG told by its bytes,
 //! at most [`LOGO_MAX_BYTES`] and [`LOGO_MAX_PX`] a side).
 //!
 //! A refusal is a catalog key and its `{placeholder}` values, shown in the
@@ -71,18 +72,12 @@ fn rgb(v: &str) -> Option<[u8; 3]> {
     Some([c(0)?, c(2)?, c(4)?])
 }
 
-/// WCAG 2 contrast ratio of white on `c`.
+/// WCAG 2 contrast ratio of white on `c`: the same measure the page's
+/// derived tokens use (`ui::brand`, #129), so what is saved here is what
+/// the CSS draws as white text on the bar, the primary button and the
+/// current page.
 pub(crate) fn contrast_with_white(c: [u8; 3]) -> f64 {
-    let lin = |v: u8| {
-        let s = f64::from(v) / 255.0;
-        if s <= 0.04045 {
-            s / 12.92
-        } else {
-            ((s + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let l = 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
-    1.05 / (l + 0.05)
+    crate::ui::brand::contrast(c, [0xff, 0xff, 0xff])
 }
 
 /// The colour to save, `#rrggbb` lowercase, if white text on it reaches
