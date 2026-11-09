@@ -30,3 +30,26 @@ pub(super) fn field(v: &View<'_>, f: &Fields) -> Markup {
         }
     }
 }
+
+/// The fields of a new announcement from its query (#127): `scope=students`
+/// with `students=<ids separated by spaces>` (the next step of an import
+/// that names its Students, [`crate::ui::announce_href`]) chooses that
+/// list; any other query chooses nothing, as on a bare form (#120). Only a
+/// draft is filled in: it is saved and reviewed as usual before any send.
+pub(super) fn prefilled(q: &[(String, String)]) -> Fields {
+    let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, x)| x.trim());
+    let named = get("students").filter(|l| get("scope") == Some("students") && !l.is_empty());
+    let (scope, students) = match named {
+        Some(list) => {
+            let ids: Vec<&str> = list.split_whitespace().collect();
+            ("students".to_string(), ids.join("\n"))
+        }
+        None => (String::new(), String::new()),
+    };
+    Fields {
+        when: "now".into(),
+        scope,
+        students,
+        ..Fields::default()
+    }
+}

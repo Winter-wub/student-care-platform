@@ -41,6 +41,7 @@ pub(crate) mod file;
 mod finish;
 mod intake;
 mod job;
+mod page_help;
 mod page_import;
 mod page_list;
 mod page_problems;
@@ -86,6 +87,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         path: "/roster/upload",
         max_body: UPLOAD_LIMIT,
         too_large: Some((view::BASE, "kernel.roster.reason_too_large")),
+        columns: None,
     };
     r.messages(texts::DEFAULTS)
         .messages(texts_sheets::DEFAULTS)

@@ -218,6 +218,7 @@ fn upload(path: &'static str) -> crate::module::UploadSpec {
         path,
         max_body: files::FORM_BODY_LIMIT,
         too_large: None,
+        columns: None,
     }
 }
 

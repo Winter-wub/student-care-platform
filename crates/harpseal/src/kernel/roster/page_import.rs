@@ -151,15 +151,16 @@ fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
 }
 
 /// The part HTMX refreshes: progress while `queued` / `running` (and it
-/// polls), the result once `done`.
+/// polls), the result and the next step once `done`.
 fn progress(v: &View<'_>, imp: &Import) -> Markup {
     let live = matches!(imp.state.as_str(), "queued" | "running");
     let url = format!("{BASE}/{}", imp.id);
     let c: &Counts = &imp.counts;
     html! {
-        div id="roster-progress" class="card" data-state=(imp.state)
+        div id="roster-progress" data-state=(imp.state)
             hx-get=[live.then_some(url.as_str())] hx-trigger=[live.then_some("every 2s")]
             hx-swap=[live.then_some("outerHTML")] {
+          div class="card" {
             @if let Some(job) = imp.failure.as_ref().and_then(|f| f.job.as_ref()) {
                 div class="warn" role="alert" { (v.t("kernel.roster.job_failed")) ": " (job) }
             }
@@ -178,6 +179,12 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
                     dt { (v.t("kernel.roster.notices_failed")) } dd { (crate::ui::number(c.notices_failed)) }
                 }
                 @if let Some(at) = imp.finished_at { p class="muted" { (v.time(at)) } }
+            }
+          }
+            // What comes next (#127): tell Students. A roster file cannot
+            // name its Audience exactly, so Staff choose it on the form.
+            @if imp.state == "done" {
+                (crate::ui::next_step(v.s, v.staff, &[], (&v.t("kernel.roster.back"), BASE)))
             }
         }
     }

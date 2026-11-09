@@ -100,6 +100,7 @@ pub use message::{
     MenuKey, Message,
 };
 pub use migrate::{MigrationReport, migrate};
+pub use module::UploadColumn;
 pub use module::{
     ActionContext, ActionHandler, AppState, CONFIRMED_KEEP_MS, JobContext, JobHandler, KeptUpload,
     MAX_LINE_CHARS, MAX_MULTILINE_CHARS, MAX_UPLOAD_BYTES, Module, ModuleRegistrar, PageState,

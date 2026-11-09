@@ -49,6 +49,19 @@ impl Filters {
         }
     }
 
+    /// No filter set (#127: an empty log reads differently from no match).
+    fn is_empty(&self) -> bool {
+        [
+            &self.actor,
+            &self.action,
+            &self.target,
+            &self.from,
+            &self.to,
+        ]
+        .iter()
+        .all(|x| x.trim().is_empty())
+    }
+
     fn query(&self) -> String {
         format!(
             "actor={}&action={}&target={}&from={}&to={}",
@@ -228,8 +241,10 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
     html! {
         div id="audit-results" {
             p class="muted count" { (l("kernel.admin.total")) " " (crate::ui::number(total)) }
-            @if rows.is_empty() {
-                div class="card" { p { (l("kernel.admin.none")) } }
+            @if rows.is_empty() && f.is_empty() {
+                (crate::ui::empty_state(&l("kernel.empty.audit"), None))
+            } @else if rows.is_empty() {
+                (crate::ui::no_match(&l("kernel.empty.filtered"), (&l("kernel.empty.clear_filters"), "/admin/audit")))
             } @else {
                 table class="rows audit" {
                     thead { tr {

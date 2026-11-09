@@ -109,6 +109,17 @@ impl Deployment {
                 &format!("{}{path}", super::routes::ADMIN),
                 guarded(route.clone(), gate),
             );
+            // Its template (#127), for the same Permission.
+            if let Some(columns) = upload.and_then(|u| u.columns) {
+                let template = crate::module::template_route(path, columns);
+                let gate = Gate {
+                    body_limit: auth::MULTIPART_LIMIT,
+                    too_large: None,
+                    ..gate
+                };
+                let at = crate::module::template_path(path);
+                root = root.route(&at, guarded(template, gate));
+            }
         }
         let css = get(|| async {
             (

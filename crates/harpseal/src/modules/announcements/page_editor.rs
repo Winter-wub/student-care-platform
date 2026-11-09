@@ -28,6 +28,27 @@ pub(super) const PREVIEW_MAX_BYTES: usize = 128 * 1024;
 
 /// Editor texts, Thai and English.
 pub(crate) const EDITOR: &[E] = &[
+    // #127: what the empty preview says before anything is typed.
+    E::new(
+        "announcements.editor.preview_empty",
+        "th",
+        "ข้อความที่พิมพ์จะแสดงที่นี่ ตามที่นักศึกษาเห็นในมินิแอป",
+    ),
+    E::new(
+        "announcements.editor.preview_empty",
+        "en",
+        "What you type appears here as Students see it in the Mini App.",
+    ),
+    E::new(
+        "announcements.editor.card_placeholder",
+        "th",
+        "หัวข้อและข้อความจะแสดงในการ์ดนี้ ตามที่นักศึกษาเห็นในแชท",
+    ),
+    E::new(
+        "announcements.editor.card_placeholder",
+        "en",
+        "The title and text appear in this card as Students see it in the chat.",
+    ),
     E::new("announcements.editor.toolbar", "th", "จัดรูปแบบ"),
     E::new("announcements.editor.toolbar", "en", "Formatting"),
     E::new("announcements.editor.bold", "th", "ตัวหนา"),
@@ -215,7 +236,12 @@ pub(super) fn preview(v: &View<'_>, f: &Fields, images: &[Stored]) -> Markup {
     let label = v.t("announcements.images.slot");
     shell(html! {
         p class="muted" { (v.t("announcements.editor.preview")) }
-        div class="mini-preview" lang="th" { (files::body_html(&f.body_th, images, true, &label)) }
+        // Nothing typed yet (#127): say what will appear, not an empty card.
+        @if f.body_th.trim().is_empty() && f.body_en.trim().is_empty() {
+            p class="preview-placeholder" { (v.t("announcements.editor.preview_empty")) }
+        } @else {
+            div class="mini-preview" lang="th" { (files::body_html(&f.body_th, images, true, &label)) }
+        }
         @if !f.body_en.trim().is_empty() {
             div class="mini-preview" lang="en" { (files::body_html(&f.body_en, images, true, &label)) }
         }

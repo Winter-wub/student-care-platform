@@ -26,19 +26,30 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use crate::{CurrentStaff, Error, PageState};
 
+mod onboard;
+mod onboard_texts;
 mod shell;
 mod thai;
+
+pub(crate) use onboard::{HelpColumn, upload_panel};
+pub use onboard::{MAX_PREFILL, announce_href, empty_state, next_step, no_match, upload_help};
+pub(crate) use onboard_texts::TEXTS as ONBOARD_TEXTS;
 
 pub use thai::{
     local_date, local_datetime, number, thai_date, thai_datetime, thai_day, thai_month,
 };
 
 /// The stylesheet, served by `Deployment::router` at [`CSS_PATH`]:
-/// `ui.css`, then the back-office shell's `ui_shell.css` (#123).
-pub const CSS: &str = concat!(include_str!("ui.css"), include_str!("ui_shell.css"));
+/// `ui.css`, then the back-office shell's `ui_shell.css` (#123) and the
+/// help panels, empty states and checklist of `ui_onboard.css` (#127).
+pub const CSS: &str = concat!(
+    include_str!("ui.css"),
+    include_str!("ui_shell.css"),
+    include_str!("ui_onboard.css")
+);
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=15";
+const CSS_HREF: &str = "/static/app.css?v=16";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

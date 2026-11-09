@@ -44,8 +44,11 @@ pub(super) async fn list(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let l = |k: &str| v.t(k);
     let body = html! {
         h1 { (title) }
+        // Only the first account (#127): the empty state below offers the
+        // one action instead.
+        @let alone = rows.len() <= 1;
         p class="actions" {
-            a class="btn" href="/admin/staff/new" { (l("kernel.admin.staff.create")) }
+            @if !alone { a class="btn" href="/admin/staff/new" { (l("kernel.admin.staff.create")) } }
             a class="btn secondary" href="/admin/roles" { (l("kernel.admin.roles.title")) }
         }
         p class="muted count" { (l("kernel.admin.total")) " " (crate::ui::number(rows.len())) }
@@ -70,6 +73,9 @@ pub(super) async fn list(State(s): State<AppState>, staff: CurrentStaff) -> Resp
                     }
                 }
             }
+        }
+        @if alone {
+            (crate::ui::empty_state(&l("kernel.empty.staff"), Some((&l("kernel.admin.staff.create"), "/admin/staff/new"))))
         }
     };
     v.page(StatusCode::OK, &title, body)

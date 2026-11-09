@@ -140,7 +140,7 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>) -> Markup {
         div id="texts-results" {
             p class="muted count" { (v.t("kernel.admin.total")) " " (crate::ui::number(total)) }
             @if groups.is_empty() {
-                div class="card" { p { (v.t("kernel.admin.none")) } }
+                (crate::ui::no_match(&v.t("kernel.empty.filtered"), (&v.t("kernel.empty.clear_filters"), "/admin/texts")))
             }
             @for (a, list) in &groups {
                 section class="text-group" data-area=(a.id) {

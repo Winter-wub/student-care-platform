@@ -51,10 +51,17 @@ impl ModuleRegistrar {
         path: &'static str,
         route: MethodRouter<AppState>,
     ) -> &mut Self {
+        // Columns declared first (`sheet_columns`) wait in a placeholder.
+        let columns = self
+            .uploads
+            .iter()
+            .position(|u| u.path == path && u.max_body == 0)
+            .and_then(|i| self.uploads.remove(i).columns);
         let spec = UploadSpec {
             path,
             max_body: UPLOAD_BODY_LIMIT,
             too_large: None,
+            columns,
         };
         self.back_office_upload(permission, spec, route)
     }

@@ -94,8 +94,13 @@ pub(crate) fn preview(v: &View<'_>, title: &str, body: &str, ack: bool) -> Marku
         div class="card preview" aria-label=(v.t("announcements.form.preview")) {
             p class="muted" { (v.t("announcements.form.preview")) }
             div class="bubble" {
-                strong { (title) }
-                p { (doc.plain()) }
+                @if title.trim().is_empty() && body.trim().is_empty() {
+                    // The form before anything is typed (#127).
+                    p class="preview-placeholder" { (v.t("announcements.editor.card_placeholder")) }
+                } @else {
+                    strong { (title) }
+                    p { (doc.plain()) }
+                }
                 @if ack { span class="btn secondary" { (v.t("announcements.card.ack")) } " " }
                 span class="btn secondary" { (v.t("announcements.card.open")) }
                 @for l in doc.first_links(super::chat::URL_BUTTONS) {

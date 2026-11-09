@@ -464,6 +464,67 @@ no file behind. Backups leave kept uploads out, rows and files (see
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.
 
+### Help beside the file input, and the next step (#127)
+
+Declare the file's columns once, with the same path as the upload route.
+It is optional: a Module that declares none keeps building and its panel
+shows the file rules only.
+
+```rust
+pub const COLUMNS: &[UploadColumn] = &[
+    UploadColumn::required("รหัสนักศึกษา", "grades.col.code", "68010001"),
+    UploadColumn::required("รหัสวิชา", "grades.col.course", "SB101"),
+    UploadColumn::optional("หมายเหตุ", "grades.col.note", ""),
+];
+
+r.sheet_upload("grades.import", "/grades/upload", post(upload))
+    .sheet_columns("/grades/upload", COLUMNS);
+```
+
+Each column is its header as it must appear in the file, the catalog key
+of what it holds in Staff's words, whether every row must fill it, and a
+fictional example value (empty for none). With columns, the Core serves
+`GET /admin/grades/upload/template.csv` (the header row, UTF-8 with a BOM)
+to Staff holding the upload's Permission. `build()` refuses columns for a
+path with no `sheet_upload` in the same Module (`InvalidRoute`), a
+template path another route already takes (`DuplicateRoute`) and an
+unknown label key (`UnknownText`).
+
+Put the panel beside the form, the roster's layout:
+
+```rust
+div class="cols" {
+    form class="card" method="post" action="/admin/grades/upload" enctype="multipart/form-data" { … }
+    (harpseal::ui::upload_help(&s, &staff, "/grades/upload"))
+}
+```
+
+`ui::upload_help` draws a card with the file rules (CSV or XLSX, at most
+4 MB, CSV saved as UTF-8), each declared column (header, label, "ต้องมีค่า"
+or "เว้นว่างได้", the example) and the template link. `.cols` puts it
+beside the form from an 860 px content width and under it on a phone.
+
+After a confirm, show the result with the next step:
+
+```rust
+let named: Vec<String> = parsed.rows.iter().map(|r| r.code.clone()).collect();
+(harpseal::ui::next_step(&s, &staff, &named, ("กลับไปหน้าผลการเรียน", "/admin/grades")))
+```
+
+It offers "แจ้งนักศึกษา" to Staff holding `announcements.send` (when the
+Announcements Module is mounted): a new announcement whose Audience is
+exactly those Students (`ui::announce_href`, at most `ui::MAX_PREFILL`, a
+thousand; above that, or with an empty list, Staff choose the Audience
+themselves). Nothing is saved or sent by the link: the draft goes through
+the usual review. The way back is always there. Pass an empty list when
+the file cannot name its Students exactly.
+
+For a Module's list with nothing yet, use `ui::empty_state(text,
+Some((label, href)))`: one sentence on what goes there and the action that
+fills it, passed only when the Staff member holds its Permission. A search
+or filter with no match uses `ui::no_match(text, (label, href))`, whose
+link clears it.
+
 ## Permissions in Thai
 
 A Permission is a short Thai sentence for Staff (#125): a verb and its

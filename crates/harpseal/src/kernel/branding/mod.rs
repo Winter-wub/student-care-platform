@@ -91,6 +91,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         path,
         max_body: BODY_LIMIT,
         too_large: None,
+        columns: None,
     };
     r.messages(texts::TEXTS)
         .back_office_page_in(

@@ -44,6 +44,12 @@ pub(super) struct Filters {
 }
 
 impl Filters {
+    /// No filter set (#127).
+    fn is_empty(&self) -> bool {
+        [&self.kind, &self.student, &self.from, &self.to]
+            .iter()
+            .all(|x| x.trim().is_empty())
+    }
     fn clean(self) -> Self {
         Self {
             kind: cut(&self.kind, 64),
@@ -230,8 +236,10 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Event], total: i64, page: i64, pag
     html! {
         div id="security-results" {
             p class="muted count" { (v.t("kernel.admin.total")) " " (crate::ui::number(total)) }
-            @if rows.is_empty() {
-                div class="card" { p { (v.t("kernel.admin.none")) } }
+            @if rows.is_empty() && f.is_empty() {
+                (crate::ui::empty_state(&v.t("kernel.empty.security"), None))
+            } @else if rows.is_empty() {
+                (crate::ui::no_match(&v.t("kernel.empty.filtered"), (&v.t("kernel.empty.clear_filters"), "/admin/security")))
             } @else {
                 table class="rows events" {
                     thead { tr {
