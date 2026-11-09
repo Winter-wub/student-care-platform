@@ -113,9 +113,69 @@ async fn the_preview_leads_with_what_changes_and_lists_who() {
         harpseal_testing::a11y::problems(&page),
         Vec::<String>::new()
     );
+    // The row's counts name no Student: the lists are in the FileStore.
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["links_cut"], 1);
-    assert_eq!(c["preview"]["leaving"].as_array().unwrap().len(), 3);
+    let raw = import_text(&h, &id, "counts").await;
+    assert!(
+        !raw.contains("Old gone") && !raw.contains("68000900"),
+        "{raw}"
+    );
+    assert!(
+        h.files()
+            .keys()
+            .contains(&format!("roster-diff/{id}.head.json"))
+    );
+}
+
+#[tokio::test]
+async fn the_import_audit_row_keeps_the_counts_and_no_student() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    roster_of_six(&h, &app, &b).await;
+    let id = previewed(&b, "next.csv", &next_term(), "full", true).await;
+    let r = confirm(&b, &id).await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    let rows = h
+        .db()
+        .query(
+            harpseal::Statement::new(
+                "SELECT after FROM audit_log WHERE action = 'roster.import' AND target_id = ?",
+            )
+            .bind(id.as_str()),
+        )
+        .await
+        .unwrap();
+    let after = rows
+        .get(0, "after")
+        .and_then(|v| v.as_text())
+        .unwrap_or_default()
+        .to_string();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(json["counts"]["will_become_left"], 3, "{after}");
+    assert_eq!(json["counts"]["updated"], 1, "{after}");
+    assert!(json["counts"].get("left_names").is_none(), "{after}");
+    for student in ["68000900", "Old gone", "นักศึกษา 0", "68000010"] {
+        assert!(!after.contains(student), "{student}: {after}");
+    }
+}
+
+#[tokio::test]
+async fn an_alarm_with_no_links_to_cut_does_not_count_them() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "a.csv", &csv(0..5), "upsert", false).await;
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    let id = previewed(&b, "b.csv", &csv(0..2), "full", true).await;
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert_eq!(
+        after(&page, "<div class=\"warn\" id=\"roster-alarm\""),
+        "3 จาก 5 คน (60%) จะพ้นสภาพ ตรวจให้แน่ใจว่าไฟล์นี้เป็นทะเบียนของภาคเรียนนี้ก่อนยืนยัน"
+    );
+    assert!(!page.contains("data-count=\"links_cut\""), "{page}");
+    // The file's own rows do not change; the sentence says only that.
+    assert!(page.contains("ข้อมูลของนักศึกษาที่อยู่ในไฟล์ไม่เปลี่ยน"), "{page}");
 }
 
 #[tokio::test]
@@ -153,19 +213,19 @@ async fn the_changes_download_as_an_audited_csv() {
     assert_eq!(r.body.lines().count(), 6, "{}", r.body);
     let sql = "SELECT count(*) FROM audit_log WHERE action = 'roster.changes.download'";
     assert_eq!(int(&h, sql, &[]).await, 1);
-    // The stored list goes; the capped lists still answer.
-    run(
-        &h,
-        &format!("UPDATE roster_import SET file_key = '' WHERE id = '{id}'"),
-    )
-    .await;
+    // A list that went missing is gone, never answered in part.
     h.services()
         .files
         .delete(&format!("roster-diff/{id}.jsonl"))
         .await
         .unwrap();
     let again = viewer.get(&format!("/admin/roster/{id}/changes.csv")).await;
-    assert_eq!(again.body.lines().count(), 6, "{}", again.body);
+    assert_eq!(again.status, 410, "{}", again.body);
+    assert_eq!(
+        int(&h, sql, &[]).await,
+        1,
+        "a refused download is not audited"
+    );
 }
 
 #[tokio::test]
@@ -193,7 +253,7 @@ async fn a_file_that_changes_nothing_says_so() {
     run_jobs(&h, &app).await;
     let id = previewed(&b, "a.csv", &csv(0..2), "upsert", false).await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
-    assert!(page.contains("ไฟล์นี้ไม่ทำให้ข้อมูลของใครเปลี่ยน"), "{page}");
+    assert!(page.contains("ข้อมูลของนักศึกษาที่อยู่ในไฟล์ไม่เปลี่ยน"), "{page}");
     assert!(!page.contains("id=\"roster-changes\""), "{page}");
 }
 
@@ -211,4 +271,27 @@ async fn the_templates_example_row_is_refused_by_row() {
     assert!(page.contains("แถวนี้เป็นแถวตัวอย่างจากแม่แบบ"), "{page}");
     assert!(page.contains("data-label=\"แถว\">2</td>"), "{page}");
     assert_eq!(int(&h, "SELECT count(*) FROM student", &[]).await, 0);
+}
+
+#[tokio::test]
+async fn the_example_row_is_named_even_when_the_code_pattern_refuses_it_and_keeps_the_warnings() {
+    // A pattern of 9 digits refuses the example's code (68010001), yet the
+    // row is still named as the example: it is found before validation.
+    let h = Harness::new();
+    let toml = CONFIG.replace("id_pattern = '########'", "id_pattern = '#########'");
+    let config = harpseal::DeploymentConfig::from_toml(&toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let file = csv_lines(&[
+        "68010001,นกน้อย ทะเลใส,noknoi@student.example,th,ชมรมดนตรี;ทุนเรียนดี,MSC,1,2.50",
+        "680000002,ปลา,,th,,MSC,1,3.0",
+    ]);
+    let id = import_id(&upload(&b, "t.csv", &file, "upsert").await);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    assert!(report.contains("2,,แถวนี้เป็นแถวตัวอย่างจากแม่แบบ"), "{report}");
+    assert!(
+        report.contains("3,อีเมล,ไม่มีอีเมล"),
+        "the warning stays: {report}"
+    );
 }

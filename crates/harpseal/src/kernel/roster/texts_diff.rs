@@ -30,6 +30,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "{left} of {active} Students ({pct}%) will become left and {links} chat Links will be cut. Make sure this file is this term's roster before you confirm"
     ),
     (
+        "kernel.roster.alarm_left_unlinked",
+        "{left} จาก {active} คน ({pct}%) จะพ้นสภาพ ตรวจให้แน่ใจว่าไฟล์นี้เป็นทะเบียนของภาคเรียนนี้ก่อนยืนยัน",
+        "{left} of {active} Students ({pct}%) will become left. Make sure this file is this term's roster before you confirm"
+    ),
+    (
         "kernel.roster.alarm_short",
         "ไฟล์มี {rows} แถว น้อยกว่านักศึกษาที่ศึกษาอยู่ {active} คน ตรวจว่าไฟล์ครบทุกคนก่อนยืนยัน",
         "The file has {rows} rows, fewer than the {active} active Students. Check that the file lists everyone before you confirm"
@@ -42,8 +47,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.no_changes",
-        "ไฟล์นี้ไม่ทำให้ข้อมูลของใครเปลี่ยน",
-        "This file changes no one's details"
+        "ข้อมูลของนักศึกษาที่อยู่ในไฟล์ไม่เปลี่ยน",
+        "The details of the Students in the file do not change"
     ),
     (
         "kernel.roster.list_shown",
@@ -62,6 +67,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.csv_after", "ค่าใหม่", "After"),
     ("kernel.roster.empty_value", "(ว่าง)", "(empty)"),
     ("kernel.roster.report_student", "นักศึกษา", "Student"),
+    (
+        "kernel.roster.changes_gone",
+        "ไม่มีรายการเปลี่ยนแปลงของการนำเข้านี้แล้ว (ลบพร้อมไฟล์ต้นฉบับเมื่อครบ 1 ปี)",
+        "The changes of this import are no longer kept (deleted with the file after a year)"
+    ),
     // The template's example row
     (
         "kernel.roster.reason_example_row",
@@ -114,10 +124,5 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.roster.no_header_found",
         "ไม่พบแถวหัวคอลัมน์ในไฟล์ แถวแรกที่มีข้อมูลต้องเป็นชื่อคอลัมน์",
         "No header row was found: the first row with data must hold the column names"
-    ),
-    (
-        "kernel.roster.reupload",
-        "อัปโหลดไฟล์ที่แก้แล้ว",
-        "Upload the corrected file"
     ),
 ];

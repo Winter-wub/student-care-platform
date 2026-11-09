@@ -64,8 +64,8 @@ pub(crate) struct HeaderMismatch {
     /// `only_footer` (the footer rule would skip every row under the
     /// header).
     pub(crate) whole: Option<&'static str>,
-    /// The headers found on that row (the closest row to one), in file
-    /// order (#134); empty for `only_footer`.
+    /// The headers found on that row, in file order (#134); empty when no
+    /// row holds any column (`no_header_row`) or for `only_footer`.
     pub(crate) found: Vec<String>,
 }
 
@@ -262,9 +262,14 @@ fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
             unexpected(&e.headers, expected)
         },
         missing: if no_header { Vec::new() } else { e.missing },
-        // The closest row as found, also when it holds none of the
-        // columns: Staff see what the file starts with (#134).
-        found: e.headers.into_iter().filter(|h| !h.is_empty()).collect(),
+        // Nothing kept when no row holds any column (#134): the closest
+        // row is then likely a Student's data, and the failure is kept for
+        // good.
+        found: if no_header {
+            Vec::new()
+        } else {
+            e.headers.into_iter().filter(|h| !h.is_empty()).collect()
+        },
         sheet: e.sheet,
         row: e.row,
         whole: no_header.then_some("no_header_row"),

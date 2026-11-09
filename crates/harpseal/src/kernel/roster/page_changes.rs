@@ -3,15 +3,15 @@
 //! who will become left with the chat Links each loses, and
 //! `GET /admin/roster/{id}/changes.csv`, every change as CSV (a sensitive
 //! read like the original file: audit `roster.changes.download`). The
-//! page reads the capped lists stored with the import; the CSV reads the
-//! whole stored list (`diff.rs`), else those capped lists.
+//! page reads the stored head (the first of each list); the CSV reads the
+//! whole stored list (`diff.rs`), and answers 410 once it is gone.
 
 use axum::extract::{Path, State};
 use axum::response::Response;
 use maud::{Markup, html};
 use serde_json::Value as Json;
 
-use super::diff::{self, Change, FieldChange};
+use super::diff::{self, Change, FieldChange, Head};
 use super::store::{self, Import};
 use super::view::{BASE, View, csv_body, download};
 use crate::audit::{self, Actor, RequestCtx, Target};
@@ -104,17 +104,21 @@ fn csv_link(v: &View<'_>, imp: &Import) -> Markup {
     }
 }
 
-/// Who changes and how, collapsed; nothing for a preview stored before
-/// #134.
-pub(super) fn changes(v: &View<'_>, imp: &Import) -> Markup {
+/// Who changes and how, collapsed, from the stored `head`; nothing for
+/// a preview stored before #134 (or whose head is gone).
+pub(super) fn changes(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup {
     let p = &imp.counts.preview;
     if !p.detailed {
         return html! {};
     }
     let total = p.changed();
     if total == 0 {
+        // About the file's rows only, so it stands beside a leaving figure.
         return html! { p class="muted" { (v.t("kernel.roster.no_changes")) } };
     }
+    let Some(head) = head else {
+        return html! {};
+    };
     let (code, name, change) = (
         v.t("kernel.students.code"),
         v.t("kernel.students.name"),
@@ -126,7 +130,7 @@ pub(super) fn changes(v: &View<'_>, imp: &Import) -> Markup {
             table class="rows" {
                 thead { tr { th { (code) } th { (name) } th { (change) } } }
                 tbody {
-                    @for c in &p.changes {
+                    @for c in &head.changes {
                         tr data-kind=(c.kind) {
                             td class="code" data-label=(code) { (c.code) }
                             td data-label=(name) { (c.name) }
@@ -140,17 +144,17 @@ pub(super) fn changes(v: &View<'_>, imp: &Import) -> Markup {
                     }
                 }
             }
-            (shown_note(v, p.changes.len(), total))
+            (shown_note(v, head.changes.len(), total))
             (csv_link(v, imp))
         }
     }
 }
 
-/// Who will become left, with the Links each loses; a preview stored
-/// before #134 keeps its list of names.
-pub(super) fn leaving(v: &View<'_>, imp: &Import) -> Markup {
+/// Who will become left, with the Links each loses, from the stored
+/// `head`; a preview stored before #134 keeps its list of names.
+pub(super) fn leaving(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup {
     let p = &imp.counts.preview;
-    if p.leaving.is_empty() {
+    let Some(head) = head.filter(|h| !h.leaving.is_empty()) else {
         return html! {
             @if !p.left_names.is_empty() {
                 div class="card" {
@@ -160,7 +164,7 @@ pub(super) fn leaving(v: &View<'_>, imp: &Import) -> Markup {
                 }
             }
         };
-    }
+    };
     let (code, name, links) = (
         v.t("kernel.students.code"),
         v.t("kernel.students.name"),
@@ -172,7 +176,7 @@ pub(super) fn leaving(v: &View<'_>, imp: &Import) -> Markup {
             table class="rows" {
                 thead { tr { th { (code) } th { (name) } th class="num" { (links) } } }
                 tbody {
-                    @for c in &p.leaving {
+                    @for c in &head.leaving {
                         tr {
                             td class="code" data-label=(code) { (c.code) }
                             td data-label=(name) { (c.name) }
@@ -181,7 +185,7 @@ pub(super) fn leaving(v: &View<'_>, imp: &Import) -> Markup {
                     }
                 }
             }
-            (shown_note(v, p.leaving.len(), p.will_become_left))
+            (shown_note(v, head.leaving.len(), p.will_become_left))
             (csv_link(v, imp))
         }
     }
@@ -201,17 +205,16 @@ pub(super) async fn csv(
         Ok(_) => return v.not_found(),
         Err(e) => return v.error(&e),
     };
-    let all = match s.services.files.get(&diff::key(&imp.id)).await {
+    // Deleted with the file after a year, or never stored (nothing
+    // changes): gone, never a silent part of the list.
+    let stored = if imp.file_key.is_empty() {
+        Ok(None)
+    } else {
+        s.services.files.get(&diff::key(&imp.id)).await
+    };
+    let all = match stored {
         Ok(Some(b)) => diff::decode(&b),
-        // Pruned after a year, or nothing changes: the capped lists.
-        Ok(None) => imp
-            .counts
-            .preview
-            .changes
-            .iter()
-            .chain(&imp.counts.preview.leaving)
-            .cloned()
-            .collect(),
+        Ok(None) => return gone(&v),
         Err(e) => return v.error(&e),
     };
     let after = serde_json::json!({ "file_name": imp.file_name, "students": all.len() });
@@ -236,6 +239,18 @@ pub(super) async fn csv(
         &name,
         csv_body(lines(&v, &all)),
     )
+}
+
+/// 410 in the layout: the list of changes is no longer kept.
+fn gone(v: &View<'_>) -> Response {
+    let text = v.t("kernel.roster.changes_gone");
+    let body = html! {
+        div class="card" {
+            p { (text) }
+            a class="btn" href=(BASE) { (v.t("kernel.roster.back")) }
+        }
+    };
+    v.page(axum::http::StatusCode::GONE, &text, body)
 }
 
 fn lines(v: &View<'_>, all: &[Change]) -> Vec<String> {

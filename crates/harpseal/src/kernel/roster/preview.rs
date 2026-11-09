@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
 
-use super::diff::{self, Change, SHOWN_CHANGES, SHOWN_LEAVING};
+use super::diff::{self, Change};
 use super::file::{self, FoundHeaders};
 use super::intake::{self, Checked};
 use super::store::{self, BUSY, Counts, Existing, Failure, Import, Preview, Tally, Warned};
@@ -26,8 +26,6 @@ pub(crate) const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const PREVIEW_HOLD_MS: i64 = 3_600_000;
 /// How long the stored file is kept.
 const KEEP_FILE_MS: i64 = 365 * 86_400_000;
-/// Most "will become left" names listed.
-const MAX_LEFT_NAMES: usize = 200;
 
 /// What an upload did.
 #[derive(Debug)]
@@ -66,8 +64,8 @@ pub(crate) async fn upload(
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
-    let read = intake::read(s, config, &name, &bytes, mode).await?;
-    let read = intake::refuse_example(read, &intake::Example::of(d.catalog(), config));
+    let example = intake::Example::of(d.catalog(), config);
+    let read = intake::read(s, config, &name, &bytes, mode, &example).await?;
     let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
@@ -102,7 +100,7 @@ pub(crate) async fn upload(
         // objects stay unless it is surely absent.
         let _ = s.files.delete(&key).await;
         let _ = s.files.delete(&super::rows::key(&id)).await;
-        let _ = s.files.delete(&diff::key(&id)).await;
+        let _ = diff::delete(s, &id).await;
     }
     out
 }
@@ -158,15 +156,7 @@ async fn record(
     };
     let (preview, changes) = preview(&valid, &existing, full, &links);
     counts.preview = preview;
-    if !changes.is_empty() {
-        s.files
-            .put(
-                &diff::key(row.id),
-                diff::encode(&changes)?,
-                "application/jsonl",
-            )
-            .await?;
-    }
+    diff::store(s, row.id, &changes).await?;
     counts.warnings = Warned::new(valid.warnings.clone());
     let parsed = super::rows::encode(&valid.records)?;
     counts.rows_sha256 = crate::auth::sha256_hex(&parsed);
@@ -342,7 +332,6 @@ pub(super) fn preview(
         .iter()
         .filter(|(_, e)| e.fields.status == "active")
         .collect();
-    let mut leaving: Vec<&str> = Vec::new();
     let mut leavers = Vec::new();
     let mut kept_by_status = 0;
     if full {
@@ -353,14 +342,12 @@ pub(super) fn preview(
             if store::status_held(e) {
                 kept_by_status += 1;
             } else {
-                leaving.push(&e.fields.display_name);
                 leavers.push(diff::leaving(code, e, links));
             }
         }
     }
-    leaving.sort_unstable();
     leavers.sort_unstable_by(|a, b| a.code.cmp(&b.code));
-    let left = leaving.len() as u64;
+    let left = leavers.len() as u64;
     let active_before = active.len() as u64;
     let shrinking = full && (valid.records.len() as u64) < active_before;
     let preview = Preview {
@@ -370,15 +357,10 @@ pub(super) fn preview(
         empty_email: valid.empty_email as u64,
         active_before,
         warning: left * 5 > active_before || shrinking,
-        left_more: left.saturating_sub(MAX_LEFT_NAMES as u64),
-        left_names: leaving
-            .into_iter()
-            .take(MAX_LEFT_NAMES)
-            .map(str::to_string)
-            .collect(),
+        // The leavers are in the stored head (#134), not in `counts`.
+        left_more: 0,
+        left_names: Vec::new(),
         detailed: true,
-        changes: changes.iter().take(SHOWN_CHANGES).cloned().collect(),
-        leaving: leavers.iter().take(SHOWN_LEAVING).cloned().collect(),
         links_cut: leavers.iter().map(|c| c.links).sum(),
     };
     changes.extend(leavers);

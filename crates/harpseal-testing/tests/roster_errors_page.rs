@@ -82,9 +82,11 @@ async fn a_file_without_any_header_row_says_which_headers_it_needs() {
         .find("id=\"expected-headers\"")
         .expect("the expected headers");
     let card = &page[at..];
-    // What the file starts with, and every column it needs, missing.
+    // No row holds a column: nothing of the file is kept (its first row
+    // may be a Student's data), and every column it needs is missing.
+    assert!(card.contains("ไม่พบแถวหัวคอลัมน์ในไฟล์"), "{card}");
     assert!(
-        card.contains("<span class=\"name code-head\">a</span>"),
+        !card.contains("<span class=\"name code-head\">a</span>"),
         "{card}"
     );
     assert_eq!(card.matches("data-header=\"missing\"").count(), 8, "{card}");

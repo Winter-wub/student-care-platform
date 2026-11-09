@@ -9,6 +9,7 @@
 
 use maud::{Markup, html};
 
+use super::diff::Head;
 use super::page_problems as problems;
 use super::reach;
 use super::store::{Import, Preview};
@@ -20,7 +21,7 @@ pub(super) const ALARM_ID: &str = "roster-alarm";
 /// The id of the leaving figure.
 pub(super) const LEAVING_ID: &str = "roster-leaving";
 
-pub(super) fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
+pub(super) fn preview(v: &View<'_>, imp: &Import, wrong: bool, head: Option<&Head>) -> Markup {
     let p = &imp.counts.preview;
     // One alert (#129): a mode no longer allowed blocks the import, so it
     // is the one announced, not the leave warning.
@@ -29,8 +30,8 @@ pub(super) fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
         @if p.warning {
             div class="warn" id=(ALARM_ID) role=[v.alert().filter(|_| allowed)] { (alarm(v, imp)) }
         }
-        (figures(v, imp))
-        (super::page_changes::leaving(v, imp))
+        (figures(v, imp, head))
+        (super::page_changes::leaving(v, imp, head))
         (super::skipped::card(v, &imp.counts.skipped))
         (problems::warnings_card(v, imp))
         @if v.staff.can(IMPORT) {
@@ -60,8 +61,14 @@ fn alarm(v: &View<'_>, imp: &Import) -> String {
     }
     let left = reach::leaving(imp);
     if left * 5 > p.active_before {
+        // No "0 บัญชี" when none of them has a Link.
+        let key = if p.links_cut > 0 {
+            "kernel.roster.alarm_left"
+        } else {
+            "kernel.roster.alarm_left_unlinked"
+        };
         return v
-            .t("kernel.roster.alarm_left")
+            .t(key)
             .replace("{left}", &number(left))
             .replace("{active}", &number(p.active_before))
             .replace("{pct}", &percent(left, p.active_before))
@@ -79,7 +86,7 @@ fn percent(part: u64, whole: u64) -> String {
 }
 
 /// The three figures, the quieter counts and the change list.
-fn figures(v: &View<'_>, imp: &Import) -> Markup {
+fn figures(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup {
     let p = &imp.counts.preview;
     let full = imp.mode == "full";
     let left = reach::leaving(imp);
@@ -97,7 +104,7 @@ fn figures(v: &View<'_>, imp: &Import) -> Markup {
                     dt { (v.t("kernel.roster.will_become_left")) }
                     @if full {
                         dd data-count="will_become_left" { (number(p.will_become_left)) }
-                        @if p.detailed && left > 0 {
+                        @if p.detailed && p.links_cut > 0 {
                             dd class="figure-note" data-count="links_cut" {
                                 (v.t("kernel.roster.links_cut").replace("{n}", &number(p.links_cut)))
                             }
@@ -109,7 +116,7 @@ fn figures(v: &View<'_>, imp: &Import) -> Markup {
                 }
             }
             (secondary(v, imp, p))
-            (super::page_changes::changes(v, imp))
+            (super::page_changes::changes(v, imp, head))
         }
     }
 }

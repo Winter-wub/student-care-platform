@@ -29,13 +29,15 @@ pub(super) struct Read {
     pub(super) headers: Vec<FoundHeaders>,
 }
 
-/// Reads and validates `bytes` for an import in `mode`.
+/// Reads and validates `bytes` for an import in `mode`; a file that still
+/// holds the template's `example` row is refused (#134).
 pub(super) async fn read(
     s: &Services,
     config: &DeploymentConfig,
     name: &str,
     bytes: &[u8],
     mode: &str,
+    example: &Example,
 ) -> Result<Read> {
     let refused = |problems| Read {
         skipped: Vec::new(),
@@ -54,11 +56,14 @@ pub(super) async fn read(
             });
         }
     };
+    // On the rows as read, before validation: a code pattern that refuses
+    // the example's code still names the row for what it is.
+    let examples = example.rows(&rows.rows, &config.roster);
     let full = mode == "full";
     let skipped = rows.skipped;
     let with = |result| Read {
         skipped: skipped.clone(),
-        result,
+        result: with_examples(&examples, result),
         headers: Vec::new(),
     };
     // Students in a hidden roster sheet would become left.
@@ -89,57 +94,66 @@ pub(super) async fn read(
     Ok(with(Ok(Checked { valid, existing })))
 }
 
-/// The template's fictional example row (#134), as the catalog writes it
-/// in each Locale Staff may download the template in. Matched on code,
-/// name and email together: the demo roster's first Student shares the
-/// example's code and name, not its email.
+/// The template's fictional example row (#134): its code, name and email
+/// as the catalog writes them in each Locale the template may be
+/// downloaded in (the Staff member's). Matched on all three together:
+/// the demo roster's first Student shares the example's code and name,
+/// not its email.
+#[derive(Debug, Default)]
 pub(super) struct Example {
-    code: String,
-    names: Vec<String>,
-    email: String,
+    rows: Vec<(String, String, String)>,
 }
 
 impl Example {
     pub(super) fn of(catalog: &crate::manifest::Catalog, config: &DeploymentConfig) -> Self {
-        let locales = [config.default_locale.0.as_str(), "th", "en"];
-        let t = |l: &str, k: &str| catalog.t(&crate::message::Locale(l.into()), k);
-        let mut names: Vec<String> = locales
-            .iter()
-            .map(|l| t(l, "kernel.upload.example_name"))
-            .collect();
-        names.dedup();
-        Self {
-            code: t(&config.default_locale.0, "kernel.upload.example_code"),
-            names,
-            email: t(&config.default_locale.0, "kernel.upload.example_email"),
+        let mut rows = Vec::new();
+        for l in [config.default_locale.0.as_str(), "th", "en"] {
+            let t = |k: &str| catalog.t(&crate::message::Locale(l.into()), k);
+            let row = (
+                t("kernel.upload.example_code"),
+                t("kernel.upload.example_name"),
+                t("kernel.upload.example_email"),
+            );
+            if !rows.contains(&row) {
+                rows.push(row);
+            }
         }
+        Self { rows }
+    }
+
+    /// One `example_row` problem per row of `read` that is the example.
+    fn rows(&self, read: &[file::Row], roster: &crate::config::RosterConfig) -> Vec<Problem> {
+        read.iter()
+            .filter(|r| {
+                let get = |c: &str| r.get(c).unwrap_or_default();
+                let cells = (
+                    get(&roster.student_code),
+                    get(&roster.display_name),
+                    get(&roster.email),
+                );
+                self.rows
+                    .iter()
+                    .any(|(c, n, e)| (c.as_str(), n.as_str(), e.as_str()) == cells)
+            })
+            .map(|r| Problem::new(r.number(), "", "example_row").on(r.sheet()))
+            .collect()
     }
 }
 
-/// Refuses a file that still holds the template's example row, named by
-/// row: it would import a fictional Student.
-pub(super) fn refuse_example(read: Read, example: &Example) -> Read {
-    let Ok(checked) = &read.result else {
-        return read;
+/// `result` refused when the file holds the example row, with the file's
+/// own problems (or warnings) after it, so the report keeps them.
+fn with_examples(
+    examples: &[Problem],
+    result: core::result::Result<Checked, Vec<Problem>>,
+) -> core::result::Result<Checked, Vec<Problem>> {
+    if examples.is_empty() {
+        return result;
+    }
+    let rest = match result {
+        Ok(c) => c.valid.warnings,
+        Err(p) => p,
     };
-    let rows: Vec<Problem> = checked
-        .valid
-        .records
-        .iter()
-        .filter(|r| {
-            r.code == example.code
-                && example.names.contains(&r.fields.display_name)
-                && r.fields.email.as_deref() == Some(example.email.as_str())
-        })
-        .map(|r| Problem::new(r.row, "", "example_row"))
-        .collect();
-    if rows.is_empty() {
-        return read;
-    }
-    Read {
-        result: Err(rows),
-        ..read
-    }
+    Err(examples.iter().cloned().chain(rest).collect())
 }
 
 /// Refuses a `full` file with a hidden sheet holding the roster header:

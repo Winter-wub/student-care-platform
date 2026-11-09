@@ -116,7 +116,9 @@ before, and any other key is refused.
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
 lists them and offers `template.csv`: the headers and one fictional example row,
 #134; a file that still holds that row, its code, name and email together, is
-refused naming the row), choose `full` (Students missing from the
+refused naming the row, checked before the rest so a code pattern that refuses
+the example's code still names it, with the file's other problems kept in the
+report), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert` (add and update only;
 nobody becomes left). The form lists `upsert` first and preselects `[roster] default_mode`
 (default `upsert`, #120), and a request that sends no mode uses it too. A
@@ -198,16 +200,21 @@ status / rows / active before on one line. Under them, collapsed, who changes:
 student code, name and each changed field as old → new, labelled with the
 `[roster]` labels (an enum value with its label); and the leaving list: code,
 name and the live Links each loses. Both are computed once at upload and kept
-with the import (the first 100 changes and 200 leavers); the whole list is
-stored as `roster-diff/<import id>.jsonl` and downloaded as `changes.csv`
-(`kernel.roster.view`, audit `roster.changes.download`). Confirm runs the Job
+in the FileStore, never in the import's row: the whole list as
+`roster-diff/<import id>.jsonl`, downloaded as `changes.csv`
+(`kernel.roster.view`, audit `roster.changes.download`), and the first 100
+changes and 200 leavers, each value cut to 200 characters, as
+`roster-diff/<import id>.head.json`, which only the preview page reads. Once
+the list is deleted (below) `changes.csv` answers 410 with a Thai page. The
+`roster.import` audit row keeps the preview's counts only, no Student. Confirm runs the Job
 `kernel.roster.import` in 500-row chunks (the page polls its progress), and the
 done page shows each preview number next to what was imported. One import at a
 time; the file stays in the FileStore under `roster/<import id>/` (its parsed
 rows under `roster-rows/<import id>.jsonl`, its changes under
-`roster-diff/<import id>.jsonl`) for one year, then the per-minute tick deletes
-them (audit `roster.file.prune`); the import's page, report and capped lists
-stay.
+`roster-diff/<import id>.*`) for one year, then the per-minute tick deletes
+them (audit `roster.file.prune`) and drops the Students the import's row names
+(who left, and the Student of each warning); the import's page and report
+stay, with their counts, rows and reasons.
 Try it with `deployments/example/data/roster.csv` (or `.xlsx`).
 
 `/admin/announcements` (`harpseal::modules::announcements::Announcements`;

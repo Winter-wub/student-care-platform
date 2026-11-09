@@ -84,7 +84,7 @@ pub(crate) async fn confirm(
         "mode": imp.mode,
         "sha256": imp.counts.sha256,
         "total_rows": imp.total_rows,
-        "counts": imp.counts.preview,
+        "counts": tallies(&imp.counts.preview),
     });
     let (audit, gate) = audit::entry_if(
         s,
@@ -112,6 +112,18 @@ pub(crate) async fn confirm(
     )?;
     let done = s.db.batch(vec![audit, queue, job]).await?;
     settle(s, &imp, done.get(1).map(|r| r.rows_affected)).await
+}
+
+/// The preview as the `roster.import` audit row keeps it (#134): counts
+/// only. The audit log is never pruned and Staff with `kernel.audit.view`
+/// read it, so it carries no Student: no names of those who leave (a
+/// preview stored before #134 has them in `left_names`).
+fn tallies(p: &super::store::Preview) -> serde_json::Value {
+    let mut v = serde_json::to_value(p).unwrap_or_default();
+    if let Some(m) = v.as_object_mut() {
+        m.remove("left_names");
+    }
+    v
 }
 
 /// `previewed` → `cancelled`, audit `roster.import.cancel`.

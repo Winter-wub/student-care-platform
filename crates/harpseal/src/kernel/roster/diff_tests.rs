@@ -89,6 +89,17 @@ fn a_field_staff_hold_is_not_a_change_and_an_unchanged_row_is_none() {
 }
 
 #[test]
+fn a_stored_null_attribute_is_the_same_as_an_absent_one() {
+    let mut stored = fields("นก ทะเล", 1, "active");
+    stored.attributes.insert("gpa".into(), Json::Null);
+    let e = existing("s1", stored, &[], &[]);
+    let r = record(2, "68000001", fields("นก ทะเล", 1, "active"), &[]);
+    let (t, _) = classify(Some(&e), &r);
+    assert_eq!((t.unchanged, t.updated), (1, 0));
+    assert_eq!(change_of(Some(&e), &r), None);
+}
+
+#[test]
 fn a_returning_student_shows_the_status_change() {
     let e = existing("s1", fields("นก ทะเล", 1, "left"), &[], &[]);
     let r = record(2, "68000001", fields("นก ทะเล", 1, "active"), &[]);
@@ -132,16 +143,53 @@ fn the_preview_lists_leavers_by_code_with_their_links_and_caps_the_lists() {
     assert_eq!(p.will_become_left, 249);
     assert_eq!(p.kept_by_status, 1);
     assert_eq!(p.links_cut, 3, "the held Student keeps their Links");
-    assert_eq!(p.leaving.len(), SHOWN_LEAVING);
-    assert_eq!(p.leaving[0].code, "68000001", "by code");
-    assert_eq!(p.leaving[0].links, 2);
-    assert_eq!(p.changes.len(), 1);
-    assert_eq!(p.changes[0].fields[0].field, "attributes.year");
+    assert!(
+        p.left_names.is_empty(),
+        "the leavers are in the head, not counts"
+    );
+    let head = Head::of(&all);
+    assert_eq!(head.leaving.len(), SHOWN_LEAVING);
+    assert_eq!(head.leaving[0].code, "68000001", "by code");
+    assert_eq!(head.leaving[0].links, 2);
+    assert_eq!(head.changes.len(), 1);
+    assert_eq!(head.changes[0].fields[0].field, "attributes.year");
     assert_eq!(all.len(), 250, "every change is stored");
     assert_eq!(all.iter().filter(|c| c.kind == "leaving").count(), 249);
+    // The counts carry no Student (#134).
+    let counts = serde_json::to_string(&p).unwrap();
+    assert!(
+        !counts.contains("คน 1") && !counts.contains("68000001"),
+        "{counts}"
+    );
     // Upsert makes nobody left.
-    let (p, _) = preview(&valid, &students, false, &HashMap::new());
-    assert!(p.leaving.is_empty() && p.links_cut == 0);
+    let (p, all) = preview(&valid, &students, false, &HashMap::new());
+    assert!(p.links_cut == 0 && Head::of(&all).leaving.is_empty());
+}
+
+#[test]
+fn the_head_cuts_long_values_and_the_list_keeps_them() {
+    let long = "ก".repeat(SHOWN_CHARS + 50);
+    let c = Change {
+        code: "68000001".into(),
+        name: "นก".into(),
+        kind: "updated".into(),
+        fields: vec![FieldChange {
+            field: "attributes.note".into(),
+            before: json!(long),
+            after: json!(["สั้น", long]),
+        }],
+        links: 0,
+    };
+    let head = Head::of(std::slice::from_ref(&c));
+    let cut = format!("{}…", "ก".repeat(SHOWN_CHARS));
+    assert_eq!(head.changes[0].fields[0].before, json!(cut));
+    assert_eq!(head.changes[0].fields[0].after, json!(["สั้น", cut]));
+    assert_eq!(
+        decode(&encode(std::slice::from_ref(&c)).unwrap())[0],
+        c,
+        "the CSV's copy is whole"
+    );
+    assert_eq!(head_key("abc"), "roster-diff/abc.head.json");
 }
 
 #[test]

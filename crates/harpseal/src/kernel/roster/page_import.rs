@@ -48,14 +48,23 @@ pub(super) async fn page(
     let mut resp = if is_fragment(&headers) {
         (StatusCode::OK, Html(progress(&v, &imp).into_string())).into_response()
     } else {
-        full(&v, &imp, wrong)
+        // The per-Student lists (#134), only where they are shown.
+        let head = if imp.state == "previewed" && imp.counts.preview.detailed {
+            match super::diff::head(&s.services, &imp.id).await {
+                Ok(h) => h,
+                Err(e) => return v.error(&e),
+            }
+        } else {
+            None
+        };
+        full(&v, &imp, wrong, head.as_ref())
     };
     resp.headers_mut()
         .insert(header::VARY, HeaderValue::from_static("HX-Request"));
     resp
 }
 
-fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
+fn full(v: &View<'_>, imp: &Import, wrong: bool, head: Option<&super::diff::Head>) -> Response {
     let title = v.t("kernel.roster.import");
     let body = html! {
         p { a class="back" href=(BASE) { "← " (v.t("kernel.roster.back")) } }
@@ -77,7 +86,7 @@ fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
             }
         }
         @match imp.state.as_str() {
-            "previewed" => (super::page_preview::preview(v, imp, wrong)),
+            "previewed" => (super::page_preview::preview(v, imp, wrong, head)),
             "failed" => (failed(v, imp)),
             _ => { (progress(v, imp)) (problems::warnings_card(v, imp)) }
         }

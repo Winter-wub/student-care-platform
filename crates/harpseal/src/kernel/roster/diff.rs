@@ -1,12 +1,16 @@
 //! What an import changes, Student by Student (#134). Computed once, when
 //! the file is previewed (the Students are already loaded to compare it),
-//! never on a page view: the first [`SHOWN_CHANGES`] changes and
-//! [`SHOWN_LEAVING`] leavers go into `counts.preview`, and the whole list
-//! into the FileStore as JSON Lines under [`key`], which `changes.csv`
-//! reads. A change holds the field and its stored values (`before`,
-//! `after`); the page and the CSV label them in the Staff member's Locale
-//! with the `[roster]` labels. The object is deleted with the file after a
-//! year (`prune.rs`); the CSV then falls back to the capped lists.
+//! never on a page view. Both go to the FileStore, never into the
+//! `roster_import` row (whose `counts` the Job, the polls and the prune
+//! read, and which D1 caps at 2 MB): the whole list as JSON Lines under
+//! [`key`], which `changes.csv` reads, and the first [`SHOWN_CHANGES`]
+//! changes and [`SHOWN_LEAVING`] leavers, each value cut to
+//! [`SHOWN_CHARS`] characters, as one small [`Head`] under [`head_key`],
+//! which only the preview page reads. A change holds the field and its
+//! stored values (`before`, `after`); the page and the CSV label them in
+//! the Staff member's Locale with the `[roster]` labels. Both objects are
+//! deleted with the file after a year (`prune.rs`); `changes.csv` is then
+//! gone (410).
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -24,9 +28,94 @@ pub(crate) const SHOWN_CHANGES: usize = 100;
 /// Students who will become left kept in the preview, by student code.
 pub(crate) const SHOWN_LEAVING: usize = 200;
 
+/// Longest value the page shows inline, in characters (a long text
+/// attribute is cut, with `…`); the CSV keeps it whole.
+pub(crate) const SHOWN_CHARS: usize = 200;
+
 /// The FileStore key of import `id`'s full list of changes.
 pub(crate) fn key(id: &str) -> String {
     format!("roster-diff/{id}.jsonl")
+}
+
+/// The FileStore key of import `id`'s [`Head`].
+pub(crate) fn head_key(id: &str) -> String {
+    format!("roster-diff/{id}.head.json")
+}
+
+/// What the preview page lists: the first changes of listed Students, in
+/// file order, and the first leavers, by student code.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub(crate) struct Head {
+    pub(crate) changes: Vec<Change>,
+    pub(crate) leaving: Vec<Change>,
+}
+
+impl Head {
+    /// The head of `all` (changes, then leavers), values cut.
+    pub(crate) fn of(all: &[Change]) -> Self {
+        let (leaving, changes): (Vec<&Change>, Vec<&Change>) =
+            all.iter().partition(|c| c.kind == "leaving");
+        Self {
+            changes: changes.into_iter().take(SHOWN_CHANGES).map(cut).collect(),
+            leaving: leaving.into_iter().take(SHOWN_LEAVING).map(cut).collect(),
+        }
+    }
+}
+
+/// `c` with every text cut to [`SHOWN_CHARS`].
+fn cut(c: &Change) -> Change {
+    let mut c = c.clone();
+    c.name = cut_text(&c.name);
+    for f in &mut c.fields {
+        cut_json(&mut f.before);
+        cut_json(&mut f.after);
+    }
+    c
+}
+
+fn cut_text(t: &str) -> String {
+    if t.chars().count() <= SHOWN_CHARS {
+        return t.to_string();
+    }
+    let mut out: String = t.chars().take(SHOWN_CHARS).collect();
+    out.push('…');
+    out
+}
+
+fn cut_json(x: &mut Json) {
+    match x {
+        Json::String(t) => *t = cut_text(t),
+        Json::Array(a) => a.iter_mut().for_each(cut_json),
+        _ => {}
+    }
+}
+
+/// Stores `all` (nothing when empty): the list, then its head.
+pub(crate) async fn store(s: &Services, id: &str, all: &[Change]) -> Result<()> {
+    if all.is_empty() {
+        return Ok(());
+    }
+    let json = "application/jsonl";
+    s.files.put(&key(id), encode(all)?, json).await?;
+    let head =
+        serde_json::to_vec(&Head::of(all)).map_err(|_| Error::Invalid("roster changes".into()))?;
+    s.files.put(&head_key(id), head, "application/json").await
+}
+
+/// The head of import `id`, `None` when none is stored (nothing changes,
+/// or pruned) or it no longer reads.
+pub(crate) async fn head(s: &Services, id: &str) -> Result<Option<Head>> {
+    Ok(s.files
+        .get(&head_key(id))
+        .await?
+        .and_then(|b| serde_json::from_slice(&b).ok()))
+}
+
+/// Deletes both objects of import `id` (a missing one is no error).
+pub(crate) async fn delete(s: &Services, id: &str) -> Result<()> {
+    s.files.delete(&key(id)).await?;
+    s.files.delete(&head_key(id)).await
 }
 
 /// What happens to one Student.
