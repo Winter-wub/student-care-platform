@@ -205,6 +205,17 @@ pub fn deployment_with_fake(
     services: Services,
     secrets: Secrets,
 ) -> Result<(Deployment, FakeChannel), StartError> {
+    deployment_with_fake_in(services, secrets, false)
+}
+
+/// [`deployment_with_fake`], built in dev mode when `dev` is set, so the
+/// back office also shows the Fake Channel (#131); the native binary's
+/// `HARPSEAL_DEV_ROUTES=1`.
+pub fn deployment_with_fake_in(
+    services: Services,
+    secrets: Secrets,
+    dev: bool,
+) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
     // With real credentials, refuse now rather than at the first Inbound.
     secrets.line.check_menu_images().map_err(|e| {
@@ -220,6 +231,7 @@ pub fn deployment_with_fake(
         ))
     })?;
     let d = builder(services, secrets)?
+        .dev(dev)
         .channel(fake.clone())
         .build()
         .map_err(StartError::Build)?;

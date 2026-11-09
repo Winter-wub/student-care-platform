@@ -56,9 +56,13 @@ pub(super) async fn reach(
     a: &Audience,
 ) -> (Option<Counts>, Vec<(String, MonthSummary)>) {
     let counts = audience::count(d, a).await.ok();
+    // This month's usage beside each Channel, as the Quota banner: a
+    // dev-only Channel's only in dev mode (#131). Its reach stays listed:
+    // those Students do get the Announcement.
     let kinds: Vec<String> = counts
         .iter()
         .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))
+        .filter(|k| d.staff_sees_channel(k))
         .collect();
     let used = usage::month_summaries(d, &kinds).await.unwrap_or_default();
     (counts, used)

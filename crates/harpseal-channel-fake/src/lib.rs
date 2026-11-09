@@ -268,6 +268,9 @@ impl Channel for FakeChannel {
     fn kind(&self) -> ChannelKind {
         self.kind
     }
+    fn dev_only(&self) -> bool {
+        true
+    }
     async fn parse_webhook(&self, req: WebhookRequest) -> Result<Vec<Inbound>> {
         let sig = req
             .headers

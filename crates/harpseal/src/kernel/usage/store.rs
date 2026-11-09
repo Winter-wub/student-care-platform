@@ -63,6 +63,15 @@ pub(crate) fn kinds(d: &Deployment) -> Vec<String> {
         .collect()
 }
 
+/// The kinds the back office shows Staff (#131): a dev-only Channel only
+/// in dev mode. The watcher keeps reading every kind ([`kinds`]).
+pub(crate) fn staff_kinds(d: &Deployment) -> Vec<String> {
+    d.staff_channel_kinds()
+        .iter()
+        .map(|k| k.as_str().to_string())
+        .collect()
+}
+
 /// The current local month (`YYYY-MM`) and each Channel in it.
 pub(crate) async fn this_month(d: &Deployment) -> Result<(String, Vec<ChannelMonth>)> {
     this_month_of(d, &kinds(d)).await

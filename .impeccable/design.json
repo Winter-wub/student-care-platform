@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-09T18:00:00+07:00",
+  "generatedAt": "2026-11-09T21:00:00+07:00",
   "title": "Design System: harpseal",
   "extensions": {
     "colorMeta": {
@@ -90,6 +90,12 @@
         "role": "status",
         "displayName": "Caution Text",
         "canonical": "#8a5a00"
+      },
+      "brand-press": {
+        "role": "primary",
+        "displayName": "Brand Press",
+        "canonical": "#0d4e68",
+        "description": "Derived per Deployment (#131, ui::brand): the brand moved 15 % (up to 60 %) away from its ink until it differs by at least 1.15:1, toward the ink at black or white. A primary button's hover and active fill; the ink stays at 4.5:1."
       }
     },
     "typographyMeta": {
@@ -128,6 +134,11 @@
         "name": "spinner-fade",
         "value": "opacity .2s",
         "purpose": "HTMX request spinner fade."
+      },
+      {
+        "name": "busy-turn",
+        "value": "rotate 1turn .8s linear infinite",
+        "purpose": "The ring on a submit that is busy (#131); still and dotted under prefers-reduced-motion."
       }
     ],
     "breakpoints": [
@@ -160,7 +171,7 @@
       "refersTo": "button-primary",
       "description": "The one action that moves the work forward; brand-filled.",
       "html": "<button class=\"ds-btn-primary\">ยืนยันนำเข้า</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}"
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}.ds-btn-primary:hover,.ds-btn-primary:active{background:#0d4e68;border-color:#0d4e68}.ds-btn-primary:active{translate:0 1px}.ds-btn-primary:disabled{background:#e8eef3;border-color:#dde3e9;color:#5b6b7a;cursor:not-allowed}"
     },
     {
       "name": "Secondary Button",
@@ -168,7 +179,7 @@
       "refersTo": "button-secondary",
       "description": "Alternative or cancel actions.",
       "html": "<button class=\"ds-btn-secondary\">ยกเลิก</button>",
-      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}"
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}.ds-btn-secondary:hover{background:#f4f6f8}.ds-btn-secondary:active{background:#e8eef3;translate:0 1px}.ds-btn-secondary:disabled{background:#e8eef3;border-color:#dde3e9;color:#5b6b7a;cursor:not-allowed}"
     },
     {
       "name": "Danger Button",
@@ -241,6 +252,14 @@
       "description": "ข้อมูลทางเทคนิค: raw details (cron, table names, IPs, request ids, Permission ids, config file names) closed by default at the end of an administration page.",
       "html": "<details class=\"ds-tech\"><summary>ข้อมูลทางเทคนิค</summary><p>กำหนดเวลา: 0 2 * * * (เวลา UTC+07:00)</p></details>",
       "css": ".ds-tech{border:1px solid #dde3e9;border-radius:12px;background:#fff}.ds-tech summary{min-height:48px;display:flex;align-items:center;padding:0 16px;font-weight:600;color:#5b6b7a;cursor:pointer}.ds-tech p{margin:0;padding:12px 16px 16px;border-top:1px solid #dde3e9}"
+    },
+    {
+      "name": "Busy Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "A submit whose form is posting (#131): the form is aria-busy, its submit buttons are aria-disabled (a repeat submit is cancelled, nothing is disabled, so the pressed button's value still goes), and the pressed one keeps its label and adds a drawn ring.",
+      "html": "<button class=\"ds-btn-busy\" aria-disabled=\"true\" data-busy>ยืนยันนำเข้า</button>",
+      "css": ".ds-btn-busy{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #dde3e9;background:#e8eef3;color:#5b6b7a;cursor:progress}.ds-btn-busy::after{content:\"\";width:1em;height:1em;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:ds-turn .8s linear infinite}@keyframes ds-turn{to{rotate:1turn}}@media (prefers-reduced-motion:reduce){.ds-btn-busy::after{animation:none;border-style:dotted;border-right-color:currentColor}}"
     }
   ],
   "narrative": {

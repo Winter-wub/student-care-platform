@@ -1,6 +1,7 @@
 # Channels: LINE and Telegram
 
-Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
+Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`; outside dev
+mode (`DeploymentBuilder::dev`) Staff are not offered it, display only (#131).
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ## Writing an adapter

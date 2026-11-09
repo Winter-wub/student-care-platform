@@ -150,6 +150,25 @@ impl Deployment {
     pub(crate) fn channel_kinds(&self) -> Vec<crate::ChannelKind> {
         self.channels.iter().map(|c| c.kind()).collect()
     }
+
+    /// The kinds the back office offers Staff by default (#131): every
+    /// Channel but a [`crate::Channel::dev_only`] one, unless built in dev
+    /// mode. Display only: a Link that exists on a hidden Channel is still
+    /// shown (and can be revoked) wherever Links are listed.
+    pub(crate) fn staff_channel_kinds(&self) -> Vec<crate::ChannelKind> {
+        self.channels
+            .iter()
+            .filter(|c| self.dev || !c.dev_only())
+            .map(|c| c.kind())
+            .collect()
+    }
+
+    /// Whether Channel `kind` is one of [`Self::staff_channel_kinds`].
+    pub(crate) fn staff_sees_channel(&self, kind: &str) -> bool {
+        self.staff_channel_kinds()
+            .iter()
+            .any(|k| k.as_str() == kind)
+    }
 }
 
 async fn webhook(

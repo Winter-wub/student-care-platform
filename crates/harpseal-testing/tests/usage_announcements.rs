@@ -49,7 +49,10 @@ async fn the_estimate_shows_used_of_the_cap_with_a_quota() {
     let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
     let src = format!("{CONFIG}\n[quotas.fake]\nmetered_per_month = 300\n");
     let config = DeploymentConfig::from_toml(&src).unwrap();
+    // Dev mode: the Fake Channel stands in for LINE here, and only dev
+    // mode shows a dev-only Channel's Quota (#131).
     let d = Deployment::builder()
+        .dev(true)
         .config(config.clone())
         .runtime(h.services())
         .channel(h.fake_channel())
@@ -78,6 +81,39 @@ async fn the_estimate_shows_used_of_the_cap_with_a_quota() {
             .body
             .contains("usage-line warn")
     );
+}
+
+#[tokio::test]
+async fn outside_dev_mode_the_estimate_lists_a_dev_only_channels_reach_not_its_usage() {
+    // As the Quota banner (#131): the Fake Channel's usage and cap are not
+    // shown outside dev mode, but the Students it reaches still are.
+    let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
+    let src = format!("{CONFIG}\n[quotas.fake]\nmetered_per_month = 300\n");
+    let config = DeploymentConfig::from_toml(&src).unwrap();
+    let d = Deployment::builder()
+        .config(config.clone())
+        .runtime(h.services())
+        .channel(h.fake_channel())
+        .verification(EmailOtp::new(config.otp))
+        .module(Announcements)
+        .build()
+        .unwrap();
+    let app = h.boot(d).await;
+    usage(&h, "fake", TODAY, 245).await;
+    student(&h, "s1", "th", "active", "{}").await;
+    link(&h, "s1", "fake", "active").await;
+    h.create_staff("officer@sealbay.example", PASSWORD, &["Officer"])
+        .await;
+    let b = app.browser();
+    b.login("officer@sealbay.example", PASSWORD).await;
+    assert_eq!(b.get("/admin/announcements/new").await.status, 200);
+    let c = b
+        .post("/admin/announcements/audience", "scope=everyone")
+        .await;
+    assert_eq!(c.status, 200);
+    assert!(c.body.contains("fake: 1"), "{}", c.body);
+    assert!(!c.body.contains("month-used"), "{}", c.body);
+    assert!(!c.body.contains("245"), "{}", c.body);
 }
 
 #[tokio::test]

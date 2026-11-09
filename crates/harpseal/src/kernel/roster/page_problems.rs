@@ -182,7 +182,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
         table class="rows" {
             thead { tr {
                 @if sheets { th { (v.t("kernel.roster.report_sheet")) } }
-                th { (v.t("kernel.roster.report_row")) }
+                th class="num" { (v.t("kernel.roster.report_row")) }
                 th { (v.t("kernel.roster.report_column")) }
                 th { (v.t("kernel.roster.report_reason")) }
                 @if levels { th { (v.t("kernel.roster.report_severity")) } }
@@ -193,7 +193,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                         @if sheets {
                             td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
                         }
-                        td data-label=(v.t("kernel.roster.report_row")) { (row(v, p, true)) }
+                        td class="num" data-label=(v.t("kernel.roster.report_row")) { (row(v, p, true)) }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))

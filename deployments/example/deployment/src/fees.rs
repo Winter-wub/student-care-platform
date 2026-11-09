@@ -268,15 +268,22 @@ async fn confirm(
 }
 
 /// Whether the import Job of upload `id`, confirmed by `staff_id` (the
-/// uploader: only they could open it to confirm), failed for good. A Job
-/// queued before #127 carries no uploader and answers `false`.
-pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str) -> bool {
+/// uploader: only they could open it to confirm), failed for good.
+///
+/// A Job queued before #127 carries no uploader. It counts only when
+/// `kept` says the upload is still there for this Staff member to open
+/// (the preview page): its own record names who it belongs to, so the
+/// page shows "failed" instead of "queued" forever (#131). Once the
+/// upload is gone, such a Job answers `false`: nothing says whose it was.
+pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str, kept: bool) -> bool {
     let q = Statement::new(
         "SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed' \
-         AND json_extract(payload, '$.staff') = ?",
+         AND (json_extract(payload, '$.staff') = ? \
+              OR (? AND json_extract(payload, '$.staff') IS NULL))",
     )
     .bind(format!("{JOB}:{id}"))
-    .bind(staff_id);
+    .bind(staff_id)
+    .bind(i64::from(kept));
     s.services.db.query(q).await.is_ok_and(|r| !r.is_empty())
 }
 

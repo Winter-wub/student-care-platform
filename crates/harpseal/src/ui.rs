@@ -27,6 +27,7 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 use crate::{CurrentStaff, Error, PageState};
 
 pub(crate) mod brand;
+mod busy;
 mod onboard;
 mod onboard_texts;
 mod shell;
@@ -45,16 +46,18 @@ pub use thai::{
 /// The stylesheet, served by `Deployment::router` at [`CSS_PATH`]:
 /// `ui.css`, then the back-office shell's `ui_shell.css` (#123), the
 /// help panels, empty states and checklist of `ui_onboard.css` (#127),
-/// and the focus, target, chip and motion rules of `ui_access.css` (#129).
+/// the focus, target, chip and motion rules of `ui_access.css` (#129),
+/// and the states, rhythm and wrapping of `ui_states.css` (#131).
 pub const CSS: &str = concat!(
     include_str!("ui.css"),
     include_str!("ui_shell.css"),
     include_str!("ui_onboard.css"),
-    include_str!("ui_access.css")
+    include_str!("ui_access.css"),
+    include_str!("ui_states.css")
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=17";
+const CSS_HREF: &str = "/static/app.css?v=18";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).
@@ -137,7 +140,11 @@ fn document(brand: &Brand, title: &str, class: &str, csrf: Option<&str>, inner: 
                 script src=(HTMX_URL) integrity=(HTMX_SRI) crossorigin="anonymous"
                     referrerpolicy="no-referrer" defer {}
             }
-            body class=(class) hx-headers=[hx_headers] { (inner) }
+            body class=(class) hx-headers=[hx_headers] {
+                (inner)
+                // The busy state of a submit (#131): back office only.
+                @if class == "office" { script { (PreEscaped(busy::BUSY_JS)) } }
+            }
         }
     }
 }

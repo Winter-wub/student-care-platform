@@ -356,3 +356,31 @@ async fn a_failed_import_shows_on_the_preview() {
     assert!(page.body.contains("id=\"job-failed\""), "{}", page.body);
     assert!(!page.body.contains("id=\"queued\""));
 }
+
+#[tokio::test]
+async fn a_failed_import_queued_before_the_uploader_rode_along_shows_failed() {
+    // A Job queued before #127 has no `staff` in its payload: its kept
+    // upload says whose it is, so the preview says failed, not queued (#131).
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    assert_eq!(b.post(&format!("{path}/confirm"), "").await.status, 303);
+    let legacy = "UPDATE job SET payload = json_remove(payload, '$.staff')";
+    h.db().execute(Statement::new(legacy)).await.unwrap();
+    h.db()
+        .execute(Statement::new("DROP TABLE fees_import"))
+        .await
+        .unwrap();
+    let mut failed = 0;
+    for _ in 0..6 {
+        failed += tick(&h, &app).await.failed;
+        h.clock().advance_ms(31 * 60_000);
+    }
+    assert_eq!(failed, 1);
+    let login = b.login("administrator@sealbay.example", PASSWORD).await;
+    assert_eq!(login.status, 303);
+    let page = b.get(&path).await;
+    assert!(page.body.contains("id=\"job-failed\""), "{}", page.body);
+    assert!(!page.body.contains("id=\"queued\""), "{}", page.body);
+}

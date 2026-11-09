@@ -64,9 +64,18 @@ async fn sums_only_the_local_calendar_month_with_free_and_failed() {
     assert!(c.contains("<dd class=\"failed\">7</dd>"));
     // The last 6 months, newest first, zeros for months without rows.
     for (month, row) in [
-        ("2026-11", "30</td><td data-label=\"ข้อความตอบกลับ (ฟรี)\">7"),
-        ("2026-10", "100</td><td data-label=\"ข้อความตอบกลับ (ฟรี)\">1"),
-        ("2026-06", "0</td><td data-label=\"ข้อความตอบกลับ (ฟรี)\">0"),
+        (
+            "2026-11",
+            "30</td><td class=\"num\" data-label=\"ข้อความตอบกลับ (ฟรี)\">7",
+        ),
+        (
+            "2026-10",
+            "100</td><td class=\"num\" data-label=\"ข้อความตอบกลับ (ฟรี)\">1",
+        ),
+        (
+            "2026-06",
+            "0</td><td class=\"num\" data-label=\"ข้อความตอบกลับ (ฟรี)\">0",
+        ),
     ] {
         let at = c.find(&format!("<tr data-month=\"{month}\">")).unwrap();
         assert!(c[at..].contains(row), "{month}");

@@ -53,15 +53,15 @@ pub(super) fn chart(kind: &str, days: &[String], totals: &[Totals], l: &Labels) 
                 summary { (l.table) }
                 table class="rows chart-table" aria-label=(label) {
                     thead { tr {
-                        th { (l.day) } th { (l.metered) } th { (l.free) } th { (l.failed) }
+                        th { (l.day) } th class="num" { (l.metered) } th class="num" { (l.free) } th class="num" { (l.failed) }
                     } }
                     tbody {
                         @for (day, t) in days.iter().zip(totals).rev() {
                             tr data-day=(day) {
                                 td data-label=(l.day) { (thai_day(day)) }
-                                td data-label=(l.metered) { (number(t.metered)) }
-                                td data-label=(l.free) { (number(t.free)) }
-                                td data-label=(l.failed) { (number(t.failed)) }
+                                td class="num" data-label=(l.metered) { (number(t.metered)) }
+                                td class="num" data-label=(l.free) { (number(t.free)) }
+                                td class="num" data-label=(l.failed) { (number(t.failed)) }
                             }
                         }
                     }

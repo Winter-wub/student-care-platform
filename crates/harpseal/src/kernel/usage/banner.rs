@@ -12,11 +12,16 @@ use crate::kernel::students::view::channel_label;
 use crate::kernel::text::fill;
 use crate::message::Locale;
 
-/// This month's usage of every Channel (one query), or `None` when the
-/// read failed. The guard reads it once per full-page GET for the
-/// banner, and keeps it for the home's quota card (#123).
+/// This month's usage of every Channel Staff are shown (one query; a
+/// dev-only one only in dev mode, #131), or `None` when the read failed.
+/// The guard reads it once per full-page GET for the banner, and keeps it
+/// for the home's quota card (#123).
 pub(crate) async fn this_month(s: &PageState) -> Option<Vec<ChannelMonth>> {
-    store::this_month(&s.deployment).await.ok().map(|(_, m)| m)
+    let kinds = store::staff_kinds(&s.deployment);
+    store::this_month_of(&s.deployment, &kinds)
+        .await
+        .ok()
+        .map(|(_, m)| m)
 }
 
 /// The banner for a Staff member in `locale`, or `None` when no Channel

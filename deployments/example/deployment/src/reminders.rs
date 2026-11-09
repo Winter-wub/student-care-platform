@@ -70,6 +70,55 @@ const TEXTS: &[CatalogEntry] = &[
         "en",
         "Draft for at most 2,000 Students at a time.",
     ),
+    // The result of "ส่งเตือนตอนนี้" (#131: it was English).
+    CatalogEntry::new(
+        "reminders.result",
+        "th",
+        "ส่งทางแชท {sent} คน · ทางอีเมล {emailed} คน · ข้าม {skipped} คน · รอส่ง {deferred} คน · ไม่สำเร็จ {failed} คน",
+    ),
+    CatalogEntry::new(
+        "reminders.result",
+        "en",
+        "Chat {sent} · email {emailed} · skipped {skipped} · waiting {deferred} · failed {failed}",
+    ),
+    CatalogEntry::new("reminders.outcome.sent", "th", "ส่งทางแชทแล้ว"),
+    CatalogEntry::new("reminders.outcome.sent", "en", "sent in chat"),
+    CatalogEntry::new("reminders.outcome.emailed", "th", "ส่งทางอีเมลแล้ว"),
+    CatalogEntry::new("reminders.outcome.emailed", "en", "emailed"),
+    CatalogEntry::new(
+        "reminders.outcome.skipped",
+        "th",
+        "ข้าม: ไม่พบรหัสนี้หรือไม่มีช่องทางติดต่อ",
+    ),
+    CatalogEntry::new(
+        "reminders.outcome.skipped",
+        "en",
+        "skipped: no such ID or no way to reach them",
+    ),
+    CatalogEntry::new(
+        "reminders.outcome.deferred",
+        "th",
+        "ยังไม่ได้ส่ง: กดส่งอีกครั้งภายหลัง",
+    ),
+    CatalogEntry::new(
+        "reminders.outcome.deferred",
+        "en",
+        "not yet: send again later",
+    ),
+    CatalogEntry::new("reminders.outcome.overtaken", "th", "ส่งไปแล้วจากอีกรอบหนึ่ง"),
+    CatalogEntry::new("reminders.outcome.overtaken", "en", "sent by another run"),
+    CatalogEntry::new("reminders.outcome.failed", "th", "ส่งไม่สำเร็จ"),
+    CatalogEntry::new("reminders.outcome.failed", "en", "failed"),
+    CatalogEntry::new(
+        "reminders.outcome.unknown",
+        "th",
+        "ไม่ทราบผล ตรวจในบันทึกการใช้งาน",
+    ),
+    CatalogEntry::new(
+        "reminders.outcome.unknown",
+        "en",
+        "outcome unknown: check the audit log",
+    ),
 ];
 
 /// The reminder, in Thai and English, under `key`.
@@ -212,8 +261,9 @@ async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     };
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let body = html! {
+        // The page header sits above its card, as on every page (#131).
+        h1 { (t("reminders.title")) }
         section class="card" {
-            h1 { (t("reminders.title")) }
             form method="post" action={ "/admin" (PATH) } {
                 (staff.csrf_field())
                 input type="hidden" name="key" value=(key);
@@ -221,10 +271,12 @@ async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
                     label for="ids" { (t("reminders.ids")) }
                     textarea id="ids" name="ids" rows="6" {}
                 }
-                button type="submit" { (t("reminders.send")) }
-                " "
-                button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
-                    (t("reminders.announce"))
+                // An action row: the two buttons never touch (#131).
+                div class="actions" {
+                    button type="submit" { (t("reminders.send")) }
+                    button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
+                        (t("reminders.announce"))
+                    }
                 }
             }
         }
@@ -252,20 +304,25 @@ async fn send_now(
     let ids = parse_student_ids(field("ids"));
     let to: Vec<NotifyTo> = ids.iter().map(NotifyTo::code).collect();
     let title = s.catalog.t(&staff.locale, "reminders.title");
+    let t = |k: &str| s.catalog.t(&staff.locale, k);
     let body = match s.notify(&notice(&format!("page:{key}")), &to).await {
         Ok(r) => html! {
+            h1 { (title) }
             section class="card" {
-                h1 { (title) }
-                p { "chat " (r.sent) ", email " (r.emailed) ", skipped " (r.skipped)
-                    ", deferred " (r.deferred) ", failed " (r.failed) }
+                p { (t("reminders.result")
+                    .replace("{sent}", &r.sent.to_string())
+                    .replace("{emailed}", &r.emailed.to_string())
+                    .replace("{skipped}", &r.skipped.to_string())
+                    .replace("{deferred}", &r.deferred.to_string())
+                    .replace("{failed}", &r.failed.to_string())) }
                 ul class="list" {
                     @for n in &r.students {
-                        li { (code(&n.to)) ": " (outcome(n.outcome)) }
+                        li { span class="code" { (code(&n.to)) } ": " (t(outcome(n.outcome))) }
                     }
                 }
             }
         },
-        Err(e) => html! { section class="card" { h1 { (title) } p { (e.to_string()) } } },
+        Err(e) => html! { h1 { (title) } section class="card" { p { (e.to_string()) } } },
     };
     Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
 }
@@ -295,7 +352,7 @@ async fn announce(
     if let Some(key) = refused {
         let title = s.catalog.t(&staff.locale, "reminders.title");
         let text = s.catalog.t(&staff.locale, key);
-        let body = html! { section class="card" { h1 { (title) } p role="alert" { (text) } } };
+        let body = html! { h1 { (title) } section class="card" { p role="alert" { (text) } } };
         let page = ui::back_office(&s, &staff, &title, body);
         return (StatusCode::UNPROCESSABLE_ENTITY, Html(page.into_string())).into_response();
     }
@@ -324,14 +381,16 @@ fn code(to: &NotifyTo) -> &str {
     }
 }
 
+/// The catalog key of an outcome.
 fn outcome(o: NotifyOutcome) -> &'static str {
     match o {
-        NotifyOutcome::Sent => "chat",
-        NotifyOutcome::Emailed => "email",
-        NotifyOutcome::Skipped(_) => "skipped",
-        NotifyOutcome::Deferred(_) => "not yet: send again",
-        NotifyOutcome::Overtaken => "sent by another run",
-        NotifyOutcome::Failed(_) => "failed",
-        _ => "?",
+        NotifyOutcome::Sent => "reminders.outcome.sent",
+        NotifyOutcome::Emailed => "reminders.outcome.emailed",
+        NotifyOutcome::Skipped(_) => "reminders.outcome.skipped",
+        NotifyOutcome::Deferred(_) => "reminders.outcome.deferred",
+        NotifyOutcome::Overtaken => "reminders.outcome.overtaken",
+        NotifyOutcome::Failed(_) => "reminders.outcome.failed",
+        // An outcome the Core adds later: say so, never "failed".
+        _ => "reminders.outcome.unknown",
     }
 }

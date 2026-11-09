@@ -124,9 +124,11 @@ impl Harness {
     }
 
     /// A builder with [`TEST_CONFIG`], these Services, the Fake Channel and
-    /// email OTP. Add Modules (or more Channels) and build.
+    /// email OTP, in dev mode (Staff see the Fake Channel; `.dev(false)`
+    /// for a production view). Add Modules (or more Channels) and build.
     pub fn builder(&self) -> DeploymentBuilder {
         Deployment::builder()
+            .dev(true)
             .config(Self::config())
             .runtime(self.services())
             .channel(self.fake.clone())

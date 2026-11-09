@@ -1,0 +1,105 @@
+/* Polish (#131): one set of states, one rhythm, and wrapping that keeps
+   ids, codes and dates whole. Appended last (see `ui::CSS`); every value
+   is a token from `:root` in ui.css. */
+
+/* States. Hover and active move a fill one step (the brand to
+   `--brand-press`, Paper to Counter Mist, then Chip Fog); focus is the one
+   ring; disabled is Chip Fog with Slate Note (4.6:1); busy keeps the label
+   and adds a drawn ring. No shadow, no lift. */
+:is(button, .btn):not(.secondary, .danger, .done, .link, :disabled, [aria-disabled="true"]):is(:hover, :active) {
+  background: var(--brand-press); border-color: var(--brand-press);
+}
+:is(button, a.btn).secondary:not(:disabled, [aria-disabled="true"]):hover { background: var(--bg); }
+:is(button, a.btn).secondary:not(:disabled, [aria-disabled="true"]):active { background: var(--chip-bg); }
+button.danger:active, .btn.danger:active { background: var(--err-press); border-color: var(--err-press); }
+button.done:hover, button.done:active { border-color: var(--ok-ink); }
+button.link:hover, a:hover { text-decoration-thickness: 2px; }
+:is(button, .btn):not(.link):active { translate: 0 1px; }
+.chips a.chip:hover { background: var(--line); }
+.chips a.chip:active { background: var(--chip-ink); color: var(--on-fill); }
+.menu > summary:hover, .tech > summary:hover { background: var(--bg); }
+.tech > summary:hover { color: var(--ink); border-radius: var(--radius); }
+:is(input, select, textarea):not(:disabled, [aria-invalid="true"]):hover { border-color: var(--muted); }
+
+:is(button, .btn):disabled, :is(button, .btn)[aria-disabled="true"] {
+  background: var(--chip-bg); border-color: var(--line); color: var(--muted);
+  cursor: not-allowed; translate: none;
+}
+:is(input, select, textarea):disabled {
+  background: var(--bg); color: var(--muted); border-color: var(--line); cursor: not-allowed;
+}
+/* Busy: a form that is posting (`aria-busy`, set by `ui::busy`) marks
+   its submit buttons `aria-disabled` (drawn as disabled; a repeat is
+   cancelled, nothing is `disabled`) and rings the one pressed
+   (`data-busy`); an HTMX form also rings through `htmx-request`. */
+form[aria-busy="true"], form[aria-busy="true"] :is(button, .btn)[aria-disabled="true"] { cursor: progress; }
+:is(button, .btn)[data-busy]::after,
+form.htmx-request button[type="submit"]::after,
+button.htmx-request::after {
+  content: ""; flex: none; width: 1em; height: 1em; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: busy-turn .8s linear infinite;
+}
+@keyframes busy-turn { to { rotate: 1turn; } }
+/* Under reduced motion the ring stands still: the state still shows. */
+@media (prefers-reduced-motion: reduce) {
+  :is(button, .btn)[data-busy]::after, form.htmx-request button[type="submit"]::after,
+  button.htmx-request::after { animation: none; border-right-color: currentColor; border-style: dotted; }
+}
+
+/* Rhythm. Fields and labels on the 4-8-12-16 scale; a section heading
+   gets more room above it (24) than below (12); buttons in a row never
+   touch: an action row is `.actions` (12 apart), and two buttons side by
+   side anywhere else keep the same 12. */
+.office .field { margin-bottom: var(--gutter); }
+.office label { margin-bottom: var(--space-sm); }
+.office :is(label.check, label.choice) { margin-bottom: 0; }
+:where(.office main) :where(table, .table-scroll, .card, .list, ul, ol, form, p, dl, div, details, section) + h2 {
+  margin-top: var(--space-lg);
+}
+:where(.office main) :not(.actions, .md-toolbar, .head-row, .pager, .chips, .inline) > :is(button, .btn) + :is(button, .btn) {
+  margin-left: var(--space-md);
+}
+.actions { gap: var(--space-md); margin-top: var(--space-sm); align-items: center; }
+.actions form { margin: 0; }
+.head-row { margin-bottom: var(--space-md); }
+.head-row h1 { margin-bottom: 0; }
+
+/* Wrapping. A chip breaks only between words; buttons and short labels
+   stay one line (a long Thai button label may still wrap between words).
+   A number (`.num`) stays whole. An id or a date breaks only when its
+   column has no room for it, and the stacked rows below give every value
+   the whole width beside its caption; a long technical token (a UUID, a
+   key) may still break rather than push the page sideways. */
+.num, .nowrap { white-space: nowrap; overflow-wrap: normal; }
+.chip { overflow-wrap: break-word; }
+button, .btn { overflow-wrap: break-word; max-width: 100%; text-align: center; }
+form.inline { flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-md); }
+form.inline label { margin: 0; white-space: nowrap; }
+form.inline input:not([type="checkbox"], [type="radio"]) { flex: 1 1 10rem; width: auto; min-width: 0; }
+form.inline :is(button, .btn) { white-space: nowrap; }
+.list .name, a.name { overflow-wrap: break-word; }
+/* A stacked row (phones): the caption floats in its own 8rem column,
+   beside every part of the value however many there are, and the value
+   flows as text in the rest, so a name, its chip and a note wrap
+   instead of squeezing each other into single letters; the Link icons
+   stay one row that wraps. */
+@container (max-width: 859.98px) {
+  table.rows td { display: flow-root; padding-left: calc(8rem + var(--space-md)); }
+  table.rows td::before { float: left; width: 8rem; margin-left: calc(-8rem - var(--space-md)); }
+  table.rows td .li { margin-right: var(--space-md); }
+}
+/* A table (wider): numbers right-aligned in tabular figures. */
+@container (min-width: 860px) {
+  table.rows :is(th, td).num { text-align: right; }
+  table.rows { margin-bottom: var(--space-md); }
+}
+
+/* The Mini App keeps its own scale (#129 left these to the back office's
+   rules): meta lines at its .875rem step, 20 px boxes inside 48 px labels,
+   status chips with their 1px edges. Named here so a back-office change
+   cannot move them. */
+.mini .muted { font-size: .875rem; }
+.mini input[type="checkbox"], .mini input[type="radio"] { width: 20px; height: 20px; }
+/* The Texts page's groups: each a section under its own heading. */
+.text-group { margin-top: var(--space-lg); }

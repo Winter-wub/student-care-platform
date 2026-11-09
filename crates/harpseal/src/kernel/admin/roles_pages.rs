@@ -32,7 +32,10 @@ fn by_module(perms: &[Permission]) -> BTreeMap<&str, Vec<&Permission>> {
 
 /// A Module as Staff know it (#125): "ระบบหลัก" for the Kernel, else the
 /// title of the Module's first back-office page ("ประกาศข่าว"), else its
-/// own `<module>.title` or `<module>.menu` text, else "ส่วนเสริม".
+/// own `<module>.title` or `<module>.menu` text, else "ส่วนเสริม" with
+/// the Module's name, "ส่วนเสริม (contact)": several Modules without a
+/// title must not read the same on the Roles page or in the Texts filter
+/// (#131).
 pub(super) fn group_name(v: &View<'_>, module: &str) -> String {
     if module == crate::kernel::NAME {
         return v.t("kernel.admin.roles.group_kernel");
@@ -49,7 +52,10 @@ pub(super) fn group_name(v: &View<'_>, module: &str) -> String {
     [format!("{module}.title"), format!("{module}.menu")]
         .iter()
         .find(|k| v.s.catalog.knows(k))
-        .map_or_else(|| v.t("kernel.admin.texts.area_module"), |k| v.t(k))
+        .map_or_else(
+            || format!("{} ({module})", v.t("kernel.admin.texts.area_module")),
+            |k| v.t(k),
+        )
 }
 
 /// Permission checkboxes named `permission`, grouped by Module, each

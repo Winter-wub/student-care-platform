@@ -116,7 +116,20 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
     // Staff unlink and Manual Link are separate Permissions (#80).
     let can_revoke = v.staff.can(LINK_REVOKE);
     let can_link = v.staff.can(LINK_MANAGE);
-    let kinds = v.s.deployment.channel_kinds();
+    // A dev-only Channel (#131) gets a row only when it holds a Link:
+    // existing Links always show, with their revoke button.
+    let offered = v.s.deployment.staff_channel_kinds();
+    let kinds: Vec<_> =
+        v.s.deployment
+            .channel_kinds()
+            .into_iter()
+            .filter(|k| {
+                offered.contains(k)
+                    || links
+                        .iter()
+                        .any(|l| l.channel == k.as_str() && l.status != "revoked")
+            })
+            .collect();
     let base = format!("/admin/students/{}", row.id);
     let history: Vec<&LinkRow> = links.iter().filter(|l| l.status == "revoked").collect();
     html! {
@@ -168,7 +181,7 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                         div class="field" {
                             label for="ml-channel" { (v.t("kernel.students.channel")) }
                             select id="ml-channel" name="channel" {
-                                @for kind in &kinds { option value=(kind.as_str()) { (channel_label(kind.as_str())) } }
+                                @for kind in &offered { option value=(kind.as_str()) { (channel_label(kind.as_str())) } }
                             }
                         }
                         div class="field" {

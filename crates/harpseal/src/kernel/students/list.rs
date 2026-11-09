@@ -89,6 +89,8 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
             .into_iter()
             .filter(|(_, a)| a.shown_in_list)
             .collect();
+    // A dev-only Channel (#131) shows only on a row that has a Link on it.
+    let offered = v.s.deployment.staff_channel_kinds();
     let kinds = v.s.deployment.channel_kinds();
     let href = |p: i64| {
         let q = super::form::urlencode(query);
@@ -136,8 +138,10 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                                 td class="icons" data-label=(v.t("kernel.students.links")) {
                                     @for kind in &kinds {
                                         @let st = r.links.iter().find(|(c, _)| c == kind.as_str());
-                                        (v.link_icon(kind.as_str(), st.map(|(_, s)| s.as_str())))
-                                        " "
+                                        @if offered.contains(kind) || st.is_some() {
+                                            (v.link_icon(kind.as_str(), st.map(|(_, s)| s.as_str())))
+                                            " "
+                                        }
                                     }
                                 }
                             }

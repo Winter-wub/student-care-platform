@@ -7,7 +7,7 @@
   position: absolute; left: 8px; top: -120px; z-index: 10;
   display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 16px;
   background: var(--card); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 10px; font-weight: 600;
+  border-radius: var(--radius-control); font-weight: 600;
 }
 .skip:focus { top: 8px; outline: 3px solid var(--focus); outline-offset: 2px; }
 main:focus { outline: none; }
@@ -41,7 +41,7 @@ main:focus { outline: none; }
 .nav ul { list-style: none; margin: 0; padding: 0; }
 .nav a {
   display: flex; align-items: center; min-height: var(--tap); padding: 0 12px;
-  border-radius: 10px; color: var(--ink); text-decoration: none;
+  border-radius: var(--radius-control); color: var(--ink); text-decoration: none;
 }
 .nav a:hover { background: var(--bg); }
 .nav a:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
@@ -76,10 +76,10 @@ main:focus { outline: none; }
   padding: var(--gutter); border-top: 1px solid var(--line);
 }
 .status-card:first-child { border-top: 0; }
-.status-card[data-state="warn"] { background: #fff8e6; }
+.status-card[data-state="warn"] { background: var(--attention-bg); }
 /* Not `.chip.warn`: the roster's `.warn` block would pad it. Its border
-   (#a37200) is 4.0:1 on the Attention Wash, so the chip reads on a warn row. */
-.chip.caution { background: #fff3d6; color: #6b4a00; border: 1px solid #a37200; padding: 1px 9px; }
+   (var(--caution-edge)) is 4.0:1 on the Attention Wash, so the chip reads on a warn row. */
+.chip.caution { background: var(--caution-bg); color: var(--caution-ink); border: 1px solid var(--caution-edge); padding: 1px 9px; }
 .status-card h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: var(--step-title); }
 .status-card .fact { margin: 0; }
 .status-card .btn { justify-self: start; margin-top: 4px; }

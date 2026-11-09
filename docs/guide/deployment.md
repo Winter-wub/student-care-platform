@@ -548,7 +548,9 @@ For a Module's list with nothing yet, use `ui::empty_state(text,
 Some((label, href)))`: one sentence on what goes there and the action that
 fills it, passed only when the Staff member holds its Permission. A search
 or filter with no match uses `ui::no_match(text, (label, href))`, whose
-link clears it.
+link clears it. A posting form reads busy until the next page (#131); give
+a form whose submit answers a download or `204 No Content` the attribute
+`data-no-busy`, or it reads busy for 30 s.
 
 ## Permissions in Thai
 

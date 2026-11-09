@@ -84,7 +84,10 @@ pub async fn boot_line<C: harpseal::Channel + 'static>(
         .telegram_like()
         .with_kind(TG);
     let config = DeploymentConfig::from_toml(src).unwrap();
+    // Dev mode: Fake Channels stand in for LINE and Telegram here, and
+    // only dev mode shows a dev-only Channel's usage (#131).
     let d = Deployment::builder()
+        .dev(true)
         .config(config.clone())
         .runtime(h.services())
         .channel(wrap(line.clone()))
