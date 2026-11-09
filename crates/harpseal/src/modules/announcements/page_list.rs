@@ -88,10 +88,16 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
 
 fn results(v: &View<'_>, rows: &[Listed], page: i64, pages: i64) -> Markup {
     let href = |p: i64| format!("/admin/announcements?page={p}");
+    let write_label = v.t("kernel.empty.announcements_action");
+    let write = v
+        .staff
+        .can(super::SEND_PERMISSION)
+        .then_some((write_label.as_str(), "/admin/announcements/new"));
     html! {
         div id="announcement-results" {
             @if rows.is_empty() {
-                div class="card" { p { (v.t("announcements.page.none")) } }
+                // Nothing yet (#127): what goes here, and the way to start.
+                (crate::ui::empty_state(&v.t("kernel.empty.announcements"), write))
             } @else {
                 table class="rows announcements" {
                     thead { tr {

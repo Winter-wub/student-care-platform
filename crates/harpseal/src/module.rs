@@ -23,6 +23,7 @@ mod setting_kind;
 pub(crate) mod settings;
 mod status;
 mod upload;
+mod upload_help;
 pub use kept::{CONFIRMED_KEEP_MS, KeptUpload, Uploads};
 pub(crate) use kept::{RouteModule, sweep_uploads};
 pub(crate) use mini_app::AppLinkSpec;
@@ -36,6 +37,8 @@ pub(crate) use settings::{SettingSpec, absorb as absorb_settings, check as check
 pub(crate) use status::StatusSpec;
 pub use status::{CardState, NavGroup, StatusCard, StatusSource};
 pub use upload::{MAX_UPLOAD_BYTES, SheetKind, SheetUpload, UPLOAD_KEEP_MS, UploadRejection};
+pub use upload_help::UploadColumn;
+pub(crate) use upload_help::{orphan_columns, template_path, template_route};
 
 /// A switchable part of the Core or customer code.
 pub trait Module: Send + Sync + 'static {
@@ -221,6 +224,8 @@ pub(crate) struct UploadSpec {
     /// The page a body over `max_body` is sent back to and the catalog key
     /// of that error flash; `None` answers the 413 page instead (#74).
     pub(crate) too_large: Option<(&'static str, &'static str)>,
+    /// The columns of a Module's sheet upload (#127), for help and template.
+    pub(crate) columns: Option<&'static [UploadColumn]>,
 }
 
 /// A back-office page listed in the navigation and on `/admin`.

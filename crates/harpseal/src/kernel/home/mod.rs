@@ -13,6 +13,7 @@
 //! rest of the home renders.
 
 mod cards;
+mod checklist;
 mod texts;
 
 use axum::extract::State;
@@ -25,6 +26,7 @@ use crate::{AppState, CardState, CurrentStaff, StatusCard};
 /// The Kernel's cards, and the shell's and the home's texts.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
+        .messages(crate::ui::ONBOARD_TEXTS)
         .status_card(cards::ROSTER, "kernel.home.roster.title", 10, cards::roster)
         .status_card(cards::QUOTA, "kernel.home.quota.title", 30, cards::quota)
         .status_card(cards::BACKUP, "kernel.home.backup.title", 40, cards::backup);
@@ -51,11 +53,13 @@ pub(crate) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Html
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let title = t("kernel.home.title");
     let shown = cards(&s, &staff).await;
+    let setup = checklist::block(&s, &staff).await;
     let body = html! {
         h1 { (title) }
         p class="muted" {
             (t("kernel.backoffice.welcome")) " " (staff.display_name) " · " (t("kernel.home.intro"))
         }
+        (setup)
         @if shown.is_empty() {
             div class="card" {
                 p { (t(if staff.nav().is_empty() { "kernel.backoffice.no_pages" } else { "kernel.home.none" })) }

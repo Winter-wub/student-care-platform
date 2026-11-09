@@ -1,6 +1,6 @@
 //! `GET /admin/roster`: the last 20 imports, the upload form (Staff with
-//! `kernel.roster.import`) with the expected headers, and the template
-//! link. `POST /admin/roster/upload` stores and previews a file.
+//! `kernel.roster.import`) with its help beside it (#127: the columns, the
+//! file rules and the template link, `page_help`). `POST /admin/roster/upload` stores and previews a file.
 //! `GET /admin/roster/template.csv` is the header row.
 
 use axum::extract::{Multipart, State};
@@ -12,7 +12,6 @@ use super::file::expected_headers;
 use super::preview::{self, MAX_FILE_BYTES, Uploaded};
 use super::store::{self, Import};
 use super::view::{BASE, IMPORT, View, csv_body, download};
-use crate::config::{AttributeType, RosterConfig};
 use crate::{AppState, CurrentStaff, RequestCtx};
 
 pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
@@ -27,10 +26,16 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
         h1 { (title) }
         @if !mapped {
             div class="warn" role="status" { (v.t("kernel.roster.no_roster")) }
-        } @else if staff.can(IMPORT) {
-            (upload_form(&v))
+        } @else {
+            // The help beside the input (#127); alone for Staff who may
+            // only look.
+            div class="cols upload-pair" {
+                @if staff.can(IMPORT) { (upload_form(&v)) }
+                aside class="card" id="upload-help" aria-label=(v.t("kernel.upload.help_title")) {
+                    (super::page_help::panel(&v, true))
+                }
+            }
         }
-        @if mapped { (headers(&v, &s.config.roster)) }
         h2 { (v.t("kernel.roster.recent")) }
         (list(&v, &imports))
     };
@@ -70,98 +75,9 @@ fn upload_form(v: &View<'_>) -> Markup {
     }
 }
 
-/// The headers table: what each column holds and whether it may be empty.
-fn headers(v: &View<'_>, roster: &RosterConfig) -> Markup {
-    let mut rows: Vec<(String, String, String)> = vec![
-        (
-            roster.student_code.clone(),
-            v.t("kernel.students.code"),
-            v.t("kernel.roster.required"),
-        ),
-        (
-            roster.display_name.clone(),
-            v.t("kernel.students.name"),
-            v.t("kernel.roster.required"),
-        ),
-        (
-            roster.email.clone(),
-            v.t("kernel.students.email"),
-            v.t("kernel.roster.optional"),
-        ),
-    ];
-    if let Some(l) = &roster.locale {
-        rows.push((
-            l.column.clone(),
-            v.t("kernel.students.locale"),
-            v.t("kernel.roster.optional"),
-        ));
-    }
-    if let Some(t) = &roster.tags {
-        let holds = format!(
-            "{} ({} \"{}\")",
-            v.t("kernel.students.tags"),
-            v.t("kernel.roster.separator"),
-            t.separator
-        );
-        rows.push((t.column.clone(), holds, v.t("kernel.roster.optional")));
-    }
-    for (key, a) in roster.attributes_in_order() {
-        let mut holds = a
-            .label_in(key, &v.staff.locale, &v.s.config.default_locale)
-            .to_string();
-        if a.kind == AttributeType::Enum {
-            // The default Locale's labels: the ones a cell may hold.
-            let default = &v.s.config.default_locale;
-            let all: Vec<String> = a
-                .values
-                .iter()
-                .map(|x| a.labelled(x, default, default))
-                .collect();
-            holds = format!(
-                "{holds} ({} {})",
-                v.t("kernel.roster.one_of"),
-                all.join(", ")
-            );
-        }
-        if let Some(range) = a.range_text() {
-            holds = format!("{holds} ({range})");
-        }
-        let need = if a.optional {
-            "kernel.roster.optional"
-        } else {
-            "kernel.roster.required"
-        };
-        rows.push((a.column.clone(), holds, v.t(need)));
-    }
-    html! {
-        details class="card" {
-            summary { h2 { (v.t("kernel.roster.expected")) } }
-            table class="rows" {
-                thead { tr {
-                    th { (v.t("kernel.roster.header")) }
-                    th { (v.t("kernel.roster.holds")) }
-                    th { "" }
-                } }
-                tbody {
-                    @for (h, holds, need) in &rows {
-                        tr {
-                            td class="code" data-label=(v.t("kernel.roster.header")) { (h) }
-                            td data-label=(v.t("kernel.roster.holds")) { (holds) }
-                            td data-label="" { (need) }
-                        }
-                    }
-                }
-            }
-            p { a class="btn secondary" href=(format!("{BASE}/template.csv")) download {
-                (v.t("kernel.roster.template"))
-            } }
-        }
-    }
-}
-
 fn list(v: &View<'_>, imports: &[Import]) -> Markup {
     if imports.is_empty() {
-        return html! { div class="card" { p { (v.t("kernel.roster.none")) } } };
+        return crate::ui::empty_state(&v.t("kernel.empty.imports"), None);
     }
     html! {
         table class="rows" {

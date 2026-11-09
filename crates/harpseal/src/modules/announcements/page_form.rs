@@ -2,7 +2,7 @@
 //! live Audience count is [`super::page_count`], the Student picker
 //! [`super::page_pick`].
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
@@ -41,12 +41,15 @@ fn with_images(
     }
 }
 
-pub(super) async fn new_page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
+/// A new draft; `?scope=students&students=…` prefills the Audience
+/// ([`super::form_scope::prefilled`], #127).
+pub(super) async fn new_page(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    Query(q): Query<Vec<(String, String)>>,
+) -> Response {
     let v = View::new(&s, &staff);
-    let fields = Fields {
-        when: "now".into(),
-        ..Fields::default()
-    };
+    let fields = super::form_scope::prefilled(&q);
     let form = Form::new(None, &fields);
     form_page(&v, StatusCode::OK, &form, &[], None)
 }

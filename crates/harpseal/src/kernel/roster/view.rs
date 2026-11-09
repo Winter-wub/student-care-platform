@@ -13,7 +13,7 @@ pub(super) const BASE: &str = "/admin/roster";
 /// Permission to see imports and download reports and files.
 pub(super) const VIEW: &str = "kernel.roster.view";
 /// Permission to upload, confirm and cancel.
-pub(super) const IMPORT: &str = "kernel.roster.import";
+pub(crate) const IMPORT: &str = "kernel.roster.import";
 
 /// Texts and settings one page render needs.
 pub(super) struct View<'a> {

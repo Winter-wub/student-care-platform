@@ -100,6 +100,25 @@ pub(super) fn nav(nav: &[(&'static str, NavSpec)], catalog: &Catalog) -> Result<
     Ok(())
 }
 
+/// Every label of a Module's upload columns (#127) is a known text.
+pub(super) fn upload_columns(
+    uploads: &[crate::module::UploadSpec],
+    catalog: &Catalog,
+) -> Result<(), BuildError> {
+    let locale = catalog.default_locale();
+    let columns = uploads.iter().filter_map(|u| u.columns).flatten();
+    match columns
+        .map(|c| c.label_key)
+        .find(|k| !catalog.has(&locale, k))
+    {
+        Some(key) => Err(BuildError::UnknownText {
+            source: "sheet_columns".into(),
+            key: key.into(),
+        }),
+        None => Ok(()),
+    }
+}
+
 pub(super) fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::NavItem> {
     let mut items: Vec<crate::auth::NavItem> = nav
         .into_iter()

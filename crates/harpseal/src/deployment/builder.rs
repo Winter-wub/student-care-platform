@@ -114,6 +114,7 @@ impl DeploymentBuilder {
         check_menu_texts(&collected.menu, &catalog)?;
         check_menu_keys(&catalog)?;
         checks::nav(&collected.nav, &catalog)?;
+        checks::upload_columns(&collected.uploads, &catalog)?;
         crate::module::check_settings(&collected.settings, &collected.permissions, &catalog)?;
         let mut nav = collected.nav;
         nav.extend(crate::kernel::admin::settings_nav(&collected.settings));
@@ -220,9 +221,18 @@ impl Collected {
             self.routes.public(module, path)?;
             self.public.push((module, path, route));
         }
+        if let Some(path) = crate::module::orphan_columns(&r.uploads) {
+            let path = path.into();
+            return Err(BuildError::InvalidRoute { module, path });
+        }
         for (permission, path, route) in r.back_office {
             self.routes.back_office(module, path)?;
             self.back_office.push((module, permission, path, route));
+        }
+        // The template of an upload with columns (#127).
+        for u in r.uploads.iter().filter(|u| u.columns.is_some()) {
+            self.routes
+                .back_office(module, &format!("{}/template.csv", u.path))?;
         }
         self.uploads.extend(r.uploads);
         for (spec, h) in r.jobs {

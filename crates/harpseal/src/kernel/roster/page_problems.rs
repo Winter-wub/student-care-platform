@@ -68,6 +68,8 @@ pub(super) fn expected(v: &View<'_>, problems: &[Problem]) -> Markup {
             p { strong { (headers) } }
             p class="muted" { (v.t("kernel.roster.expected_help")) " "
                 a href=(format!("{BASE}/template.csv")) { (v.t("kernel.roster.template")) } }
+            // The upload page's help (#127), so the fix is on this page.
+            (super::page_help::panel(v, false))
         }
     }
 }

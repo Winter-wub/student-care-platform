@@ -41,6 +41,7 @@ pub(crate) mod file;
 mod finish;
 mod intake;
 mod job;
+mod page_help;
 mod page_import;
 mod page_list;
 mod page_problems;
@@ -65,7 +66,9 @@ use axum::routing::{get, post};
 use crate::config::RosterConfig;
 use crate::manifest::JobSpec;
 use crate::module::{ModuleRegistrar, UploadSpec};
-use view::{IMPORT, VIEW};
+/// `IMPORT`: the Permission to upload, confirm and cancel imports.
+pub(crate) use view::IMPORT;
+use view::VIEW;
 
 /// Largest body `POST /admin/roster/upload` reads: a file of
 /// [`preview::MAX_FILE_BYTES`] plus the form's other fields. Only that
@@ -76,7 +79,7 @@ const UPLOAD_LIMIT: usize = preview::MAX_FILE_BYTES + 64 * 1024;
 pub(crate) use prune::prune_files;
 
 /// Whether uploads are possible: the Deployment maps roster files.
-fn has_mapping(roster: &RosterConfig) -> bool {
+pub(crate) fn has_mapping(roster: &RosterConfig) -> bool {
     roster.is_mapped()
 }
 
@@ -86,6 +89,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         path: "/roster/upload",
         max_body: UPLOAD_LIMIT,
         too_large: Some((view::BASE, "kernel.roster.reason_too_large")),
+        columns: None,
     };
     r.messages(texts::DEFAULTS)
         .messages(texts_sheets::DEFAULTS)

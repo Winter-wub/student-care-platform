@@ -444,6 +444,51 @@ disclosure.
   A header problem lists the headers the template expects, with a link to
   the template.
 
+## Help where the work is (#127)
+
+Staff learn the back office by doing its file-driven jobs, so the help sits
+on the pages where they do them.
+
+- **Upload help.** The roster's upload form has a panel beside it (under
+  it on a phone): the accepted files (CSV or XLSX, at most 4 MB, a CSV
+  saved as CSV UTF-8), each column `[roster]` maps with what it holds,
+  whether it may be empty ("ต้องมีค่า" / "เว้นว่างได้") and an example,
+  and the template link. Staff who may only look see the panel alone. A
+  file refused for its header row shows the same columns under the list
+  of expected headers. A Module's upload page gets the same panel from
+  the columns it declares once
+  ([deployment.md](deployment.md#help-beside-the-file-input-and-the-next-step-127)).
+  Example values of the roster's own columns are texts
+  (`kernel.upload.example_*`), fictional by default; attribute examples
+  come from the attribute (the first allowed value, the bottom of its
+  range).
+- **The next step.** A finished roster import offers "แจ้งนักศึกษา": a
+  new announcement where Staff choose the Audience themselves, since a
+  roster file cannot name it exactly. A Module import that names its
+  Students (the example's fees upload) prefills the Audience with exactly
+  those student codes, once its Job has written the balances (before
+  that, the page says the import is queued or failed). Nothing is saved or sent by opening it: the draft goes through the
+  usual review. Staff without `announcements.send` see only the way back.
+- **Empty lists** say what goes there and offer the one action that fills
+  it, only to Staff holding its Permission: Students (import the roster),
+  announcements (write one), Staff while only the first account exists
+  (add Staff), roster imports, and the audit log and Security Events. A
+  search or filter that matches nothing says so and offers to clear it.
+- **First run.** While the Deployment is fresh, which means **no Student
+  yet**, the home shows "เริ่มต้นใช้งาน" above the status ledger: set the
+  branding, import the roster, add other Staff, send the first
+  announcement. Once any Student exists (imported or added by hand) it is
+  never shown, so established Deployments do not see it. Each step links
+  to its page and ticks itself from data the Deployment already keeps:
+  branding set in `[branding]` (any value other than the default) or
+  saved on `/admin/branding`, a second Staff account, an announcement
+  sending or sent. There is no table of its own and nothing to dismiss. A
+  step the Staff member has no Permission for is not shown, nor the
+  roster step where `[roster]` maps no file. If its query fails, the
+  block says it could not be read, as a status card does.
+- **The announcement editor** says what its previews will show before
+  anything is typed, instead of an empty card.
+
 ## Branding
 
 `/admin/branding` (`kernel.setting.edit`, held by the Administrator) sets the

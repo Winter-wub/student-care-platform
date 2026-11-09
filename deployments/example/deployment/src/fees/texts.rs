@@ -11,6 +11,64 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("fees.audit.import", "en", "Imported outstanding fees"),
     CatalogEntry::new("fees.file", "th", "ไฟล์ CSV หรือ XLSX (ไม่เกิน 4 MB)"),
     CatalogEntry::new("fees.file", "en", "CSV or XLSX file (up to 4 MB)"),
+    // The upload's columns, for the help panel (#127).
+    CatalogEntry::new("fees.col.code", "th", "รหัสนักศึกษา 8 หลัก"),
+    CatalogEntry::new("fees.col.code", "en", "The 8-digit student ID"),
+    CatalogEntry::new(
+        "fees.col.name",
+        "th",
+        "ชื่อและนามสกุล ใช้ตรวจในหน้าก่อนนำเข้า ไม่ได้นำเข้า",
+    ),
+    CatalogEntry::new(
+        "fees.col.name",
+        "en",
+        "First and last name, shown on the check page, not imported",
+    ),
+    CatalogEntry::new(
+        "fees.col.amount",
+        "th",
+        "ยอดค้างชำระเป็นบาท ทศนิยมไม่เกิน 2 ตำแหน่ง",
+    ),
+    CatalogEntry::new(
+        "fees.col.amount",
+        "en",
+        "The balance in baht, at most 2 decimals",
+    ),
+    CatalogEntry::new("fees.back_to_list", "th", "กลับไปหน้ายอดค้างชำระ"),
+    CatalogEntry::new("fees.back_to_list", "en", "Back to outstanding fees"),
+    // The result once imported, and the wait before it (#127).
+    CatalogEntry::new("fees.imported_title", "th", "นำเข้ายอดค้างชำระแล้ว"),
+    CatalogEntry::new("fees.imported_title", "en", "Outstanding fees imported"),
+    CatalogEntry::new(
+        "fees.imported",
+        "th",
+        "นำเข้ายอดค้างชำระ {n} รายการแล้ว เมื่อ {time}",
+    ),
+    CatalogEntry::new(
+        "fees.imported",
+        "en",
+        "{n} balances were imported on {time}.",
+    ),
+    CatalogEntry::new(
+        "fees.pending",
+        "th",
+        "แจ้งนักศึกษาได้เมื่อนำเข้าเสร็จ โหลดหน้านี้ใหม่อีกครั้งในอีกสักครู่",
+    ),
+    CatalogEntry::new(
+        "fees.pending",
+        "en",
+        "You can tell Students once the import is done. Reload this page in a moment.",
+    ),
+    CatalogEntry::new(
+        "fees.superseded",
+        "th",
+        "ยอดของนักศึกษาบางคนในไฟล์นี้ถูกแทนด้วยไฟล์ที่นำเข้าภายหลัง จึงต้องเลือกกลุ่มผู้รับเอง",
+    ),
+    CatalogEntry::new(
+        "fees.superseded",
+        "en",
+        "A later file replaced some of these balances, so choose the Audience yourself.",
+    ),
     CatalogEntry::new("fees.check", "th", "ตรวจไฟล์"),
     CatalogEntry::new("fees.check", "en", "Check the file"),
     CatalogEntry::new("fees.stored", "th", "ยอดที่บันทึกไว้"),

@@ -261,6 +261,25 @@ impl Deployment {
         resolve_prefix(&self.registry.action_prefixes, action.as_str())
     }
 
+    /// The columns declared for the upload route at `path` (#127).
+    pub(crate) fn upload_columns(&self, path: &str) -> Option<&'static [crate::UploadColumn]> {
+        let u = self.registry.uploads.iter();
+        u.filter(|u| u.path == path).find_map(|u| u.columns)
+    }
+
+    /// Whether some Module registered the back-office route `/admin{path}`.
+    pub(crate) fn has_back_office(&self, path: &str) -> bool {
+        self.back_office_permission(path).is_some()
+    }
+
+    /// The Permission guarding the back-office route `/admin{path}`.
+    pub(crate) fn back_office_permission(&self, path: &str) -> Option<&'static str> {
+        let mut routes = self.registry.back_office.iter();
+        routes
+            .find(|(_, _, p, _)| *p == path)
+            .map(|(_, perm, _, _)| *perm)
+    }
+
     /// The `/admin` home's status cards, sorted (#123).
     pub(crate) fn status_cards(&self) -> &[crate::module::StatusSpec] {
         &self.registry.status

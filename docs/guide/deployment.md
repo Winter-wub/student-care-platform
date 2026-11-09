@@ -464,6 +464,92 @@ no file behind. Backups leave kept uploads out, rows and files (see
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.
 
+### Help beside the file input, and the next step (#127)
+
+Declare the file's columns once, with the same path as the upload route.
+It is optional: a Module that declares none keeps building and its panel
+shows the file rules only.
+
+```rust
+pub const COLUMNS: &[UploadColumn] = &[
+    UploadColumn::required("รหัสนักศึกษา", "grades.col.code", "68010001"),
+    UploadColumn::required("รหัสวิชา", "grades.col.course", "SB101"),
+    UploadColumn::optional("หมายเหตุ", "grades.col.note", ""),
+];
+
+r.sheet_upload("grades.import", "/grades/upload", post(upload))
+    .sheet_columns("/grades/upload", COLUMNS);
+```
+
+Each column is its header as it must appear in the file, the catalog key
+of what it holds in Staff's words, whether every row must fill it, and a
+fictional example value (empty for none). With columns, the Core serves
+`GET /admin/grades/upload/template.csv` (the header row, UTF-8 with a BOM)
+to Staff holding the upload's Permission. The path has no parameters.
+`build()` refuses columns for a path with no `sheet_upload` in the same
+Module (also one registered with `back_office` instead) or with a
+parameter (`InvalidRoute`), a template path another route already takes
+(`DuplicateRoute`) and an unknown label key (`UnknownText`).
+
+Put the panel beside the form, the roster's layout:
+
+```rust
+div class="cols" {
+    form class="card" method="post" action="/admin/grades/upload" enctype="multipart/form-data" { … }
+    (harpseal::ui::upload_help(&s, &staff, "/grades/upload"))
+}
+```
+
+`ui::upload_help` draws a card with the file rules (CSV or XLSX, at most
+4 MB, CSV saved as UTF-8), each declared column (header, label, "ต้องมีค่า"
+or "เว้นว่างได้", the example) and the template link, shown only to Staff
+holding the upload's Permission. `.cols` puts it
+beside the form from an 860 px content width and under it on a phone.
+
+Offer the next step on the result page **once the import Job has
+written its rows**, not right after the confirm: until then say the
+import is queued (or that it failed). Read that result from the Module's
+own tables, keyed by the upload id: the Job's `KeptUpload::finish`
+deletes the kept upload, so `uploads.open(&id)` finds nothing on a reload
+after the next tick. Keep the uploader rule `Uploads::open` applied: store
+`kept.staff_id` with your record and show the result only to that Staff
+member (the example also puts the uploader in the Job's payload, so a Job
+that failed after its upload was gone answers only them). The example
+keeps one `fees_import` row per upload (written in the Job's batch, with
+`staff_id`) and the upload id on each balance (indexed, migration
+`0003`):
+
+```rust
+// GET /admin/grades/{id}
+if let Some(done) = imported(&s, &id, &staff.id).await? {  // your table: upload id and uploader
+    let back = s.catalog.t(&staff.locale, "grades.back_to_list");
+    return page(html! {
+        div class="flash ok" { … }
+        (harpseal::ui::next_step(&s, &staff, &done.student_codes, (&back, "/admin/grades")))
+    });
+}
+// Not imported yet: the kept upload's preview, "queued" or "failed".
+```
+
+`next_step` offers "แจ้งนักศึกษา" to Staff holding `announcements.send`
+(when the Announcements Module is mounted): a new announcement whose
+Audience is exactly those student codes (`ui::announce_href`; repeats
+are dropped). A link is a URL, so it names Students only up to
+`ui::MAX_PREFILL_QUERY` (7 KB) of query and `ui::MAX_PREFILL` (a
+thousand) codes; the 7 KB binds first for usual codes (about 790
+eight-digit codes). Above either, or with an empty list, Staff choose the Audience
+themselves on the form, which takes any list they paste. Nothing is saved
+or sent by the link: the draft goes through the usual review. The way
+back is always there. Pass an empty list when the file cannot name its
+Students exactly (the example does when a later file replaced some of its
+balances).
+
+For a Module's list with nothing yet, use `ui::empty_state(text,
+Some((label, href)))`: one sentence on what goes there and the action that
+fills it, passed only when the Staff member holds its Permission. A search
+or filter with no match uses `ui::no_match(text, (label, href))`, whose
+link clears it.
+
 ## Permissions in Thai
 
 A Permission is a short Thai sentence for Staff (#125): a verb and its

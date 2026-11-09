@@ -24,7 +24,12 @@ pub(super) fn editable(catalog: &Catalog, key: &str) -> bool {
         && !BUILD_TIME.iter().any(|p| key.starts_with(p))
         && !label_only(key)
         && !page_only(key)
+        && !DEPRECATED.contains(&key)
 }
+
+/// Default texts no page reads any more (#127), kept only so a
+/// Deployment's `[texts]` override of one still builds: nothing to edit.
+const DEPRECATED: [&str; 1] = ["announcements.page.none"];
 
 /// Labels the back office reads from the catalog (#125): Role and Locale
 /// names, and a Module's audit actions (`<module>.audit.<action>`).

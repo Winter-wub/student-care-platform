@@ -149,7 +149,7 @@ The back office is a well-run registrar's counter. Papers are stacked neatly, ev
 
 It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards when the content is narrower than 860 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
 
-This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure). It is the reference to improve on, not a ceiling.
+This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure, #127 upload help, empty states, next step and first-run checklist). It is the reference to improve on, not a ceiling.
 
 **Key Characteristics:**
 - Calm and trustworthy: flat surfaces, thin rules, a single accent.
@@ -296,8 +296,20 @@ The `/admin` home is "this term at a glance": one Paper card holding a ledger of
 ### Technical details disclosure (#123)
 Administration pages keep raw details (cron, table names, IPs, request ids, Permission ids, config file names) behind a closed `details.tech` "ข้อมูลทางเทคนิค" at the end of the page: Paper, 1px Rule Line, 12px radius, a 48 px Slate Note summary, the body under a Rule Line. Cards inside it lose their own border so nothing nests.
 
+### Upload help panel (#127)
+Beside every file input that takes a spreadsheet: the roster's and each Module's (`ui::upload_help`). A Paper card in the `.cols` pair (form 3, help 2 from an 860 px content width; stacked below), titled "ไฟล์ที่ต้องเตรียม". It holds the file rules as a short bulleted list (CSV or XLSX, the size limit, CSV saved as UTF-8, how headers are matched), then the columns as a `.list`: the header in label weight, a chip ("ต้องมีค่า" neutral, "เว้นว่างได้" quiet: Paper with a Rule Line and Slate Note text), then what it holds and a fictional example on the line below. The template is a secondary button at the end. Never hidden behind a disclosure: the columns are the help.
+
+### Empty state (#127)
+A list with nothing yet is one Paper card: one sentence on what goes here (at most 60ch), then the one action that fills it as a primary button, drawn only when the Staff member holds its Permission. No illustration, no icon. A search or filter with no match is the same card with a sentence on what to try and a secondary "ล้างตัวกรอง" / "ล้างการค้นหา" link.
+
+### Next step (#127)
+After a confirmed import the result page ends with a "ขั้นต่อไป" card: one sentence on what the action does (and that nothing is sent before review), the primary "แจ้งนักศึกษา" for Staff who may send, and a secondary way back.
+
+### First-run checklist (#127)
+On the home, above the status ledger, while the Deployment is fresh (no Student yet): a Paper card "เริ่มต้นใช้งาน", a Slate Note line counting the steps left, and an ordered `.list` of steps. Each step is a drawn ring (2px Field Edge) and the step's name as a 48 px link, with a chip; a done step's ring fills Approved Ink with a white drawn check, its name turns Slate Note and its chip turns Approved. Not a progress bar, not a dismissable tour: it goes away by itself once the Deployment has Students.
+
 ### Message preview bubble (signature)
-The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem wide. Staff see roughly what Students will get before they send.
+The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem wide. Staff see roughly what Students will get before they send. Before anything is typed, each preview holds one Slate Note line on what will appear there, in a 1px dashed Field Edge outline (#127), never an empty bubble.
 
 ## Do's and Don'ts
 

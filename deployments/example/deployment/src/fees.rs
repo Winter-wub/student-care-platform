@@ -2,7 +2,9 @@
 //! imports each Student's outstanding balance from a CSV or XLSX file the
 //! finance office exports, one term per sheet.
 //!
-//! 1. `GET /admin/fees`: the upload form and how many balances are stored.
+//! 1. `GET /admin/fees`: the upload form, with the help panel the
+//!    declared `pages::COLUMNS` give it (#127), and how many balances
+//!    are stored.
 //! 2. `POST /admin/fees/upload` ([`ModuleRegistrar::sheet_upload`]: the
 //!    roster's 4 MiB limit, 413 above it): the file must read
 //!    ([`harpseal::sheet`]), then it is kept ([`Uploads::keep`]) and the
@@ -13,11 +15,16 @@
 //! 4. `POST …/confirm` re-reads the kept file ([`Uploads::open`] refuses
 //!    one whose hash changed), pins it for the Job ([`Uploads::confirm`]:
 //!    kept a week instead of the rest of the 24 hours) and enqueues the Job
-//!    `fees.import`; `POST …/cancel` deletes it ([`Uploads::discard`]).
+//!    `fees.import`, then shows the preview again, saying it is queued;
+//!    `POST …/cancel` deletes it ([`Uploads::discard`]).
 //! 5. The Job reads it once more ([`KeptUpload::open_confirmed`]), writes
 //!    `fees_balance` and deletes it ([`KeptUpload::finish`]). A Job that
 //!    finds no upload succeeds only if `fees_balance` holds its rows.
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
+//! 6. `GET /admin/fees/{id}` after the Job: the result, read from
+//!    `fees_import` and `fees_balance` (the kept upload is gone), with the
+//!    next step "แจ้งนักศึกษา", a draft announcement to the Students whose
+//!    balance comes from this file (#127).
 //!
 //! Where Students pay is two Module settings (#75), the bank and branch
 //! [`BANK_NAME`] and the account number [`BANK_ACCOUNT`] (digits, `-` and
@@ -27,7 +34,9 @@
 //! [`student::PATH`]. The account has no default (#103): Students see
 //! "not set" until Finance saves one (the demo seed saves a fictional one).
 
+mod pages;
 pub mod read;
+mod result;
 pub mod status;
 pub mod student;
 mod texts;
@@ -43,7 +52,7 @@ use harpseal::{
 };
 use maud::{Markup, html};
 
-use read::{Parsed, baht};
+use read::Parsed;
 
 /// The Module's name, which scopes its kept uploads.
 pub const NAME: &str = "fees";
@@ -108,29 +117,45 @@ impl Module for Fees {
             "0002_fees_import",
             include_str!("../migrations/fees/0002_fees_import.sql"),
         )
-        .back_office_page(IMPORT, "/fees", "fees.title", 60, get(page))
+        .migration(
+            "0003_fees_import_staff",
+            include_str!("../migrations/fees/0003_fees_import_staff.sql"),
+        )
+        .back_office_page(IMPORT, "/fees", "fees.title", 60, get(pages::page))
         .messages(status::TEXTS)
         .status_card(IMPORT, "fees.home.title", status::ORDER, status::card)
-        .sheet_upload(IMPORT, "/fees/upload", post(upload))
-        .back_office(IMPORT, "/fees/{id}", get(preview))
+        .sheet_upload(IMPORT, pages::UPLOAD, post(upload))
+        // The columns, once (#127): the help panel and the template follow.
+        .sheet_columns(pages::UPLOAD, pages::COLUMNS)
+        .back_office(IMPORT, "/fees/{id}", get(pages::preview))
         .back_office(IMPORT, "/fees/{id}/confirm", post(confirm))
         .back_office(IMPORT, "/fees/{id}/cancel", post(cancel))
         .job(JobSpec::new(JOB), run);
     }
 }
 
-fn t(s: &AppState, staff: &CurrentStaff, key: &str) -> String {
+pub(crate) fn t(s: &AppState, staff: &CurrentStaff, key: &str) -> String {
     s.catalog.t(&staff.locale, key)
 }
 
-fn render(s: &AppState, staff: &CurrentStaff, status: StatusCode, body: Markup) -> Response {
+pub(crate) fn render(
+    s: &AppState,
+    staff: &CurrentStaff,
+    status: StatusCode,
+    body: Markup,
+) -> Response {
     let title = t(s, staff, "fees.title");
     let page = harpseal::ui::back_office(s, staff, &title, body);
     (status, Html(page.into_string())).into_response()
 }
 
 /// A short message on the Module's page, with `status`.
-fn notice(s: &AppState, staff: &CurrentStaff, status: StatusCode, text: &str) -> Response {
+pub(crate) fn notice(
+    s: &AppState,
+    staff: &CurrentStaff,
+    status: StatusCode,
+    text: &str,
+) -> Response {
     let body = html! {
         div class="flash err" role="status" { (text) }
         p { a class="btn secondary" href=(BASE) { (t(s, staff, "fees.title")) } }
@@ -140,28 +165,6 @@ fn notice(s: &AppState, staff: &CurrentStaff, status: StatusCode, text: &str) ->
 
 fn see_other(to: &str) -> Response {
     (StatusCode::SEE_OTHER, [(header::LOCATION, to.to_string())]).into_response()
-}
-
-async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
-    let q = Statement::new("SELECT COUNT(*) AS n FROM fees_balance");
-    let stored = match s.services.db.query(q).await {
-        Ok(rows) => rows.get(0, "n").and_then(|v| v.as_i64()).unwrap_or(0),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
-    let body = html! {
-        h1 { (t(&s, &staff, "fees.title")) }
-        p { (t(&s, &staff, "fees.stored")) ": " strong id="stored" { (stored) } }
-        form class="card" method="post" action=(format!("{BASE}/upload"))
-            enctype="multipart/form-data" {
-            (staff.csrf_field())
-            div class="field" {
-                label for="fees-file" { (t(&s, &staff, "fees.file")) }
-                input id="fees-file" type="file" name="file" required accept=".csv,.xlsx";
-            }
-            button type="submit" { (t(&s, &staff, "fees.check")) }
-        }
-    };
-    render(&s, &staff, StatusCode::OK, body)
 }
 
 async fn upload(
@@ -187,7 +190,7 @@ async fn upload(
 }
 
 /// The kept upload and what it holds, or the page to answer instead.
-async fn open(
+pub(crate) async fn open(
     s: &AppState,
     staff: &CurrentStaff,
     uploads: &Uploads,
@@ -205,64 +208,6 @@ async fn open(
         Ok(None) => Err(gone("fees.gone", StatusCode::NOT_FOUND)),
         Err(_) => Err(gone("fees.changed", StatusCode::CONFLICT)),
     }
-}
-
-async fn preview(
-    State(s): State<AppState>,
-    staff: CurrentStaff,
-    uploads: Uploads,
-    Path(id): Path<String>,
-) -> Response {
-    let (kept, p) = match open(&s, &staff, &uploads, &id).await {
-        Ok(x) => x,
-        Err(r) => return *r,
-    };
-    let action = |what: &str| format!("{BASE}/{}/{what}", kept.id);
-    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id).await;
-    let body = html! {
-        h1 { (t(&s, &staff, "fees.preview")) }
-        p class="muted" { (kept.file_name) " · " span id="row-count" { (p.fees.len()) } }
-        @if !p.problems.is_empty() {
-            h2 { (t(&s, &staff, "fees.problems")) }
-            table class="rows" id="problems" { tbody {
-                @for pr in &p.problems {
-                    tr { td { (pr.sheet) } td { (pr.row) } td { (pr.text) } }
-                }
-            } }
-        }
-        table class="rows" id="fees" { tbody {
-            @for f in &p.fees {
-                tr { td { (f.sheet) } td { (f.row) } td class="code" { (f.code) }
-                     td { (f.name) } td { (baht(f.satang)) } }
-            }
-        } }
-        @if !p.skipped.is_empty() || !p.hidden.is_empty() {
-            h2 { (t(&s, &staff, "fees.skipped")) }
-            ul id="skipped" {
-                @for r in &p.skipped { li { (r.sheet) " แถว " (r.row) ": " (r.text) } }
-                @for h in &p.hidden { li { "ชีตที่ซ่อน: " (h) } }
-            }
-        }
-        @if kept.confirmed_at.is_some() {
-            @if failed {
-                div class="flash err" role="status" id="job-failed" { (t(&s, &staff, "fees.failed")) }
-            } @else {
-                div class="flash ok" role="status" id="queued" { (t(&s, &staff, "fees.queued")) }
-            }
-        } @else {
-            @if p.importable() {
-                form method="post" action=(action("confirm")) {
-                    (staff.csrf_field())
-                    button type="submit" { (t(&s, &staff, "fees.confirm")) }
-                }
-            }
-            form method="post" action=(action("cancel")) {
-                (staff.csrf_field())
-                button class="secondary" type="submit" { (t(&s, &staff, "fees.cancel")) }
-            }
-        }
-    };
-    render(&s, &staff, StatusCode::OK, body)
 }
 
 async fn confirm(
@@ -293,7 +238,9 @@ async fn confirm(
         }
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
-    let payload = serde_json::json!({ "upload": kept.id });
+    // The uploader rides along, so a failed Job's page follows the
+    // uploader rule once the upload itself is gone (#127).
+    let payload = serde_json::json!({ "upload": kept.id, "staff": kept.staff_id });
     let key = format!("{JOB}:{}", kept.id);
     match s.jobs.enqueue_unique(&key, JOB, payload, None).await {
         Ok(Some(_)) => {}
@@ -316,13 +263,20 @@ async fn confirm(
     if audited.await.is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    see_other(BASE)
+    // The result page, with the next step (#127).
+    see_other(&format!("{BASE}/{}", kept.id))
 }
 
-/// Whether the import Job of upload `id` failed for good.
-async fn job_failed(s: &AppState, id: &str) -> bool {
-    let q = Statement::new("SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed'")
-        .bind(format!("{JOB}:{id}"));
+/// Whether the import Job of upload `id`, confirmed by `staff_id` (the
+/// uploader: only they could open it to confirm), failed for good. A Job
+/// queued before #127 carries no uploader and answers `false`.
+pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str) -> bool {
+    let q = Statement::new(
+        "SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed' \
+         AND json_extract(payload, '$.staff') = ?",
+    )
+    .bind(format!("{JOB}:{id}"))
+    .bind(staff_id);
     s.services.db.query(q).await.is_ok_and(|r| !r.is_empty())
 }
 
@@ -364,11 +318,13 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     }
     let now = cx.services.now_ms();
     let rows = i64::try_from(p.fees.len()).unwrap_or(i64::MAX);
-    let record =
-        Statement::new("INSERT INTO fees_import (upload_id, rows, imported_at) VALUES (?, ?, ?)")
-            .bind(id)
-            .bind(rows)
-            .bind(now);
+    let record = Statement::new(
+        "INSERT INTO fees_import (upload_id, rows, imported_at, staff_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(rows)
+    .bind(now)
+    .bind(kept.staff_id.as_str());
     let stmts: Vec<Statement> = p
         .fees
         .iter()

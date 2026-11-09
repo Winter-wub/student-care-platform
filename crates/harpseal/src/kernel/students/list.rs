@@ -95,11 +95,19 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
         let m = if missing { "&missing=1" } else { "" };
         format!("/admin/students?q={q}{m}&page={p}")
     };
+    let import_label = v.t("kernel.empty.students_action");
+    let import = v
+        .staff
+        .can("kernel.roster.import")
+        .then_some((import_label.as_str(), "/admin/roster"));
     html! {
         div id="student-results" {
             p class="muted count" { (v.t("kernel.students.total")) " " (total) }
-            @if rows.is_empty() {
-                div class="card" { p { (v.t("kernel.students.none")) } }
+            @if rows.is_empty() && query.trim().is_empty() && !missing {
+                // Nobody yet (#127): the roster brings them.
+                (crate::ui::empty_state(&v.t("kernel.empty.students"), import))
+            } @else if rows.is_empty() {
+                (crate::ui::no_match(&v.t("kernel.empty.students_no_match"), (&v.t("kernel.empty.clear_search"), "/admin/students")))
             } @else {
                 table class="rows students" {
                     thead { tr {
