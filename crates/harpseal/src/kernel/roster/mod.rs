@@ -6,7 +6,7 @@
 //! `roster/<import id>/<file name>`, reads it ([`file`]: the headers must
 //! match `[roster]` exactly), validates every row ([`validate`]: one error
 //! refuses the whole file, with a downloadable report) and previews what
-//! will change ([`preview`]). Confirming queues the Job
+//! will change ([`preview`], Student by Student in [`diff`]). Confirming queues the Job
 //! `kernel.roster.import` ([`job`]), which applies 500 rows per run in one
 //! `Db::batch` each and, in `full` mode, ends with the `left` transition
 //! ([`finish`]). Only one import is `previewed` / `queued` / `running` at a
@@ -24,10 +24,12 @@
 //! | `POST /admin/roster/{id}/confirm`, `…/cancel`, `…/fail` (stuck) | `kernel.roster.import` |
 //! | `GET /admin/roster/{id}/report.csv` | `kernel.roster.view` |
 //! | `GET /admin/roster/{id}/file` (audited `roster.file.download`) | `kernel.roster.view` |
+//! | `GET /admin/roster/{id}/changes.csv` (#134, audited `roster.changes.download`) | `kernel.roster.view` |
 //!
 //! Audit: `roster.import.upload` (each upload), `roster.import` (confirm:
 //! counts, file hash, mode, file name), `roster.import.cancel`,
-//! `roster.import.fail`, `roster.file.download`, `roster.file.prune`
+//! `roster.import.fail`, `roster.file.download`, `roster.changes.download`
+//! (#134), `roster.file.prune`
 //! (actor `system`, a year after upload, see [`prune`]); the Job writes `student.status` per Student it
 //! marks left and `link.revoke` per Link.
 //!
@@ -36,14 +38,18 @@
 
 pub mod api;
 mod chunk;
+pub(crate) mod diff;
 pub(crate) use crate::sheet::csv;
 pub(crate) mod file;
 mod finish;
 mod intake;
 mod job;
+mod page_changes;
+mod page_headers;
 mod page_help;
 mod page_import;
 mod page_list;
+mod page_preview;
 mod page_problems;
 pub(crate) mod preview;
 mod prune;
@@ -54,6 +60,7 @@ mod skipped;
 mod store;
 mod stuck;
 mod texts;
+mod texts_diff;
 mod texts_reach;
 mod texts_sheets;
 mod texts_warnings;
@@ -95,6 +102,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .messages(texts_sheets::DEFAULTS)
         .messages(texts_warnings::DEFAULTS)
         .messages(texts_reach::DEFAULTS)
+        .messages(texts_diff::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",
@@ -110,6 +118,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .back_office(IMPORT, "/roster/{id}/fail", post(page_import::fail))
         .back_office(VIEW, "/roster/{id}/report.csv", get(page_problems::report))
         .back_office(VIEW, "/roster/{id}/file", get(page_import::file))
+        .back_office(VIEW, "/roster/{id}/changes.csv", get(page_changes::csv))
         .job(JobSpec::new(service::JOB_KIND), job::run);
 }
 

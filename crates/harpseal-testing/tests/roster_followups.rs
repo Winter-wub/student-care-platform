@@ -96,6 +96,15 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     .await;
     let file_key = import_text(&h, &id, "file_key").await;
     let rows_key = format!("roster-rows/{id}.jsonl");
+    // Its changes (#134): the whole list and the page's head.
+    let diff_keys = [
+        format!("roster-diff/{id}.jsonl"),
+        format!("roster-diff/{id}.head.json"),
+    ];
+    assert!(
+        diff_keys.iter().all(|k| h.files().keys().contains(k)),
+        "stored at upload"
+    );
     let tick = || app.deployment().tick(Timestamp(h.clock().now_ms()));
 
     h.clock().set_ms(uploaded_at + 365 * DAY_MS - 3_600_000);
@@ -113,6 +122,7 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
         !keys.contains(&file_key) && !keys.contains(&rows_key),
         "{keys:?}"
     );
+    assert!(diff_keys.iter().all(|k| !keys.contains(k)), "{keys:?}");
     assert_eq!(import_text(&h, &id, "file_key").await, "");
     assert_eq!(import_text(&h, &id, "state").await, "done", "the row stays");
     let audit = "SELECT count(*) FROM audit_log WHERE action = 'roster.file.prune' \
@@ -126,6 +136,15 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     assert!(page.body.contains("ลบไฟล์แล้ว"), "{}", page.body);
     assert!(!page.body.contains(&format!("/admin/roster/{id}/file\"")));
     assert_eq!(v.get(&format!("/admin/roster/{id}/file")).await.status, 404);
+    // The changes are gone too: 410 with a Thai page, never part of them.
+    let gone = v.get(&format!("/admin/roster/{id}/changes.csv")).await;
+    assert_eq!(gone.status, 410);
+    assert!(
+        gone.body
+            .contains("รายการเปลี่ยนแปลงของการนำเข้านี้ไม่มีให้ดาวน์โหลดแล้ว"),
+        "{}",
+        gone.body
+    );
 }
 
 #[tokio::test]

@@ -35,14 +35,8 @@ fn a_file_with_only_warnings_is_valid_and_lists_each_class() {
          68010003,กุ้ง,ok@student.sealbay.example,,,MSC,1,\n",
         &none(),
     );
-    assert_eq!(
-        got,
-        vec![
-            w(2, "missing_email"),
-            w(3, "invalid_email"),
-            w(4, "empty_attribute")
-        ]
-    );
+    // The blank optional cell of row 4 is fine (#134).
+    assert_eq!(got, vec![w(2, "missing_email"), w(3, "invalid_email")]);
 }
 
 #[test]
@@ -150,28 +144,47 @@ fn a_row_whose_email_staff_set_by_hand_is_not_compared() {
 }
 
 #[test]
-fn empty_optional_cells_make_one_warning_per_column_with_a_count_and_first_rows() {
+fn empty_optional_cells_warn_no_more_and_block_as_one_problem_per_column_when_listed() {
     let rows: String = (1..=7)
         .map(|n| format!("6801000{n},นก{n},n{n}@student.sealbay.example,,,MSC,1,\n"))
         .collect();
+    // A blank optional cell is fine by default (#134).
     let v = read(&rows, &test_config(), &none()).unwrap();
-    assert_eq!(v.warnings.len(), 1);
-    let p = &v.warnings[0];
-    assert_eq!((p.row, p.column.as_str(), p.count), (2, "เกรดเฉลี่ย", 7));
-    assert_eq!(p.rows, vec![2, 3, 4, 5, 6]);
-    assert_eq!(
-        classes(&v.warnings)["empty_attribute"],
-        7,
-        "cells, not columns"
-    );
-    assert_eq!(total(&v.warnings), 7);
-    // Blocking, it is still one problem for the column.
+    assert!(v.warnings.is_empty(), "{:?}", v.warnings);
+    // A Deployment that lists the class refuses the file, with one
+    // problem for the column, its count and its first rows.
     let mut c = test_config();
     c.roster.blocking = vec!["empty_attribute".into()];
     let all = read(&rows, &c, &none()).unwrap_err();
     assert_eq!(
         (all.len(), all[0].severity, all[0].count),
         (1, Severity::Blocking, 7)
+    );
+    let p = &all[0];
+    assert_eq!((p.row, p.column.as_str()), (2, "เกรดเฉลี่ย"));
+    assert_eq!(p.rows, vec![2, 3, 4, 5, 6]);
+    assert_eq!(classes(&all)["empty_attribute"], 7, "cells, not columns");
+    assert_eq!(total(&all), 7);
+}
+
+#[test]
+fn a_warning_names_its_student() {
+    let body = format!(
+        "68010001,นก ทะเล,,,,MSC,1,1\n68010002,ปลา,{MAIL},,,MSC,1,1\n68010003,กุ้ง,{MAIL},,,MSC,1,1\n"
+    );
+    let v = read(&body, &test_config(), &none()).unwrap();
+    let named: Vec<(&str, &str, &str)> = v
+        .warnings
+        .iter()
+        .map(|p| (p.reason.as_str(), p.student.as_str(), p.name.as_str()))
+        .collect();
+    assert_eq!(
+        named,
+        vec![
+            ("missing_email", "68010001", "นก ทะเล"),
+            ("duplicate_email", "68010002", "ปลา"),
+            ("duplicate_email", "68010003", "กุ้ง"),
+        ]
     );
 }
 
@@ -191,13 +204,17 @@ fn a_deployment_makes_a_warning_class_blocking() {
         vec![
             (2, "invalid_email", Severity::Blocking),
             (3, "missing_email", Severity::Warning),
-            // One per column, after the rows' own problems.
-            (2, "empty_attribute", Severity::Warning),
         ]
     );
-    // The other classes still only warn.
+    // The other classes still only warn; a listed `empty_attribute`
+    // blocks, one per column after the rows' own problems.
     c.roster.blocking = vec!["duplicate_email".into(), "empty_attribute".into()];
-    assert_eq!(read(body, &c, &none()).unwrap_err().len(), 3);
+    let all = read(body, &c, &none()).unwrap_err();
+    assert_eq!(all.len(), 3);
+    assert_eq!(
+        (all[2].row, all[2].reason.as_str(), all[2].severity),
+        (2, "empty_attribute", Severity::Blocking)
+    );
     c.roster.blocking = vec!["missing_email".into()];
     let all = read(body, &c, &none()).unwrap_err();
     assert_eq!(all.iter().filter(|p| p.severity.is_blocking()).count(), 1);

@@ -56,10 +56,24 @@ pub(crate) struct Preview {
     pub(crate) active_before: u64,
     /// Left > 20% of the active roster, or a `full` file shorter than it.
     pub(crate) warning: bool,
-    /// Names of those who will become left, at most 200.
+    /// Names of those who will become left, at most 200; empty in a
+    /// `detailed` preview, whose leavers are in `diff::head_key`.
     pub(crate) left_names: Vec<String>,
     /// How many more will become left than `left_names` lists.
     pub(crate) left_more: u64,
+    /// Whether the preview has per-Student lists (#134): the first
+    /// changes and leavers in `diff::head_key`, every change in
+    /// `diff::key`. `false` for a preview stored before them.
+    pub(crate) detailed: bool,
+    /// Live chat Links of everyone who will become left.
+    pub(crate) links_cut: u64,
+}
+
+impl Preview {
+    /// Listed Students the import changes: new, updated and returning.
+    pub(crate) fn changed(&self) -> u64 {
+        self.tally.new + self.tally.updated + self.tally.returning
+    }
 }
 
 /// `roster_import.counts`. The file hash is `sha256` (a key ending in
@@ -138,6 +152,10 @@ pub(crate) struct Failure {
     pub(crate) classes: BTreeMap<String, u64>,
     /// Why the Job failed (never file contents).
     pub(crate) job: Option<String>,
+    /// The header row of each sheet whose headers differ (#134), so the
+    /// page sets what the file has beside what it needs.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) headers: Vec<super::file::FoundHeaders>,
 }
 
 /// One `roster_import` row.
@@ -325,12 +343,38 @@ pub(crate) fn classify(existing: Option<&Existing>, rec: &Record) -> (Tally, Mer
     t.skipped_by_override = m.skipped.len() as u64;
     if e.fields.status == "left" && m.fields.status == "active" {
         t.returning = 1;
-    } else if m.fields == e.fields && tags == e.roster_tags {
+    } else if same(&m.fields, &e.fields) && tags == e.roster_tags {
         t.unchanged = 1;
     } else {
         t.updated = 1;
     }
     (t, m)
+}
+
+/// Whether two Students' fields are the same, an attribute stored as JSON
+/// `null` counting as absent (#134: no "updated" without a change).
+fn same(a: &StudentFields, b: &StudentFields) -> bool {
+    let set = |f: &StudentFields| {
+        f.attributes
+            .iter()
+            .filter(|(_, v)| !v.is_null())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    // Every field by name: a new one is a compile error here, not a
+    // silent "unchanged".
+    let StudentFields {
+        display_name,
+        email,
+        locale,
+        status,
+        attributes: _,
+    } = a;
+    *display_name == b.display_name
+        && *email == b.email
+        && *locale == b.locale
+        && *status == b.status
+        && set(a) == set(b)
 }
 
 /// Whether the Student's status is a manual override (kept by imports).

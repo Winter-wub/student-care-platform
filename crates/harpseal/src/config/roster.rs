@@ -83,7 +83,8 @@ pub struct RosterConfig {
     /// Warning classes this Deployment makes blocking (#71): `missing_email`,
     /// `invalid_email`, `duplicate_email`, `empty_attribute`. A file with one
     /// is refused like one with a malformed id. Default: none, so each only
-    /// warns.
+    /// warns, except `empty_attribute` (a blank optional attribute cell),
+    /// which since #134 raises nothing unless listed here.
     pub blocking: Vec<String>,
     /// The attribute schema of `student.attributes`, keyed by attribute
     /// key (the JSON key and the `manual_overrides` entry

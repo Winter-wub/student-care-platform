@@ -9,7 +9,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
 
-use super::file;
+use super::diff::{self, Change};
+use super::file::{self, FoundHeaders};
 use super::intake::{self, Checked};
 use super::store::{self, BUSY, Counts, Existing, Failure, Import, Preview, Tally, Warned};
 use super::validate::{Problem, Valid};
@@ -25,8 +26,6 @@ pub(crate) const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
 pub(crate) const PREVIEW_HOLD_MS: i64 = 3_600_000;
 /// How long the stored file is kept.
 const KEEP_FILE_MS: i64 = 365 * 86_400_000;
-/// Most "will become left" names listed.
-const MAX_LEFT_NAMES: usize = 200;
 
 /// What an upload did.
 #[derive(Debug)]
@@ -65,7 +64,8 @@ pub(crate) async fn upload(
     let key = format!("roster/{id}/{name}");
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
-    let read = intake::read(s, config, &name, &bytes, mode).await?;
+    let example = intake::Example::of(d.catalog(), config);
+    let read = intake::read(s, config, &name, &bytes, mode, &example).await?;
     let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
@@ -85,7 +85,12 @@ pub(crate) async fn upload(
         key: &key,
         name: &name,
     };
-    let out = record(s, &row, counts, read.result, mode == "full", ctx).await;
+    let input = Input {
+        read: read.result,
+        headers: read.headers,
+        full: mode == "full",
+    };
+    let out = record(s, &row, counts, input, ctx).await;
     if !matches!(out, Ok(Uploaded::Previewed(..) | Uploaded::Refused(_)))
         && row_absent(s, &id).await
     {
@@ -95,6 +100,7 @@ pub(crate) async fn upload(
         // objects stay unless it is surely absent.
         let _ = s.files.delete(&key).await;
         let _ = s.files.delete(&super::rows::key(&id)).await;
+        let _ = diff::delete(s, &id).await;
     }
     out
 }
@@ -105,17 +111,26 @@ async fn row_absent(s: &Services, id: &str) -> bool {
     s.db.query(q).await.is_ok_and(|r| r.is_empty())
 }
 
-/// Writes the import row (and, for a valid file, its parsed rows first):
-/// `failed` with the report, or `previewed` while the slot is free.
+/// What reading the upload found, for [`record`].
+struct Input {
+    read: core::result::Result<Checked, Vec<Problem>>,
+    /// The header rows of a file refused for its headers (#134).
+    headers: Vec<FoundHeaders>,
+    full: bool,
+}
+
+/// Writes the import row (and, for a valid file, its parsed rows and its
+/// changes first): `failed` with the report, or `previewed` while the
+/// slot is free.
 async fn record(
     s: &Services,
     row: &NewRow<'_>,
     mut counts: Counts,
-    read: core::result::Result<Checked, Vec<Problem>>,
-    full: bool,
+    input: Input,
     ctx: &RequestCtx,
 ) -> Result<Uploaded> {
-    let Checked { valid, existing } = match read {
+    let full = input.full;
+    let Checked { valid, existing } = match input.read {
         Ok(c) => c,
         Err(problems) => {
             let (blocking, warned): (Vec<_>, Vec<_>) =
@@ -126,13 +141,22 @@ async fn record(
                 classes: warnings::classes(&blocking),
                 problems: warnings::kept(blocking),
                 job: None,
+                headers: input.headers,
             };
             let stmts = row.statements(s, &counts, Some(&failure), 0, ctx, None)?;
             s.db.batch(stmts).await?;
             return Ok(Uploaded::Refused(row.id.to_string()));
         }
     };
-    counts.preview = preview(&valid, &existing, full);
+    // Live Links matter only to those who will become left (#134).
+    let links = if full {
+        diff::live_links(s).await?
+    } else {
+        HashMap::new()
+    };
+    let (preview, changes) = preview(&valid, &existing, full, &links);
+    counts.preview = preview;
+    diff::store(s, row.id, &changes).await?;
     counts.warnings = Warned::new(valid.warnings.clone());
     let parsed = super::rows::encode(&valid.records)?;
     counts.rows_sha256 = crate::auth::sha256_hex(&parsed);
@@ -141,10 +165,16 @@ async fn record(
         .await?;
     let total = valid.records.len() as i64;
     let stale = s.now_ms() - PREVIEW_HOLD_MS;
-    let mut stmts = replace_stale(s, stale).await?;
+    let (mut stmts, replaced) = replace_stale(s, stale).await?;
     stmts.extend(row.statements(s, &counts, None, total, ctx, Some(stale))?);
     let insert_at = stmts.len() - 2;
     let done = s.db.batch(stmts).await?;
+    // Nothing reads a cancelled import's lists (#134): best effort.
+    for (k, id) in replaced.iter().enumerate() {
+        if done.get(2 * k + 1).map(|r| r.rows_affected) == Some(1) {
+            let _ = diff::delete(s, id).await;
+        }
+    }
     if done.get(insert_at).map(|r| r.rows_affected) != Some(1) {
         // Another upload took the slot between the check and the write.
         return match store::busy(s, stale).await? {
@@ -159,8 +189,9 @@ async fn record(
 }
 
 /// Cancels the previews older than `stale` (they give the slot up), each
-/// with an audit row `roster.import.cancel` by the system that gates it.
-async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
+/// with an audit row `roster.import.cancel` by the system that gates it:
+/// the statements (an audit row, then its update, per import) and the ids.
+async fn replace_stale(s: &Services, stale: i64) -> Result<(Vec<Statement>, Vec<String>)> {
     let rows =
         s.db.query(
             Statement::new(
@@ -170,10 +201,12 @@ async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
         )
         .await?;
     let mut stmts = Vec::new();
+    let mut ids = Vec::new();
     for i in 0..rows.len() {
         let Some(id) = rows.get(i, "id").and_then(crate::Value::as_text) else {
             continue;
         };
+        ids.push(id.to_string());
         let cond = Statement::new(
             "EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND state = 'previewed' \
              AND created_at < ?)",
@@ -201,7 +234,7 @@ async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
             .bind(gate),
         );
     }
-    Ok(stmts)
+    Ok((stmts, ids))
 }
 
 /// The new `roster_import` row.
@@ -286,19 +319,29 @@ fn json_err(e: serde_json::Error) -> Error {
     Error::Invalid(format!("roster counts: {e}"))
 }
 
-/// Compares the file with the Students.
-fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> Preview {
+/// Compares the file with the Students: the preview, and every change
+/// Student by Student (#134; `links`: live Links per Student id).
+pub(super) fn preview(
+    valid: &Valid,
+    existing: &HashMap<String, Existing>,
+    full: bool,
+    links: &HashMap<String, u64>,
+) -> (Preview, Vec<Change>) {
     let mut tally = Tally::default();
     let mut listed = HashSet::new();
+    let mut changes = Vec::new();
     for rec in &valid.records {
         listed.insert(rec.code.as_str());
-        tally.add(&store::classify(existing.get(&rec.code), rec).0);
+        let e = existing.get(&rec.code);
+        let (t, m) = store::classify(e, rec);
+        tally.add(&t);
+        changes.extend(diff::change(e, rec, &t, &m));
     }
     let active: Vec<_> = existing
         .iter()
         .filter(|(_, e)| e.fields.status == "active")
         .collect();
-    let mut leaving: Vec<&str> = Vec::new();
+    let mut leavers = Vec::new();
     let mut kept_by_status = 0;
     if full {
         for (code, e) in &active {
@@ -308,26 +351,27 @@ fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> P
             if store::status_held(e) {
                 kept_by_status += 1;
             } else {
-                leaving.push(&e.fields.display_name);
+                leavers.push(diff::leaving(code, e, links));
             }
         }
     }
-    leaving.sort_unstable();
-    let left = leaving.len() as u64;
+    leavers.sort_unstable_by(|a, b| a.code.cmp(&b.code));
+    let left = leavers.len() as u64;
     let active_before = active.len() as u64;
     let shrinking = full && (valid.records.len() as u64) < active_before;
-    Preview {
+    let preview = Preview {
         tally,
         will_become_left: left,
         kept_by_status,
         empty_email: valid.empty_email as u64,
         active_before,
         warning: left * 5 > active_before || shrinking,
-        left_more: left.saturating_sub(MAX_LEFT_NAMES as u64),
-        left_names: leaving
-            .into_iter()
-            .take(MAX_LEFT_NAMES)
-            .map(str::to_string)
-            .collect(),
-    }
+        // The leavers are in the stored head (#134), not in `counts`.
+        left_more: 0,
+        left_names: Vec::new(),
+        detailed: true,
+        links_cut: leavers.iter().map(|c| c.links).sum(),
+    };
+    changes.extend(leavers);
+    (preview, changes)
 }

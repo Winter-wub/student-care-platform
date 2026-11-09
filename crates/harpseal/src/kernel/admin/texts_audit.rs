@@ -250,6 +250,11 @@ pub(super) const AUDIT: &[E] = th_en![
         "Downloaded a roster file"
     ),
     (
+        "kernel.admin.audit.action.roster_changes_download",
+        "ดาวน์โหลดรายการเปลี่ยนแปลงของการนำเข้ารายชื่อ",
+        "Downloaded the changes of a roster import"
+    ),
+    (
         "kernel.admin.audit.action.roster_file_prune",
         "ลบไฟล์รายชื่อเก่า",
         "Deleted old roster files"

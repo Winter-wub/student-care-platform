@@ -46,6 +46,16 @@ pub(super) fn typed_field(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
         return html! {};
     }
     let n = leaving(imp).to_string();
+    // The field names the figures it confirms (#134): the alarm in numbers
+    // and the leaving figure, then the error of the last try.
+    let mut described = format!(
+        "{} {}",
+        super::page_preview::ALARM_ID,
+        super::page_preview::LEAVING_ID
+    );
+    if wrong {
+        described.push_str(" roster-typed-error");
+    }
     html! {
         div class="field confirm-reach" {
             label for="roster-typed" { (v.t("kernel.roster.typed_label").replace("{n}", &n)) }
@@ -53,7 +63,7 @@ pub(super) fn typed_field(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
                 data-reach=(n)
                 autocomplete="off" spellcheck="false" enterkeyhint="done"
                 aria-invalid=[wrong.then_some("true")]
-                aria-describedby=[wrong.then_some("roster-typed-error")];
+                aria-describedby=(described);
             @if wrong {
                 p id="roster-typed-error" class="field-error" {
                     (v.t("kernel.roster.typed_wrong").replace("{n}", &n))

@@ -112,7 +112,7 @@ fn an_empty_fake_secret_refuses_to_start() {
 }
 
 #[tokio::test]
-async fn the_example_roster_template_has_the_mapped_headers() {
+async fn the_example_roster_template_has_the_mapped_headers_and_an_example_row() {
     let h = Harness::new();
     let app = boot(&h).await;
     h.create_staff(
@@ -126,8 +126,10 @@ async fn the_example_roster_template_has_the_mapped_headers() {
         .await;
     let r = b.get("/admin/roster/template.csv").await;
     assert_eq!(r.status, 200);
+    // The headers, then one fictional example row (#134).
     assert_eq!(
         r.body,
-        "\u{feff}รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\r\n"
+        "\u{feff}รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\r\n\
+         68010001,นกน้อย ทะเลใส,noknoi@student.example,th,\"ชมรมดนตรี;ทุนเรียนดี\",MSC,1,2.50\r\n"
     );
 }

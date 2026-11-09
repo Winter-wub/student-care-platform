@@ -203,7 +203,17 @@ async fn students_who_leave_lose_their_links_and_are_told() {
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["will_become_left"], 1);
     assert_eq!(c["preview"]["returning"], 1);
-    assert_eq!(c["preview"]["left_names"], serde_json::json!(["Old gone"]));
+    // Who leaves is in the stored head, not in the row (#134).
+    let head = h
+        .services()
+        .files
+        .get(&format!("roster-diff/{id}.head.json"))
+        .await
+        .unwrap()
+        .unwrap();
+    let head: serde_json::Value = serde_json::from_slice(&head).unwrap();
+    assert_eq!(head["leaving"][0]["name"], "Old gone");
+    assert_eq!(head["leaving"].as_array().unwrap().len(), 1);
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     assert_eq!(import_text(&h, &id, "state").await, "done");
