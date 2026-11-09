@@ -218,3 +218,37 @@ async fn a_held_schedule_edited_to_nobody_is_still_confirmable() {
     assert_eq!(cookie_flash(&b), "ok:announcements.flash.scheduled");
     assert_eq!(count(&w, QUEUED).await, 1);
 }
+
+#[tokio::test]
+async fn a_schedule_ahead_to_everyone_with_nobody_yet_has_the_plain_label() {
+    let w = boot().await;
+    student(
+        &w.h,
+        "s1",
+        "th",
+        "active",
+        r#"{"programme":"MSC","year":2}"#,
+    )
+    .await;
+    let b = signed_in(&w, "Officer").await;
+    let id = create(
+        &b,
+        &form("นัดหมาย", "พบอาจารย์", &format!("&scope=everyone{LATER}")),
+    )
+    .await;
+    let body = b
+        .get(&format!("/admin/announcements/{id}/review"))
+        .await
+        .body;
+    assert!(body.contains(NOTE_LATER), "{body}");
+    assert!(!body.contains("ส่งถึงทุกคน 0 คน"), "{body}");
+    assert!(!body.contains(r#"class="danger""#), "{body}");
+    assert!(
+        body.contains(r#"<button type="submit">ยืนยันส่ง</button>"#),
+        "{body}"
+    );
+    assert!(body.contains(r#"name="reach" value="0""#), "{body}");
+    confirm_reviewed(&b, &id).await;
+    assert_eq!(cookie_flash(&b), "ok:announcements.flash.scheduled");
+    assert_eq!(count(&w, QUEUED).await, 1);
+}

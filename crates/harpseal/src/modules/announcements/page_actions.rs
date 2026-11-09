@@ -120,6 +120,8 @@ pub(super) async fn confirm(
         Ok(r) => r,
         Err(resp) => return *resp,
     };
+    // One clock read for the checks and the send-now-or-schedule choice.
+    let now = s.services.now_ms();
     if row.status == "draft" {
         // The Audience counted once, for both checks.
         let c = match crate::audience::count(&s.deployment, &row.audience).await {
@@ -129,7 +131,6 @@ pub(super) async fn confirm(
         // Nobody to reach, for a send that goes now (#135): the review
         // step's button is disabled; a post that skips it is refused the
         // same way. A schedule still ahead resolves its recipients later.
-        let now = s.services.now_ms();
         if review::nobody(&c).is_some() && review::goes_now(&row, now) {
             return v.redirect(&to_review, false, "announcements.review.nobody_refused");
         }
@@ -138,7 +139,8 @@ pub(super) async fn confirm(
         }
     }
     let version = p.version;
-    let r = service::confirm(&s.deployment, &id, version, &Actor::staff(&staff), &ctx).await;
+    let actor = Actor::staff(&staff);
+    let r = service::confirm_at(&s.deployment, &id, version, &actor, &ctx, now).await;
     match r {
         Ok(true) => v.redirect(&back(&id), true, "announcements.flash.scheduled"),
         Ok(false) => v.redirect(&back(&id), true, "announcements.flash.sending"),

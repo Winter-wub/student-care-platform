@@ -235,10 +235,23 @@ pub(crate) async fn confirm(
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<bool> {
+    confirm_at(d, id, version, actor, ctx, d.services().now_ms()).await
+}
+
+/// [`confirm`] deciding "now or scheduled" at `now` (ms), the clock read
+/// the caller's own checks used (#135): a draft the review page refused to
+/// send now to nobody cannot turn into an immediate send between two reads.
+pub(crate) async fn confirm_at(
+    d: &Deployment,
+    id: &str,
+    version: i64,
+    actor: &Actor,
+    ctx: &RequestCtx,
+    now: i64,
+) -> Result<bool> {
     let s = d.services();
     let mut row = load_err(store::load(s, id).await?)?;
     row.version = version;
-    let now = s.now_ms();
     let later = row.send_at.filter(|t| *t > now);
     let (status, action) = match later {
         Some(_) => ("scheduled", "announcement.schedule"),

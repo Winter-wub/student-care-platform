@@ -115,7 +115,8 @@ pub async fn create_draft(
 ///
 /// The caller owns the confirmation: there is no review step, no recount
 /// of a send to everyone (#120) and no refusal of a send that reaches
-/// nobody (#135) here, only the Permission and the version. A page that calls this should show the reach first, as
+/// nobody (#135) here, only the Permission and the version. A page that
+/// calls this should show the reach first, as
 /// `/admin/announcements/{id}/review` does.
 pub async fn confirm(
     d: &Deployment,

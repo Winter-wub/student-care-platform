@@ -203,8 +203,14 @@ pub(super) async fn page(
                     (v.staff.csrf_field())
                     input type="hidden" name="version" value=(row.version);
                     input type="hidden" name=(REVIEWED) value="1";
-                    @if everyone {
+                    // A schedule ahead to everyone with nobody yet: the plain
+                    // label beside the caution note, never "ส่งถึงทุกคน 0
+                    // คน"; the reach still goes for the recount.
+                    @if everyone && empty.is_none() {
                         (everyone_button(&v, counts.students, live))
+                    } @else if everyone {
+                        input type="hidden" name=(REACH) value=(counts.students);
+                        button type="submit" { (v.t("announcements.review.confirm")) }
                     } @else {
                         button type="submit" { (v.t("announcements.review.confirm")) }
                     }
