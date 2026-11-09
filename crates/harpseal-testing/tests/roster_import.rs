@@ -129,7 +129,16 @@ async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
     let c = counts(&h, &full).await;
     assert_eq!(c["preview"]["will_become_left"], 9);
     assert_eq!(c["preview"]["warning"], true);
-    assert_eq!(c["preview"]["left_names"].as_array().unwrap().len(), 9);
+    // Who leaves is in the stored head, not in the row (#134).
+    let head = h
+        .services()
+        .files
+        .get(&format!("roster-diff/{full}.head.json"))
+        .await
+        .unwrap()
+        .unwrap();
+    let head: serde_json::Value = serde_json::from_slice(&head).unwrap();
+    assert_eq!(head["leaving"].as_array().unwrap().len(), 9);
     let page = b.get(&format!("/admin/roster/{full}")).await.body;
     assert!(page.contains("class=\"warn\""), "red warning");
     assert!(page.contains("นักศึกษา 12"), "names that will become left");
