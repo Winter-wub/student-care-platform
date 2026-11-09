@@ -16,14 +16,16 @@ Core refuses it unless the Deployment is built in dev mode
 - a Mini App token is refused (404), and a session signed in over the Fake
   Channel while the Deployment was in dev mode counts as none (the entry page);
 - the link flow never starts, and a Manual Link to it is refused;
-- nothing is sent to an existing Fake Link: it counts as unreachable, and an
-  Announcement's audience does not count it.
+- nothing is sent to an existing Fake Link: it counts as unreachable. An
+  Announcement's audience does not count it, and deliveries already queued
+  for it are skipped as `unreachable`, so the Announcement still finishes.
 
 A Fake Link that already exists still shows in the back office and can be
-revoked (#131); the revoke notice is skipped. Staff are not offered the Fake
-Channel either (no empty Link row, Manual Link option, usage card or Quota
-line). The refusal lives in one place, `Deployment::channel`, so a future
-dev-only Channel gets it too.
+revoked (#131), even where the Fake Channel is not registered at all (the
+example Worker). The revoke notice is skipped (Staff see "not notified"). Staff
+are not offered the Fake Channel either (no empty Link row, Manual Link option,
+usage card or Quota line). The refusal lives in one place,
+`Deployment::channel`, so a future dev-only Channel gets it too.
 
 Where dev mode is on:
 
@@ -37,6 +39,9 @@ Where dev mode is on:
 A strong `FAKE_SECRET` has at least 16 characters and is not `change-me`
 (`openssl rand -hex 16`). A customer Deployment registers LINE and Telegram
 and uses the Fake Channel only in tests.
+
+**Migrating to #133:** a test that builds its own Deployment with the Fake
+Channel needs `.dev(true)`. See the [testing guide](testing.md#the-harness).
 
 ## Writing an adapter
 

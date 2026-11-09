@@ -102,11 +102,30 @@ impl TestApp {
 
     /// Posts one signed webhook call carrying `events` to `/webhook/fake`,
     /// as the platform would.
+    ///
+    /// # Panics
+    ///
+    /// When the Deployment takes no traffic on the Fake Channel: built
+    /// without dev mode (#133) or without the Fake Channel. Use
+    /// [`TestApp::fake_webhook_raw`] to test that refusal.
     pub async fn fake_webhook(&self, events: impl IntoIterator<Item = Inbound>) -> TestResponse {
+        let kind = harpseal::Channel::kind(&self.fake);
+        self.assert_takes_traffic("fake_webhook", kind.as_str());
         let events: Vec<Inbound> = events.into_iter().collect();
         let body = FakeChannel::encode(&events);
         let signature = self.fake.sign(&body);
         self.fake_webhook_raw(body, &signature).await
+    }
+
+    /// Panics, naming the fix, unless the Deployment takes traffic on the
+    /// Fake Channel `kind` (#133).
+    pub(crate) fn assert_takes_traffic(&self, helper: &str, kind: &str) {
+        assert!(
+            self.deployment.channel(kind).is_some(),
+            "{helper}: this Deployment refuses the Fake Channel `{kind}` (a dev-only Channel \
+             takes traffic only in dev mode, #133): build it with Harness::builder() or add \
+             .dev(true) (or register the Fake Channel); to test the refusal, use the _raw variant"
+        );
     }
 
     /// Posts `body` to `/webhook/fake` with `signature` as is (for bad

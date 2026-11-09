@@ -63,7 +63,9 @@ npx wrangler@4 secret put FAKE_SECRET    # at least 16 characters, not change-me
 # wrangler.toml [vars]: HARPSEAL_FAKE_DEMO = "1"
 ```
 
-With `HARPSEAL_FAKE_DEMO = "1"` the Worker registers the Fake Channel and is
+Any value other than `"1"` or unset (`"0"` and empty are off too) refuses to
+start, so a typo never turns the demo on or off silently. With
+`HARPSEAL_FAKE_DEMO = "1"` the Worker registers the Fake Channel and is
 built in dev mode (`DeploymentBuilder::dev(true)`), so the Fake Channel takes
 traffic and Staff see it. It refuses to start with a weaker `FAKE_SECRET`, and
 whoever holds the secret can sign in as any Student who links over it. Use it

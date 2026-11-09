@@ -175,6 +175,8 @@ pub enum StartError {
     /// A hosted Fake demo ([`FAKE_DEMO_VAR`]) without a strong
     /// `FAKE_SECRET` ([`check_fake_secret`]).
     WeakFakeSecret(String),
+    /// [`FAKE_DEMO_VAR`] is neither `"1"` nor unset ([`fake_demo`]).
+    FakeDemo(String),
     /// A LINE Channel with real credentials has no usable rich menu image,
     /// or a `LINE_MENU_IMAGE_*` file could not be read.
     MenuImages(String),
@@ -188,7 +190,7 @@ impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
-            StartError::WeakFakeSecret(m) => write!(f, "{m}"),
+            StartError::WeakFakeSecret(m) | StartError::FakeDemo(m) => write!(f, "{m}"),
             StartError::MenuImages(m) => write!(f, "LINE rich menu images: {m}"),
             StartError::Build(e) => write!(f, "{e}"),
             StartError::PublicUrl(e) => write!(f, "HARPSEAL_PUBLIC_URL: {e}"),
@@ -207,6 +209,19 @@ pub const MIN_FAKE_SECRET_CHARS: usize = 16;
 /// The documented placeholder `FAKE_SECRET`, refused wherever the Fake
 /// Channel takes traffic.
 pub const PLACEHOLDER_FAKE_SECRET: &str = "change-me";
+
+/// The value of [`FAKE_DEMO_VAR`]: unset, empty or `"0"` is off, `"1"` is
+/// on; anything else refuses to start ([`StartError::FakeDemo`]), so a
+/// typo never silently turns the demo on or off.
+pub fn fake_demo(value: Option<&str>) -> Result<bool, StartError> {
+    match value.map(str::trim) {
+        None | Some("" | "0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(StartError::FakeDemo(format!(
+            "{FAKE_DEMO_VAR} must be \"1\" (on) or unset (off), not {other:?}"
+        ))),
+    }
+}
 
 /// Whether `secret` is strong enough for a Fake Channel that takes
 /// traffic: at least [`MIN_FAKE_SECRET_CHARS`] characters and not

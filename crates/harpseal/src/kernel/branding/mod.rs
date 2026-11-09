@@ -52,7 +52,7 @@ use crate::port_types::{Statement, Value};
 use crate::{AppState, Result, Services};
 
 pub(crate) use relock::RELOCK;
-pub(crate) use store::{drawn, drawn_all, names_file};
+pub(crate) use store::{drawn, drawn_all, names_file, resume_at};
 
 /// The display name.
 pub(crate) const NAME_KEY: &str = "kernel.branding.name";

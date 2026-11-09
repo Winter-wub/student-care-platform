@@ -112,7 +112,7 @@ async fn outside_dev_mode_the_estimate_lists_neither_a_dev_only_channels_reach_n
         .post("/admin/announcements/audience", "scope=everyone")
         .await;
     assert_eq!(c.status, 200);
-    assert!(!c.body.contains("fake: 1"), "{}", c.body);
+    assert!(!c.body.contains("fake"), "no Fake count at all: {}", c.body);
     assert!(!c.body.contains("month-used"), "{}", c.body);
     assert!(!c.body.contains("245"), "{}", c.body);
 }

@@ -153,6 +153,12 @@ impl Browser<'_> {
     /// [`FakeChannel::mini_app_token`] for `external_id` and `next` to
     /// `/app/session`, and keeps the App Session cookie. Returns the POST's
     /// response (303 to `next` on success).
+    ///
+    /// # Panics
+    ///
+    /// When the Deployment takes no traffic on the Fake Channel: built
+    /// without dev mode (#133) or without it. Use
+    /// [`Browser::open_mini_app_raw`] to test that refusal.
     pub async fn open_mini_app(
         &self,
         fake: &FakeChannel,
@@ -160,6 +166,8 @@ impl Browser<'_> {
         next: &str,
     ) -> TestResponse {
         let kind = harpseal::Channel::kind(fake);
+        self.app
+            .assert_takes_traffic("open_mini_app", kind.as_str());
         let token = fake.mini_app_token(external_id);
         self.open_mini_app_raw(kind.as_str(), &token, next).await
     }

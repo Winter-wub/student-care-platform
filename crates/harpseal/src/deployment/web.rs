@@ -22,9 +22,10 @@ impl Deployment {
     ///   status, or the platform would resend the whole call), 401 on a bad
     ///   signature, 400 when the body cannot be parsed, 404 for an unknown
     ///   Channel or one that takes no traffic (a [`crate::Channel::dev_only`]
-    ///   Channel outside dev, #133), before anything is read or recorded. When the request carries a [`crate::Background`]
-    ///   extension (both runtimes add one), the 200 comes right after the
-    ///   events are claimed and the handling runs on it, independent of the
+    ///   Channel outside dev, #133), before anything is read or recorded.
+    ///   When the request carries a [`crate::Background`] extension (both
+    ///   runtimes add one), the 200 comes right after the events are
+    ///   claimed and the handling runs on it, independent of the
     ///   connection ([`Deployment::accept_webhook`]); without one the
     ///   events are handled before the answer;
     /// - `GET /static/app.css`: the shared stylesheet;
@@ -183,6 +184,30 @@ impl Deployment {
             .filter(|c| self.takes(c.as_ref()))
             .map(|c| c.kind())
             .collect()
+    }
+
+    /// The Channel kinds a Student's Links card or list row shows (#131,
+    /// #133): every kind offered to Staff, plus the Channel of each of the
+    /// Student's live Links (`live`) even when it is not offered (dev-only
+    /// outside dev) or not registered here at all (the example Worker has
+    /// no Fake Channel), so an existing Link always shows and can be
+    /// revoked. Registration order, then unregistered kinds as they come.
+    pub(crate) fn link_kinds<'a>(&self, live: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        let live: Vec<&str> = live.into_iter().collect();
+        let offered = self.staff_channel_kinds();
+        let mut out: Vec<String> = self
+            .channels
+            .iter()
+            .map(|c| c.kind())
+            .filter(|k| offered.contains(k) || live.contains(&k.as_str()))
+            .map(|k| k.as_str().to_string())
+            .collect();
+        for k in live {
+            if !out.iter().any(|o| o == k) {
+                out.push(k.to_string());
+            }
+        }
+        out
     }
 
     /// Whether Channel `kind` is one of [`Self::staff_channel_kinds`].

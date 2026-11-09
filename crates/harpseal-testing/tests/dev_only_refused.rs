@@ -10,7 +10,7 @@ mod support;
 use axum::body::Body;
 use harpseal::{ActionId, Inbound, Statement};
 use harpseal_channel_fake::FakeChannel;
-use harpseal_testing::{Harness, TestApp};
+use harpseal_testing::{Harness, TestApp, TestResponse};
 use http::Request;
 use support::{Chat, ROSTER};
 
@@ -59,6 +59,20 @@ fn link_flow_start(who: &str) -> Vec<Inbound> {
     ]
 }
 
+/// `ev`, signed with the Fake Channel's own secret, posted as is (the
+/// `fake_webhook` helper refuses a Deployment that refuses the Channel).
+async fn signed(h: &Harness, app: &TestApp, ev: Inbound) -> TestResponse {
+    let body = FakeChannel::encode(&[ev]);
+    let signature = h.fake_channel().sign(&body);
+    app.fake_webhook_raw(body, &signature).await
+}
+
+/// Opens the Mini App for `who` with a valid Fake token, posted as is.
+async fn sign_in(h: &Harness, b: &harpseal_testing::Browser<'_>, who: &str) -> TestResponse {
+    let token = h.fake_channel().mini_app_token(who);
+    b.open_mini_app_raw("fake", &token, "/app").await
+}
+
 #[tokio::test]
 async fn outside_dev_mode_a_signed_fake_webhook_is_404_and_records_nothing() {
     let h = Harness::new();
@@ -66,7 +80,7 @@ async fn outside_dev_mode_a_signed_fake_webhook_is_404_and_records_nothing() {
     let before = records(&app).await;
     for ev in link_flow_start("u1") {
         // Signed with the Channel's own secret: still refused.
-        assert_eq!(app.fake_webhook([ev]).await.status, 404);
+        assert_eq!(signed(&h, &app, ev).await.status, 404);
     }
     assert_eq!(records(&app).await, before, "nothing recorded");
     assert!(h.fake_channel().sent().is_empty(), "nothing sent");
@@ -95,7 +109,7 @@ async fn outside_dev_mode_a_valid_mini_app_token_signs_no_one_in() {
     let app = boot(&h, false).await;
     let before = records(&app).await;
     let b = app.browser();
-    let r = b.open_mini_app(&h.fake_channel(), "u1", "/app").await;
+    let r = sign_in(&h, &b, "u1").await;
     assert_eq!(r.status, 404, "{}", r.body);
     assert!(b.cookie("app_session").is_none());
     assert_eq!(records(&app).await, before, "nothing recorded");
@@ -124,6 +138,8 @@ async fn a_session_signed_in_during_dev_mode_counts_as_none_outside_it() {
     let r = app.request(req).await;
     assert_eq!(r.status, 200, "the entry page");
     assert!(!r.body.contains("Nok Thale"), "{}", r.body);
+    // Deleted, not kept alive.
+    assert_eq!(app.count("SELECT count(*) FROM app_session").await, 0);
 }
 
 #[tokio::test]
@@ -145,4 +161,22 @@ async fn outside_dev_mode_nothing_is_sent_to_an_existing_fake_link() {
         .await;
     assert!(sent.is_err(), "{sent:?}");
     assert!(h.fake_channel().sent().is_empty());
+}
+
+#[tokio::test]
+#[should_panic(expected = "add .dev(true)")]
+async fn the_harness_helpers_name_the_fix_when_the_fake_channel_is_refused() {
+    let h = Harness::new();
+    let app = boot(&h, false).await;
+    app.fake_webhook(link_flow_start("u1")).await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "Harness::builder()")]
+async fn open_mini_app_names_the_fix_when_the_fake_channel_is_refused() {
+    let h = Harness::new();
+    let app = boot(&h, false).await;
+    app.browser()
+        .open_mini_app(&h.fake_channel(), "u1", "/app")
+        .await;
 }
