@@ -466,23 +466,26 @@ on the pages where they do them.
   new announcement where Staff choose the Audience themselves, since a
   roster file cannot name it exactly. A Module import that names its
   Students (the example's fees upload) prefills the Audience with exactly
-  them. Nothing is saved or sent by opening it: the draft goes through the
+  those student codes, once its Job has written the balances (before
+  that, the page says the import is queued or failed). Nothing is saved or sent by opening it: the draft goes through the
   usual review. Staff without `announcements.send` see only the way back.
 - **Empty lists** say what goes there and offer the one action that fills
   it, only to Staff holding its Permission: Students (import the roster),
   announcements (write one), Staff while only the first account exists
   (add Staff), roster imports, and the audit log and Security Events. A
   search or filter that matches nothing says so and offers to clear it.
-- **First run.** The home shows "เริ่มต้นใช้งาน" above the status ledger
-  while any of its steps is left: set the branding, import the roster,
-  add other Staff, send the first announcement. Each links to its page and
-  ticks itself from data the Deployment already keeps (a branding setting
-  saved on `/admin/branding`, any Student, a second Staff account, an
-  announcement past its draft); there is no table of its own and nothing
-  to dismiss. A step the Staff member has no Permission for is not shown,
-  and the block goes away once every step shown is done. A Deployment
-  whose branding comes only from `[branding]` in the TOML keeps the
-  branding step until someone saves it on `/admin/branding`.
+- **First run.** While the Deployment is fresh, which means **no Student
+  yet**, the home shows "เริ่มต้นใช้งาน" above the status ledger: set the
+  branding, import the roster, add other Staff, send the first
+  announcement. Once any Student exists (imported or added by hand) it is
+  never shown, so established Deployments do not see it. Each step links
+  to its page and ticks itself from data the Deployment already keeps:
+  branding set in `[branding]` (any value other than the default) or
+  saved on `/admin/branding`, a second Staff account, an announcement
+  sending or sent. There is no table of its own and nothing to dismiss. A
+  step the Staff member has no Permission for is not shown, nor the
+  roster step where `[roster]` maps no file. If its query fails, the
+  block says it could not be read, as a status card does.
 - **The announcement editor** says what its previews will show before
   anything is typed, instead of an empty card.
 

@@ -46,15 +46,6 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.mode_full", "ทั้งทะเบียน", "Whole roster"),
     ("kernel.roster.mode_upsert", "เพิ่ม/แก้ไข", "Add/update"),
     ("kernel.roster.check", "ตรวจไฟล์", "Check the file"),
-    (
-        "kernel.roster.expected",
-        "หัวคอลัมน์ที่ไฟล์ต้องมี",
-        "Headers the file must have"
-    ),
-    ("kernel.roster.header", "หัวคอลัมน์", "Header"),
-    ("kernel.roster.holds", "ข้อมูล", "Holds"),
-    ("kernel.roster.optional", "เว้นว่างได้", "May be empty"),
-    ("kernel.roster.required", "ต้องมีค่า", "Required"),
     ("kernel.roster.one_of", "หนึ่งใน", "One of"),
     ("kernel.roster.separator", "คั่นด้วย", "Separated by"),
     (
@@ -64,7 +55,6 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     // List
     ("kernel.roster.recent", "การนำเข้าล่าสุด", "Recent imports"),
-    ("kernel.roster.none", "ยังไม่มีการนำเข้า", "No imports yet"),
     ("kernel.roster.when", "เมื่อ", "When"),
     ("kernel.roster.who", "โดย", "By"),
     ("kernel.roster.state", "สถานะ", "State"),

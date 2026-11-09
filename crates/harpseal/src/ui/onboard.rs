@@ -6,10 +6,15 @@ use maud::{Markup, html};
 
 use crate::{CurrentStaff, PageState};
 
-/// Hand-picked Students a "แจ้งนักศึกษา" link names at most. Above it the
-/// draft names no Audience (the form asks Staff to choose): a longer query
-/// string would pass Cloudflare's URL limit.
+/// Students a "แจ้งนักศึกษา" link names at most. The link is a URL, so a
+/// longer list (or a query over [`MAX_PREFILL_QUERY`]) names no one and
+/// Staff choose the Audience on the form. A limit of the link only: the
+/// form takes any list Staff paste.
 pub const MAX_PREFILL: usize = 1000;
+/// Longest query string a "แจ้งนักศึกษา" link carries, in bytes once
+/// encoded: well inside the URL limits of browsers, proxies and
+/// Cloudflare (16 KB).
+pub const MAX_PREFILL_QUERY: usize = 7 * 1024;
 
 /// One column as the help panel lists it.
 pub(crate) struct HelpColumn {
@@ -96,7 +101,8 @@ pub(crate) fn upload_panel(
 /// [`crate::MAX_UPLOAD_BYTES`], CSV saved as UTF-8) and, when the Module
 /// declared them with [`crate::ModuleRegistrar::sheet_columns`], each
 /// column with its label, whether it may be empty and an example, and the
-/// link to the CSV template.
+/// link to the CSV template (only for Staff holding the upload's
+/// Permission).
 pub fn upload_help(s: &PageState, staff: &CurrentStaff, path: &str) -> Markup {
     let declared = s.deployment.upload_columns(path).unwrap_or_default();
     let columns: Vec<HelpColumn> = declared
@@ -108,7 +114,13 @@ pub fn upload_help(s: &PageState, staff: &CurrentStaff, path: &str) -> Markup {
             example: c.example.to_string(),
         })
         .collect();
-    let template = (!columns.is_empty()).then(|| crate::module::template_path(path));
+    // The template is served behind the upload's Permission: no link for
+    // Staff who would get a 403.
+    let may = s
+        .deployment
+        .back_office_permission(path)
+        .is_some_and(|p| staff.can(p));
+    let template = (may && !columns.is_empty()).then(|| crate::module::template_path(path));
     html! {
         aside class="card" aria-label=(s.catalog.t(&staff.locale, "kernel.upload.help_title")) {
             (upload_panel(s, staff, &columns, template.as_deref(), false))
@@ -139,16 +151,34 @@ pub fn no_match(text: &str, clear: (&str, &str)) -> Markup {
     }
 }
 
-/// The new-announcement form for `students` (student IDs): the Audience is
-/// those Students when there are 1 to [`MAX_PREFILL`] of them, else none
-/// is chosen. Nothing is sent from it without the usual review.
+/// The new-announcement form for `students` (student codes, repeats
+/// dropped in order): the Audience is those Students when there are 1 to
+/// [`MAX_PREFILL`] of them and the query fits [`MAX_PREFILL_QUERY`], else
+/// the bare form, where Staff choose. Nothing is sent from it without the
+/// usual review.
 pub fn announce_href(students: &[String]) -> String {
-    const NEW: &str = "/admin/announcements/new";
-    if students.is_empty() || students.len() > MAX_PREFILL {
-        return NEW.to_string();
+    prefill(students).unwrap_or_else(|| NEW_ANNOUNCEMENT.to_string())
+}
+
+const NEW_ANNOUNCEMENT: &str = "/admin/announcements/new";
+
+/// The prefilled link, or `None` when it names no one.
+fn prefill(students: &[String]) -> Option<String> {
+    let mut seen = std::collections::HashSet::new();
+    let codes: Vec<&String> = students.iter().filter(|c| seen.insert(*c)).collect();
+    if codes.is_empty() || codes.len() > MAX_PREFILL {
+        return None;
     }
-    let list: Vec<String> = students.iter().map(|id| query_escape(id)).collect();
-    format!("{NEW}?scope=students&students={}", list.join("+"))
+    let list: Vec<String> = codes.iter().map(|c| query_escape(c)).collect();
+    let query = format!("scope=students&students={}", list.join("+"));
+    (query.len() <= MAX_PREFILL_QUERY).then(|| format!("{NEW_ANNOUNCEMENT}?{query}"))
+}
+
+/// How many different Students `students` names, if a link can carry them.
+fn named(students: &[String]) -> Option<usize> {
+    prefill(students)?;
+    let distinct: std::collections::HashSet<&String> = students.iter().collect();
+    Some(distinct.len())
 }
 
 fn query_escape(s: &str) -> String {
@@ -163,8 +193,8 @@ fn query_escape(s: &str) -> String {
 }
 
 /// The step after a confirmed import (#127): "แจ้งนักศึกษา", a draft
-/// announcement to `students` (see [`announce_href`]; empty: Staff choose
-/// the Audience), for Staff who may send announcements, and the way back
+/// announcement to `students` (student codes; see [`announce_href`]:
+/// empty, or too many for a link, and Staff choose the Audience), for Staff who may send announcements, and the way back
 /// (`(label, href)`). The draft goes through the usual review before
 /// anything is sent.
 pub fn next_step(
@@ -176,14 +206,13 @@ pub fn next_step(
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let may = staff.can(crate::modules::announcements::SEND_PERMISSION)
         && s.deployment.has_back_office("/announcements/new");
-    let named = !students.is_empty() && students.len() <= MAX_PREFILL;
-    let n = crate::ui::number(students.len());
+    let named = named(students);
     html! {
         section class="card next-step" id="next-step" {
             h2 { (t("kernel.next.title")) }
             @if may {
-                p { @if named {
-                    (s.catalog.tf(&staff.locale, "kernel.next.named", &[("n", &n)]))
+                p { @if let Some(n) = named {
+                    (s.catalog.tf(&staff.locale, "kernel.next.named", &[("n", &crate::ui::number(n))]))
                 } @else {
                     (t("kernel.next.choose"))
                 } }

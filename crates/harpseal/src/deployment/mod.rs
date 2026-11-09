@@ -269,10 +269,15 @@ impl Deployment {
 
     /// Whether some Module registered the back-office route `/admin{path}`.
     pub(crate) fn has_back_office(&self, path: &str) -> bool {
-        self.registry
-            .back_office
-            .iter()
-            .any(|(_, _, p, _)| *p == path)
+        self.back_office_permission(path).is_some()
+    }
+
+    /// The Permission guarding the back-office route `/admin{path}`.
+    pub(crate) fn back_office_permission(&self, path: &str) -> Option<&'static str> {
+        let mut routes = self.registry.back_office.iter();
+        routes
+            .find(|(_, _, p, _)| *p == path)
+            .map(|(_, perm, _, _)| *perm)
     }
 
     /// The `/admin` home's status cards, sorted (#123).

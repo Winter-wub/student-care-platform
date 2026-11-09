@@ -22,7 +22,6 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ("kernel.admin.filter", "กรอง", "Filter"),
     ("kernel.admin.clear", "ล้างตัวกรอง", "Clear"),
     ("kernel.admin.total", "ทั้งหมด", "Total"),
-    ("kernel.admin.none", "ไม่พบรายการ", "Nothing found"),
     ("kernel.admin.prev", "ก่อนหน้า", "Previous"),
     ("kernel.admin.next", "ถัดไป", "Next"),
     ("kernel.admin.page", "หน้า", "Page"),

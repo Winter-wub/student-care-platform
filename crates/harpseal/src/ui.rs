@@ -32,7 +32,9 @@ mod shell;
 mod thai;
 
 pub(crate) use onboard::{HelpColumn, upload_panel};
-pub use onboard::{MAX_PREFILL, announce_href, empty_state, next_step, no_match, upload_help};
+pub use onboard::{
+    MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
+};
 pub(crate) use onboard_texts::TEXTS as ONBOARD_TEXTS;
 
 pub use thai::{

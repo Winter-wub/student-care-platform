@@ -6,7 +6,7 @@
 use axum::body::Body;
 use axum::http::{Request, header};
 use example_deployment::{Secrets, builder, fees};
-use harpseal::Statement;
+use harpseal::{Statement, Timestamp};
 use harpseal_testing::{Browser, Harness, TestApp, TestResponse};
 
 const PASSWORD: &str = "kelp forest at dawn";
@@ -103,24 +103,53 @@ async fn the_upload_form_has_the_declared_columns_and_template_beside_it() {
     assert_eq!(t.body, "\u{feff}รหัสนักศึกษา,ชื่อ-สกุล,ยอดค้างชำระ\r\n");
 }
 
+/// Runs the queued Jobs once.
+async fn tick(h: &Harness, app: &TestApp) {
+    let report = app
+        .deployment()
+        .tick(Timestamp(h.clock().now_ms()))
+        .await
+        .unwrap();
+    assert_eq!(report.failed, 0, "{:?}", report.errors);
+}
+
+/// The next-step card, if any.
+fn next_step(page: &str) -> Option<String> {
+    let at = page.find("id=\"next-step\"")?;
+    Some(page[at..at + page[at..].find("</section>").unwrap()].to_string())
+}
+
 #[tokio::test]
-async fn a_confirmed_upload_offers_a_draft_to_the_students_in_the_file() {
+async fn the_result_survives_the_job_and_offers_the_next_step_only_once_imported() {
     let h = Harness::new();
     let app = boot(&h).await;
     let b = signed_in(&h, &app, "Administrator").await;
     let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
-    let before = b.get(&path).await.body;
-    assert!(
-        !before.contains("id=\"next-step\""),
+    assert_eq!(
+        next_step(&b.get(&path).await.body),
+        None,
         "not before the confirm"
     );
     let r = b.post(&format!("{path}/confirm"), "").await;
     assert_eq!(r.status, 303, "{}", r.body);
     assert_eq!(r.header("location"), Some(path.as_str()), "the result page");
+    // Queued: it says so, and offers nothing before the balances exist.
     let page = b.get(&path).await.body;
-    assert!(page.contains("id=\"queued\""), "{page}");
-    let at = page.find("id=\"next-step\"").expect("the next step");
-    let next = &page[at..at + page[at..].find("</section>").unwrap()];
+    assert!(
+        page.contains("id=\"queued\"") && page.contains("id=\"pending\""),
+        "{page}"
+    );
+    assert_eq!(next_step(&page), None, "{page}");
+    // The Job imports and deletes the kept upload; the page still answers.
+    tick(&h, &app).await;
+    assert_eq!(
+        count(&h, "SELECT COUNT(*) AS n FROM module_upload").await,
+        0
+    );
+    let r = b.get(&path).await;
+    assert_eq!(r.status, 200, "{}", r.body);
+    assert!(r.body.contains("นำเข้ายอดค้างชำระ 2 รายการแล้ว"), "{}", r.body);
+    let next = next_step(&r.body).expect("the next step once imported");
     let href = "/admin/announcements/new?scope=students&amp;students=68010001+68010002";
     assert!(
         next.contains(&format!("href=\"{href}\">แจ้งนักศึกษา</a>")),
@@ -131,11 +160,31 @@ async fn a_confirmed_upload_offers_a_draft_to_the_students_in_the_file() {
         next.contains(&format!("href=\"{}\">กลับไปหน้ายอดค้างชำระ</a>", fees::BASE)),
         "back: {next}"
     );
+    // A reload later still answers the same.
+    assert_eq!(b.get(&path).await.status, 200);
     // The link opens a draft with exactly those Students; nothing is sent.
     let form = b.get(&href.replace("&amp;", "&")).await.body;
     assert!(form.contains(">68010001\n68010002</textarea>"), "{form}");
     let none = "SELECT COUNT(*) AS n FROM announcement";
     assert_eq!(count(&h, none).await, 0);
+}
+
+#[tokio::test]
+async fn a_later_file_replacing_some_balances_leaves_the_audience_to_staff() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let b = signed_in(&h, &app, "Administrator").await;
+    let first = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
+    b.post(&format!("{first}/confirm"), "").await;
+    tick(&h, &app).await;
+    let later = "รหัสนักศึกษา,ชื่อ-สกุล,ยอดค้างชำระ\n68010002,ปลาทอง อ่าวคราม,100\n";
+    let second = preview_path(&upload(&b, "later.csv", later.as_bytes()).await);
+    b.post(&format!("{second}/confirm"), "").await;
+    tick(&h, &app).await;
+    let page = b.get(&first).await.body;
+    assert!(page.contains("id=\"superseded\""), "{page}");
+    let next = next_step(&page).expect("the next step");
+    assert!(next.contains("href=\"/admin/announcements/new\""), "{next}");
 }
 
 #[tokio::test]
@@ -145,9 +194,8 @@ async fn finance_without_announcements_gets_only_the_way_back() {
     let b = signed_in(&h, &app, "Finance").await;
     let path = preview_path(&upload(&b, "fees.csv", FEES_CSV.as_bytes()).await);
     b.post(&format!("{path}/confirm"), "").await;
-    let page = b.get(&path).await.body;
-    let at = page.find("id=\"next-step\"").expect("the next step");
-    let next = &page[at..at + page[at..].find("</section>").unwrap()];
+    tick(&h, &app).await;
+    let next = next_step(&b.get(&path).await.body).expect("the next step");
     assert!(!next.contains("/admin/announcements/new"), "{next}");
     assert!(next.contains(&format!("href=\"{}\"", fees::BASE)), "{next}");
 }

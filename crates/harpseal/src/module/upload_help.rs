@@ -72,9 +72,10 @@ impl ModuleRegistrar {
     /// With columns, the Core serves `GET /admin{path}/template.csv` (the
     /// header row, UTF-8 with a BOM so Excel reads Thai) to Staff holding
     /// the upload's Permission, and `ui::upload_help` lists the columns
-    /// with their labels and examples. `build()` refuses columns for a
-    /// path with no `sheet_upload` in the same Module
-    /// ([`crate::BuildError::InvalidRoute`]), a template path another
+    /// with their labels and examples. `path` has no parameters. `build()`
+    /// refuses columns for a path with no `sheet_upload` in the same
+    /// Module (also a path registered with `back_office` instead) or with a
+    /// parameter ([`crate::BuildError::InvalidRoute`]), a template path another
     /// route already takes ([`crate::BuildError::DuplicateRoute`]) and an
     /// unknown `label_key` ([`crate::BuildError::UnknownText`]).
     pub fn sheet_columns(
@@ -84,7 +85,9 @@ impl ModuleRegistrar {
     ) -> &mut Self {
         match self.uploads.iter_mut().find(|u| u.path == path) {
             Some(u) => u.columns = Some(columns),
-            // Kept so `build()` can refuse it with the Module's name.
+            // A placeholder `sheet_upload` takes over; `build()` refuses
+            // one still left (with the Module's name), so its 0 never
+            // becomes a body limit.
             None => self.uploads.push(super::UploadSpec {
                 path,
                 max_body: 0,
@@ -128,15 +131,14 @@ fn template(path: &str, columns: &[UploadColumn]) -> Response {
     resp
 }
 
-/// Whether the registered upload routes of one Module hold every path that
-/// has columns: the first that does not, else `None`.
-pub(crate) fn orphan_columns(
-    uploads: &[super::UploadSpec],
-    back_office: &[(&'static str, &'static str, MethodRouter<AppState>)],
-) -> Option<&'static str> {
+/// The first path of one Module's declared columns that `build()` must
+/// refuse: one with no [`ModuleRegistrar::sheet_upload`] (columns waiting
+/// in a placeholder, or set on another kind of upload) or with a
+/// parameter (its template would need one too); else `None`.
+pub(crate) fn orphan_columns(uploads: &[super::UploadSpec]) -> Option<&'static str> {
     uploads
         .iter()
         .filter(|u| u.columns.is_some())
+        .find(|u| u.max_body != super::upload::UPLOAD_BODY_LIMIT || u.path.contains('{'))
         .map(|u| u.path)
-        .find(|p| !back_office.iter().any(|(_, bp, _)| bp == p))
 }

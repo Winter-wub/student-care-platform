@@ -485,10 +485,11 @@ Each column is its header as it must appear in the file, the catalog key
 of what it holds in Staff's words, whether every row must fill it, and a
 fictional example value (empty for none). With columns, the Core serves
 `GET /admin/grades/upload/template.csv` (the header row, UTF-8 with a BOM)
-to Staff holding the upload's Permission. `build()` refuses columns for a
-path with no `sheet_upload` in the same Module (`InvalidRoute`), a
-template path another route already takes (`DuplicateRoute`) and an
-unknown label key (`UnknownText`).
+to Staff holding the upload's Permission. The path has no parameters.
+`build()` refuses columns for a path with no `sheet_upload` in the same
+Module (also one registered with `back_office` instead) or with a
+parameter (`InvalidRoute`), a template path another route already takes
+(`DuplicateRoute`) and an unknown label key (`UnknownText`).
 
 Put the panel beside the form, the roster's layout:
 
@@ -501,23 +502,41 @@ div class="cols" {
 
 `ui::upload_help` draws a card with the file rules (CSV or XLSX, at most
 4 MB, CSV saved as UTF-8), each declared column (header, label, "ต้องมีค่า"
-or "เว้นว่างได้", the example) and the template link. `.cols` puts it
+or "เว้นว่างได้", the example) and the template link, shown only to Staff
+holding the upload's Permission. `.cols` puts it
 beside the form from an 860 px content width and under it on a phone.
 
-After a confirm, show the result with the next step:
+Offer the next step on the result page **once the import Job has
+written its rows**, not right after the confirm: until then say the
+import is queued (or that it failed). Read that result from the Module's
+own tables, keyed by the upload id: the Job's `KeptUpload::finish`
+deletes the kept upload, so `uploads.open(&id)` finds nothing on a reload
+after the next tick. The example keeps one `fees_import` row per upload
+(written in the Job's batch) and the upload id on each balance:
 
 ```rust
-let named: Vec<String> = parsed.rows.iter().map(|r| r.code.clone()).collect();
-(harpseal::ui::next_step(&s, &staff, &named, ("กลับไปหน้าผลการเรียน", "/admin/grades")))
+// GET /admin/grades/{id}
+if let Some(done) = imported(&s, &id).await? {      // your table, by upload id
+    let back = s.catalog.t(&staff.locale, "grades.back_to_list");
+    return page(html! {
+        div class="flash ok" { … }
+        (harpseal::ui::next_step(&s, &staff, &done.student_codes, (&back, "/admin/grades")))
+    });
+}
+// Not imported yet: the kept upload's preview, "queued" or "failed".
 ```
 
-It offers "แจ้งนักศึกษา" to Staff holding `announcements.send` (when the
-Announcements Module is mounted): a new announcement whose Audience is
-exactly those Students (`ui::announce_href`, at most `ui::MAX_PREFILL`, a
-thousand; above that, or with an empty list, Staff choose the Audience
-themselves). Nothing is saved or sent by the link: the draft goes through
-the usual review. The way back is always there. Pass an empty list when
-the file cannot name its Students exactly.
+`next_step` offers "แจ้งนักศึกษา" to Staff holding `announcements.send`
+(when the Announcements Module is mounted): a new announcement whose
+Audience is exactly those student codes (`ui::announce_href`; repeats
+are dropped). A link is a URL, so it names Students only up to
+`ui::MAX_PREFILL` (a thousand) codes and `ui::MAX_PREFILL_QUERY` (7 KB)
+of query; above either, or with an empty list, Staff choose the Audience
+themselves on the form, which takes any list they paste. Nothing is saved
+or sent by the link: the draft goes through the usual review. The way
+back is always there. Pass an empty list when the file cannot name its
+Students exactly (the example does when a later file replaced some of its
+balances).
 
 For a Module's list with nothing yet, use `ui::empty_state(text,
 Some((label, href)))`: one sentence on what goes there and the action that

@@ -36,6 +36,39 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     ),
     CatalogEntry::new("fees.back_to_list", "th", "กลับไปหน้ายอดค้างชำระ"),
     CatalogEntry::new("fees.back_to_list", "en", "Back to outstanding fees"),
+    // The result once imported, and the wait before it (#127).
+    CatalogEntry::new("fees.imported_title", "th", "นำเข้ายอดค้างชำระแล้ว"),
+    CatalogEntry::new("fees.imported_title", "en", "Outstanding fees imported"),
+    CatalogEntry::new(
+        "fees.imported",
+        "th",
+        "นำเข้ายอดค้างชำระ {n} รายการแล้ว เมื่อ {time}",
+    ),
+    CatalogEntry::new(
+        "fees.imported",
+        "en",
+        "{n} balances were imported on {time}.",
+    ),
+    CatalogEntry::new(
+        "fees.pending",
+        "th",
+        "แจ้งนักศึกษาได้เมื่อนำเข้าเสร็จ โหลดหน้านี้ใหม่อีกครั้งในอีกสักครู่",
+    ),
+    CatalogEntry::new(
+        "fees.pending",
+        "en",
+        "You can tell Students once the import is done. Reload this page in a moment.",
+    ),
+    CatalogEntry::new(
+        "fees.superseded",
+        "th",
+        "ยอดของนักศึกษาบางคนในไฟล์นี้ถูกแทนด้วยไฟล์ที่นำเข้าภายหลัง จึงต้องเลือกกลุ่มผู้รับเอง",
+    ),
+    CatalogEntry::new(
+        "fees.superseded",
+        "en",
+        "A later file replaced some of these balances, so choose the Audience yourself.",
+    ),
     CatalogEntry::new("fees.check", "th", "ตรวจไฟล์"),
     CatalogEntry::new("fees.check", "en", "Check the file"),
     CatalogEntry::new("fees.stored", "th", "ยอดที่บันทึกไว้"),

@@ -15,13 +15,16 @@
 //! 4. `POST …/confirm` re-reads the kept file ([`Uploads::open`] refuses
 //!    one whose hash changed), pins it for the Job ([`Uploads::confirm`]:
 //!    kept a week instead of the rest of the 24 hours) and enqueues the Job
-//!    `fees.import`, then shows the preview again with the next step:
-//!    "แจ้งนักศึกษา", a draft announcement to the Students in the file
-//!    (#127); `POST …/cancel` deletes it ([`Uploads::discard`]).
+//!    `fees.import`, then shows the preview again, saying it is queued;
+//!    `POST …/cancel` deletes it ([`Uploads::discard`]).
 //! 5. The Job reads it once more ([`KeptUpload::open_confirmed`]), writes
 //!    `fees_balance` and deletes it ([`KeptUpload::finish`]). A Job that
 //!    finds no upload succeeds only if `fees_balance` holds its rows.
 //!    An upload nobody confirms is deleted by the tick after 24 hours.
+//! 6. `GET /admin/fees/{id}` after the Job: the result, read from
+//!    `fees_import` and `fees_balance` (the kept upload is gone), with the
+//!    next step "แจ้งนักศึกษา", a draft announcement to the Students whose
+//!    balance comes from this file (#127).
 //!
 //! Where Students pay is two Module settings (#75), the bank and branch
 //! [`BANK_NAME`] and the account number [`BANK_ACCOUNT`] (digits, `-` and
@@ -33,6 +36,7 @@
 
 mod pages;
 pub mod read;
+mod result;
 pub mod status;
 pub mod student;
 mod texts;
@@ -142,7 +146,12 @@ pub(crate) fn render(
 }
 
 /// A short message on the Module's page, with `status`.
-fn notice(s: &AppState, staff: &CurrentStaff, status: StatusCode, text: &str) -> Response {
+pub(crate) fn notice(
+    s: &AppState,
+    staff: &CurrentStaff,
+    status: StatusCode,
+    text: &str,
+) -> Response {
     let body = html! {
         div class="flash err" role="status" { (text) }
         p { a class="btn secondary" href=(BASE) { (t(s, staff, "fees.title")) } }

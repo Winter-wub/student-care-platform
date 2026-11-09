@@ -192,19 +192,42 @@ async fn the_next_step_opens_a_draft_with_the_named_students() {
 
 #[test]
 fn a_list_too_long_for_a_link_names_no_one() {
-    let many: Vec<String> = (0..=harpseal::ui::MAX_PREFILL)
-        .map(|i| format!("{:08}", 68_000_000 + i))
-        .collect();
+    use harpseal::ui::{MAX_PREFILL, MAX_PREFILL_QUERY, announce_href};
+    const BARE: &str = "/admin/announcements/new";
+    let codes = |n: usize, width: usize| -> Vec<String> {
+        (0..n).map(|i| format!("{:0width$}", i)).collect()
+    };
+    assert_eq!(announce_href(&[]), BARE);
+    // Over the count: no one, however short.
+    assert_eq!(announce_href(&codes(MAX_PREFILL + 1, 3)), BARE);
+    assert_ne!(announce_href(&codes(MAX_PREFILL, 4)), BARE);
+    // Within the count but over the query length: no one.
+    let long = codes(800, 10);
     assert_eq!(
-        harpseal::ui::announce_href(&many),
-        "/admin/announcements/new"
+        announce_href(&long),
+        BARE,
+        "800 × 11 bytes > {MAX_PREFILL_QUERY}"
     );
-    assert_eq!(harpseal::ui::announce_href(&[]), "/admin/announcements/new");
-    let at_cap = &many[..harpseal::ui::MAX_PREFILL];
-    let href = harpseal::ui::announce_href(at_cap);
-    assert!(href.len() < 12_000, "within Cloudflare's URL limit");
+    let fits = codes(500, 10);
+    let href = announce_href(&fits);
+    assert!(
+        href.len() - BARE.len() - 1 <= MAX_PREFILL_QUERY,
+        "{}",
+        href.len()
+    );
+    // Repeats are dropped, in order, before counting.
     assert_eq!(
-        harpseal::ui::announce_href(&["a b&c".into()]),
+        announce_href(&["68010002".into(), "68010001".into(), "68010002".into()]),
+        "/admin/announcements/new?scope=students&students=68010002+68010001"
+    );
+    let repeated = vec!["68010001".to_string(); MAX_PREFILL + 5];
+    assert_ne!(
+        announce_href(&repeated),
+        BARE,
+        "one Student, named many times"
+    );
+    assert_eq!(
+        announce_href(&["a b&c".into()]),
         "/admin/announcements/new?scope=students&students=a%20b%26c"
     );
 }

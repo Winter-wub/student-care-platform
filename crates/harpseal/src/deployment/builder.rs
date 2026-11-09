@@ -221,7 +221,7 @@ impl Collected {
             self.routes.public(module, path)?;
             self.public.push((module, path, route));
         }
-        if let Some(path) = crate::module::orphan_columns(&r.uploads, &r.back_office) {
+        if let Some(path) = crate::module::orphan_columns(&r.uploads) {
             let path = path.into();
             return Err(BuildError::InvalidRoute { module, path });
         }

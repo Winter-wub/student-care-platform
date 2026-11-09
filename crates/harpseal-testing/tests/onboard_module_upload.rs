@@ -52,6 +52,11 @@ enum Way {
     BadLabel,
     /// The template path already taken by a page.
     TakenTemplate,
+    /// Columns for a path registered with `back_office`, not
+    /// `sheet_upload` (its body limit must not become 0).
+    OnBackOffice,
+    /// Columns for a path with a parameter.
+    Param,
 }
 
 struct Grades(Way);
@@ -75,7 +80,13 @@ impl Module for Grades {
     fn register(&self, r: &mut ModuleRegistrar) {
         r.permission(Permission::new("grades.import", "Import grades").thai("นำเข้าผลการเรียน"))
             .messages(TEXTS)
-            .back_office_page("grades.import", "/grades", "grades.title", 60, get(page));
+            .back_office_page(
+                "kernel.student.view",
+                "/grades",
+                "grades.title",
+                60,
+                get(page),
+            );
         let upload = post(|| async { "kept" });
         match self.0 {
             Way::After => {
@@ -98,6 +109,17 @@ impl Module for Grades {
             Way::BadLabel => {
                 r.sheet_upload("grades.import", "/grades/upload", upload)
                     .sheet_columns("/grades/upload", BAD);
+            }
+            Way::OnBackOffice => {
+                r.sheet_columns("/grades/upload", COLUMNS).back_office(
+                    "grades.import",
+                    "/grades/upload",
+                    upload,
+                );
+            }
+            Way::Param => {
+                r.sheet_upload("grades.import", "/grades/{term}/upload", upload)
+                    .sheet_columns("/grades/{term}/upload", COLUMNS);
             }
             Way::TakenTemplate => {
                 r.sheet_upload("grades.import", "/grades/upload", upload)
@@ -174,6 +196,13 @@ async fn the_template_needs_the_uploads_permission() {
     let (h, app) = boot(Way::After).await;
     let b = as_role(&h, &app, "Viewer").await;
     assert_eq!(b.get("/admin/grades/upload/template.csv").await.status, 403);
+    // The panel still shows the columns, without the link they cannot use.
+    let page = b.get("/admin/grades").await.body;
+    assert!(
+        page.contains("<span class=\"example\">SB101</span>"),
+        "{page}"
+    );
+    assert!(!page.contains("template.csv"), "{page}");
 }
 
 #[tokio::test]
@@ -201,4 +230,10 @@ fn build_refuses_columns_it_cannot_serve() {
         build(&h, Way::TakenTemplate),
         Err(BuildError::DuplicateRoute { .. })
     ));
+    assert!(
+        matches!(build(&h, Way::OnBackOffice), Err(BuildError::InvalidRoute { path, .. }) if path == "/grades/upload")
+    );
+    assert!(
+        matches!(build(&h, Way::Param), Err(BuildError::InvalidRoute { path, .. }) if path == "/grades/{term}/upload")
+    );
 }

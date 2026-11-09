@@ -306,7 +306,7 @@ A list with nothing yet is one Paper card: one sentence on what goes here (at mo
 After a confirmed import the result page ends with a "ขั้นต่อไป" card: one sentence on what the action does (and that nothing is sent before review), the primary "แจ้งนักศึกษา" for Staff who may send, and a secondary way back.
 
 ### First-run checklist (#127)
-On the home, above the status ledger, while a step is left: a Paper card "เริ่มต้นใช้งาน", a Slate Note line counting the steps left, and an ordered `.list` of steps. Each step is a drawn ring (2px Field Edge) and the step's name as a 48 px link, with a chip; a done step's ring fills Approved Ink with a white drawn check, its name turns Slate Note and its chip turns Approved. Not a progress bar, not a dismissable tour: it goes away by itself when the data says the work is done.
+On the home, above the status ledger, while the Deployment is fresh (no Student yet): a Paper card "เริ่มต้นใช้งาน", a Slate Note line counting the steps left, and an ordered `.list` of steps. Each step is a drawn ring (2px Field Edge) and the step's name as a 48 px link, with a chip; a done step's ring fills Approved Ink with a white drawn check, its name turns Slate Note and its chip turns Approved. Not a progress bar, not a dismissable tour: it goes away by itself once the Deployment has Students.
 
 ### Message preview bubble (signature)
 The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem wide. Staff see roughly what Students will get before they send. Before anything is typed, each preview holds one Slate Note line on what will appear there, in a 1px dashed Field Edge outline (#127), never an empty bubble.

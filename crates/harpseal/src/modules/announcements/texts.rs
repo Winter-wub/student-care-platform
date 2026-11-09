@@ -78,11 +78,6 @@ pub(crate) const PAGES: &[E] = th_en![
         "Back to the list"
     ),
     ("announcements.page.cancel", "ยกเลิก", "Cancel"),
-    (
-        "announcements.page.none",
-        "ยังไม่มีประกาศ",
-        "No announcements yet."
-    ),
     ("announcements.page.status", "สถานะ", "Status"),
     ("announcements.page.time", "เวลา", "Time"),
     (

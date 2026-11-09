@@ -1,7 +1,8 @@
 //! The Fees Module's two pages: the upload form with its help beside it
 //! (#127: the columns declared once in [`COLUMNS`] give the panel and the
-//! template) and the preview, which after a confirm offers the next step,
-//! a draft announcement to the Students in the file.
+//! template) and the preview. After a confirm it says the import is
+//! queued (or failed); once the Job wrote the balances it is the result,
+//! with the next step ([`super::result`]).
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -10,7 +11,7 @@ use harpseal::{AppState, CurrentStaff, Statement, UploadColumn, Uploads};
 use maud::html;
 
 use super::read::{AMOUNT, CODE, NAME, baht};
-use super::{BASE, job_failed, open, render, t};
+use super::{BASE, job_failed, notice, open, render, result, t};
 
 /// The upload route, under `/admin`.
 pub const UPLOAD: &str = "/fees/upload";
@@ -53,15 +54,23 @@ pub(super) async fn preview(
     uploads: Uploads,
     Path(id): Path<String>,
 ) -> Response {
+    // Imported: the durable result, read from the Module's tables (the Job
+    // deleted the kept upload), with the next step.
+    // Unreadable: the upload's own state below still says where it stands.
+    if let Ok(Some(imp)) = result::imported(&s, &id).await {
+        return result::page(&s, &staff, &imp);
+    }
     let (kept, p) = match open(&s, &staff, &uploads, &id).await {
         Ok(x) => x,
+        // A Job that failed for good may have outlived its upload.
+        Err(_) if job_failed(&s, &id).await => {
+            let text = t(&s, &staff, "fees.failed");
+            return notice(&s, &staff, StatusCode::CONFLICT, &text);
+        }
         Err(r) => return *r,
     };
     let action = |what: &str| format!("{BASE}/{}/{what}", kept.id);
     let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id).await;
-    // The Students this file names: the next step's Audience (#127).
-    let named: Vec<String> = p.fees.iter().map(|f| f.code.clone()).collect();
-    let back = t(&s, &staff, "fees.back_to_list");
     let body = html! {
         h1 { (t(&s, &staff, "fees.preview")) }
         p class="muted" { (kept.file_name) " · " span id="row-count" { (p.fees.len()) } }
@@ -91,7 +100,8 @@ pub(super) async fn preview(
                 div class="flash err" role="status" id="job-failed" { (t(&s, &staff, "fees.failed")) }
             } @else {
                 div class="flash ok" role="status" id="queued" { (t(&s, &staff, "fees.queued")) }
-                (harpseal::ui::next_step(&s, &staff, &named, (&back, BASE)))
+                // Students are told once the balances are written (#127).
+                p class="muted" id="pending" { (t(&s, &staff, "fees.pending")) }
             }
         } @else {
             @if p.importable() {

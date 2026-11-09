@@ -1,7 +1,9 @@
-//! The first-run checklist on the home (#127): a fresh Deployment shows
-//! four steps, each ticks itself from data already kept, the block goes
-//! away once every step is done, and a Staff member sees only the steps
-//! their Permissions allow (none: no block).
+//! The first-run checklist on the home (#127): shown only while the
+//! Deployment is fresh (no Student yet); four steps, each ticking itself
+//! from data already kept (branding from the TOML or a saved setting, a
+//! second Staff account, an announcement sending or sent); only the steps
+//! the Staff member may take, and no roster step where `[roster]` maps no
+//! file.
 
 use harpseal::modules::announcements::Announcements;
 use harpseal::{DeploymentConfig, Statement};
@@ -22,13 +24,22 @@ Administrator = [
 ]
 Sender = ["announcements.view", "announcements.send"]
 Viewer = ["kernel.student.view"]
+
+[roster]
+student_code = "รหัสนักศึกษา"
+display_name = "ชื่อ-สกุล"
+email = "อีเมล"
 "#;
 
 async fn boot() -> (Harness, TestApp) {
+    boot_with(CONFIG).await
+}
+
+async fn boot_with(toml: &str) -> (Harness, TestApp) {
     let h = Harness::new();
     let d = h
         .builder()
-        .config(DeploymentConfig::from_toml(CONFIG).unwrap())
+        .config(DeploymentConfig::from_toml(toml).unwrap())
         .module(Announcements)
         .build()
         .unwrap();
@@ -104,38 +115,48 @@ async fn a_fresh_deployment_lists_every_step_undone_with_its_page() {
     assert!(body.find("id=\"setup\"") < body.find("class=\"card term\""));
 }
 
+const STUDENT: &str = "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+     VALUES ('s1', '68010001', 'นกน้อย ทะเลใส', 'th', 0, 0)";
+
 #[tokio::test]
-async fn steps_tick_themselves_from_data_and_the_block_goes_when_all_are_done() {
+async fn steps_tick_themselves_from_data_while_the_deployment_is_fresh() {
     let (h, app) = boot().await;
     let b = as_who(&h, &app, "admin", "").await;
-    // A Student and a second Staff account: two of four.
-    exec(
-        &h,
-        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
-         VALUES ('s1', '68010001', 'นกน้อย ทะเลใส', 'th', 0, 0)",
-    )
-    .await;
+    let ticked = |body: &str| -> Vec<bool> {
+        steps(&block(body).expect("fresh: the checklist"))
+            .into_iter()
+            .map(|(_, d)| d)
+            .collect()
+    };
     h.create_staff("officer@sealbay.example", PASSWORD, &["Viewer"])
         .await;
-    let setup = block(&b.get("/admin").await.body).expect("still two to go");
-    assert!(setup.contains("เหลืออีก 2 จาก 4 ขั้น"), "{setup}");
-    let ticked: Vec<bool> = steps(&setup).into_iter().map(|(_, d)| d).collect();
-    assert_eq!(ticked, [false, true, true, false]);
-    // A draft is not the first announcement; a sent one is.
+    assert_eq!(
+        ticked(&b.get("/admin").await.body),
+        [false, false, true, false]
+    );
+    // Neither a draft nor a scheduled one is the first announcement.
     exec(
         &h,
         "INSERT INTO announcement (id, status, created_by, created_at, updated_at) \
          VALUES ('a1', 'draft', (SELECT id FROM staff LIMIT 1), 0, 0)",
     )
     .await;
-    let setup = block(&b.get("/admin").await.body).unwrap();
-    assert!(!steps(&setup)[3].1, "a draft does not count");
+    assert!(!ticked(&b.get("/admin").await.body)[3], "a draft");
+    exec(
+        &h,
+        "UPDATE announcement SET status = 'scheduled' WHERE id = 'a1'",
+    )
+    .await;
+    assert!(
+        !ticked(&b.get("/admin").await.body)[3],
+        "scheduled, not sent"
+    );
     exec(
         &h,
         "UPDATE announcement SET status = 'sent' WHERE id = 'a1'",
     )
     .await;
-    // Branding saved on /admin/branding: the last step.
+    // Branding saved on /admin/branding.
     exec(
         &h,
         "INSERT INTO setting (key, locale, value, updated_at) \
@@ -143,8 +164,42 @@ async fn steps_tick_themselves_from_data_and_the_block_goes_when_all_are_done() 
     )
     .await;
     let body = b.get("/admin").await.body;
-    assert_eq!(block(&body), None, "every step done: no block");
+    assert_eq!(ticked(&body), [true, false, true, true]);
+    assert!(block(&body).unwrap().contains("เหลืออีก 1 จาก 4 ขั้น"));
+    // The first Student: established, the block goes; the ledger stays.
+    exec(&h, STUDENT).await;
+    let body = b.get("/admin").await.body;
+    assert_eq!(block(&body), None);
     assert!(body.contains("class=\"card term\""), "the ledger stays");
+}
+
+#[tokio::test]
+async fn an_established_deployment_with_toml_branding_sees_no_checklist() {
+    let toml = format!("{CONFIG}\n[branding]\nname = \"มหาวิทยาลัยซีลเบย์\"\n");
+    let (h, app) = boot_with(&toml).await;
+    let b = as_who(&h, &app, "admin", "").await;
+    // Still fresh: the TOML's branding counts as done.
+    let setup = block(&b.get("/admin").await.body).expect("fresh");
+    assert!(steps(&setup)[0].1, "branding from [branding]: {setup}");
+    exec(&h, STUDENT).await;
+    assert_eq!(block(&b.get("/admin").await.body), None);
+}
+
+#[tokio::test]
+async fn without_a_roster_mapping_there_is_no_roster_step() {
+    let toml = CONFIG.split("[roster]").next().unwrap();
+    let (h, app) = boot_with(toml).await;
+    let b = as_who(&h, &app, "admin", "").await;
+    let setup = block(&b.get("/admin").await.body).expect("fresh");
+    let got: Vec<String> = steps(&setup).into_iter().map(|(h, _)| h).collect();
+    assert_eq!(
+        got,
+        [
+            "/admin/branding",
+            "/admin/staff",
+            "/admin/announcements/new"
+        ]
+    );
 }
 
 #[tokio::test]
