@@ -5,7 +5,7 @@
 #   npx wrangler@4 dev --local          # then open http://localhost:8787/notice
 # The owner's preview (creates resources on their account):
 #   npx wrangler@4 d1 create harpseal-example   # paste the id below
-#   npx wrangler@4 secret put FAKE_SECRET       # required; see README for the rest
+#   (secrets: see docs/guide/workers.md; no FAKE_SECRET: no Fake Channel here)
 #   npx wrangler@4 deploy
 name = "harpseal-example"
 main = "build/index.js"
@@ -34,6 +34,9 @@ crons = ["* * * * *"]
 EMAIL_FROM = "Seal Bay University <noreply@sealbay.example>"
 # The Worker's https origin (#109): announcement images on chat Cards.
 # HARPSEAL_PUBLIC_URL = "https://students.sealbay.example"
+# A hosted demo only, never production (#133): registers the Fake Channel in
+# dev mode; needs secret FAKE_SECRET of at least 16 characters, not change-me.
+# HARPSEAL_FAKE_DEMO = "1"
 
 [[d1_databases]]
 binding = "DB"

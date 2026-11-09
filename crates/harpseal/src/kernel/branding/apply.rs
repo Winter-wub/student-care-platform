@@ -86,7 +86,7 @@ pub(crate) fn check(
     menus: &[Menu],
 ) -> std::result::Result<Vec<crate::MenuLayout>, MenuImageProblem> {
     let mut layouts = Vec::new();
-    for art in d.channels().iter().filter_map(|c| c.menu_art()) {
+    for art in d.channels().filter_map(|c| c.menu_art()) {
         layouts.extend(art.check(slot, image, menus)?);
     }
     Ok(layouts)
@@ -100,7 +100,7 @@ pub(crate) async fn save(
     ctx: &RequestCtx,
 ) -> Result<MenuImagesSaved> {
     let s = d.services();
-    let arts: Vec<_> = d.channels().iter().filter_map(|c| c.menu_art()).collect();
+    let arts: Vec<_> = d.channels().filter_map(|c| c.menu_art()).collect();
     let Some(first) = arts.first() else {
         return Err(Error::Invalid(
             "no Channel draws its Menu on an image".into(),

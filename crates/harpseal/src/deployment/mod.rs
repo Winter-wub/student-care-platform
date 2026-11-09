@@ -39,7 +39,8 @@ pub struct Deployment {
     services: Services,
     queue: crate::jobs::Jobs,
     channels: Vec<Arc<dyn Channel>>,
-    /// Built with [`DeploymentBuilder::dev`]: Staff see dev-only Channels.
+    /// Built with [`DeploymentBuilder::dev`]: dev-only Channels take
+    /// traffic and Staff see them.
     dev: bool,
     verification: Arc<dyn VerificationMethod>,
     catalog: Arc<Catalog>,
@@ -172,12 +173,15 @@ impl Deployment {
         Ok(report)
     }
 
-    /// The Channel of `kind`.
+    /// The Channel of `kind`, if it takes traffic here. A
+    /// [`Channel::dev_only`] Channel (the Fake Channel) does not unless the
+    /// Deployment is built with [`DeploymentBuilder::dev`] (#133): outside
+    /// dev it is `None`, as if not registered. This is the one gate every
+    /// input path goes through (webhooks, Mini App sign-in and sessions,
+    /// the chat link flow, Manual Links) and every send (Pushes,
+    /// Announcements, Menus): they all refuse or skip it.
     pub fn channel(&self, kind: &str) -> Option<&dyn Channel> {
-        self.channels
-            .iter()
-            .find(|c| c.kind().as_str() == kind)
-            .map(|c| c.as_ref())
+        self.registered_channel(kind).filter(|c| self.takes(*c))
     }
 
     /// The branding cache (#114).
@@ -185,9 +189,10 @@ impl Deployment {
         &self.branding
     }
 
-    /// Every Channel, in registration order.
-    pub(crate) fn channels(&self) -> &[Arc<dyn Channel>] {
-        &self.channels
+    /// Every Channel that takes traffic ([`Deployment::channel`]), in
+    /// registration order.
+    pub(crate) fn channels(&self) -> impl Iterator<Item = &Arc<dyn Channel>> {
+        self.channels.iter().filter(|c| self.takes(c.as_ref()))
     }
 
     pub(crate) fn channel_or_err(&self, kind: &str) -> Result<&dyn Channel> {

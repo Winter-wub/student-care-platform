@@ -95,7 +95,6 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     // Only the Channels with Menu images, drawn on the saved ones.
     let channels: Vec<Arc<dyn Channel>> = d
         .channels()
-        .iter()
         .zip(drawn)
         .filter(|(c, _)| c.menu_art().is_some())
         .map(|(_, v)| v)
