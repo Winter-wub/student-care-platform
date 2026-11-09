@@ -157,7 +157,12 @@ pub(crate) async fn cancel(
     .bind(id)
     .bind(gate);
     let done = s.db.batch(vec![audit, change]).await?;
-    settle(s, &imp, done.get(1).map(|r| r.rows_affected)).await
+    let changed = done.get(1).map(|r| r.rows_affected);
+    if changed == Some(1) {
+        // Nothing reads a cancelled import's lists (#134): best effort.
+        let _ = super::diff::delete(s, id).await;
+    }
+    settle(s, &imp, changed).await
 }
 
 async fn settle(s: &Services, imp: &Import, changed: Option<u64>) -> Result<Outcome> {

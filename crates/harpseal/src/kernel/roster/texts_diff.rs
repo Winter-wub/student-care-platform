@@ -68,9 +68,14 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.empty_value", "(ว่าง)", "(empty)"),
     ("kernel.roster.report_student", "นักศึกษา", "Student"),
     (
+        "kernel.roster.lists_missing",
+        "ไม่มีรายชื่อของการนำเข้านี้ให้ดูแล้ว อัปโหลดไฟล์อีกครั้งเพื่อดูว่าใครข้อมูลเปลี่ยนและใครจะพ้นสภาพ",
+        "The lists of this import are no longer available. Upload the file again to see who changes and who leaves"
+    ),
+    (
         "kernel.roster.changes_gone",
-        "ไม่มีรายการเปลี่ยนแปลงของการนำเข้านี้แล้ว (ลบพร้อมไฟล์ต้นฉบับเมื่อครบ 1 ปี)",
-        "The changes of this import are no longer kept (deleted with the file after a year)"
+        "รายการเปลี่ยนแปลงของการนำเข้านี้ไม่มีให้ดาวน์โหลดแล้ว",
+        "The changes of this import are no longer available"
     ),
     // The template's example row
     (

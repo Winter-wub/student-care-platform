@@ -112,12 +112,19 @@ pub(super) fn changes(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup
         return html! {};
     }
     let total = p.changed();
+    // The lists are not stored any more (a restored backup carries no
+    // FileStore object but the file): say so, so a full replace never looks
+    // as if no one leaves.
+    let missing = head.is_none() && (total > 0 || p.will_become_left > 0);
+    let missing = html! {
+        @if missing { p class="muted" id="roster-lists-missing" { (v.t("kernel.roster.lists_missing")) } }
+    };
     if total == 0 {
         // About the file's rows only, so it stands beside a leaving figure.
-        return html! { p class="muted" { (v.t("kernel.roster.no_changes")) } };
+        return html! { p class="muted" { (v.t("kernel.roster.no_changes")) } (missing) };
     }
     let Some(head) = head else {
-        return html! {};
+        return missing;
     };
     let (code, name, change) = (
         v.t("kernel.students.code"),

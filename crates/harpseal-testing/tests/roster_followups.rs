@@ -140,7 +140,8 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     let gone = v.get(&format!("/admin/roster/{id}/changes.csv")).await;
     assert_eq!(gone.status, 410);
     assert!(
-        gone.body.contains("ไม่มีรายการเปลี่ยนแปลงของการนำเข้านี้แล้ว"),
+        gone.body
+            .contains("รายการเปลี่ยนแปลงของการนำเข้านี้ไม่มีให้ดาวน์โหลดแล้ว"),
         "{}",
         gone.body
     );

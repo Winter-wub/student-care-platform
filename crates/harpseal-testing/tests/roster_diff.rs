@@ -295,3 +295,74 @@ async fn the_example_row_is_named_even_when_the_code_pattern_refuses_it_and_keep
         "the warning stays: {report}"
     );
 }
+
+#[tokio::test]
+async fn a_preview_whose_lists_are_gone_says_so_beside_the_figures() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    roster_of_six(&h, &app, &b).await;
+    let id = previewed(&b, "next.csv", &next_term(), "full", true).await;
+    // As after a restored backup, which carries the file but not the lists.
+    for key in [
+        format!("roster-diff/{id}.jsonl"),
+        format!("roster-diff/{id}.head.json"),
+    ] {
+        h.services().files.delete(&key).await.unwrap();
+    }
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    // The figures stay; the lists give way to one line, never to nothing.
+    assert_eq!(after(&page, "data-count=\"will_become_left\""), "3");
+    assert!(
+        page.contains("ไม่มีรายชื่อของการนำเข้านี้ให้ดูแล้ว อัปโหลดไฟล์อีกครั้ง"),
+        "{page}"
+    );
+    assert!(!page.contains("id=\"roster-changes\""), "{page}");
+    assert!(!page.contains("id=\"roster-leaving-list\""), "{page}");
+    assert_eq!(page.matches("id=\"roster-lists-missing\"").count(), 1);
+    assert_eq!(
+        harpseal_testing::a11y::problems(&page),
+        Vec::<String>::new()
+    );
+    // The download says it is not available, whatever the reason.
+    let r = b.get(&format!("/admin/roster/{id}/changes.csv")).await;
+    assert_eq!(r.status, 410);
+    assert!(
+        r.body
+            .contains("รายการเปลี่ยนแปลงของการนำเข้านี้ไม่มีให้ดาวน์โหลดแล้ว"),
+        "{}",
+        r.body
+    );
+}
+
+#[tokio::test]
+async fn a_cancelled_or_replaced_preview_leaves_no_lists_behind() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let keys = |id: &str| {
+        [
+            format!("roster-diff/{id}.jsonl"),
+            format!("roster-diff/{id}.head.json"),
+        ]
+    };
+    let stored = |id: &str| {
+        keys(id)
+            .iter()
+            .filter(|k| h.files().keys().contains(k))
+            .count()
+    };
+    // Cancelled by Staff.
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
+    assert_eq!(stored(&id), 2);
+    b.get(&format!("/admin/roster/{id}")).await;
+    b.post(&format!("/admin/roster/{id}/cancel"), "").await;
+    assert_eq!(import_text(&h, &id, "state").await, "cancelled");
+    assert_eq!(stored(&id), 0);
+    // Replaced after an hour by the next upload.
+    let old = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
+    assert_eq!(stored(&old), 2);
+    h.clock().advance_minutes(61);
+    let new = previewed(&b, "b.csv", &csv(0..3), "full", false).await;
+    assert_eq!(import_text(&h, &old, "state").await, "cancelled");
+    assert_eq!(stored(&old), 0);
+    assert_eq!(stored(&new), 2, "the new preview keeps its own");
+}

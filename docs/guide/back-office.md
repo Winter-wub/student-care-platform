@@ -204,8 +204,11 @@ in the FileStore, never in the import's row: the whole list as
 `roster-diff/<import id>.jsonl`, downloaded as `changes.csv`
 (`kernel.roster.view`, audit `roster.changes.download`), and the first 100
 changes and 200 leavers, each value cut to 200 characters, as
-`roster-diff/<import id>.head.json`, which only the preview page reads. Once
-the list is deleted (below) `changes.csv` answers 410 with a Thai page. The
+`roster-diff/<import id>.head.json`, which only the preview page reads. A
+cancelled or replaced preview's lists are deleted at once. When they are not
+available (deleted after a year, below, or missing from a restored backup), the
+preview keeps its figures and says so in one line, and `changes.csv` answers
+410 with a Thai page. The
 `roster.import` audit row keeps the preview's counts only, no Student. Confirm runs the Job
 `kernel.roster.import` in 500-row chunks (the page polls its progress), and the
 done page shows each preview number next to what was imported. One import at a

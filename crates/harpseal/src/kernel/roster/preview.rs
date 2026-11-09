@@ -165,10 +165,16 @@ async fn record(
         .await?;
     let total = valid.records.len() as i64;
     let stale = s.now_ms() - PREVIEW_HOLD_MS;
-    let mut stmts = replace_stale(s, stale).await?;
+    let (mut stmts, replaced) = replace_stale(s, stale).await?;
     stmts.extend(row.statements(s, &counts, None, total, ctx, Some(stale))?);
     let insert_at = stmts.len() - 2;
     let done = s.db.batch(stmts).await?;
+    // Nothing reads a cancelled import's lists (#134): best effort.
+    for (k, id) in replaced.iter().enumerate() {
+        if done.get(2 * k + 1).map(|r| r.rows_affected) == Some(1) {
+            let _ = diff::delete(s, id).await;
+        }
+    }
     if done.get(insert_at).map(|r| r.rows_affected) != Some(1) {
         // Another upload took the slot between the check and the write.
         return match store::busy(s, stale).await? {
@@ -183,8 +189,9 @@ async fn record(
 }
 
 /// Cancels the previews older than `stale` (they give the slot up), each
-/// with an audit row `roster.import.cancel` by the system that gates it.
-async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
+/// with an audit row `roster.import.cancel` by the system that gates it:
+/// the statements (an audit row, then its update, per import) and the ids.
+async fn replace_stale(s: &Services, stale: i64) -> Result<(Vec<Statement>, Vec<String>)> {
     let rows =
         s.db.query(
             Statement::new(
@@ -194,10 +201,12 @@ async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
         )
         .await?;
     let mut stmts = Vec::new();
+    let mut ids = Vec::new();
     for i in 0..rows.len() {
         let Some(id) = rows.get(i, "id").and_then(crate::Value::as_text) else {
             continue;
         };
+        ids.push(id.to_string());
         let cond = Statement::new(
             "EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND state = 'previewed' \
              AND created_at < ?)",
@@ -225,7 +234,7 @@ async fn replace_stale(s: &Services, stale: i64) -> Result<Vec<Statement>> {
             .bind(gate),
         );
     }
-    Ok(stmts)
+    Ok((stmts, ids))
 }
 
 /// The new `roster_import` row.

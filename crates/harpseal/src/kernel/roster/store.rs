@@ -361,10 +361,19 @@ fn same(a: &StudentFields, b: &StudentFields) -> bool {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<BTreeMap<_, _>>()
     };
-    a.display_name == b.display_name
-        && a.email == b.email
-        && a.locale == b.locale
-        && a.status == b.status
+    // Every field by name: a new one is a compile error here, not a
+    // silent "unchanged".
+    let StudentFields {
+        display_name,
+        email,
+        locale,
+        status,
+        attributes: _,
+    } = a;
+    *display_name == b.display_name
+        && *email == b.email
+        && *locale == b.locale
+        && *status == b.status
         && set(a) == set(b)
 }
 
