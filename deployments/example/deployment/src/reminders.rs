@@ -109,6 +109,16 @@ const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("reminders.outcome.overtaken", "en", "sent by another run"),
     CatalogEntry::new("reminders.outcome.failed", "th", "ส่งไม่สำเร็จ"),
     CatalogEntry::new("reminders.outcome.failed", "en", "failed"),
+    CatalogEntry::new(
+        "reminders.outcome.unknown",
+        "th",
+        "ไม่ทราบผล ตรวจในบันทึกการใช้งาน",
+    ),
+    CatalogEntry::new(
+        "reminders.outcome.unknown",
+        "en",
+        "outcome unknown: check the audit log",
+    ),
 ];
 
 /// The reminder, in Thai and English, under `key`.
@@ -379,6 +389,8 @@ fn outcome(o: NotifyOutcome) -> &'static str {
         NotifyOutcome::Skipped(_) => "reminders.outcome.skipped",
         NotifyOutcome::Deferred(_) => "reminders.outcome.deferred",
         NotifyOutcome::Overtaken => "reminders.outcome.overtaken",
-        _ => "reminders.outcome.failed",
+        NotifyOutcome::Failed(_) => "reminders.outcome.failed",
+        // An outcome the Core adds later: say so, never "failed".
+        _ => "reminders.outcome.unknown",
     }
 }

@@ -169,7 +169,10 @@ async fn the_pressed_named_button_is_never_held_back() {
     }
     let script = &page[page.rfind("<script>").unwrap()..];
     assert!(!script.contains(".disabled") && !script.contains("disabled=true"));
-    assert!(!script.contains("setTimeout"), "no timed release");
+    assert!(
+        script.contains("HOLD=30000"),
+        "a stuck hold lets go after 30 s"
+    );
 }
 
 #[tokio::test]
