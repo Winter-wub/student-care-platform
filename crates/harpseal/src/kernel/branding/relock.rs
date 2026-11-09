@@ -95,15 +95,11 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     // Only the Channels with Menu images, drawn on the saved ones.
     let channels: Vec<Arc<dyn Channel>> = d
         .channels()
-        .iter()
         .zip(drawn)
         .filter(|(c, _)| c.menu_art().is_some())
         .map(|(_, v)| v)
         .collect();
-    let start = p["channel"]
-        .as_str()
-        .and_then(|k| channels.iter().position(|c| c.kind().as_str() == k))
-        .unwrap_or(0);
+    let (start, same) = super::resume_at(&d, &channels, p["channel"].as_str());
     let r = Run {
         cx: &cx,
         p: &p,
@@ -113,7 +109,7 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     if p["phase"].as_str() == Some("retire") {
         return r.retire(&channels, start).await;
     }
-    let after = p["after"].as_str().unwrap_or_default();
+    let after = p["after"].as_str().filter(|_| same).unwrap_or_default();
     r.relock(&channels, start, after).await
 }
 

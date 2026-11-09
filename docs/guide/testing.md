@@ -43,7 +43,15 @@ page's CSRF token (`b.get(..)`, `b.post(path, form)` adds `_csrf`,
 
 Use `h.builder()` to add Modules before booting, or pass any Deployment to
 `h.boot(d)` (the example's tests do `example_deployment::builder(h.services(),
-..).channel(h.fake_channel())`).
+..).dev(true).channel(h.fake_channel())`). `h.builder()` is in dev mode. A
+Deployment you build yourself is not, and outside dev mode the Core refuses the
+Fake Channel, a dev-only Channel (#133). So add `.dev(true)` to it, or
+`app.fake_webhook` and `b.open_mini_app` panic and name that fix. To test the
+refusal itself, use `app.fake_webhook_raw` and `b.open_mini_app_raw`.
+
+**Migrating to #133:** a test that builds its own Deployment with
+`.channel(h.fake_channel())` and sends Fake traffic needs `.dev(true)` on the
+builder.
 
 ## `just e2e`
 

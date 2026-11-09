@@ -21,9 +21,11 @@ impl Deployment {
     ///   accepted (a failing event is logged, never turned into an error
     ///   status, or the platform would resend the whole call), 401 on a bad
     ///   signature, 400 when the body cannot be parsed, 404 for an unknown
-    ///   Channel. When the request carries a [`crate::Background`]
-    ///   extension (both runtimes add one), the 200 comes right after the
-    ///   events are claimed and the handling runs on it, independent of the
+    ///   Channel or one that takes no traffic (a [`crate::Channel::dev_only`]
+    ///   Channel outside dev, #133), before anything is read or recorded.
+    ///   When the request carries a [`crate::Background`] extension (both
+    ///   runtimes add one), the 200 comes right after the events are
+    ///   claimed and the handling runs on it, independent of the
     ///   connection ([`Deployment::accept_webhook`]); without one the
     ///   events are handled before the answer;
     /// - `GET /static/app.css`: the shared stylesheet;
@@ -146,21 +148,66 @@ impl Deployment {
 }
 
 impl Deployment {
+    /// The Channel of `kind` as registered, whether or not it takes
+    /// traffic: only to tell a refused dev-only Channel from an unknown one.
+    pub(crate) fn registered_channel(&self, kind: &str) -> Option<&dyn crate::Channel> {
+        self.channels
+            .iter()
+            .find(|c| c.kind().as_str() == kind)
+            .map(|c| c.as_ref())
+    }
+
+    /// Whether Channel `kind` is registered but refused: dev-only, outside
+    /// dev (#133).
+    pub(crate) fn refuses_channel(&self, kind: &str) -> bool {
+        self.registered_channel(kind).is_some() && self.channel(kind).is_none()
+    }
+
+    /// Whether `c` takes traffic: dev mode, or not
+    /// [`crate::Channel::dev_only`] (#133).
+    pub(super) fn takes(&self, c: &dyn crate::Channel) -> bool {
+        self.dev || !c.dev_only()
+    }
+
     /// The kinds of the Deployment's Channels, in registration order.
     pub(crate) fn channel_kinds(&self) -> Vec<crate::ChannelKind> {
         self.channels.iter().map(|c| c.kind()).collect()
     }
 
     /// The kinds the back office offers Staff by default (#131): every
-    /// Channel but a [`crate::Channel::dev_only`] one, unless built in dev
-    /// mode. Display only: a Link that exists on a hidden Channel is still
-    /// shown (and can be revoked) wherever Links are listed.
+    /// Channel that takes traffic ([`Deployment::channel`]). A Link that
+    /// exists on a refused Channel is still shown (and can be revoked)
+    /// wherever Links are listed.
     pub(crate) fn staff_channel_kinds(&self) -> Vec<crate::ChannelKind> {
         self.channels
             .iter()
-            .filter(|c| self.dev || !c.dev_only())
+            .filter(|c| self.takes(c.as_ref()))
             .map(|c| c.kind())
             .collect()
+    }
+
+    /// The Channel kinds a Student's Links card or list row shows (#131,
+    /// #133): every kind offered to Staff, plus the Channel of each of the
+    /// Student's live Links (`live`) even when it is not offered (dev-only
+    /// outside dev) or not registered here at all (the example Worker has
+    /// no Fake Channel), so an existing Link always shows and can be
+    /// revoked. Registration order, then unregistered kinds as they come.
+    pub(crate) fn link_kinds<'a>(&self, live: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+        let live: Vec<&str> = live.into_iter().collect();
+        let offered = self.staff_channel_kinds();
+        let mut out: Vec<String> = self
+            .channels
+            .iter()
+            .map(|c| c.kind())
+            .filter(|k| offered.contains(k) || live.contains(&k.as_str()))
+            .map(|k| k.as_str().to_string())
+            .collect();
+        for k in live {
+            if !out.iter().any(|o| o == k) {
+                out.push(k.to_string());
+            }
+        }
+        out
     }
 
     /// Whether Channel `kind` is one of [`Self::staff_channel_kinds`].

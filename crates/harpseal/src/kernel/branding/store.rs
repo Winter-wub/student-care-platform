@@ -250,6 +250,40 @@ pub(crate) async fn drawn_as(
     Ok(d.branding().images.view(&sig, || art.drawn_on(&images)))
 }
 
+/// Where a Menu run saved at Channel `kind` (its payload's `channel`)
+/// resumes among `channels` (Channels that take traffic, in registration
+/// order), and whether its saved cursor still applies. At `kind` itself,
+/// with the cursor; when `kind` takes no traffic here any more (dev-only
+/// outside dev, #133), at the next Channel after it in registration order,
+/// from its first account; at the first Channel, from its first account,
+/// when `kind` is none or not registered.
+pub(crate) fn resume_at(
+    d: &Deployment,
+    channels: &[Arc<dyn Channel>],
+    kind: Option<&str>,
+) -> (usize, bool) {
+    let Some(kind) = kind else {
+        return (0, false);
+    };
+    if let Some(i) = channels.iter().position(|c| c.kind().as_str() == kind) {
+        return (i, true);
+    }
+    let order = d.channel_kinds();
+    let Some(saved) = order.iter().position(|k| k.as_str() == kind) else {
+        return (0, false);
+    };
+    let later = |c: &Arc<dyn Channel>| {
+        order
+            .iter()
+            .position(|k| *k == c.kind())
+            .is_some_and(|i| i > saved)
+    };
+    (
+        channels.iter().position(later).unwrap_or(channels.len()),
+        false,
+    )
+}
+
 /// Every Channel of the Deployment, each drawn on the saved images.
 pub(crate) async fn drawn_all(d: &Deployment) -> Result<Vec<Arc<dyn Channel>>> {
     let saved = Saved::load(d.services()).await?;

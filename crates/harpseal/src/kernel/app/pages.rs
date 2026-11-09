@@ -65,7 +65,19 @@ fn percent_decode(v: &str) -> Option<String> {
 async fn visitor(s: &AppState, headers: &HeaderMap) -> Result<Option<AppVisitor>> {
     let has = |l: &str| s.catalog.has(&Locale(l.to_string()), "kernel.app.title");
     let idle = s.config.mini_app.idle_ms();
-    session::resolve(&s.services, headers, idle, has, &s.config.default_locale).await
+    let v = session::resolve(&s.services, headers, idle, has, &s.config.default_locale).await?;
+    // A session signed in over a Channel that takes no traffic here (a
+    // dev-only one outside dev, #133) counts as none, and is deleted (its
+    // expiry may have slid just now): the entry page.
+    match v {
+        Some(v) if s.deployment.channel(&v.channel).is_none() => {
+            if let Some(token) = crate::auth::cookie(headers, session::COOKIE) {
+                session::drop_token(&s.services, &token).await?;
+            }
+            Ok(None)
+        }
+        v => Ok(v),
+    }
 }
 
 /// The entry page for `next`, with the cookie cleared when one was sent.

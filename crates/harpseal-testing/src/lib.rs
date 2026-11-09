@@ -124,8 +124,8 @@ impl Harness {
     }
 
     /// A builder with [`TEST_CONFIG`], these Services, the Fake Channel and
-    /// email OTP, in dev mode (Staff see the Fake Channel; `.dev(false)`
-    /// for a production view). Add Modules (or more Channels) and build.
+    /// email OTP, in dev mode (the Fake Channel takes traffic and Staff see
+    /// it; with `.dev(false)` it is refused, #133). Add Modules (or more Channels) and build.
     pub fn builder(&self) -> DeploymentBuilder {
         Deployment::builder()
             .dev(true)

@@ -1,8 +1,47 @@
 # Channels: LINE and Telegram
 
-Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`; outside dev
-mode (`DeploymentBuilder::dev`) Staff are not offered it, display only (#131).
+Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
+
+## The Fake Channel never belongs in production
+
+The Fake Channel is for tests and local demos. Anyone who holds `FAKE_SECRET`
+can sign its webhooks and Mini App tokens, finish the link flow as any Student
+and read that Student's Mini App pages. So it is `Channel::dev_only`, and the
+Core refuses it unless the Deployment is built in dev mode
+(`DeploymentBuilder::dev(true)`, #133). Outside dev mode, whatever the secret:
+
+- `POST /webhook/fake` answers 404 and records nothing (no chat account, no
+  event claim, no audit or Security Event);
+- a Mini App token is refused (404), and a session signed in over the Fake
+  Channel while the Deployment was in dev mode counts as none (the entry page);
+- the link flow never starts, and a Manual Link to it is refused;
+- nothing is sent to an existing Fake Link: it counts as unreachable. An
+  Announcement's audience does not count it, and deliveries already queued
+  for it are skipped as `unreachable`, so the Announcement still finishes.
+
+A Fake Link that already exists still shows in the back office and can be
+revoked (#131), even where the Fake Channel is not registered at all (the
+example Worker). The revoke notice is skipped (Staff see "not notified"). Staff
+are not offered the Fake Channel either (no empty Link row, Manual Link option,
+usage card or Quota line). The refusal lives in one place,
+`Deployment::channel`, so a future dev-only Channel gets it too.
+
+Where dev mode is on:
+
+- tests: `Harness::builder()` (use `.dev(false)` for a production view);
+- the native example with `HARPSEAL_DEV_ROUTES=1`, on a loopback address
+  with a strong `FAKE_SECRET` (see the [self-hosting guide](self-hosting.md));
+- the example Worker only with the hosted demo opt-in, `HARPSEAL_FAKE_DEMO=1`
+  plus a strong `FAKE_SECRET` (see the [Workers guide](workers.md)). By
+  default the Worker does not register the Fake Channel at all.
+
+A strong `FAKE_SECRET` has at least 16 characters and is not `change-me`
+(`openssl rand -hex 16`). A customer Deployment registers LINE and Telegram
+and uses the Fake Channel only in tests.
+
+**Migrating to #133:** a test that builds its own Deployment with the Fake
+Channel needs `.dev(true)`. See the [testing guide](testing.md#the-harness).
 
 ## Writing an adapter
 

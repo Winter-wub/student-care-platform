@@ -31,6 +31,7 @@ async fn the_script_follows_the_web_client_not_the_kind_or_url() {
     let d = Deployment::builder()
         .config(Harness::config())
         .runtime(h.services())
+        .dev(true)
         .channel(h.fake_channel())
         .channel(campus)
         .channel(liff)

@@ -84,9 +84,10 @@ async fn the_estimate_shows_used_of_the_cap_with_a_quota() {
 }
 
 #[tokio::test]
-async fn outside_dev_mode_the_estimate_lists_a_dev_only_channels_reach_not_its_usage() {
+async fn outside_dev_mode_the_estimate_lists_neither_a_dev_only_channels_reach_nor_its_usage() {
     // As the Quota banner (#131): the Fake Channel's usage and cap are not
-    // shown outside dev mode, but the Students it reaches still are.
+    // shown outside dev mode. Nor are the Students on it (#133): nothing
+    // is sent to a dev-only Channel there, so they are not reached.
     let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
     let src = format!("{CONFIG}\n[quotas.fake]\nmetered_per_month = 300\n");
     let config = DeploymentConfig::from_toml(&src).unwrap();
@@ -111,7 +112,7 @@ async fn outside_dev_mode_the_estimate_lists_a_dev_only_channels_reach_not_its_u
         .post("/admin/announcements/audience", "scope=everyone")
         .await;
     assert_eq!(c.status, 200);
-    assert!(c.body.contains("fake: 1"), "{}", c.body);
+    assert!(!c.body.contains("fake"), "no Fake count at all: {}", c.body);
     assert!(!c.body.contains("month-used"), "{}", c.body);
     assert!(!c.body.contains("245"), "{}", c.body);
 }

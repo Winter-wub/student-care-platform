@@ -94,16 +94,13 @@ pub(super) async fn run(cx: JobContext, job: Job) -> Result<()> {
     };
     // Drawn on the Menu images saved on `/admin/branding` (#114).
     let channels = &crate::kernel::branding::drawn_all(&d).await?;
-    let start = p["channel"]
-        .as_str()
-        .and_then(|k| channels.iter().position(|c| c.kind().as_str() == k))
-        .unwrap_or(0);
+    let (start, same) = crate::kernel::branding::resume_at(&d, channels, p["channel"].as_str());
+    let saved_after = p["after"].as_str().filter(|_| same).unwrap_or_default();
     if p["phase"].as_str() == Some("relock") {
-        let after = p["after"].as_str().unwrap_or_default();
-        return step.relock(channels, start, after).await;
+        return step.relock(channels, start, saved_after).await;
     }
     if p["phase"].as_str() != Some("retire") {
-        let mut after = p["after"].as_str().unwrap_or_default().to_string();
+        let mut after = saved_after.to_string();
         for ch in &channels[start..] {
             if let Some(next) = step.relink(ch.as_ref(), &menu, &after).await? {
                 return step.continue_at(ch.as_ref(), "relink", next).await;

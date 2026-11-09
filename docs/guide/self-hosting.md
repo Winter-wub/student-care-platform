@@ -34,13 +34,16 @@ needs a C compiler, plus NASM on Windows x86-64.
 The Deployment's secrets: `LINE_CHANNEL_SECRET`, `LINE_ACCESS_TOKEN`,
 `LINE_LIFF_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`,
 `TELEGRAM_WEB_APP_URL`, `FAKE_SECRET` (required, non-empty: the Fake Channel
-refuses an empty secret). With the Announcements Module on (the example has
-it), `LINE_LIFF_ID` and `TELEGRAM_WEB_APP_URL` are required too: its Cards
-carry Mini App buttons, and `build()` refuses a Channel without a Mini App.
-A timer calls `Deployment::tick` every minute, each tick in its own task: a
-panicking Job handler is recorded as a failed run of that Job, and any other
-panic in a tick is logged and the next tick still runs. The plain `release` profile keeps panic unwinding for this binary;
-the Worker builds with `wasm-release` (release + `panic = "abort"`).
+refuses an empty secret). Outside dev mode the native binary still registers the
+Fake Channel, but the Core refuses all its traffic (#133, see the [Channels
+guide](channels.md#the-fake-channel-never-belongs-in-production)). With the
+Announcements Module on (the example has it), `LINE_LIFF_ID` and
+`TELEGRAM_WEB_APP_URL` are required too: its Cards carry Mini App buttons, and
+`build()` refuses a Channel without a Mini App. A timer calls `Deployment::tick`
+every minute, each tick in its own task: a panicking Job handler is recorded as
+a failed run of that Job, and any other panic in a tick is logged and the next
+tick still runs. The plain `release` profile keeps panic unwinding for this
+binary; the Worker builds with `wasm-release` (release + `panic = "abort"`).
 
 #### Back office and the `harpseal` CLI
 
@@ -110,8 +113,9 @@ change it at first sign-in) and `seed-example` against `HARPSEAL_DB`.
 
 ### Dev mode (`HARPSEAL_DEV_ROUTES=1`)
 
-For demos and `just e2e` only, never in production. Email is captured in
-memory instead of sent, and three routes answer only with header
+For demos and `just e2e` only, never in production. The Deployment is built in
+dev mode, so the Fake Channel takes traffic and Staff see it. Email is
+captured in memory instead of sent, and three routes answer only with header
 `x-dev-secret: <FAKE_SECRET>` (404 otherwise):
 
 | Route | Answer |

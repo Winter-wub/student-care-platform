@@ -129,6 +129,7 @@ async fn the_card_says_where_to_read_without_a_mini_app() {
     let d = harpseal::Deployment::builder()
         .config(Harness::config())
         .runtime(h.services())
+        .dev(true)
         .channel(fake)
         .verification(harpseal::EmailOtp::default())
         .build()

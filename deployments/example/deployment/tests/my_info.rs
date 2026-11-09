@@ -24,6 +24,7 @@ async fn run(h: &Harness, sql: &str) {
 async fn boot(h: &Harness) -> TestApp {
     let d = builder(h.services(), secrets())
         .unwrap()
+        .dev(true)
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");

@@ -69,7 +69,8 @@ impl Secrets {
 
     /// Reads [`Secrets::VARS`] through `get`: the process environment on
     /// the native binary, Worker secrets and vars on Workers. Missing values
-    /// are empty; [`deployment`] refuses an empty `FAKE_SECRET`.
+    /// are empty; [`deployment`] refuses an empty `FAKE_SECRET`
+    /// ([`hosted_deployment`] reads it only for a Fake demo).
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
         let v = |k: &str| get(k).unwrap_or_default();
         Secrets {
@@ -171,6 +172,11 @@ pub fn builder(services: Services, secrets: Secrets) -> Result<DeploymentBuilder
 pub enum StartError {
     /// `FAKE_SECRET` is empty: the Fake Channel would accept unsigned calls.
     FakeSecret(harpseal::Error),
+    /// A hosted Fake demo ([`FAKE_DEMO_VAR`]) without a strong
+    /// `FAKE_SECRET` ([`check_fake_secret`]).
+    WeakFakeSecret(String),
+    /// [`FAKE_DEMO_VAR`] is neither `"1"` nor unset ([`fake_demo`]).
+    FakeDemo(String),
     /// A LINE Channel with real credentials has no usable rich menu image,
     /// or a `LINE_MENU_IMAGE_*` file could not be read.
     MenuImages(String),
@@ -184,6 +190,7 @@ impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StartError::FakeSecret(e) => write!(f, "FAKE_SECRET: {e}"),
+            StartError::WeakFakeSecret(m) | StartError::FakeDemo(m) => write!(f, "{m}"),
             StartError::MenuImages(m) => write!(f, "LINE rich menu images: {m}"),
             StartError::Build(e) => write!(f, "{e}"),
             StartError::PublicUrl(e) => write!(f, "HARPSEAL_PUBLIC_URL: {e}"),
@@ -193,8 +200,69 @@ impl std::fmt::Display for StartError {
 
 impl std::error::Error for StartError {}
 
+/// The Worker variable that opts a hosted Deployment in to the Fake
+/// Channel (`"1"`), for a demo only (#133): see [`hosted_deployment`].
+pub const FAKE_DEMO_VAR: &str = "HARPSEAL_FAKE_DEMO";
+/// Shortest `FAKE_SECRET` a Fake Channel that takes traffic accepts (native
+/// dev mode and the hosted demo).
+pub const MIN_FAKE_SECRET_CHARS: usize = 16;
+/// The documented placeholder `FAKE_SECRET`, refused wherever the Fake
+/// Channel takes traffic.
+pub const PLACEHOLDER_FAKE_SECRET: &str = "change-me";
+
+/// The value of [`FAKE_DEMO_VAR`]: unset, empty or `"0"` is off, `"1"` is
+/// on; anything else refuses to start ([`StartError::FakeDemo`]), so a
+/// typo never silently turns the demo on or off.
+pub fn fake_demo(value: Option<&str>) -> Result<bool, StartError> {
+    match value.map(str::trim) {
+        None | Some("" | "0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(other) => Err(StartError::FakeDemo(format!(
+            "{FAKE_DEMO_VAR} must be \"1\" (on) or unset (off), not {other:?}"
+        ))),
+    }
+}
+
+/// Whether `secret` is strong enough for a Fake Channel that takes
+/// traffic: at least [`MIN_FAKE_SECRET_CHARS`] characters and not
+/// [`PLACEHOLDER_FAKE_SECRET`]. The error names the rule.
+pub fn check_fake_secret(secret: &str) -> Result<(), String> {
+    if secret == PLACEHOLDER_FAKE_SECRET || secret.chars().count() < MIN_FAKE_SECRET_CHARS {
+        return Err(format!(
+            "FAKE_SECRET must have at least {MIN_FAKE_SECRET_CHARS} characters and not be \
+             `{PLACEHOLDER_FAKE_SECRET}` (e.g. `openssl rand -hex 16`)"
+        ));
+    }
+    Ok(())
+}
+
+/// The Worker's Deployment (#133). By default it has no Fake Channel at
+/// all: only LINE and Telegram, and `FAKE_SECRET` is not read. With
+/// `fake_demo` (the Worker's [`FAKE_DEMO_VAR`] set to `"1"`, for a hosted
+/// demo only), it also registers the Fake Channel and is built in dev mode
+/// so that Channel takes traffic, but only with a `FAKE_SECRET` that passes
+/// [`check_fake_secret`]: whoever holds that secret can sign in as any
+/// Student who links over it.
+pub fn hosted_deployment(
+    services: Services,
+    secrets: Secrets,
+    fake_demo: bool,
+) -> Result<Deployment, StartError> {
+    if fake_demo {
+        check_fake_secret(&secrets.fake_secret)
+            .map_err(|m| StartError::WeakFakeSecret(format!("{FAKE_DEMO_VAR}=1: {m}")))?;
+        return deployment_with_fake_in(services, secrets, true).map(|(d, _)| d);
+    }
+    check_menu_images(&secrets)?;
+    builder(services, secrets)?
+        .build()
+        .map_err(StartError::Build)
+}
+
 /// The whole Deployment, with a Fake Channel keyed by `secrets.fake_secret`,
-/// which must not be empty.
+/// which must not be empty. Built outside dev mode, so that Channel takes
+/// no traffic (#133): the native binary without `HARPSEAL_DEV_ROUTES=1`.
+/// The Worker uses [`hosted_deployment`].
 pub fn deployment(services: Services, secrets: Secrets) -> Result<Deployment, StartError> {
     deployment_with_fake(services, secrets).map(|(d, _)| d)
 }
@@ -209,15 +277,25 @@ pub fn deployment_with_fake(
 }
 
 /// [`deployment_with_fake`], built in dev mode when `dev` is set, so the
-/// back office also shows the Fake Channel (#131); the native binary's
-/// `HARPSEAL_DEV_ROUTES=1`.
+/// Fake Channel takes traffic (#133) and the back office shows it (#131);
+/// the native binary's `HARPSEAL_DEV_ROUTES=1`.
 pub fn deployment_with_fake_in(
     services: Services,
     secrets: Secrets,
     dev: bool,
 ) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
-    // With real credentials, refuse now rather than at the first Inbound.
+    check_menu_images(&secrets)?;
+    let d = builder(services, secrets)?
+        .dev(dev)
+        .channel(fake.clone())
+        .build()
+        .map_err(StartError::Build)?;
+    Ok((d, fake))
+}
+
+/// With real LINE credentials, refuse now rather than at the first Inbound.
+fn check_menu_images(secrets: &Secrets) -> Result<(), StartError> {
     secrets.line.check_menu_images().map_err(|e| {
         let why = match e {
             harpseal::Error::Invalid(m) => m,
@@ -229,11 +307,5 @@ pub fn deployment_with_fake_in(
             menu_images::LOCKED_VAR,
             menu_images::UNLOCKED_VAR
         ))
-    })?;
-    let d = builder(services, secrets)?
-        .dev(dev)
-        .channel(fake.clone())
-        .build()
-        .map_err(StartError::Build)?;
-    Ok((d, fake))
+    })
 }

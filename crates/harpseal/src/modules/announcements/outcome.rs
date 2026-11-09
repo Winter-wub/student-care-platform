@@ -34,6 +34,19 @@ pub(super) fn skipped(id: &str) -> Statement {
     .bind(id.to_string())
 }
 
+/// Every pending delivery of round `round` on `channel`, skipped as
+/// unreachable: the Channel takes no traffic here (dev-only outside dev,
+/// or no longer registered, #133), so the round can still finish.
+pub(super) fn skipped_channel(id: &str, round: i64, channel: &str) -> Statement {
+    Statement::new(
+        "UPDATE announcement_delivery SET status = 'skipped', error = 'unreachable' \
+         WHERE announcement_id = ? AND round = ? AND channel = ? AND status = 'pending'",
+    )
+    .bind(id.to_string())
+    .bind(round)
+    .bind(channel.to_string())
+}
+
 /// Retries this Job gets (`job.max_attempts`, 3 by default): a run whose
 /// `attempt` is above it is the last.
 pub(super) async fn max_retries(s: &Services, job_id: &str) -> Result<u32> {

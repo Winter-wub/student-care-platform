@@ -48,7 +48,7 @@ const SLOTS: [(MenuSlot, &str, &str); 2] = [
 ];
 
 fn art(s: &PageState) -> Option<&dyn MenuArt> {
-    s.deployment.channels().iter().find_map(|c| c.menu_art())
+    s.deployment.channels().find_map(|c| c.menu_art())
 }
 
 /// Re-link and re-lock Jobs not finished yet.

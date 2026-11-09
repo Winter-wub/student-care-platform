@@ -57,8 +57,8 @@ pub(super) async fn reach(
 ) -> (Option<Counts>, Vec<(String, MonthSummary)>) {
     let counts = audience::count(d, a).await.ok();
     // This month's usage beside each Channel, as the Quota banner: a
-    // dev-only Channel's only in dev mode (#131). Its reach stays listed:
-    // those Students do get the Announcement.
+    // dev-only Channel's only in dev mode (#131). Outside dev it reaches
+    // no one either (#133): `audience::count` skips it, as every send does.
     let kinds: Vec<String> = counts
         .iter()
         .flat_map(|c| c.per_channel.keys().map(|k| k.to_string()))

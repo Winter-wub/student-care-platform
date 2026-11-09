@@ -31,10 +31,10 @@ use serde_json::{Value, json};
 /// Header carrying `FAKE_SECRET`.
 pub const SECRET_HEADER: &str = "x-dev-secret";
 
-/// Shortest `FAKE_SECRET` dev mode accepts.
-pub const MIN_SECRET_CHARS: usize = 16;
+/// Shortest `FAKE_SECRET` dev mode accepts (the hosted demo's rule too).
+pub const MIN_SECRET_CHARS: usize = example_deployment::MIN_FAKE_SECRET_CHARS;
 /// The documented placeholder, refused in dev mode.
-pub const PLACEHOLDER_SECRET: &str = "change-me";
+pub const PLACEHOLDER_SECRET: &str = example_deployment::PLACEHOLDER_FAKE_SECRET;
 /// Emails kept; older ones are dropped.
 pub const KEPT_EMAILS: usize = 50;
 

@@ -17,6 +17,7 @@ fn secrets() -> Secrets {
 async fn boot(h: &Harness) -> harpseal_testing::TestApp {
     let d = builder(h.services(), secrets())
         .unwrap()
+        .dev(true)
         .channel(h.fake_channel())
         .build()
         .expect("the example Deployment builds");
@@ -42,6 +43,7 @@ fn example_has_four_roles_and_the_contact_menu() {
     let h = Harness::new();
     let d = builder(h.services(), secrets())
         .unwrap()
+        .dev(true)
         .channel(h.fake_channel())
         .build()
         .unwrap();

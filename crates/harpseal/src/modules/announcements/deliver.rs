@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value as Json, json};
 
 use super::gate::JobReq;
-use super::outcome::{failed, is_final, kind_of, max_retries, outcome, skipped};
+use super::outcome::{failed, is_final, kind_of, max_retries, outcome, skipped, skipped_channel};
 use super::store::{self, Row};
 use super::{DELIVER, DELIVER_CHANNEL, NAME};
 use crate::delivery::{ChannelAccountId, Timestamp};
@@ -163,6 +163,7 @@ async fn enqueue_children(cx: &JobContext, d: &Deployment, row: &Row) -> Result<
         let channel = store::text(&rows, i, "channel");
         let total = usize::try_from(store::int(&rows, i, "n").unwrap_or(0)).unwrap_or(0);
         let Some((size, paced)) = chunk_size(d, &channel) else {
+            stmts.push(skipped_channel(row.id.as_str(), row.round, &channel));
             continue;
         };
         for n in 0..total.div_ceil(size) {
@@ -245,7 +246,8 @@ pub(crate) async fn child(cx: JobContext, job: Job) -> Result<()> {
         return Ok(());
     }
     let Some(kind) = d.channel(&channel).map(|c| c.kind()) else {
-        return Ok(());
+        s.db.execute(skipped_channel(&id, round, &channel)).await?;
+        return finish_if_done(s, &id, round).await;
     };
     let rows =
         s.db.query(

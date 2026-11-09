@@ -175,4 +175,4 @@ A typed value a Module declares for the whole Deployment, such as the bank accou
 _Avoid_: config, option, preference
 
 **Fake Channel** (ช่องทางจำลอง):
-An in-memory Channel adapter used in tests and demos; it must pass the same contract tests as real Channels.
+An in-memory Channel adapter used in tests and demos; it must pass the same contract tests as real Channels. It is dev-only: outside dev mode the Core refuses all its traffic, and it never belongs in production.

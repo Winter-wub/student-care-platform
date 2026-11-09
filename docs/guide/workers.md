@@ -40,7 +40,6 @@ A preview on your own account:
 ```sh
 cd deployments/example/worker
 npx wrangler@4 d1 create harpseal-example            # paste database_id into wrangler.toml
-npx wrangler@4 secret put FAKE_SECRET                 # required
 npx wrangler@4 secret put RESEND_API_KEY              # optional: without it every email send fails
 npx wrangler@4 secret put LINE_CHANNEL_SECRET         # and LINE_ACCESS_TOKEN, LINE_LIFF_ID,
                                                       # TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET,
@@ -53,5 +52,24 @@ curl https://harpseal-example.<subdomain>.workers.dev/notice
 Bindings the runtime reads (`CloudflareSettings`): D1 `DB`, R2 `FILES`
 (optional: without it file operations answer an error naming the binding),
 secret `RESEND_API_KEY`, var `EMAIL_FROM` (set in `wrangler.toml`).
+
+The Worker registers LINE and Telegram only: no Fake Channel, and it does not
+read `FAKE_SECRET` (#133). The Fake Channel never belongs in production
+([Channels guide](channels.md#the-fake-channel-never-belongs-in-production)).
+A hosted demo that must take Fake traffic opts in explicitly:
+
+```sh
+npx wrangler@4 secret put FAKE_SECRET    # at least 16 characters, not change-me: openssl rand -hex 16
+# wrangler.toml [vars]: HARPSEAL_FAKE_DEMO = "1"
+```
+
+Any value other than `"1"` or unset (`"0"` and empty are off too) refuses to
+start, so a typo never turns the demo on or off silently. With
+`HARPSEAL_FAKE_DEMO = "1"` the Worker registers the Fake Channel and is
+built in dev mode (`DeploymentBuilder::dev(true)`), so the Fake Channel takes
+traffic and Staff see it. It refuses to start with a weaker `FAKE_SECRET`, and
+whoever holds the secret can sign in as any Student who links over it. Use it
+only on a demo database with fictional Students; remove the variable to turn
+it off.
 `Date.now()` is frozen while a request computes, so never measure durations
 with the Clock there; use `wrangler tail`.

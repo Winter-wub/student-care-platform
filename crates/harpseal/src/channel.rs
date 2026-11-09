@@ -227,13 +227,16 @@ pub trait Channel: Send + Sync {
     fn menu_art(&self) -> Option<&dyn MenuArt> {
         None
     }
-    /// A Channel for demos and tests only (the Fake Channel). Display
-    /// only (#131): unless the Deployment is built with
-    /// [`crate::DeploymentBuilder::dev`], the back office does not offer it
-    /// (no empty Link row, no Manual Link to it, no usage card or quota
-    /// line). It changes nothing else: the Channel still takes webhooks,
-    /// sends and signs in to the Mini App, and a Link that exists on it is
-    /// still listed and can be revoked. Default `false`.
+    /// A Channel for demos and tests only (the Fake Channel). Unless the
+    /// Deployment is built with [`crate::DeploymentBuilder::dev`], it takes
+    /// no traffic (#133): [`crate::Deployment::channel`] does not return
+    /// it, so its webhooks are 404, its Mini App tokens and sessions are
+    /// refused, its link flow never runs, Manual Links to it are refused
+    /// and nothing is sent to it (a Link on it counts as unreachable).
+    /// The back office does not offer it either (#131: no empty Link row,
+    /// no Manual Link option, no usage card or quota line), but a Link that
+    /// exists on it is still listed and can be revoked. Whatever its
+    /// secret, it never belongs in production. Default `false`.
     fn dev_only(&self) -> bool {
         false
     }
