@@ -117,6 +117,7 @@ async fn data_without_a_header_is_reported_not_dropped() {
     let (_, _, report) = refused("a.csv", file.as_bytes()).await;
     assert!(report.contains("2,D,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
     assert!(report.contains("3,J,มีข้อมูลในคอลัมน์ที่ไม่มีหัวคอลัมน์"), "{report}");
-    let blocking = report.lines().filter(|l| !l.ends_with(",เตือน")).count();
+    // The level, then the Student a warning names (#134).
+    let blocking = report.lines().filter(|l| !l.contains(",เตือน,")).count();
     assert_eq!(blocking, 3, "the header and the two rows: {report}");
 }
