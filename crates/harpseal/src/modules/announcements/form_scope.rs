@@ -84,30 +84,30 @@ pub(super) fn described(errors: &[(&str, &str)], field: &str) -> Option<String> 
 pub(super) fn attributes(v: &View<'_>, f: &Fields) -> Markup {
     let roster = &v.s.config.roster;
     html! {
-                // Each attribute is labelled (#129): a list of values is
-                // a fieldset with a legend, a typed one a label tied to
-                // its input.
-                @for (key, spec) in roster.attributes_in_order() {
-                    @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
-                    @let label = spec.label_in(key, &v.staff.locale, &v.s.config.default_locale);
-                    @if spec.kind == AttributeType::Enum {
-                        fieldset class="checks" {
-                            legend { (label) }
-                            @for value in &spec.values {
-                                label class="check" {
-                                    input type="checkbox" name=(format!("attr.{key}")) value=(value)
-                                        checked[chosen.contains(value)];
-                                    " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
-                                }
-                            }
-                        }
-                    } @else {
-                        div class="field" {
-                            label for=(format!("attr-{key}")) { (label) }
-                            input id=(format!("attr-{key}")) name=(format!("attr.{key}")) value=(chosen.join(", "))
-                                placeholder=(v.t("announcements.form.any_of"));
+        // Each attribute is labelled (#129): a list of values is
+        // a fieldset with a legend, a typed one a label tied to
+        // its input.
+        @for (key, spec) in roster.attributes_in_order() {
+            @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
+            @let label = spec.label_in(key, &v.staff.locale, &v.s.config.default_locale);
+            @if spec.kind == AttributeType::Enum {
+                fieldset class="checks" {
+                    legend { (label) }
+                    @for value in &spec.values {
+                        label class="check" {
+                            input type="checkbox" name=(format!("attr.{key}")) value=(value)
+                                checked[chosen.contains(value)];
+                            " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
                         }
                     }
                 }
+            } @else {
+                div class="field" {
+                    label for=(format!("attr-{key}")) { (label) }
+                    input id=(format!("attr-{key}")) name=(format!("attr.{key}")) value=(chosen.join(", "))
+                        placeholder=(v.t("announcements.form.any_of"));
+                }
+            }
+        }
     }
 }

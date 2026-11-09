@@ -41,7 +41,7 @@ async fn boot_blocking(classes: &str) -> (Harness, TestApp) {
 async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "w.csv", &warned_file(), "full").await;
+    let id = previewed(&b, "w.csv", &warned_file(), "full", false).await;
     let w = &counts(&h, &id).await["warnings"];
     assert_eq!(w["total"], 5);
     assert_eq!(w["classes"]["missing_email"], 1);
@@ -88,7 +88,7 @@ async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
 async fn the_report_of_a_file_that_imports_lists_its_warnings() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "w.csv", &warned_file(), "full").await;
+    let id = previewed(&b, "w.csv", &warned_file(), "full", false).await;
     let r = b.get(&format!("/admin/roster/{id}/report.csv")).await;
     assert_eq!(r.status, 200);
     assert!(
@@ -129,13 +129,13 @@ async fn an_email_an_existing_student_has_is_a_warning_unless_it_is_theirs() {
         "68000099,ปลา,other@student.sealbay.example,,,MSC,1,3.0",
     ]);
     // 68000099 is in the file with another email, so their old one is free.
-    let id = previewed(&b, "a.csv", &file, "upsert").await;
+    let id = previewed(&b, "a.csv", &file, "upsert", false).await;
     assert_eq!(total(&counts(&h, &id).await), 0, "no warnings are stored");
     b.post(&format!("/admin/roster/{id}/cancel"), "").await;
 
     // Only 68000001 is listed: 68000099 keeps the address.
     let file = csv_lines(&[&format!("68000001,นก,{OK},,,MSC,1,3.0")]);
-    let id = previewed(&b, "b.csv", &file, "upsert").await;
+    let id = previewed(&b, "b.csv", &file, "upsert", false).await;
     let w = &counts(&h, &id).await["warnings"];
     assert_eq!(
         (
@@ -148,7 +148,7 @@ async fn an_email_an_existing_student_has_is_a_warning_unless_it_is_theirs() {
 
     // The Student's own address is no duplicate.
     let file = csv_lines(&[&format!("68000099,ปลา,{OK},,,MSC,1,3.0")]);
-    let id = previewed(&b, "c.csv", &file, "upsert").await;
+    let id = previewed(&b, "c.csv", &file, "upsert", false).await;
     assert_eq!(total(&counts(&h, &id).await), 0, "no warnings are stored");
 }
 
@@ -192,7 +192,7 @@ async fn a_class_that_is_not_made_blocking_still_only_warns() {
         "68000002,ปลา,,,,MSC,1,",
         "68000003,กุ้ง,nok@sealbay,,,MSC,1,3.0",
     ]);
-    let id = previewed(&b, "w.csv", &file, "full").await;
+    let id = previewed(&b, "w.csv", &file, "full", false).await;
     assert_eq!(counts(&h, &id).await["warnings"]["total"], 3);
 }
 
@@ -247,7 +247,7 @@ async fn a_refused_file_shows_its_warnings_apart_from_the_blocking_problems() {
 async fn a_failed_job_still_shows_the_warnings_of_the_import() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "w.csv", &warned_file(), "full").await;
+    let id = previewed(&b, "w.csv", &warned_file(), "full", false).await;
     run(&h, &format!(
         "UPDATE roster_import SET state = 'failed', error = '{{\"job\":\"x\"}}' WHERE id = '{id}'"
     ))
@@ -264,7 +264,7 @@ async fn blank_optional_cells_make_one_warning_per_column() {
         .map(|n| format!("6800000{n},นก{n},n{n}@student.sealbay.example,,,MSC,1,"))
         .collect();
     let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
-    let id = previewed(&b, "b.csv", &csv_lines(&refs), "full").await;
+    let id = previewed(&b, "b.csv", &csv_lines(&refs), "full", false).await;
     let c = counts(&h, &id).await;
     assert_eq!(c["warnings"]["total"], 8, "cells");
     assert_eq!(c["warnings"]["problems"].as_array().unwrap().len(), 1);
@@ -293,14 +293,14 @@ async fn a_left_student_or_one_a_full_import_retires_does_not_make_a_duplicate()
     .await;
     let file = csv_lines(&[&format!("68000001,นก,{OK},,,MSC,1,3.0")]);
     // upsert: 68000099 stays active with the address.
-    let id = previewed(&b, "u.csv", &file, "upsert").await;
+    let id = previewed(&b, "u.csv", &file, "upsert", false).await;
     assert_eq!(
         counts(&h, &id).await["warnings"]["classes"]["duplicate_email"],
         1
     );
     b.post(&format!("/admin/roster/{id}/cancel"), "").await;
     // full: 68000099 is not in the file, so becomes left; 68000098 is left.
-    let id = previewed(&b, "f.csv", &file, "full").await;
+    let id = previewed(&b, "f.csv", &file, "full", true).await;
     assert_eq!(total(&counts(&h, &id).await), 0);
 }
 
@@ -309,7 +309,7 @@ async fn an_email_is_stored_trimmed_of_every_unicode_space() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     let file = csv_lines(&["68000001,นก,\u{a0}nok@student.sealbay.example\t,,,MSC,1,3.0"]);
-    let id = previewed(&b, "n.csv", &file, "full").await;
+    let id = previewed(&b, "n.csv", &file, "full", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     let sql = "SELECT count(*) FROM student WHERE email = 'nok@student.sealbay.example'";

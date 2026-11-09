@@ -14,7 +14,7 @@ const ACTIVE: &str = "SELECT count(*) FROM student WHERE status = 'active'";
 async fn twelve_hundred_rows_run_as_three_chunk_jobs() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "big.csv", &csv(0..1200), "full").await;
+    let id = previewed(&b, "big.csv", &csv(0..1200), "full", false).await;
     confirm(&b, &id).await;
     let mut applied = Vec::new();
     for _ in 0..3 {
@@ -87,7 +87,7 @@ async fn snapshot(h: &harpseal_testing::Harness, id: &str) -> (String, i64, i64,
 async fn running_a_finished_chunk_again_changes_nothing() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "big.csv", &csv(0..600), "full").await;
+    let id = previewed(&b, "big.csv", &csv(0..600), "full", false).await;
     confirm(&b, &id).await;
     // Mid-import: chunk 0 is applied, chunk 500 is queued.
     app.deployment()
@@ -122,7 +122,7 @@ async fn running_a_finished_chunk_again_changes_nothing() {
 async fn a_chunk_that_fails_part_way_writes_nothing_and_is_retried() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "big.csv", &csv(0..1200), "full").await;
+    let id = previewed(&b, "big.csv", &csv(0..1200), "full", false).await;
     confirm(&b, &id).await;
     // The 700th row breaks the second chunk's batch at its 200th upsert.
     run(
@@ -161,7 +161,7 @@ async fn a_chunk_that_fails_part_way_writes_nothing_and_is_retried() {
 async fn a_chunk_that_keeps_failing_marks_the_import_failed_without_file_contents() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..5), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..5), "full", false).await;
     confirm(&b, &id).await;
     run(
         &h,
@@ -183,7 +183,7 @@ async fn a_chunk_that_keeps_failing_marks_the_import_failed_without_file_content
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("การนำเข้าหยุดกลางทาง"), "{page}");
     // The slot is free again.
-    previewed(&b, "b.csv", &csv(0..5), "full").await;
+    previewed(&b, "b.csv", &csv(0..5), "full", false).await;
 }
 
 #[tokio::test]
@@ -199,7 +199,7 @@ async fn students_who_leave_lose_their_links_and_are_told() {
          updated_at) VALUES ('back', '68000002', 'Back', 'th', 'left', 1, 1)",
     )
     .await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", true).await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["will_become_left"], 1);
     assert_eq!(c["preview"]["returning"], 1);
@@ -251,7 +251,7 @@ async fn a_status_set_by_hand_is_not_changed_by_a_full_import() {
         "UPDATE student SET manual_overrides = '[\"status\"]' WHERE id = 'stay'",
     )
     .await;
-    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full", false).await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["will_become_left"], 0);
     // A Student kept active, not a field kept: counted apart (#46).

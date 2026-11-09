@@ -45,7 +45,7 @@ async fn an_upsert_preview_keeps_the_plain_confirm() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..3).await;
-    let id = previewed(&b, "a.csv", &csv(0..1), "upsert").await;
+    let id = previewed(&b, "a.csv", &csv(0..1), "upsert", false).await;
     let page = preview_page(&b, &id).await;
     assert!(page.contains(">ยืนยันนำเข้า</button>"), "{page}");
     assert!(!page.contains(DANGER) && !page.contains(TYPED), "{page}");
@@ -58,7 +58,7 @@ async fn a_full_replace_that_makes_nobody_left_keeps_the_plain_confirm() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..3).await;
-    let id = previewed(&b, "a.csv", &csv(0..4), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..4), "full", false).await;
     let page = preview_page(&b, &id).await;
     assert!(page.contains(">ยืนยันนำเข้า</button>"), "{page}");
     assert!(!page.contains(DANGER) && !page.contains(TYPED), "{page}");
@@ -71,7 +71,7 @@ async fn a_full_replace_names_its_reach_in_the_danger_style() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..10).await;
-    let id = previewed(&b, "a.csv", &csv(1..12), "full").await;
+    let id = previewed(&b, "a.csv", &csv(1..12), "full", false).await;
     let page = preview_page(&b, &id).await;
     assert!(
         page.contains(&format!("{DANGER}ยืนยัน: 1 คนจะพ้นสภาพ</button>")),
@@ -91,7 +91,7 @@ async fn a_warned_full_replace_needs_the_reach_typed_and_refuses_anything_else()
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..5).await;
-    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full", true).await;
     let page = preview_page(&b, &id).await;
     assert!(
         page.contains(&format!("{DANGER}ยืนยัน: 3 คนจะพ้นสภาพ</button>")),
@@ -134,7 +134,7 @@ async fn the_word_confirms_a_warned_full_replace_too() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..5).await;
-    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full", true).await;
     assert_eq!(confirm_typed(&b, &id, Some(TYPED_WORD)).await.status, 303);
     assert_eq!(flash(&b), "ok:kernel.roster.confirmed");
     assert_eq!(import_text(&h, &id, "state").await, "queued");
@@ -154,7 +154,7 @@ async fn a_full_only_deployment_without_a_default_mode_still_builds_and_asks() {
     assert!(page.contains(r#"value="full" checked"#), "{page}");
     // The full replace still names its reach and asks for it typed.
     on_roster(&h, 0..5).await;
-    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full", true).await;
     let page = preview_page(&b, &id).await;
     assert!(
         page.contains(&format!("{DANGER}ยืนยัน: 3 คนจะพ้นสภาพ</button>")),

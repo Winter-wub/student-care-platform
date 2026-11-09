@@ -3,8 +3,8 @@
    onboarding help (see `ui::CSS`). Measured, not eyeballed: every ratio
    below is WCAG 2 relative luminance. */
 
-/* On the letterhead the ring is the bar's own ink: white (or Ledger Ink
-   on a light TOML colour), at least 4.5:1 on the brand. */
+/* On the letterhead the ring is the bar's own ink: white, else Ledger
+   Ink, else black (a light TOML colour), at least 4.5:1 on the brand. */
 .bar :focus-visible, .mini-bar :focus-visible { outline-color: var(--brand-ink); }
 /* The current page's ring sits inside its brand fill, in the bar's ink. */
 .nav a[aria-current="page"]:focus-visible { outline: 3px solid var(--brand-ink); outline-offset: -5px; }

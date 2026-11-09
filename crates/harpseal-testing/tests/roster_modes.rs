@@ -120,7 +120,7 @@ async fn a_forged_full_request_is_refused_and_imports_nothing() {
     assert_eq!(int(&h, ACTIVE, &[]).await, 1);
     assert_eq!(int(&h, LIVE_LINKS, &[]).await, 1);
     // The same file as `upsert` goes through.
-    previewed(&b, "a.csv", &csv(10..13), "upsert").await;
+    previewed(&b, "a.csv", &csv(10..13), "upsert", false).await;
 }
 
 #[tokio::test]
@@ -189,7 +189,7 @@ async fn a_full_only_deployment_offers_and_accepts_only_full() {
     let r = upload(&b, "a.csv", &csv(0..3), "upsert").await;
     assert_eq!(r.status, 400, "{}", r.body);
     assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
-    previewed(&b, "a.csv", &csv(0..3), "full").await;
+    previewed(&b, "a.csv", &csv(0..3), "full", false).await;
 }
 
 #[tokio::test]
@@ -198,7 +198,7 @@ async fn a_full_preview_cannot_be_confirmed_after_the_deployment_went_upsert_onl
     let (h, first) = boot_with("").await;
     let b = signed_in(&h, &first, "Officer").await;
     linked_student(&h, "other", "68000900", "active").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", true).await;
     // …then the Deployment turns `full` off, and the preview is still there.
     let app = boot_in(&h, UPSERT_ONLY).await;
     let b = app.browser();

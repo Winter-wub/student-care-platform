@@ -156,17 +156,29 @@ pub fn import_id(r: &TestResponse) -> String {
         .to_string()
 }
 
-/// Uploads and checks it was previewed; returns the import id.
-pub async fn previewed(b: &Browser<'_>, name: &str, bytes: &[u8], mode: &str) -> String {
-    let r = upload(b, name, bytes, mode).await;
-    assert_eq!(r.status, 303, "{}", r.body);
-    // Previewed, with or without the leave warning in the flash (#129).
-    let f = flash(b);
-    assert!(
-        f == "ok:kernel.roster.previewed" || f == "err:kernel.roster.previewed_warning",
-        "{f}"
-    );
-    import_id(&r)
+/// Uploads and checks it was previewed, with the leave warning in its
+/// flash when `expect_warning` (#129); returns the import id. A failure
+/// names the calling line.
+#[track_caller]
+pub fn previewed<'a>(
+    b: &'a Browser<'_>,
+    name: &'a str,
+    bytes: &'a [u8],
+    mode: &'a str,
+    expect_warning: bool,
+) -> impl std::future::Future<Output = String> + 'a {
+    let at = std::panic::Location::caller();
+    async move {
+        let r = upload(b, name, bytes, mode).await;
+        assert_eq!(r.status, 303, "{at}: {}", r.body);
+        let want = if expect_warning {
+            "err:kernel.roster.previewed_warning"
+        } else {
+            "ok:kernel.roster.previewed"
+        };
+        assert_eq!(flash(b), want, "{at}");
+        import_id(&r)
+    }
 }
 
 /// Confirms import `id` (after loading its page for the token), typing

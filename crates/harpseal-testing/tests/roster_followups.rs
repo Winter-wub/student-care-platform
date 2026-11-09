@@ -13,7 +13,7 @@ const DAY_MS: i64 = 86_400_000;
 async fn chunks_read_the_parsed_rows_not_the_original_file() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "big.csv", &csv(0..1200), "upsert").await;
+    let id = previewed(&b, "big.csv", &csv(0..1200), "upsert", false).await;
     let rows_key = format!("roster-rows/{id}.jsonl");
     assert!(
         h.files().keys().contains(&rows_key),
@@ -38,7 +38,7 @@ async fn chunks_read_the_parsed_rows_not_the_original_file() {
 async fn without_the_parsed_rows_a_chunk_reads_the_original_file() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.xlsx", XLSX_50, "upsert").await;
+    let id = previewed(&b, "a.xlsx", XLSX_50, "upsert", false).await;
     // A Deployment restored from a backup has only the original.
     h.files()
         .delete(&format!("roster-rows/{id}.jsonl"))
@@ -54,7 +54,7 @@ async fn without_the_parsed_rows_a_chunk_reads_the_original_file() {
 async fn changed_parsed_rows_fail_the_import() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "upsert").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "upsert", false).await;
     let forged = String::from_utf8(csv(0..3))
         .unwrap()
         .replace("นักศึกษา 1", "x");
@@ -82,11 +82,11 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     let uploaded_at = h.clock().now_ms();
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     // A second import still running a year later keeps its file.
-    let waiting = previewed(&b, "b.csv", &csv(0..2), "upsert").await;
+    let waiting = previewed(&b, "b.csv", &csv(0..2), "upsert", false).await;
     confirm(&b, &waiting).await;
     run(&h, "DELETE FROM job WHERE state = 'queued'").await;
     run(
@@ -170,7 +170,7 @@ async fn an_upload_that_loses_the_slot_leaves_no_stored_object() {
 async fn the_fallback_refuses_a_file_that_now_reads_differently() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "upsert").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "upsert", false).await;
     confirm(&b, &id).await;
     // Restored without the parsed rows, under a `[roster]` that still
     // accepts the file but reads `ชั้นปี` as a number (1.0, not 1).
@@ -206,7 +206,7 @@ async fn one_failing_object_does_not_hold_back_the_other_prunes() {
     let start = h.clock().now_ms();
     let mut ids = Vec::new();
     for (name, rows) in [("a.csv", 0..3), ("b.csv", 0..4)] {
-        let id = previewed(&b, name, &csv(rows), "upsert").await;
+        let id = previewed(&b, name, &csv(rows), "upsert", false).await;
         confirm(&b, &id).await;
         run_jobs(&h, &app).await;
         ids.push(id);
@@ -240,7 +240,7 @@ async fn one_failing_object_does_not_hold_back_the_other_prunes() {
 async fn a_preview_whose_file_was_pruned_cannot_be_confirmed() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "upsert").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "upsert", false).await;
     h.clock().advance_ms(366 * DAY_MS);
     let r = app
         .deployment()

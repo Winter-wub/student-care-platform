@@ -165,7 +165,9 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
             hx-swap=[live.then_some("outerHTML")] {
           div class="card" {
             @if let Some(job) = imp.failure.as_ref().and_then(|f| f.job.as_ref()) {
-                div class="warn" role="alert" { (v.t("kernel.roster.job_failed")) ": " (job) }
+                // The alert only without a flash (#129): after "mark failed"
+                // the flash announces; a poll carries none, so it does.
+                div class="warn" role=[v.alert()] { (v.t("kernel.roster.job_failed")) ": " (job) }
             }
             @if live {
                 label for="roster-bar" { (v.t("kernel.roster.progress")) " "

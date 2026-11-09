@@ -173,7 +173,6 @@ table.rows td::before { content: attr(data-label); flex: 0 0 8rem; color: var(--
   background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-weight: 700;
 }
 .news > li { display: block; }
-.news h3 { font-size: 1rem; margin: 0 0 4px; }
 .news .meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
 .foot { text-align: center; color: var(--muted); font-size: .8125rem; padding: 8px var(--gutter) 24px; }
 .notice h2 { margin-top: 20px; }

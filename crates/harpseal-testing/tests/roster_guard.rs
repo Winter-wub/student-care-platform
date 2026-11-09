@@ -13,7 +13,7 @@ use roster_support::*;
 async fn a_second_upload_is_refused_while_one_is_previewed_or_running() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let first = previewed(&b, "a.csv", &csv(0..600), "full").await;
+    let first = previewed(&b, "a.csv", &csv(0..600), "full", false).await;
     let r = upload(&b, "b.csv", &csv(0..3), "full").await;
     assert_eq!(
         r.header("location"),
@@ -35,16 +35,16 @@ async fn a_second_upload_is_refused_while_one_is_previewed_or_running() {
     assert_eq!(import_id(&r), first);
 
     run_jobs(&h, &app).await;
-    previewed(&b, "b.csv", &csv(0..3), "full").await;
+    previewed(&b, "b.csv", &csv(0..3), "full", true).await;
 }
 
 #[tokio::test]
 async fn a_preview_older_than_an_hour_is_replaced() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let old = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let old = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     h.clock().advance_minutes(61);
-    let new = previewed(&b, "b.csv", &csv(0..3), "upsert").await;
+    let new = previewed(&b, "b.csv", &csv(0..3), "upsert", false).await;
     assert_ne!(old, new);
     assert_eq!(import_text(&h, &old, "state").await, "cancelled");
     let r = confirm(&b, &old).await;
@@ -56,7 +56,7 @@ async fn a_preview_older_than_an_hour_is_replaced() {
 async fn a_viewer_sees_imports_but_cannot_upload_confirm_or_cancel() {
     let (h, app) = boot().await;
     let officer = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&officer, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&officer, "a.csv", &csv(0..3), "full", false).await;
     let viewer = signed_in(&h, &app, "Viewer").await;
     assert_eq!(viewer.get("/admin/roster").await.status, 200);
     let page = viewer.get(&format!("/admin/roster/{id}")).await;
@@ -85,7 +85,7 @@ async fn posts_without_the_csrf_token_are_refused() {
     let r = upload_with(&b, "a.csv", &csv(0..3), "full", Some("0000")).await;
     assert_eq!(r.status, 403);
     assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     let r = b.post_raw(&format!("/admin/roster/{id}/confirm"), "").await;
     assert_eq!(r.status, 403);
     assert_eq!(import_text(&h, &id, "state").await, "previewed");
@@ -95,7 +95,7 @@ async fn posts_without_the_csrf_token_are_refused() {
 async fn cancel_frees_the_slot_and_a_double_confirm_is_one_job() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     b.get(&format!("/admin/roster/{id}")).await;
     let r = b.post(&format!("/admin/roster/{id}/cancel"), "").await;
     assert_eq!(r.status, 303);
@@ -104,7 +104,7 @@ async fn cancel_frees_the_slot_and_a_double_confirm_is_one_job() {
     let cancel = "SELECT count(*) FROM audit_log WHERE action = 'roster.import.cancel'";
     assert_eq!(int(&h, cancel, &[]).await, 1);
 
-    let id = previewed(&b, "b.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "b.csv", &csv(0..3), "full", false).await;
     assert_eq!(confirm(&b, &id).await.status, 303);
     let again = b.post(&format!("/admin/roster/{id}/confirm"), "").await;
     assert_eq!(
@@ -130,7 +130,7 @@ async fn fragment(b: &harpseal_testing::Browser<'_>, id: &str) -> harpseal_testi
 async fn the_progress_fragment_polls_until_the_import_is_done() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..700), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..700), "full", false).await;
     confirm(&b, &id).await;
     app.deployment()
         .tick(Timestamp(h.clock().now_ms()))
@@ -157,7 +157,7 @@ async fn downloading_the_original_file_is_an_audited_read() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Viewer").await;
     let officer = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&officer, "รายชื่อ.xlsx", XLSX_50, "full").await;
+    let id = previewed(&officer, "รายชื่อ.xlsx", XLSX_50, "full", false).await;
     let r = b.get(&format!("/admin/roster/{id}/file")).await;
     assert_eq!(r.status, 200);
     assert_eq!(r.header("cache-control"), Some("no-store"));
