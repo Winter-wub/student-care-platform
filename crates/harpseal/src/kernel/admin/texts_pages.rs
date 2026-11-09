@@ -127,7 +127,7 @@ async fn render(
     let in_use = settings::row(&v.s.catalog, &v.s.config, &stored, key, &title_locale);
     let title = preview_short(in_use.effective());
     let body = html! {
-        p { a href="/admin/texts" { "← " (l("kernel.admin.texts.back")) } }
+        p { a class="back" href="/admin/texts" { "← " (l("kernel.admin.texts.back")) } }
         h1 { (title) }
         p class="muted" { (l("kernel.admin.texts.shown_on")) " "
             a href=(format!("/admin/texts?area={}", enc(&shown.id))) { (shown.name) } }

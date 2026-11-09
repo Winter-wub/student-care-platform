@@ -114,15 +114,18 @@ pub(super) async fn section(v: &View<'_>, f: MenuForm) -> crate::Result<Markup> 
                 (v.staff.csrf_field())
                 @for (slot, name, label, state, src, layouts) in &figures {
                     div class="field" {
-                        h3 { (v.t(label)) " " span class="chip" { (v.t(state)) } }
+                        // The heading names the file input (#129).
+                        h3 id=(format!("m-{name}-title")) { (v.t(label)) " " span class="chip" { (v.t(state)) } }
                         @for l in layouts { (areas(src, l, &caption)) }
                         @if f.drafts.contains_key(slot) {
                             input type="hidden" name=(format!("{name}_draft"))
                                 value=(base64_encode(&f.drafts[slot]));
                         }
                         input id=(format!("m-{name}")) type="file" name=(name) accept="image/png"
-                            aria-invalid=[f.errors.get(slot).map(|_| "true")];
-                        @if let Some(e) = f.errors.get(slot) { p class="field-error" { (e) } }
+                            aria-labelledby=(format!("m-{name}-title"))
+                            aria-invalid=[f.errors.get(slot).map(|_| "true")]
+                            aria-describedby=[f.errors.get(slot).map(|_| format!("m-{name}-error"))];
+                        @if let Some(e) = f.errors.get(slot) { p class="field-error" id=(format!("m-{name}-error")) { (e) } }
                     }
                 }
                 div class="actions" {

@@ -68,7 +68,7 @@ async fn a_bad_email_and_an_empty_one_only_warn_and_are_counted() {
         "68000001,นก,nok@sealbay,,,MSC,1,3.0",
         "68000002,ปลา,,,,MSC,1,3.0",
     ]);
-    let id = previewed(&b, "a.csv", &file, "full").await;
+    let id = previewed(&b, "a.csv", &file, "full", false).await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["empty_email"], 1);
     assert_eq!(c["warnings"]["classes"]["invalid_email"], 1);

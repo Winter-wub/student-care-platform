@@ -115,7 +115,7 @@ async fn a_refused_header_shows_the_same_columns() {
 async fn a_confirmed_import_offers_the_next_step() {
     let (h, app) = boot_sending().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "roster.csv", CSV_50, "upsert").await;
+    let id = previewed(&b, "roster.csv", CSV_50, "upsert", false).await;
     // Before the confirm: no next step yet.
     let before = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(!before.contains("id=\"next-step\""));
@@ -148,7 +148,7 @@ async fn a_confirmed_import_offers_the_next_step() {
 async fn staff_who_cannot_send_get_only_the_way_back() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "roster.csv", CSV_50, "upsert").await;
+    let id = previewed(&b, "roster.csv", CSV_50, "upsert", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;

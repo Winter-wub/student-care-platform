@@ -120,7 +120,7 @@ async fn a_forged_full_request_is_refused_and_imports_nothing() {
     assert_eq!(int(&h, ACTIVE, &[]).await, 1);
     assert_eq!(int(&h, LIVE_LINKS, &[]).await, 1);
     // The same file as `upsert` goes through.
-    previewed(&b, "a.csv", &csv(10..13), "upsert").await;
+    previewed(&b, "a.csv", &csv(10..13), "upsert", false).await;
 }
 
 #[tokio::test]
@@ -152,12 +152,31 @@ async fn with_both_modes_and_an_upsert_default_a_full_preview_keeps_the_leave_wa
     assert!(page.contains(r#"value="upsert" checked"#), "{page}");
     assert!(page.contains(r#"value="full""#));
     linked_student(&h, "gone", "68000900", "active").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    // The flash names the warning: it is the one message announced (#129).
+    let r = upload(&b, "a.csv", &csv(0..3), "full").await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(flash(&b), "err:kernel.roster.previewed_warning");
+    let id = import_id(&r);
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("ทั้งทะเบียน"), "the preview names the mode");
+    assert!(page.contains("ตรวจไฟล์แล้ว ระวัง:"), "{page}");
     assert!(page.contains(r#"data-count="will_become_left""#), "{page}");
     assert!(page.contains("Old gone"), "{page}");
-    assert!(page.contains(r#"role="alert""#), "the warning stays");
+    // The warning stays on the page, not a second live region under the
+    // flash; opened again later, it is the page's one alert (#129).
+    assert!(
+        page.contains(r#"<div class="warn">ระวัง: จะมีนักศึกษาพ้นสภาพเกิน 20%"#),
+        "the warning stays: {page}"
+    );
+    assert_eq!(
+        harpseal_testing::a11y::problems(&page),
+        Vec::<String>::new()
+    );
+    let again = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(
+        again.contains(r#"<div class="warn" role="alert">ระวัง:"#),
+        "{again}"
+    );
 }
 
 #[tokio::test]
@@ -170,7 +189,7 @@ async fn a_full_only_deployment_offers_and_accepts_only_full() {
     let r = upload(&b, "a.csv", &csv(0..3), "upsert").await;
     assert_eq!(r.status, 400, "{}", r.body);
     assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
-    previewed(&b, "a.csv", &csv(0..3), "full").await;
+    previewed(&b, "a.csv", &csv(0..3), "full", false).await;
 }
 
 #[tokio::test]
@@ -179,7 +198,7 @@ async fn a_full_preview_cannot_be_confirmed_after_the_deployment_went_upsert_onl
     let (h, first) = boot_with("").await;
     let b = signed_in(&h, &first, "Officer").await;
     linked_student(&h, "other", "68000900", "active").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", true).await;
     // …then the Deployment turns `full` off, and the preview is still there.
     let app = boot_in(&h, UPSERT_ONLY).await;
     let b = app.browser();
@@ -189,6 +208,15 @@ async fn a_full_preview_cannot_be_confirmed_after_the_deployment_went_upsert_onl
     );
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("ผลตรวจไฟล์นี้ใช้แบบการนำเข้า"), "{page}");
+    // A plain GET has no flash: the refusal is the page's one alert (#129).
+    assert!(
+        page.contains(r#"<div class="warn" role="alert">ผลตรวจไฟล์นี้"#),
+        "{page}"
+    );
+    assert_eq!(
+        harpseal_testing::a11y::problems(&page),
+        Vec::<String>::new()
+    );
     assert!(
         !page.contains(&format!("/admin/roster/{id}/confirm")),
         "{page}"

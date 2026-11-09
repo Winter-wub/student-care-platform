@@ -31,8 +31,9 @@ const MAX_LEFT_NAMES: usize = 200;
 /// What an upload did.
 #[derive(Debug)]
 pub(crate) enum Uploaded {
-    /// Previewed: import id.
-    Previewed(String),
+    /// Previewed: import id, and whether the preview carries the leave
+    /// warning (more than 20 % left, or a file shorter than the roster).
+    Previewed(String, bool),
     /// Refused with a report: import id (state `failed`).
     Refused(String),
     /// Another import holds the slot.
@@ -85,7 +86,8 @@ pub(crate) async fn upload(
         name: &name,
     };
     let out = record(s, &row, counts, read.result, mode == "full", ctx).await;
-    if !matches!(out, Ok(Uploaded::Previewed(_) | Uploaded::Refused(_))) && row_absent(s, &id).await
+    if !matches!(out, Ok(Uploaded::Previewed(..) | Uploaded::Refused(_)))
+        && row_absent(s, &id).await
     {
         // No row points at the objects (a failed batch, or another upload
         // took the slot): they would never be pruned. A batch can fail
@@ -150,7 +152,10 @@ async fn record(
             None => Err(Error::Conflict("roster import slot".into())),
         };
     }
-    Ok(Uploaded::Previewed(row.id.to_string()))
+    Ok(Uploaded::Previewed(
+        row.id.to_string(),
+        counts.preview.warning,
+    ))
 }
 
 /// Cancels the previews older than `stale` (they give the slot up), each

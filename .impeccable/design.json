@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-09T12:00:00+07:00",
+  "generatedAt": "2026-11-09T18:00:00+07:00",
   "title": "Design System: harpseal",
   "extensions": {
     "colorMeta": {
@@ -68,20 +68,42 @@
         "role": "status",
         "displayName": "Caution Ink",
         "canonical": "#6b4a00"
+      },
+      "field-edge": {
+        "role": "neutral",
+        "displayName": "Field Edge",
+        "canonical": "#7d8a97"
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus (derived)",
+        "canonical": "#0f5c7a",
+        "note": "--focus: the brand darkened until at least 3:1 on every light surface (ui::brand)."
+      },
+      "brand-text": {
+        "role": "primary",
+        "displayName": "Brand Text (derived)",
+        "canonical": "#0f5c7a",
+        "note": "--brand-text: the brand darkened until at least 4.5:1 on every light surface."
+      },
+      "caution-text": {
+        "role": "status",
+        "displayName": "Caution Text",
+        "canonical": "#8a5a00"
       }
     },
     "typographyMeta": {
       "headline": {
         "displayName": "Headline",
-        "purpose": "Page titles (h1)."
+        "purpose": "Page titles (h1), 1.7578rem, 1.4: one per page."
       },
       "title": {
         "displayName": "Title",
-        "purpose": "Card and section titles (h2)."
+        "purpose": "Subsections (h3) and home status-card titles, 1.125rem, 1.4."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "All running text; line height 1.6 for Thai marks."
+        "purpose": "All running text at 1rem (the user's size); line height 1.6 for Thai marks; tabular figures in data."
       },
       "label": {
         "displayName": "Label",
@@ -90,6 +112,14 @@
       "caption": {
         "displayName": "Caption",
         "purpose": "Table headers, meta lines, definition terms."
+      },
+      "section": {
+        "displayName": "Section",
+        "purpose": "Section and card titles (h2), 1.40625rem, 1.4: 1.25 x Title."
+      },
+      "small": {
+        "displayName": "Small",
+        "purpose": "Chips and footers, 0.8125rem."
       }
     },
     "shadows": [],
@@ -130,7 +160,7 @@
       "refersTo": "button-primary",
       "description": "The one action that moves the work forward; brand-filled.",
       "html": "<button class=\"ds-btn-primary\">ยืนยันนำเข้า</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}"
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;min-width:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#0f5c7a;color:#fff;cursor:pointer}.ds-btn-primary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}"
     },
     {
       "name": "Secondary Button",
@@ -138,7 +168,7 @@
       "refersTo": "button-secondary",
       "description": "Alternative or cancel actions.",
       "html": "<button class=\"ds-btn-secondary\">ยกเลิก</button>",
-      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid rgba(15,92,122,.35);outline-offset:1px}"
+      "css": ".ds-btn-secondary{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #0f5c7a;background:#fff;color:#0f5c7a;cursor:pointer}.ds-btn-secondary:focus-visible{outline:3px solid #0f5c7a;outline-offset:2px}"
     },
     {
       "name": "Danger Button",
@@ -154,7 +184,7 @@
       "refersTo": "input",
       "description": "Labelled field with brand focus and refused error state.",
       "html": "<label class=\"ds-label\">รหัสนักศึกษา<input class=\"ds-input\" value=\"69020001\"></label>",
-      "css": ".ds-label{display:block;font-weight:600}.ds-input{display:block;width:100%;margin-top:6px;min-height:48px;padding:10px 12px;font:inherit;background:#fff;border:1px solid #b8c2cc;border-radius:10px;color:#17212b}.ds-input:focus{outline:3px solid rgba(15,92,122,.35);outline-offset:1px;border-color:#0f5c7a}"
+      "css": ".ds-label{display:block;font-weight:600}.ds-input{display:block;width:100%;margin-top:6px;min-height:48px;padding:10px 12px;font:inherit;background:#fff;border:1px solid #7d8a97;border-radius:10px;color:#17212b}.ds-input:focus{outline:3px solid #0f5c7a;outline-offset:2px;border-color:#0f5c7a}"
     },
     {
       "name": "Top Bar",
@@ -235,7 +265,7 @@
       },
       {
         "name": "The Tall Line Rule",
-        "body": "Body line height never drops below 1.6; Thai stacked marks need the room.",
+        "body": "Body line height never drops below 1.6, headings never below 1.4; Thai stacked marks need the room.",
         "section": "typography"
       },
       {
@@ -245,7 +275,7 @@
       }
     ],
     "dos": [
-      "Do use --brand for the top bar, the primary action, links and focus, and assume it can be any institution colour.",
+      "Do use --brand for the top bar and the primary action, --brand-text for links and --focus for the ring, and assume the brand can be any institution colour.",
       "Do keep every interactive element at least 48 px tall and wide.",
       "Do separate surfaces with Rule Line borders and tone, not shadows.",
       "Do use the fixed status pairs (Approved, Refused, Caution) for every state message.",

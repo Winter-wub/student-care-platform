@@ -28,7 +28,7 @@
 
 pub mod api;
 mod apply;
-mod check;
+pub(crate) mod check;
 mod logo;
 mod menu_page;
 mod page;

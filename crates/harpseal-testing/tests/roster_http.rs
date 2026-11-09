@@ -40,7 +40,7 @@ async fn a_3_mib_file_is_accepted_and_one_over_4_mib_refused() {
         big.len() > 2 * 1024 * 1024,
         "past axum's default body limit"
     );
-    let id = previewed(&b, "big.csv", &big, "upsert").await;
+    let id = previewed(&b, "big.csv", &big, "upsert", false).await;
     assert!(
         int(
             &h,
@@ -98,7 +98,7 @@ async fn a_full_file_without_rows_is_refused_and_an_upsert_one_is_not() {
     );
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &empty, "upsert").await;
+    let id = previewed(&b, "a.csv", &empty, "upsert", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     assert_eq!(import_text(&h, &id, "state").await, "done");
@@ -123,9 +123,9 @@ async fn a_long_report_says_how_many_problems_it_leaves_out() {
 async fn replacing_a_stale_preview_is_audited() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let old = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let old = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     h.clock().advance_minutes(61);
-    previewed(&b, "b.csv", &csv(0..3), "full").await;
+    previewed(&b, "b.csv", &csv(0..3), "full", false).await;
     let audit = "SELECT count(*) FROM audit_log WHERE action = 'roster.import.cancel' \
                  AND target_id = ? AND actor_kind = 'system'";
     assert_eq!(int(&h, audit, &[&old]).await, 1);

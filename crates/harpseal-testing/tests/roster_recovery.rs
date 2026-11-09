@@ -21,7 +21,7 @@ async fn tick(h: &harpseal_testing::Harness, app: &harpseal_testing::TestApp) ->
 async fn an_import_whose_job_died_gives_the_slot_up() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..600), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..600), "full", false).await;
     confirm(&b, &id).await;
     tick(&h, &app).await;
     assert_eq!(import_text(&h, &id, "state").await, "running");
@@ -34,7 +34,12 @@ async fn an_import_whose_job_died_gives_the_slot_up() {
     )
     .await;
     let again = upload(&b, "b.csv", &csv(0..3), "full").await;
-    assert_eq!(flash(&b), "ok:kernel.roster.previewed", "the slot is free");
+    // Previewed (3 rows against a roster of 500 carries the leave warning).
+    assert_eq!(
+        flash(&b),
+        "err:kernel.roster.previewed_warning",
+        "the slot is free"
+    );
     assert_ne!(import_id(&again), id);
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let error = import_text(&h, &id, "error").await;
@@ -53,7 +58,7 @@ async fn an_import_whose_job_died_gives_the_slot_up() {
 async fn staff_can_mark_a_stuck_import_failed_after_the_lock_window() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     confirm(&b, &id).await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(!page.contains("/fail"), "not before the lock window");
@@ -65,6 +70,13 @@ async fn staff_can_mark_a_stuck_import_failed_after_the_lock_window() {
     assert!(page.contains(&format!("/admin/roster/{id}/fail")), "{page}");
     b.post(&format!("/admin/roster/{id}/fail"), "").await;
     assert_eq!(flash(&b), "ok:kernel.roster.marked_failed");
+    // The flash is the one message; the failed Job's line is no second
+    // alert (#129).
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert_eq!(
+        harpseal_testing::a11y::problems(&page),
+        Vec::<String>::new()
+    );
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let audit = "SELECT count(*) FROM audit_log WHERE action = 'roster.import.fail' \
                  AND target_id = ? AND actor_kind = 'staff'";
@@ -81,10 +93,10 @@ async fn staff_can_mark_a_stuck_import_failed_after_the_lock_window() {
 async fn two_hundred_fifty_leaving_students_take_three_left_jobs() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let first = previewed(&b, "a.csv", &csv(0..260), "full").await;
+    let first = previewed(&b, "a.csv", &csv(0..260), "full", false).await;
     confirm(&b, &first).await;
     run_jobs(&h, &app).await;
-    let id = previewed(&b, "b.csv", &csv(0..10), "full").await;
+    let id = previewed(&b, "b.csv", &csv(0..10), "full", true).await;
     assert_eq!(counts(&h, &id).await["preview"]["will_become_left"], 250);
     confirm(&b, &id).await;
     assert_eq!(tick(&h, &app).await, 1, "the chunk");
@@ -123,7 +135,7 @@ async fn two_hundred_fifty_leaving_students_take_three_left_jobs() {
 async fn a_staff_edit_made_while_the_chunk_runs_survives() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let first = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let first = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     confirm(&b, &first).await;
     run_jobs(&h, &app).await;
     run(
@@ -136,7 +148,7 @@ async fn a_staff_edit_made_while_the_chunk_runs_survives() {
     .await;
     let mut file = String::from_utf8(csv(0..3)).unwrap();
     file = file.replace("ปี1;MSC,MSC,1,3.0", "ปี2;MSC,MSC,2,3.5");
-    let id = previewed(&b, "b.csv", file.as_bytes(), "full").await;
+    let id = previewed(&b, "b.csv", file.as_bytes(), "full", false).await;
     confirm(&b, &id).await;
     // Staff edit again after the Job read the row: the trigger runs
     // inside the chunk's batch, right after its compare-and-set.
@@ -164,7 +176,7 @@ async fn a_revoked_notice_that_fails_is_counted() {
     linked_student(&h, "gone", "68000900", "active").await;
     h.fake_channel()
         .set_unreachable(&FakeChannel::account("u-gone"), true);
-    let id = previewed(&b, "a.csv", &csv(0..2), "full").await;
+    let id = previewed(&b, "a.csv", &csv(0..2), "full", true).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     assert_eq!(import_text(&h, &id, "state").await, "done");

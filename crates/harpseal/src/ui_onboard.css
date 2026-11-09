@@ -26,7 +26,7 @@
 /* The tick: a drawn ring, filled Approved Ink with a white check when done. */
 .tick {
   position: relative; flex: none; width: 22px; height: 22px;
-  border: 2px solid #b8c2cc; border-radius: 50%;
+  border: 2px solid var(--field-edge); border-radius: 50%;
 }
 .tick.done { background: var(--ok-ink); border-color: var(--ok-ink); }
 .tick.done::after {
@@ -37,7 +37,7 @@
 
 .preview-placeholder {
   margin: 0; padding: 12px 14px; color: var(--muted);
-  border: 1px dashed #b8c2cc; border-radius: 14px;
+  border: 1px dashed var(--field-edge); border-radius: 14px;
 }
 
 table.rows + .card.empty { margin-top: var(--gutter); }

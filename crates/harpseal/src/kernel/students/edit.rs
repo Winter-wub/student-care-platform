@@ -116,7 +116,8 @@ fn render(
         let err = errors.contains_key(name);
         html! {
             input id=(name) name=(name) type=(kind) value=(value(name))
-                aria-invalid=[err.then_some("true")];
+                aria-invalid=[err.then_some("true")]
+                aria-describedby=[err.then(|| format!("{name}-error"))];
         }
     };
     let (t_name, t_email, t_locale, t_status) = (
@@ -156,7 +157,9 @@ fn render(
             override_key: "locale".into(),
             label: &t_locale,
             control: html! {
-                select id="locale" name="locale" {
+                select id="locale" name="locale"
+                    aria-invalid=[errors.contains_key("locale").then_some("true")]
+                    aria-describedby=[errors.contains_key("locale").then_some("locale-error")] {
                     @for l in &locales {
                         option value=(l) selected[*l == current_locale] { (l) }
                     }
@@ -169,8 +172,10 @@ fn render(
         let control = match spec.kind {
             AttributeType::Enum => {
                 let cur = value(&name);
+                let err = errors.contains_key(&name);
                 html! {
-                    select id=(name) name=(name) {
+                    select id=(name) name=(name) aria-invalid=[err.then_some("true")]
+                        aria-describedby=[err.then(|| format!("{name}-error"))] {
                         @if spec.optional || cur.is_empty() { option value="" { "-" } }
                         // A stored value no longer listed stays as it is.
                         @if !cur.is_empty() && !spec.values.contains(&cur) {
@@ -226,7 +231,8 @@ fn render(
                     }
                     (f.control)
                     @if let Some(key) = errors.get(&f.input) {
-                        p class="field-error" role="alert" { (v.t(key)) }
+                        // Tied to its input (#129); the summary above announces.
+                        p class="field-error" id=(format!("{}-error", f.input)) { (v.t(key)) }
                     }
                     @if overridden {
                         button class="link" type="submit" formaction=(clear_action)

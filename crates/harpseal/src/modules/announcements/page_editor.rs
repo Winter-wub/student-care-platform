@@ -274,7 +274,8 @@ pub(super) async fn fragment(
     let long = |b: &str| b.chars().count() > MAX_BODY;
     if long(&f.body_th) || long(&f.body_en) {
         let line = shell(html! {
-            p class="field-error" role="alert" { (v.t("announcements.editor.too_long")) }
+            // `#body-preview` is the polite region that announces it (#129).
+            p class="field-error" { (v.t("announcements.editor.too_long")) }
         });
         return (StatusCode::OK, Html(line.into_string())).into_response();
     }

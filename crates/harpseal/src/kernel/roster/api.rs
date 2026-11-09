@@ -57,7 +57,7 @@ pub async fn upload(
     let staff = crate::auth::roles::require(d.services(), actor, IMPORT_PERMISSION).await?;
     Ok(
         match preview::upload(d, file_name, bytes, mode, &staff, ctx).await? {
-            preview::Uploaded::Previewed(id) => Uploaded::Previewed(id),
+            preview::Uploaded::Previewed(id, _) => Uploaded::Previewed(id),
             preview::Uploaded::Refused(id) => Uploaded::Refused(id),
             preview::Uploaded::Busy(b) => Uploaded::Busy(b.id),
         },

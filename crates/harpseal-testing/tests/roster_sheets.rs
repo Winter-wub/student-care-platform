@@ -17,7 +17,7 @@ const NO_HEADER: &[u8] =
 async fn every_sheet_of_a_workbook_is_imported() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full", false).await;
     assert_eq!(counts(&h, &id).await["preview"]["new"], 5);
     assert_eq!(confirm(&b, &id).await.status, 303);
     run_jobs(&h, &app).await;
@@ -73,7 +73,7 @@ const TRAILING: &[u8] =
 async fn skipped_rows_are_shown_on_the_preview_and_in_the_report() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full", false).await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("data-skipped=\"2\""), "{page}");
     assert!(
@@ -91,7 +91,7 @@ async fn skipped_rows_are_shown_on_the_preview_and_in_the_report() {
 async fn a_full_import_never_drops_a_trailing_student_into_left() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     let active = "SELECT count(*) FROM student WHERE status = 'active'";
@@ -117,7 +117,7 @@ const HIDDEN_ROSTER: &[u8] =
 async fn a_hidden_roster_sheet_blocks_a_full_import_and_is_listed_in_upsert() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full").await;
+    let id = previewed(&b, "cohorts.xlsx", COHORTS, "full", false).await;
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;
     let active = "SELECT count(*) FROM student WHERE status = 'active'";
@@ -130,7 +130,7 @@ async fn a_hidden_roster_sheet_blocks_a_full_import_and_is_listed_in_upsert() {
     assert!(report.contains("ปี 2,ทั้งชีต,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
     assert_eq!(int(&h, active, &[]).await, 5, "nobody became left");
     // In upsert nobody becomes left: it previews, listing the hidden sheet.
-    let id = previewed(&b, "h.xlsx", HIDDEN_ROSTER, "upsert").await;
+    let id = previewed(&b, "h.xlsx", HIDDEN_ROSTER, "upsert", false).await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("ข้ามชีตที่ซ่อนอยู่ (มีหัวคอลัมน์รายชื่อ) (ปี 2)"), "{page}");
 }
@@ -140,7 +140,7 @@ async fn a_calculated_gpa_column_is_imported() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     let calc = include_bytes!("../../harpseal/tests/fixtures/roster/calculated.xlsx");
-    let id = previewed(&b, "calculated.xlsx", calc, "upsert").await;
+    let id = previewed(&b, "calculated.xlsx", calc, "upsert", false).await;
     assert_eq!(counts(&h, &id).await["preview"]["new"], 3);
 }
 

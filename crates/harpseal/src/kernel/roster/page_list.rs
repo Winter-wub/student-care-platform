@@ -191,8 +191,15 @@ pub(super) async fn upload(
         return refused(&v, "kernel.roster.mode_not_allowed");
     }
     match preview::upload(&s.deployment, &up.name, bytes, mode, &staff.id, &ctx).await {
-        Ok(Uploaded::Previewed(id)) => {
-            v.redirect(&format!("{BASE}/{id}"), true, "kernel.roster.previewed")
+        // A preview with the leave warning says so in its flash, the one
+        // message the page announces (#129).
+        Ok(Uploaded::Previewed(id, warned)) => {
+            let (ok, key) = if warned {
+                (false, "kernel.roster.previewed_warning")
+            } else {
+                (true, "kernel.roster.previewed")
+            };
+            v.redirect(&format!("{BASE}/{id}"), ok, key)
         }
         Ok(Uploaded::Refused(id)) => v.redirect(
             &format!("{BASE}/{id}"),

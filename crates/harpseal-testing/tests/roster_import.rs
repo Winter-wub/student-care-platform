@@ -11,7 +11,7 @@ const STUDENTS: &str = "SELECT count(*) FROM student";
 async fn happy_path(name: &str, bytes: &[u8]) {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let id = previewed(&b, name, bytes, "full").await;
+    let id = previewed(&b, name, bytes, "full", false).await;
     let page = b.get(&format!("/admin/roster/{id}")).await;
     assert_eq!(page.status, 200);
     assert!(page.body.contains("ยืนยันนำเข้า"), "confirm button");
@@ -84,7 +84,7 @@ async fn an_xlsx_of_the_same_students_imports_the_same_way() {
 async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let first = previewed(&b, "a.csv", &csv(0..10), "full").await;
+    let first = previewed(&b, "a.csv", &csv(0..10), "full", false).await;
     confirm(&b, &first).await;
     run_jobs(&h, &app).await;
     assert_eq!(
@@ -98,7 +98,7 @@ async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
     );
 
     // Upsert with 3 of them and 2 new: nobody leaves.
-    let up = previewed(&b, "b.csv", &csv(8..13), "upsert").await;
+    let up = previewed(&b, "b.csv", &csv(8..13), "upsert", false).await;
     let c = counts(&h, &up).await;
     assert_eq!(
         (
@@ -125,7 +125,7 @@ async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
     );
 
     // Full with 4 of them: 9 become left, with the red warning.
-    let full = previewed(&b, "c.csv", &csv(0..4), "full").await;
+    let full = previewed(&b, "c.csv", &csv(0..4), "full", true).await;
     let c = counts(&h, &full).await;
     assert_eq!(c["preview"]["will_become_left"], 9);
     assert_eq!(c["preview"]["warning"], true);
@@ -156,7 +156,7 @@ async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
     assert_eq!(counts(&h, &full).await["left"], 9);
 
     // The left ones come back with a full file: "returning".
-    let back = previewed(&b, "d.csv", &csv(0..13), "full").await;
+    let back = previewed(&b, "d.csv", &csv(0..13), "full", false).await;
     assert_eq!(counts(&h, &back).await["preview"]["returning"], 9);
 }
 
@@ -164,7 +164,7 @@ async fn full_mode_marks_missing_students_left_and_upsert_never_does() {
 async fn manual_overrides_survive_the_import_and_are_counted() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
-    let first = previewed(&b, "a.csv", &csv(0..3), "full").await;
+    let first = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
     confirm(&b, &first).await;
     run_jobs(&h, &app).await;
     // Staff renamed 68000001 by hand; the manual Tag stays too.
@@ -189,7 +189,7 @@ async fn manual_overrides_survive_the_import_and_are_counted() {
     file = file
         .replace("นักศึกษา 1,", "นักศึกษา หนึ่ง,")
         .replace("ปี1;MSC,MSC,1", "ปี2;MSC,MSC,2");
-    let id = previewed(&b, "b.csv", file.as_bytes(), "full").await;
+    let id = previewed(&b, "b.csv", file.as_bytes(), "full", false).await;
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["skipped_by_override"], 1);
     assert_eq!(c["preview"]["updated"], 3, "year and Tags change for all");

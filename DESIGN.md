@@ -9,7 +9,7 @@ colors:
   ledger-ink: "#17212b"
   slate-note: "#5b6b7a"
   rule-line: "#dde3e9"
-  field-edge: "#b8c2cc"
+  field-edge: "#7d8a97"
   chip-fog: "#e8eef3"
   chip-ink: "#2c4456"
   approved-wash: "#e5f5ec"
@@ -21,7 +21,10 @@ colors:
   caution-edge: "#a37200"
   attention-wash: "#fff8e6"
   caution-ink: "#6b4a00"
-  caution-meter: "#c98a00"
+  caution-meter: "#9a6a00"
+  approved-edge: "#3d8a5f"
+  caution-text: "#8a5a00"
+  refused-edge: "#c24141"
   over-meter: "#c62828"
   text-red: "#b42318"
   text-orange: "#b54708"
@@ -31,16 +34,22 @@ colors:
 typography:
   headline:
     fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
-    fontSize: "1.375rem"
+    fontSize: "1.7578rem"
     fontWeight: 700
-    lineHeight: 1.3
+    lineHeight: 1.4
+  section:
+    fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
+    fontSize: "1.40625rem"
+    fontWeight: 700
+    lineHeight: 1.4
   title:
     fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 700
+    lineHeight: 1.4
   body:
     fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
-    fontSize: "16px"
+    fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.6
   label:
@@ -50,6 +59,10 @@ typography:
   caption:
     fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
     fontSize: "0.875rem"
+    fontWeight: 400
+  small:
+    fontFamily: "system-ui, -apple-system, Segoe UI, Noto Sans Thai, Sukhumvit Set, sans-serif"
+    fontSize: "0.8125rem"
     fontWeight: 400
 rounded:
   chip: "999px"
@@ -162,7 +175,8 @@ This document records the incumbent system as of the start of the back-office re
 A cool, low-contrast neutral field with one institutional accent, plus three fixed status pairs (approved, refused, caution). Each pair is a pale wash with a deep ink.
 
 ### Primary
-- **Harbour Teal** (#0f5c7a): the default institution colour, replaced per Deployment through `--brand`. It fills the top bar, primary buttons, links, progress bars and the Mini App avatar. Its 35%-alpha form draws the focus ring.
+- **Harbour Teal** (#0f5c7a): the default institution colour, replaced per Deployment through `--brand`. It fills the top bar, primary buttons, progress bars, the current page and the Mini App avatar.
+- **Derived brand tokens (#129, `ui::brand`):** computed per Deployment from the brand with WCAG relative luminance, never eyeballed. `--brand-ink` (text on the brand) is white, else Ledger Ink, else black, the first that reaches 4.5:1 (when white fails, black is at least 4.66:1, so one always does; only a TOML colour can need it: the branding page refuses one on save with the same function, and shows the ratio rounded down). `--brand-text` (links, secondary buttons) is the brand darkened in 5 % steps until it is at least 4.5:1 on every light surface (Paper, Counter Mist, Chip Fog and the washes). `--focus` (the focus ring, checkboxes, the chart) is the brand darkened until at least 3:1 on the same surfaces. Harbour Teal and the default #0b5cad need no darkening (6.2:1 and up); a saved colour at the 4.5:1 edge (#767676, 4.2:1 on Counter Mist) gets a darker `--brand-text`; a yellow TOML colour (#ffd400) gets Ledger Ink text on the bar and a dark-gold ring.
 
 ### Neutral
 - **Counter Mist** (#f4f6f8): the page ground behind every card.
@@ -170,13 +184,15 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 - **Ledger Ink** (#17212b): body text and headings.
 - **Slate Note** (#5b6b7a): secondary text, table captions, definition terms, meta lines.
 - **Rule Line** (#dde3e9): card borders, list dividers, meter tracks.
-- **Field Edge** (#b8c2cc): the resting border of inputs, selects and textareas.
+- **Field Edge** (#7d8a97): the resting border of inputs, selects and textareas, the checklist ring and the empty preview outline: 3.5:1 on Paper, 3.3:1 on Counter Mist (was #b8c2cc, 1.81:1).
+- **Caution Text** (#8a5a00): the unreachable Link state, field warnings and the Mini App's waiting line: caution as text on Paper (5.9:1) and Counter Mist (5.5:1).
 - **Chip Fog / Chip Ink** (#e8eef3 / #2c4456): neutral chips and tags.
 
 ### Status
 - **Approved Wash / Approved Ink** (#e5f5ec / #145c36): success flashes, "done" buttons, active Links, the meter under its limit.
 - **Refused Wash / Refused Ink** (#fdecec / #8a1c1c): error flashes, blocking warnings, invalid fields, error chips, and the danger button's fill. **Refused Press** (#6f1515) is the danger button's hover.
-- **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips, the "ต้องดู" chip. The caution meter fill is #c98a00, and the over-limit fill is #c62828.
+- **Caution Wash / Caution Ink** (#fff3d6 / #6b4a00): quota warnings, override chips, the "ต้องดู" chip. The caution meter fill is #9a6a00 (3.7:1 on the Rule Line track; was #c98a00, 2.28:1), and the over-limit fill is #c62828 (4.4:1).
+- **Status chip edges (#129):** Approved #3d8a5f (4.2:1 on Paper, 3.7:1 on its wash), Refused #c24141 (5.1:1 / 4.5:1), Caution #a37200 (4.2:1 / 3.8:1), 1px. Neutral chips are labels whose words carry them and stay borderless.
 - **Attention Wash** (#fff8e6): the whole row that needs a look: a changed audit row, a Warn status card (#123). Ledger Ink on it is 15.4:1.
 
 ### Text palette (#113)
@@ -202,14 +218,19 @@ The only colours Staff can give text in an Announcement body (`{red}…{/red}`),
 **Character:** one native family at a few sizes, so Thai and Latin render with the device's own hinting. Hierarchy comes from weight and size, not typeface contrast.
 
 ### Hierarchy
-- **Headline** (700, 1.375rem, 1.3): page titles (`h1`).
-- **Title** (700, 1.125rem): card and section titles (`h2`). Subsections (`h3`) use 1rem.
-- **Body** (400, 16px, 1.6): everything else. The generous line height leaves room for Thai tone marks and upper vowels.
+A 1.25 ratio between heading levels in the back office (`.office`, #129; was 16/16/18/22 px, at most 1.22); the Mini App keeps its compact 22/18/16 px headings. Built from the title step: `--step-title` 1.125rem, `--step-section` × 1.25, `--step-page` × 1.25.
+- **Headline** (700, 1.7578rem ≈ 28 px, 1.4): page titles (`h1`), one per page.
+- **Section** (700, 1.40625rem ≈ 22.5 px, 1.4): section and card titles (`h2`).
+- **Title** (700, 1.125rem = 18 px, 1.4): subsections (`h3`), and the status card titles of the home ledger (an `h2` drawn at this step: a ledger row, not a section).
+- **Body** (400, 1rem, 1.6): everything else, in the user's own font size (`100%`, not a fixed 16 px). The generous line height leaves room for Thai tone marks and upper vowels. Headings use 1.4: at 28 px, 1.3 left a wrapped Thai title's upper vowels nearly touching the line above. Headings wrap `balance`.
+- **Figures:** tabular (`tabular-nums`) in tables, facts, counts, meters and status cards.
 - **Label** (600, 1rem): form labels, list names, buttons, flashes.
-- **Caption** (400, 0.875rem): table headers, meta lines, the "who" line, definition terms. Small print goes down to 0.8125rem for chips and footers.
+- **Caption** (400, 0.875rem): table headers, meta lines, the "who" line, definition terms. Muted meta lines (`.muted`) use the caption size (was 0.9375rem, a step off the scale). Small print goes down to 0.8125rem for chips and footers.
 
 ### Named Rules
-**The Tall Line Rule.** Body line height never drops below 1.6. Thai stacked marks need the room.
+**The Tall Line Rule.** Body line height never drops below 1.6, headings never below 1.4. Thai stacked marks need the room.
+
+**The font stays.** The system UI font with Noto Sans Thai and Sukhumvit Set fallbacks rendered every page without clipped marks at 360 px and on desktop (#129 audit), so no web font is loaded.
 
 ## Layout
 
@@ -255,14 +276,18 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Danger:** Refused Ink fill with white text (9.3:1), for an action in proportion to its reach: one that sends to every Student or makes many of them left (#120). The label names the reach ("ยืนยัน: 20 คนจะพ้นสภาพ", "ส่งถึงทุกคน 50 คน"). It never follows the brand, hovers darker (#6f1515) and has its own solid 3px Refused Ink focus ring at a 2px offset, so a red institution colour cannot hide it. Use `ui::danger_button`; a broad action above its threshold also asks Staff to type the reach, checked on the server.
 - **Done:** Approved Wash with Approved Ink, for completed states such as an acknowledgement.
 - **Link button:** text only and underlined, for low-weight actions inside lists.
-- **Focus:** a 3px ring in the brand colour at 35% alpha, 1px offset.
+- **Focus:** one solid 3px `--focus` ring at a 2px offset on every focusable element (links in text and tables included); on the bar and the current page it is `--brand-ink`. Was the brand at 35 % alpha (1.79:1).
 
 ### Cards / Containers
 - **Corner Style:** 12px. **Background:** Paper. **Border:** 1px Rule Line. **Padding:** 16px. **Shadow:** none.
 
 ### Inputs / Fields
 - **Style:** Paper background, 1px Field Edge border, 10px radius, 48px minimum height, 10px 12px padding. Textareas are at least 120px tall.
-- **Focus:** the brand focus ring, and the border turns brand.
+- **Focus:** the focus ring, and the border turns `--focus`.
+- **Labels and errors (#129):** every control has a tied `label`, or a `legend` when it is one of a group (Audience attributes with listed values are a fieldset). A form with errors shows one Refused summary (`role="alert"`); each field's message has an id the control or fieldset names with `aria-describedby`, and is not a live region itself. A page announces one message per update: the flash, or its own message, not both.
+- **Checkboxes and radios:** 20 px, `accent-color: var(--focus)`, inside a 48 px label.
+- **Targets:** links in tables, lists and facts, and the back link (`a.back`), are at least 24 px tall; a link inside a sentence is exempt; buttons and fields 48 px.
+- **Wide tables:** a table whose columns follow the config (the Students list, one per shown roster attribute) sits in a focusable `.table-scroll` region and scrolls there, never the page.
 - **Error:** the border turns Refused Ink (`aria-invalid`), with a 600-weight Refused Ink message below.
 
 ### Chips
@@ -314,7 +339,9 @@ The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** use `--brand` for the top bar, the primary action, links and focus. Assume it can be any institution colour.
+- **Do** use `--brand` for the top bar and the primary action, `--brand-text` for links and `--focus` for the ring. Assume the brand can be any institution colour.
+- **Do** compute a contrast before choosing a colour, and keep text at 4.5:1 and marks (borders, rings, meters) at 3:1.
+- **Do** respect `prefers-reduced-motion`: the only motion, the HTMX spinner fade, is instant under it.
 - **Do** keep every interactive element at least 48px tall and wide.
 - **Do** separate surfaces with Rule Line borders and tone, not shadows.
 - **Do** use the fixed status pairs (Approved, Refused, Caution) for every state message.

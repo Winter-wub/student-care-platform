@@ -128,7 +128,7 @@ async fn render(v: &View<'_>, f: &Fields, error: Option<&str>, status: StatusCod
     let l = |k: &str| v.t(k);
     let locales = super::settings::locales(&v.s.catalog, &v.s.config);
     let body = html! {
-        p { a href="/admin/staff" { "← " (l("kernel.admin.staff.back")) } }
+        p { a class="back" href="/admin/staff" { "← " (l("kernel.admin.staff.back")) } }
         h1 { (title) }
         form method="post" action="/admin/staff/new" class="card narrow" {
             (v.staff.csrf_field())

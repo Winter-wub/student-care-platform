@@ -58,7 +58,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
         html! { @if on { " " span class="chip override" { (v.t("kernel.students.override")) } } }
     };
     Ok(html! {
-        p { a href="/admin/students" { "← " (v.t("kernel.students.back")) } }
+        p { a class="back" href="/admin/students" { "← " (v.t("kernel.students.back")) } }
         h1 { (row.fields.display_name) " " (v.status_chip(&row.status)) (badge("status")) }
         p class="code" { (row.code) }
         div class="cols" {
@@ -127,8 +127,8 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                     @let live = links.iter().find(|l| l.channel == kind.as_str() && l.status != "revoked");
                     li {
                         span class="name" { (v.link_icon(kind.as_str(), live.map(|l| l.status.as_str()))) }
+                        // The state is in the line's words already (#129).
                         @if let Some(l) = live {
-                            span { (v.t(&format!("kernel.students.link_{}", l.status))) }
                             span class="muted" {
                                 (v.t(&format!("kernel.students.method_{}", l.method))) " · "
                                 (v.t("kernel.students.linked_at")) " " (v.time(l.linked_at))
@@ -141,8 +141,6 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                                     button class="secondary" type="submit" { (v.t("kernel.students.revoke")) }
                                 }
                             }
-                        } @else {
-                            span class="muted" { (v.t("kernel.students.link_none")) }
                         }
                     }
                 }

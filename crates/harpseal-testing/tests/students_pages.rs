@@ -49,7 +49,11 @@ async fn the_list_shows_50_students_per_page_with_a_next_page() {
     assert!(!r.body.contains("<th>วันเข้าศึกษา</th>"), "not shown_in_list");
     assert!(!r.body.contains("data-label=\"วันเข้าศึกษา\""));
     assert!(r.body.contains("data-label=\"ชั้นปี\">2</td>"));
-    assert!(r.body.contains("aria-label=\"fake: ยังไม่เชื่อม\""));
+    // The Link's state in words, not the glyph alone (#129).
+    assert!(
+        r.body
+            .contains("fake: <span class=\"li-word\">ยังไม่เชื่อม</span>")
+    );
     // The HTMX search box.
     assert!(r.body.contains("hx-get=\"/admin/students\""));
     assert!(
@@ -125,7 +129,7 @@ async fn the_detail_shows_links_tags_consent_and_logs_the_read() {
     assert!(body.contains("<dt>ชั้นปี</dt><dd>2</dd>"));
     assert!(body.contains("<dt>วันเข้าศึกษา</dt><dd>ไม่มีข้อมูล</dd>"));
     // Links per Channel with status, method and time.
-    assert!(body.contains("aria-label=\"fake: เชื่อมอยู่\""));
+    assert!(body.contains("fake: <span class=\"li-word\">เชื่อมอยู่</span>"));
     assert!(body.contains("ยืนยันทางอีเมล"));
     assert!(body.contains("รหัสบัญชี u1"));
     // Tags grouped roster vs manual; Consent; the Security Event.

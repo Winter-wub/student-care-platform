@@ -79,6 +79,13 @@ impl<'a> View<'a> {
         )
     }
 
+    /// `role="alert"` for the page's own message when no flash shows: a
+    /// page announces one message per update (#129), and after a redirect
+    /// the flash is that message.
+    pub(super) fn alert(&self) -> Option<&'static str> {
+        self.staff.flash.is_none().then_some("alert")
+    }
+
     /// 303 to `to` with a one-shot flash (`ok`, catalog key).
     pub(super) fn redirect(&self, to: &str, ok: bool, key: &str) -> Response {
         let secure = self.s.config.staff.cookie_secure;

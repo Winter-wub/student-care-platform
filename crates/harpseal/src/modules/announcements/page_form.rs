@@ -16,7 +16,6 @@ use super::notice;
 use super::store::{self, Row};
 use super::view::View;
 use super::{page_count, page_detail, page_editor, page_notice, page_pick, page_review, service};
-use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 /// Errors as (field, catalog key).
@@ -252,18 +251,17 @@ fn form_page(
     );
     let sent = row.is_some_and(|r| r.status == "sent");
     let scheduled = row.is_some_and(|r| r.status == "scheduled");
-    let err = |field: &str| -> Markup {
-        html! { @for (_, key) in errors.iter().filter(|(f, _)| *f == field) { p class="field-error" role="alert" { (v.t(key)) } } }
-    };
-    let roster = &v.s.config.roster;
+    let err = |field: &str| -> Markup { super::form_scope::field_errors(v, errors, field) };
+    let d = |field: &str| super::form_scope::described(errors, field);
     let body = html! {
         h1 { (title) }
         @if sent { p class="muted" { (v.t("announcements.form.sent_note")) } }
         form method="post" action=(action) enctype="multipart/form-data" class="card announcement-form" {
             (v.staff.csrf_field())
+            @if !errors.is_empty() || form.reselect { p class="flash err" role="alert" { (v.t("announcements.form.fix_errors")) } }
             @if let Some(version) = f.version { input type="hidden" name="version" value=(version); }
             @if let Some(r) = row { input type="hidden" name="announcement_id" value=(r.id); }
-            fieldset {
+            fieldset aria-describedby=[d("th")] {
                 legend { (v.t("announcements.form.thai")) }
                 (err("th"))
                 div class="field" {
@@ -277,7 +275,7 @@ fn form_page(
                     (page_editor::help(v))
                 }
             }
-            fieldset {
+            fieldset aria-describedby=[d("en")] {
                 legend { (v.t("announcements.form.english")) }
                 (err("en"))
                 div class="field" {
@@ -311,10 +309,10 @@ fn form_page(
             div class="field" {
                 label for="expires" { (v.t("announcements.form.expires")) }
                 (err("expires"))
-                input id="expires" type="date" name="expires" value=(f.expires);
+                input id="expires" type="date" name="expires" value=(f.expires) aria-describedby=[d("expires")];
             }
             @if !sent {
-                fieldset {
+                fieldset aria-describedby=[d("send_at")] {
                     legend { (v.t("announcements.form.when")) }
                     (err("send_at"))
                     @if !scheduled {
@@ -330,29 +328,12 @@ fn form_page(
                     input type="datetime-local" name="send_at" value=(f.send_at)
                         aria-label=(v.t("announcements.form.later"));
                 }
-                fieldset {
+                fieldset aria-describedby=[d("audience")] {
                     legend { (v.t("announcements.form.audience")) }
                     (err("audience"))
                     (super::form_scope::field(v, f))
                     p class="muted" { (v.t("announcements.form.audience_help")) }
-                    @for (key, spec) in roster.attributes_in_order() {
-                        @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
-                        div class="field" {
-                            span class="label" { (spec.label_in(key, &v.staff.locale, &v.s.config.default_locale)) }
-                            @if spec.kind == AttributeType::Enum {
-                                @for value in &spec.values {
-                                    label class="check" {
-                                        input type="checkbox" name=(format!("attr.{key}")) value=(value)
-                                            checked[chosen.contains(value)];
-                                        " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
-                                    }
-                                }
-                            } @else {
-                                input name=(format!("attr.{key}")) value=(chosen.join(", "))
-                                    placeholder=(v.t("announcements.form.any_of"));
-                            }
-                        }
-                    }
+                    (super::form_scope::attributes(v, f))
                     div class="field" {
                         label for="tags" { (v.t("announcements.form.tags")) }
                         input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));

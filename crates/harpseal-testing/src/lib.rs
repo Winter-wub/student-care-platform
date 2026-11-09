@@ -24,6 +24,7 @@
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod a11y;
 mod app;
 mod browser;
 pub mod contract;
