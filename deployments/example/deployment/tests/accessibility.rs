@@ -2,7 +2,8 @@
 //! every page of the navigation, the first pages those link to, the
 //! announcement editor and a roster import refused for its headers, one
 //! `h1` and no skipped heading level, every field labelled, and one
-//! message announced per update (`harpseal_testing::a11y`).
+//! message announced per update (`harpseal_testing::a11y`); also the
+//! review steps of #135.
 
 use axum::body::Body;
 use example_deployment::{Secrets, builder, seed::seed};
@@ -215,6 +216,57 @@ async fn back_office_pages_keep_heading_order_labels_and_one_message() {
             .map(|p| format!("{at}: {p}")),
     );
     seen.push(at);
+
+    // The review steps of #135: the privacy version change, "ส่งเตือน
+    // ตอนนี้" (with someone to reach, and with nobody), and a draft whose
+    // send is disabled (the seed links nobody).
+    let texts = b.get("/admin/texts").await.body;
+    let form = format!(
+        "version=2026-11&expected={}",
+        input_value(&texts, "expected")
+    );
+    let reminders = b.get("/admin/reminders").await.body;
+    let key = input_value(&reminders, "key");
+    let mut reviews = vec![
+        ("/admin/texts/consent".to_string(), form),
+        ("/admin/reminders".into(), format!("key={key}&ids=68010001")),
+        ("/admin/reminders".into(), format!("key={key}&ids=68019999")),
+    ];
+    let mut blocked = 0;
+    for (path, body) in reviews.drain(..) {
+        let r = b.post(&path, &body).await;
+        assert_eq!(r.status, 200, "{path}: {}", r.body);
+        blocked += usize::from(r.body.contains("blocked-reason"));
+        found.extend(
+            a11y::problems(&r.body)
+                .into_iter()
+                .map(|p| format!("POST {path} {body}: {p}")),
+        );
+    }
+    assert_eq!(blocked, 1, "68019999 reaches nobody");
+    let list = b.get("/admin/announcements").await.body;
+    let mut drafts = 0;
+    for a in links(&list)
+        .into_iter()
+        .filter(|l| l.starts_with("/admin/announcements/0") && l.matches('/').count() == 3)
+    {
+        let r = b.get(&format!("{a}/review")).await;
+        if r.status != 200 {
+            continue;
+        }
+        drafts += 1;
+        assert!(
+            r.body.contains("blocked-reason"),
+            "nobody is linked: {}",
+            r.body
+        );
+        found.extend(
+            a11y::problems(&r.body)
+                .into_iter()
+                .map(|p| format!("{a}/review: {p}")),
+        );
+    }
+    assert!(drafts > 0, "a seeded draft: {list}");
 
     for must in [
         "/admin/students",

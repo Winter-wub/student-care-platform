@@ -1,6 +1,7 @@
 //! The example's fee reminder (#73): the weekly Job notifies the Students
 //! tagged `fee_due` (chat when linked, email otherwise), and Staff send it
-//! now to pasted student IDs from the back office; neither repeats.
+//! now to pasted student IDs from the back office, through a review step
+//! (#135); neither repeats.
 
 use example_deployment::{Secrets, builder, reminders};
 use harpseal::{Statement, Timestamp};
@@ -148,7 +149,16 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     let form = b.get("/admin/reminders").await.body;
     let at = form.find("name=\"key\" value=\"").unwrap() + "name=\"key\" value=\"".len();
     let key = &form[at..at + form[at..].find('"').unwrap()];
-    let post = format!("key={key}&ids=68010003%0A68010002%0A68019999");
+    let ids = "ids=68010003%0A68010002%0A68019999";
+    // "ส่งเตือนตอนนี้" opens the review step (#135): nothing is sent yet.
+    let review = b
+        .post("/admin/reminders", &format!("key={key}&{ids}"))
+        .await;
+    assert_eq!(review.status, 200, "{}", review.body);
+    assert!(review.body.contains("ตรวจก่อนส่งเตือน"), "{}", review.body);
+    assert_eq!(chats(&h, "s3"), 0, "the review sends nothing");
+    assert!(h.email().to("mali@seal-bay.invalid").is_empty());
+    let post = format!("key={key}&{ids}&reviewed=1&reach=2");
     let r = b.post("/admin/reminders", &post).await;
     assert_eq!(r.status, 200, "{}", r.body);
     for seen in [
@@ -161,7 +171,9 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     assert_eq!(chats(&h, "s3"), 1);
 
     // A form without its key is refused, never sent under a shared one.
-    let r = b.post("/admin/reminders", "key=&ids=68010003").await;
+    let r = b
+        .post("/admin/reminders", "key=&ids=68010003&reviewed=1&reach=1")
+        .await;
     assert_eq!(r.status, 400);
     assert_eq!(chats(&h, "s3"), 1);
 
@@ -218,4 +230,132 @@ async fn a_student_waiting_for_the_line_quota_is_reminded_a_day_later() {
     assert_eq!(line(&h), 2, "one Push to Ploy");
     assert_eq!(app.count(waiting).await, 0);
     assert_eq!(chats(&h, "s1"), 1, "Karn was not reminded twice");
+}
+
+/// A signed-in Officer and the form's `key`.
+async fn officer<'a>(h: &Harness, app: &'a TestApp) -> (harpseal_testing::Browser<'a>, String) {
+    h.create_staff(
+        "officer@sealbay.example",
+        "kelp forest at dawn",
+        &["Officer"],
+    )
+    .await;
+    let b = app.browser();
+    b.login("officer@sealbay.example", "kelp forest at dawn")
+        .await;
+    let form = b.get("/admin/reminders").await.body;
+    let at = form.find("name=\"key\" value=\"").unwrap() + "name=\"key\" value=\"".len();
+    let key = form[at..at + form[at..].find('"').unwrap()].to_string();
+    (b, key)
+}
+
+#[tokio::test]
+async fn the_review_shows_who_gets_it_how_and_the_message_and_sends_only_when_confirmed() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    run(
+        &h,
+        "INSERT INTO student (id, student_code, display_name, locale, status, created_at, \
+         updated_at) VALUES ('s9', '68010009', 'Left Puffin', 'th', 'left', 1, 1)",
+    )
+    .await;
+    let (b, key) = officer(&h, &app).await;
+    let ids = "ids=68010001%0A68010002%0A68010009%0A68019999";
+    let r = b
+        .post("/admin/reminders", &format!("key={key}&{ids}"))
+        .await;
+    assert_eq!(r.status, 200);
+    let page = &r.body;
+    assert_eq!(page.matches("<h1").count(), 1);
+    assert!(
+        page.contains(r#"data-count="recipients"><strong>2 คน</strong>"#),
+        "{page}"
+    );
+    assert!(page.contains("Karn Seal, Mali Tern"), "first names: {page}");
+    assert!(page.contains("แชท fake 1 บัญชี"), "{page}");
+    assert!(page.contains("อีเมล 1 คน"), "{page}");
+    assert!(page.contains("68010009</span>: พ้นสภาพแล้ว"), "{page}");
+    assert!(page.contains("68019999</span>: ไม่พบรหัสนี้"), "{page}");
+    assert!(
+        page.contains("กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้"),
+        "preview"
+    );
+    assert!(page.contains(r#"name="reach" value="2""#), "{page}");
+    assert!(page.contains(">ยืนยันส่งเตือน 2 คน</button>"), "{page}");
+    // "กลับไปแก้ไข" goes back to the form with the list kept.
+    assert!(page.contains(r#"<form method="get" action="/admin/reminders""#));
+    let back = b.get("/admin/reminders?ids=68010001%0A68010002").await.body;
+    assert!(back.contains(">68010001\n68010002</textarea>"), "{back}");
+    // A stale count shows the review again, unsent.
+    let stale = format!("key={key}&{ids}&reviewed=1&reach=3");
+    let r = b.post("/admin/reminders", &stale).await;
+    assert!(r.body.contains("ผู้รับเปลี่ยนไปจากที่ตรวจไว้"), "{}", r.body);
+    assert_eq!(chats(&h, "s1"), 0);
+    let ok = format!("key={key}&{ids}&reviewed=1&reach=2");
+    let r = b.post("/admin/reminders", &ok).await;
+    assert!(
+        r.body.contains("68010001</span>: ส่งทางแชทแล้ว"),
+        "{}",
+        r.body
+    );
+    assert_eq!(chats(&h, "s1"), 1);
+}
+
+#[tokio::test]
+async fn nobody_to_reach_disables_the_send_with_the_reason() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    run(
+        &h,
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('s8', '68010008', 'Quiet Auk', 'th', 1, 1)",
+    )
+    .await;
+    let (b, key) = officer(&h, &app).await;
+    let blocked = r#"<button type="submit" disabled aria-describedby="reminders-blocked">"#;
+    for (ids, why) in [
+        ("68010008%0A68019999", "ยังไม่มีนักศึกษาที่ผูกบัญชีหรือมีอีเมลในรายชื่อนี้"),
+        ("", "กรุณาใส่รหัสนักศึกษาอย่างน้อยหนึ่งคน"),
+    ] {
+        let r = b
+            .post("/admin/reminders", &format!("key={key}&ids={ids}"))
+            .await;
+        assert!(r.body.contains(blocked), "{ids}: {}", r.body);
+        assert!(r.body.contains(why), "{ids}: {}", r.body);
+        assert!(!r.body.contains(r#"name="reviewed""#), "no confirm form");
+        // Posted anyway: still the review, nothing sent.
+        let r = b
+            .post(
+                "/admin/reminders",
+                &format!("key={key}&ids={ids}&reviewed=1&reach=0"),
+            )
+            .await;
+        assert!(r.body.contains(blocked), "{ids}");
+    }
+    let many: Vec<String> = (0..41).map(|n| format!("6802{n:04}")).collect();
+    let r = b
+        .post(
+            "/admin/reminders",
+            &format!("key={key}&ids={}", many.join("%0A")),
+        )
+        .await;
+    assert!(r.body.contains("ส่งเตือนได้ครั้งละไม่เกิน 40 คน"), "{}", r.body);
+    assert_eq!(app.count("SELECT count(*) FROM outbound_message").await, 0);
+    assert!(h.email().to("mali@seal-bay.invalid").is_empty());
+}
+
+#[tokio::test]
+async fn the_page_shows_the_weekly_schedule() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    h.clock().set_ms(MONDAY_9AM - 60 * MIN);
+    let (b, _) = officer(&h, &app).await;
+    let page = b.get("/admin/reminders").await.body;
+    assert!(page.contains("ส่งอัตโนมัติทุกสัปดาห์"), "{page}");
+    assert!(
+        page.contains("ทุกวันจันทร์ เวลา 09:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย fee_due"),
+        "{page}"
+    );
+    assert!(page.contains("ตอนนี้มี 2 คน"), "Karn and Mali: {page}");
+    assert!(page.contains("ครั้งถัดไป"), "{page}");
 }

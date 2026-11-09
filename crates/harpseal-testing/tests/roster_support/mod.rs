@@ -182,12 +182,20 @@ pub fn previewed<'a>(
 }
 
 /// Confirms import `id` (after loading its page for the token), typing
-/// "ยืนยัน" in case its reach asks for it (#120).
+/// the number its page asks for when its reach asks for one (#120; only
+/// the number confirms since #135).
 pub async fn confirm(b: &Browser<'_>, id: &str) -> TestResponse {
-    confirm_typed(b, id, Some(TYPED_WORD)).await
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    let asked = page
+        .split("พิมพ์ตัวเลข ")
+        .nth(1)
+        .and_then(|r| r.split(' ').next())
+        .map(|n| format!("typed={n}"))
+        .unwrap_or_default();
+    b.post(&format!("/admin/roster/{id}/confirm"), &asked).await
 }
 
-/// "ยืนยัน", form-encoded.
+/// "ยืนยัน", form-encoded: no longer a confirmation (#135).
 pub const TYPED_WORD: &str = "%E0%B8%A2%E0%B8%B7%E0%B8%99%E0%B8%A2%E0%B8%B1%E0%B8%99";
 
 /// Confirms import `id` with `typed` (form-encoded) as the typed

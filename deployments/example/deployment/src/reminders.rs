@@ -2,7 +2,9 @@
 //! 09:00 the Students tagged `fee_due` get a fee reminder, by chat when
 //! linked, by email otherwise ([`harpseal::JobContext::notify`]); Staff
 //! can also send it now to a pasted list from `/admin/reminders`
-//! ([`harpseal::PageState::notify`]). The same form drafts an
+//! ([`harpseal::PageState::notify`]), through a review step that shows
+//! who gets it, by which channel, and the message (`reminders/review.rs`,
+//! #135); the page also shows the weekly schedule. The same form drafts an
 //! Announcement to the pasted Students ([`ANNOUNCE_PATH`], #106) through
 //! `harpseal::modules::announcements::create_draft`, as the signed-in
 //! Staff member, who must also hold `announcements.send`.
@@ -13,16 +15,16 @@
 //! Job enqueued twice, sends nobody the reminder twice.
 
 use axum::Form;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
-    Actor, AppState, CatalogEntry, CurrentStaff, Error, Job, JobContext, JobSpec, Locale,
-    MAX_NOTIFY, Message, Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo,
-    Permission, RequestCtx, Result, Statement, Timestamp, Value, ui,
+    Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY, Message,
+    Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx,
+    Result, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -46,92 +48,26 @@ pub const PERMISSION: Permission =
 
 const DAY_MS: i64 = 86_400_000;
 
+mod review;
+mod schedule;
+mod texts;
+use texts::TEXTS;
+
+/// The Thai reminder: the email subject and the text.
+const NOTICE_TH: (&str, &str) = (
+    "เตือนชำระค่าธรรมเนียม",
+    "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้",
+);
+
 /// The Module.
 pub struct Reminders;
 
-const TEXTS: &[CatalogEntry] = &[
-    CatalogEntry::new("reminders.title", "th", "เตือนชำระค่าธรรมเนียม"),
-    CatalogEntry::new("reminders.title", "en", "Fee reminder"),
-    CatalogEntry::new("reminders.ids", "th", "รหัสนักศึกษา (สูงสุด 40 คน)"),
-    CatalogEntry::new("reminders.ids", "en", "Student IDs (up to 40)"),
-    CatalogEntry::new("reminders.send", "th", "ส่งเตือนตอนนี้"),
-    CatalogEntry::new("reminders.send", "en", "Send now"),
-    CatalogEntry::new("reminders.announce", "th", "ร่างประกาศถึงนักศึกษาเหล่านี้"),
-    CatalogEntry::new("reminders.announce", "en", "Draft an announcement to them"),
-    CatalogEntry::new("reminders.no_ids", "th", "กรุณาใส่รหัสนักศึกษาอย่างน้อยหนึ่งคน"),
-    CatalogEntry::new("reminders.no_ids", "en", "Enter at least one student ID."),
-    CatalogEntry::new(
-        "reminders.too_many_ids",
-        "th",
-        "ร่างประกาศได้ครั้งละไม่เกิน 2,000 คน",
-    ),
-    CatalogEntry::new(
-        "reminders.too_many_ids",
-        "en",
-        "Draft for at most 2,000 Students at a time.",
-    ),
-    // The result of "ส่งเตือนตอนนี้" (#131: it was English).
-    CatalogEntry::new(
-        "reminders.result",
-        "th",
-        "ส่งทางแชท {sent} คน · ทางอีเมล {emailed} คน · ข้าม {skipped} คน · รอส่ง {deferred} คน · ไม่สำเร็จ {failed} คน",
-    ),
-    CatalogEntry::new(
-        "reminders.result",
-        "en",
-        "Chat {sent} · email {emailed} · skipped {skipped} · waiting {deferred} · failed {failed}",
-    ),
-    CatalogEntry::new("reminders.outcome.sent", "th", "ส่งทางแชทแล้ว"),
-    CatalogEntry::new("reminders.outcome.sent", "en", "sent in chat"),
-    CatalogEntry::new("reminders.outcome.emailed", "th", "ส่งทางอีเมลแล้ว"),
-    CatalogEntry::new("reminders.outcome.emailed", "en", "emailed"),
-    CatalogEntry::new(
-        "reminders.outcome.skipped",
-        "th",
-        "ข้าม: ไม่พบรหัสนี้หรือไม่มีช่องทางติดต่อ",
-    ),
-    CatalogEntry::new(
-        "reminders.outcome.skipped",
-        "en",
-        "skipped: no such ID or no way to reach them",
-    ),
-    CatalogEntry::new(
-        "reminders.outcome.deferred",
-        "th",
-        "ยังไม่ได้ส่ง: กดส่งอีกครั้งภายหลัง",
-    ),
-    CatalogEntry::new(
-        "reminders.outcome.deferred",
-        "en",
-        "not yet: send again later",
-    ),
-    CatalogEntry::new("reminders.outcome.overtaken", "th", "ส่งไปแล้วจากอีกรอบหนึ่ง"),
-    CatalogEntry::new("reminders.outcome.overtaken", "en", "sent by another run"),
-    CatalogEntry::new("reminders.outcome.failed", "th", "ส่งไม่สำเร็จ"),
-    CatalogEntry::new("reminders.outcome.failed", "en", "failed"),
-    CatalogEntry::new(
-        "reminders.outcome.unknown",
-        "th",
-        "ไม่ทราบผล ตรวจในบันทึกการใช้งาน",
-    ),
-    CatalogEntry::new(
-        "reminders.outcome.unknown",
-        "en",
-        "outcome unknown: check the audit log",
-    ),
-];
-
 /// The reminder, in Thai and English, under `key`.
 pub fn notice(key: &str) -> Notice {
-    let th = "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้";
+    let (subject, th) = NOTICE_TH;
     let en = "Seal Bay University: please pay your tuition fee by this Friday.";
     Notice::new("reminders", key)
-        .locale(
-            Locale::th(),
-            vec![Message::text(th)],
-            "เตือนชำระค่าธรรมเนียม",
-            th,
-        )
+        .locale(Locale::th(), vec![Message::text(th)], subject, th)
         .locale(Locale::en(), vec![Message::text(en)], "Fee reminder", en)
 }
 
@@ -252,24 +188,38 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
     Ok(())
 }
 
-/// The form; its `key` makes a second post of the same form (a double
-/// click, a reload) send nobody the reminder twice, even while the first
-/// is still sending.
-async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
+/// The page: the weekly schedule (#135), then the form; its `key` makes
+/// a second post of the same form (a double click, a reload) send nobody
+/// the reminder twice, even while the first is still sending. `?ids=`
+/// fills the list again ("กลับไปแก้ไข" on the review step).
+async fn page(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    Query(q): Query<Vec<(String, String)>>,
+) -> Response {
     let Ok(key) = s.services.new_id() else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
+    let ids = q
+        .iter()
+        .find(|(k, _)| k == "ids")
+        .map(|(_, v)| parse_student_ids(v).join("\n"))
+        .unwrap_or_default();
     let t = |k: &str| s.catalog.t(&staff.locale, k);
+    let schedule = schedule::card(&s, &staff).await;
     let body = html! {
         // The page header sits above its card, as on every page (#131).
         h1 { (t("reminders.title")) }
+        (schedule)
         section class="card" {
+            h2 { (t("reminders.now_title")) }
+            p class="muted" { (t("reminders.now_help")) }
             form method="post" action={ "/admin" (PATH) } {
                 (staff.csrf_field())
                 input type="hidden" name="key" value=(key);
                 div class="field" {
                     label for="ids" { (t("reminders.ids")) }
-                    textarea id="ids" name="ids" rows="6" {}
+                    textarea id="ids" name="ids" rows="6" { (ids) }
                 }
                 // An action row: the two buttons never touch (#131).
                 div class="actions" {
@@ -284,7 +234,9 @@ async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     Html(ui::back_office(&s, &staff, &t("reminders.title"), body).into_string()).into_response()
 }
 
-/// Sends the reminder to the pasted student IDs and lists the outcome.
+/// "ส่งเตือนตอนนี้": the review step (#135) until it is confirmed with the
+/// count it showed; then sends the reminder to the pasted student IDs and
+/// lists the outcome.
 async fn send_now(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -301,8 +253,22 @@ async fn send_now(
     if key.len() != 36 || !key.chars().all(fits) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let ids = parse_student_ids(field("ids"));
-    let to: Vec<NotifyTo> = ids.iter().map(NotifyTo::code).collect();
+    let plan = match review::plan(&s, parse_student_ids(field("ids"))).await {
+        Ok(p) => p,
+        Err(e) => return ui::service_error(&s, &staff, &e),
+    };
+    let reviewed = field(review::REVIEWED) == "1";
+    let seen = field(review::REACH).trim().parse::<usize>().ok();
+    if !reviewed || seen != Some(plan.reach()) || plan.blocked().is_some() {
+        return review::page(
+            &s,
+            &staff,
+            key,
+            &plan,
+            reviewed && seen != Some(plan.reach()),
+        );
+    }
+    let to: Vec<NotifyTo> = plan.ids.iter().map(NotifyTo::code).collect();
     let title = s.catalog.t(&staff.locale, "reminders.title");
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let body = match s.notify(&notice(&format!("page:{key}")), &to).await {

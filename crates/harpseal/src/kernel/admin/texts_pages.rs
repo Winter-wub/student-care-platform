@@ -1,7 +1,8 @@
 //! `/admin/texts` (`kernel.setting.edit`): the list is `texts_list.rs`;
 //! `/admin/texts/{key}` edits one key per Locale (save or reset to
 //! default), titled by its text and the page it shows on (#125); `POST
-//! /admin/texts/consent` sets the Consent notice version.
+//! /admin/texts/consent` sets the Consent notice version, through its
+//! review step (`consent_review.rs`, #135).
 
 use axum::Form;
 use axum::extract::{Path, State};
@@ -10,6 +11,7 @@ use axum::response::Response;
 use maud::{Markup, html};
 use serde::Deserialize;
 
+use super::consent_review as review;
 use super::settings::{self, Refused, TextRow};
 use super::texts_api::Written;
 use super::texts_areas::Areas;
@@ -35,12 +37,8 @@ pub(super) fn consent_card(v: &View<'_>, stored: Option<&str>) -> Markup {
             form method="post" action="/admin/texts/consent" {
                 (v.staff.csrf_field())
                 input type="hidden" name="expected" value=(settings::version(stored));
-                div class="field" {
-                    label for="consent-version" { (v.t("kernel.admin.texts.consent_new")) }
-                    input id="consent-version" name="version" required maxlength="32"
-                        pattern="[A-Za-z0-9._\\-]+" autocomplete="off";
-                }
-                button type="submit" { (v.t("kernel.admin.texts.consent_save")) }
+                (review::field(v))
+                button type="submit" { (v.t("kernel.admin.consent.review")) }
             }
         }
     }
@@ -53,6 +51,12 @@ pub(super) struct VersionForm {
     version: String,
     #[serde(default)]
     expected: String,
+    /// `1` once the review step was seen (#135).
+    #[serde(default)]
+    reviewed: String,
+    /// The number of Students the review step showed.
+    #[serde(default)]
+    reach: String,
 }
 
 pub(super) async fn consent(
@@ -78,6 +82,23 @@ pub(super) async fn consent(
     }
     if new == before {
         return v.redirect(back, false, "kernel.admin.texts.consent_same");
+    }
+    // The review step (#135): shown until it is confirmed with the
+    // number it showed, counted again here.
+    let reach = match review::asked_again(&s.services, new).await {
+        Ok(n) => n,
+        Err(e) => return v.error(&e),
+    };
+    let seen = f.reach.trim().parse::<u64>().ok();
+    if f.reviewed != "1" || seen != Some(reach) {
+        let change = review::Change {
+            before,
+            new,
+            expected: &f.expected,
+            reach,
+            changed: f.reviewed == "1",
+        };
+        return review::page(&v, &change);
     }
     let actor = Actor::staff(&staff);
     match settings::set_version(&s.services, &actor, new, expected, before, &ctx).await {

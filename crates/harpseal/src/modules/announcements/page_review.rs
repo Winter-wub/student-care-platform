@@ -4,7 +4,10 @@
 //! when it goes out, and the bubble; then "ยืนยันส่ง" and "กลับไปแก้ไข".
 //! A draft to everyone confirms with "ส่งถึงทุกคน N คน" in the danger
 //! style, and the confirm POST must carry that N: [`everyone_ok`] counts
-//! again on the server and refuses a stale or missing one.
+//! again on the server and refuses a stale or missing one. A draft that
+//! reaches no chat account (no Student linked, or every Link unreachable)
+//! cannot be sent (#135): the button is disabled with the reason, and the
+//! confirm refuses it ([`nobody`]).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -85,6 +88,20 @@ pub(super) async fn everyone_ok(
     Ok(Some(
         posted.and_then(|p| p.trim().parse::<usize>().ok()) == Some(now),
     ))
+}
+
+/// Why a send that reaches `c` cannot go (#135): the catalog key of the
+/// reason when no chat account would get it, `None` otherwise. Unreachable
+/// Links are skipped by the send, so they do not count.
+pub(super) fn nobody(c: &Counts) -> Option<&'static str> {
+    if c.per_channel.values().any(|(active, _)| *active > 0) {
+        return None;
+    }
+    Some(if c.students == 0 {
+        "announcements.review.nobody"
+    } else {
+        "announcements.review.nobody_reachable"
+    })
 }
 
 /// How many of `a`'s Students have a live Link, when `a` also counts
@@ -169,14 +186,18 @@ pub(super) async fn page(
             (super::page_detail::preview(&v, &title, &body, row.require_ack))
         }
         div class="actions" {
-            form method="post" action=(format!("{detail}/confirm")) class="inline" {
-                (v.staff.csrf_field())
-                input type="hidden" name="version" value=(row.version);
-                input type="hidden" name=(REVIEWED) value="1";
-                @if everyone {
-                    (everyone_button(&v, counts.students, live))
-                } @else {
-                    button type="submit" { (v.t("announcements.review.confirm")) }
+            @if let Some(why) = nobody(&counts) {
+                (crate::ui::blocked_button(&v.t("announcements.review.confirm"), &v.t(why), "review-blocked"))
+            } @else {
+                form method="post" action=(format!("{detail}/confirm")) class="inline" {
+                    (v.staff.csrf_field())
+                    input type="hidden" name="version" value=(row.version);
+                    input type="hidden" name=(REVIEWED) value="1";
+                    @if everyone {
+                        (everyone_button(&v, counts.students, live))
+                    } @else {
+                        button type="submit" { (v.t("announcements.review.confirm")) }
+                    }
                 }
             }
             a class="btn secondary" href=(format!("{detail}/edit")) { (v.t("announcements.review.back")) }

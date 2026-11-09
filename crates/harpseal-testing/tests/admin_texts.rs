@@ -203,8 +203,36 @@ async fn bumping_the_consent_version_asks_a_linked_student_again() {
         .post("/admin/texts/consent", "version=2+0&expected=-")
         .await;
     assert_eq!(flash(&admin), "err:kernel.admin.texts.consent_invalid");
-    admin
+    // The review step first (#135): nothing is saved until it is
+    // confirmed with the number of Students it showed.
+    let review = admin
         .post("/admin/texts/consent", "version=2&expected=-")
+        .await;
+    assert_eq!(review.status, 200, "{}", review.body);
+    assert!(review.body.contains("นักศึกษา 1 คน"), "{}", review.body);
+    assert!(
+        review.body.contains(
+            r#"<button class="danger" type="submit">เปลี่ยนฉบับ: ขอความยินยอมใหม่ 1 คน</button>"#
+        ),
+        "{}",
+        review.body
+    );
+    let unsaved = "SELECT count(*) FROM setting WHERE key = 'kernel.consent.version'";
+    assert_eq!(app.count(unsaved).await, 0, "the review saves nothing");
+    let stale = admin
+        .post(
+            "/admin/texts/consent",
+            "version=2&expected=-&reviewed=1&reach=0",
+        )
+        .await;
+    assert_eq!(stale.status, 200, "a moved count shows the review again");
+    assert!(stale.body.contains("จำนวนนักศึกษาเปลี่ยนไป"), "{}", stale.body);
+    assert_eq!(app.count(unsaved).await, 0);
+    admin
+        .post(
+            "/admin/texts/consent",
+            "version=2&expected=-&reviewed=1&reach=1",
+        )
         .await;
     assert_eq!(flash(&admin), "ok:kernel.admin.texts.consent_saved");
     let stored = text(
@@ -234,7 +262,10 @@ async fn bumping_the_consent_version_asks_a_linked_student_again() {
     );
     // A stale form (it still thinks there is no row) is refused.
     admin
-        .post("/admin/texts/consent", "version=3&expected=-")
+        .post(
+            "/admin/texts/consent",
+            "version=3&expected=-&reviewed=1&reach=0",
+        )
         .await;
     assert_eq!(flash(&admin), "err:kernel.admin.conflict");
 }

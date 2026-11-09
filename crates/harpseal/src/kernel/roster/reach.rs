@@ -2,8 +2,9 @@
 //! N Students left gets a danger-styled confirm naming N ("ยืนยัน: N คน
 //! จะพ้นสภาพ"); when the preview also carries the shrink warning (more
 //! than 20 % left, or a file shorter than the roster) Staff must type N
-//! or the word "ยืนยัน" first. The confirm handler checks the typed text
-//! here, on the server: the form only shows the field.
+//! first: only the number, never a word such as "ยืนยัน" (#135). The
+//! confirm handler checks the typed text here, on the server, through
+//! [`crate::ui::typed_count_ok`]: the form only shows the field.
 
 use maud::{Markup, html};
 
@@ -30,29 +31,9 @@ pub(super) fn needs_typed(imp: &Import) -> bool {
 
 /// Whether `typed` confirms `imp`: not needed, or the number of Students
 /// who will become left (ASCII or Thai digits, thousands separators and
-/// spaces ignored), or the word "ยืนยัน" / "confirm".
+/// spaces ignored). A word ("ยืนยัน", "confirm") no longer does (#135).
 pub(super) fn typed_ok(imp: &Import, typed: Option<&str>) -> bool {
-    if !needs_typed(imp) {
-        return true;
-    }
-    let Some(t) = typed.map(str::trim).filter(|t| !t.is_empty()) else {
-        return false;
-    };
-    if t == "ยืนยัน" || t.eq_ignore_ascii_case("confirm") {
-        return true;
-    }
-    let digits: Option<String> = t
-        .chars()
-        .filter(|c| !matches!(c, ',' | ' ' | '\u{a0}'))
-        .map(|c| match c {
-            '0'..='9' => Some(c),
-            '๐'..='๙' => char::from_digit(c as u32 - '๐' as u32, 10),
-            _ => None,
-        })
-        .collect();
-    digits
-        .and_then(|d| d.parse::<u64>().ok())
-        .is_some_and(|n| n == leaving(imp))
+    !needs_typed(imp) || crate::ui::typed_count_ok(typed, leaving(imp))
 }
 
 /// The id of the confirm form, which the typed field joins with `form=`.
@@ -123,12 +104,23 @@ mod tests {
     }
 
     #[test]
-    fn the_number_or_the_word_confirms_and_anything_else_does_not() {
+    fn only_the_number_confirms_and_a_word_does_not() {
         let i = imp("full", 1234, true);
-        for ok in ["1234", " 1,234 ", "๑๒๓๔", "ยืนยัน", "Confirm"] {
+        for ok in ["1234", " 1,234 ", "๑๒๓๔"] {
             assert!(typed_ok(&i, Some(ok)), "{ok}");
         }
-        for bad in ["", "  ", "1233", "12345", "-1234", "ยืนยั", "yes", "1234x"] {
+        let bad = [
+            "",
+            "  ",
+            "1233",
+            "12345",
+            "-1234",
+            "ยืนยัน",
+            "Confirm",
+            "yes",
+            "1234x",
+        ];
+        for bad in bad {
             assert!(!typed_ok(&i, Some(bad)), "{bad}");
         }
         assert!(!typed_ok(&i, None));

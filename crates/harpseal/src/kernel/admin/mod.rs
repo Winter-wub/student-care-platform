@@ -7,7 +7,7 @@
 //! | `GET /admin/audit`, `GET /admin/audit/{id}` | `kernel.audit.view` |
 //! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{roles,status,password,unlock}` | `kernel.staff.manage` |
 //! | `GET/POST /admin/roles`, `GET/POST /admin/roles/{id}`, `POST …/delete` | `kernel.staff.manage` |
-//! | `GET /admin/texts`, `GET/POST /admin/texts/{key}`, `POST /admin/texts/consent` | `kernel.setting.edit` |
+//! | `GET /admin/texts`, `GET/POST /admin/texts/{key}`, `POST /admin/texts/consent` (review step, then save: #135) | `kernel.setting.edit` |
 //! | `GET/POST /admin/settings` (Module settings, #75; see [`module_settings`]) | each setting's own Permission |
 //! | `GET /admin/backups`, `POST …/now`, `GET …/{id}/download`, `GET …/export.xlsx` | `kernel.backup.manage` ([`backups`]) |
 //!
@@ -20,6 +20,7 @@ mod audit;
 mod audit_detail;
 mod audit_words;
 pub(crate) mod backups;
+mod consent_review;
 mod module_settings;
 mod module_settings_texts;
 mod roles_pages;
@@ -65,6 +66,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .messages(texts::STAFF)
         .messages(texts_audit::AUDIT)
         .messages(module_settings_texts::TEXTS)
+        .messages(consent_review::TEXTS)
         .back_office_page_in(
             crate::NavGroup::Admin,
             SECURITY,

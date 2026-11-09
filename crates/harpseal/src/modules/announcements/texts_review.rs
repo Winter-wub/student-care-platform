@@ -171,6 +171,23 @@ pub(crate) const REVIEW: &[E] = th_en![
         "จำนวนผู้รับเปลี่ยนไปจากที่ตรวจไว้ ยังไม่ได้ส่ง ตรวจอีกครั้งแล้วกดยืนยัน",
         "The number of recipients changed since you checked. Nothing was sent; check again and confirm."
     ),
+    // Nobody to reach (#135): the reason beside the disabled button, and
+    // the flash of a confirm refused for it.
+    (
+        "announcements.review.nobody",
+        "ยังไม่มีนักศึกษาที่ผูกบัญชีในกลุ่มผู้รับนี้ จึงยังส่งไม่ได้ เลือกกลุ่มผู้รับใหม่ หรือรอให้นักศึกษาผูกบัญชีก่อน",
+        "No Student in this Audience has linked a chat account yet, so it cannot be sent. Choose another Audience, or wait until Students link."
+    ),
+    (
+        "announcements.review.nobody_reachable",
+        "นักศึกษาในกลุ่มผู้รับนี้ติดต่อไม่ได้ทุกบัญชี (บล็อกบัญชีแชทไว้) จึงยังส่งไม่ได้ เลือกกลุ่มผู้รับใหม่ หรือรอให้นักศึกษาเลิกบล็อก",
+        "Every chat account in this Audience is unreachable (the bot is blocked), so it cannot be sent. Choose another Audience, or wait until they unblock it."
+    ),
+    (
+        "announcements.review.nobody_refused",
+        "ยังไม่ได้ส่ง เพราะไม่มีนักศึกษาที่ติดต่อได้ในกลุ่มผู้รับนี้",
+        "Nothing was sent: no Student in this Audience can be reached"
+    ),
     (
         "announcements.review.not_draft",
         "ประกาศนี้ส่งหรือตั้งเวลาไปแล้ว",
