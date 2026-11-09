@@ -136,7 +136,7 @@ var seen=[],space=false;function add(w){if(seen.indexOf(w)<0)seen.push(w);}
 (i.value.match(/[^A-Za-z0-9._-]+/g)||[]).forEach(function(r){space=space||/\s/.test(r);
 r.split(/\s+/).forEach(function(w){if(w)add('\u201c'+w+'\u201d');});});
 if(space)add(e.getAttribute('data-space'));
-if(seen.length){var t=e.getAttribute('data-bad').replace('{chars}',seen.join(' '));
+if(seen.length){var t=e.getAttribute('data-bad').replace('{chars}',function(){return seen.join(' ');});
 if(e.textContent!==t)e.textContent=t;i.setAttribute('aria-invalid','true');}
 else{if(e.textContent)e.textContent='';i.removeAttribute('aria-invalid');}});
 })();"#;

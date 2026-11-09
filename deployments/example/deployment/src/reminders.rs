@@ -191,7 +191,9 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
 /// The page: the weekly schedule (#135), then the form; its `key` makes
 /// a second post of the same form (a double click, a reload) send nobody
 /// the reminder twice, even while the first is still sending. `?ids=`
-/// fills the list again ("กลับไปแก้ไข" on the review step).
+/// fills the list again ("กลับไปแก้ไข" on the review step), at most
+/// [`MAX_STUDENTS`] codes and only from a query within
+/// [`ui::MAX_PREFILL_QUERY`]; a longer one leaves the list empty.
 async fn page(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -202,8 +204,12 @@ async fn page(
     };
     let ids = q
         .iter()
-        .find(|(k, _)| k == "ids")
-        .map(|(_, v)| parse_student_ids(v).join("\n"))
+        .find(|(k, v)| k == "ids" && v.len() <= ui::MAX_PREFILL_QUERY)
+        .map(|(_, v)| {
+            let mut ids = parse_student_ids(v);
+            ids.truncate(MAX_STUDENTS);
+            ids.join("\n")
+        })
         .unwrap_or_default();
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let schedule = schedule::card(&s, &staff).await;
@@ -214,24 +220,34 @@ async fn page(
         section class="card" {
             h2 { (t("reminders.now_title")) }
             p class="muted" { (t("reminders.now_help")) }
-            form method="post" action={ "/admin" (PATH) } {
-                (staff.csrf_field())
-                input type="hidden" name="key" value=(key);
-                div class="field" {
-                    label for="ids" { (t("reminders.ids")) }
-                    textarea id="ids" name="ids" rows="6" { (ids) }
-                }
-                // An action row: the two buttons never touch (#131).
-                div class="actions" {
-                    button type="submit" { (t("reminders.send")) }
-                    button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
-                        (t("reminders.announce"))
-                    }
-                }
-            }
+            (list_form(&s, &staff, &key, &ids))
         }
     };
     Html(ui::back_office(&s, &staff, &t("reminders.title"), body).into_string()).into_response()
+}
+
+/// The list form: the pasted ids under `key`, "ส่งเตือนตอนนี้" and
+/// "ร่างประกาศ…". Also on the review step when the list is too long to
+/// go back by a link (#135).
+fn list_form(s: &AppState, staff: &CurrentStaff, key: &str, ids: &str) -> maud::Markup {
+    let t = |k: &str| s.catalog.t(&staff.locale, k);
+    html! {
+        form method="post" action={ "/admin" (PATH) } {
+            (staff.csrf_field())
+            input type="hidden" name="key" value=(key);
+            div class="field" {
+                label for="ids" { (t("reminders.ids")) }
+                textarea id="ids" name="ids" rows="6" { (ids) }
+            }
+            // An action row: the two buttons never touch (#131).
+            div class="actions" {
+                button type="submit" { (t("reminders.send")) }
+                button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
+                    (t("reminders.announce"))
+                }
+            }
+        }
+    }
 }
 
 /// "ส่งเตือนตอนนี้": the review step (#135) until it is confirmed with the

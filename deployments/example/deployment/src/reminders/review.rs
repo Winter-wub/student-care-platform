@@ -23,6 +23,8 @@ pub(super) const REVIEWED: &str = "reviewed";
 pub(super) const REACH: &str = "reach";
 /// How many names the review lists before "และอีก N คน".
 const NAMES: usize = 5;
+/// Who may see Students' names: others see their codes (#135).
+const STUDENT_VIEW: &str = "kernel.student.view";
 
 /// Why a pasted id gets nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,8 +49,8 @@ impl Skip {
 pub(super) struct Plan {
     /// The ids as pasted (parsed), the form's `ids` again.
     pub(super) ids: Vec<String>,
-    /// Display names of the Students who get it, in pasted order.
-    pub(super) names: Vec<String>,
+    /// (code, display name) of the Students who get it, in pasted order.
+    pub(super) people: Vec<(String, String)>,
     /// Channel kind → active Links that get it by chat.
     pub(super) chat: BTreeMap<String, usize>,
     /// Students who get it by email (no active Link, an address).
@@ -60,7 +62,7 @@ pub(super) struct Plan {
 impl Plan {
     /// Students who get the reminder, by chat or by email.
     pub(super) fn reach(&self) -> usize {
-        self.names.len()
+        self.people.len()
     }
 
     /// The catalog key of why it cannot be sent, if it cannot.
@@ -162,9 +164,21 @@ pub(super) async fn plan(s: &AppState, ids: Vec<String>) -> Result<Plan> {
             p.skipped.push((code, Skip::NoWay));
             continue;
         }
-        p.names.push(name.clone());
+        p.people.push((code, name.clone()));
     }
     Ok(p)
+}
+
+/// `v` percent-encoded for a query value (unreserved bytes kept).
+fn encode(v: &str) -> String {
+    v.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 /// A Channel kind as Staff know it.
@@ -190,6 +204,16 @@ pub(super) fn page(
     let title = t("reminders.review_title");
     let action = format!("/admin{PATH}");
     let (th_subject, th_text) = super::NOTICE_TH;
+    let ids = plan.ids.join("\n");
+    // "กลับไปแก้ไข" is a link back to the page with the list, unless the
+    // list is too long for a URL (Cloudflare refuses 16 KB): then the
+    // list form is on this page, filled in.
+    let back_query = format!("ids={}", encode(&ids));
+    let inline_edit = back_query.len() > ui::MAX_PREFILL_QUERY;
+    let label = match plan.blocked() {
+        Some(_) => t("reminders.confirm_plain"),
+        None => n("reminders.confirm", plan.reach()),
+    };
     let body = html! {
         h1 { (title) }
         @if changed { p class="note" role="status" { (t("reminders.changed")) } }
@@ -205,20 +229,27 @@ pub(super) fn page(
         div class="actions" {
             @if let Some(why) = plan.blocked() {
                 @let reason = t(why).replace("{max}", &MAX_NOTIFY.to_string());
-                (ui::blocked_button(&n("reminders.confirm", plan.reach()), &reason, "reminders-blocked"))
+                (ui::blocked_button(&label, &reason, "reminders-blocked"))
             } @else {
                 form method="post" action=(action) class="inline" {
                     (staff.csrf_field())
                     input type="hidden" name="key" value=(key);
-                    input type="hidden" name="ids" value=(plan.ids.join("\n"));
+                    input type="hidden" name="ids" value=(ids);
                     input type="hidden" name=(REVIEWED) value="1";
                     input type="hidden" name=(REACH) value=(plan.reach());
-                    button type="submit" { (n("reminders.confirm", plan.reach())) }
+                    button type="submit" { (label) }
                 }
             }
-            form method="get" action=(action) class="inline" {
-                input type="hidden" name="ids" value=(plan.ids.join("\n"));
-                button type="submit" class="secondary" { (t("reminders.back")) }
+            @if inline_edit {
+                a class="btn secondary" href="#edit-list" { (t("reminders.back")) }
+            } @else {
+                a class="btn secondary" href=(format!("{action}?{back_query}")) { (t("reminders.back")) }
+            }
+        }
+        @if inline_edit {
+            section class="card" id="edit-list" {
+                h2 { (t("reminders.edit_title")) }
+                (super::list_form(s, staff, key, &ids))
             }
         }
     };
@@ -228,15 +259,23 @@ pub(super) fn page(
 fn facts(s: &AppState, staff: &CurrentStaff, p: &Plan) -> Markup {
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let n = |k: &str, n: usize| t(k).replace("{n}", &ui::number(n));
-    let more = p.names.len().saturating_sub(NAMES);
+    let more = p.people.len().saturating_sub(NAMES);
+    // Names only for Staff who may view Students; codes otherwise.
+    let names = staff.can(STUDENT_VIEW);
+    let shown: Vec<&str> = p
+        .people
+        .iter()
+        .take(NAMES)
+        .map(|(code, name)| if names { name.as_str() } else { code.as_str() })
+        .collect();
     html! {
         dl class="facts" {
             dt { (t("reminders.review_who")) }
             dd data-count="recipients" { strong { (n("reminders.review_people", p.reach())) } }
-            @if !p.names.is_empty() {
-                dt { (t("reminders.review_names")) }
+            @if !p.people.is_empty() {
+                dt { (t(if names { "reminders.review_names" } else { "reminders.review_codes" })) }
                 dd data-names {
-                    (p.names.iter().take(NAMES).cloned().collect::<Vec<_>>().join(", "))
+                    (shown.join(", "))
                     @if more > 0 { " " (n("reminders.review_more", more)) }
                 }
             }

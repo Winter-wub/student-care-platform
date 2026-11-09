@@ -182,16 +182,20 @@ pub fn previewed<'a>(
 }
 
 /// Confirms import `id` (after loading its page for the token), typing
-/// the number its page asks for when its reach asks for one (#120; only
-/// the number confirms since #135).
+/// the number its typed field asks for (`data-reach`) when it has one
+/// (#120; only the number confirms since #135).
 pub async fn confirm(b: &Browser<'_>, id: &str) -> TestResponse {
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
-    let asked = page
-        .split("พิมพ์ตัวเลข ")
-        .nth(1)
-        .and_then(|r| r.split(' ').next())
-        .map(|n| format!("typed={n}"))
-        .unwrap_or_default();
+    let asked = if page.contains(r#"name="typed""#) {
+        let n = page
+            .split(r#"data-reach=""#)
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .unwrap_or_else(|| panic!("a typed field without data-reach: {page}"));
+        format!("typed={n}")
+    } else {
+        String::new()
+    };
     b.post(&format!("/admin/roster/{id}/confirm"), &asked).await
 }
 

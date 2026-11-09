@@ -3,8 +3,8 @@
 //! the version the page showed and answers 303 + flash. A confirm comes
 //! from the review step only (#120): without `reviewed` it goes there, and
 //! a send to everyone (a confirm or a resend) must carry the reach the
-//! page showed, counted again here; a draft that reaches nobody is
-//! refused (#135).
+//! page showed, counted again here; a draft that would go now to nobody
+//! is refused (#135).
 
 use axum::Form;
 use axum::extract::{Path, State};
@@ -121,21 +121,20 @@ pub(super) async fn confirm(
         Err(resp) => return *resp,
     };
     if row.status == "draft" {
-        // Nobody to reach (#135): the review step's button is disabled;
-        // a post that skips it is refused the same way.
-        match crate::audience::count(&s.deployment, &row.audience).await {
-            Ok(c) if review::nobody(&c).is_some() => {
-                return v.redirect(&to_review, false, "announcements.review.nobody_refused");
-            }
-            Ok(_) => {}
+        // The Audience counted once, for both checks.
+        let c = match crate::audience::count(&s.deployment, &row.audience).await {
+            Ok(c) => c,
             Err(e) => return v.error(&e),
+        };
+        // Nobody to reach, for a send that goes now (#135): the review
+        // step's button is disabled; a post that skips it is refused the
+        // same way. A schedule still ahead resolves its recipients later.
+        let now = s.services.now_ms();
+        if review::nobody(&c).is_some() && review::goes_now(&row, now) {
+            return v.redirect(&to_review, false, "announcements.review.nobody_refused");
         }
-        match review::everyone_ok(&s.deployment, &row, p.reach.as_deref()).await {
-            Ok(Some(false)) => {
-                return v.redirect(&to_review, false, "announcements.review.changed");
-            }
-            Ok(_) => {}
-            Err(e) => return v.error(&e),
+        if review::everyone_ok(&row, &c, p.reach.as_deref()) == Some(false) {
+            return v.redirect(&to_review, false, "announcements.review.changed");
         }
     }
     let version = p.version;

@@ -4,8 +4,9 @@
 
 use maud::{Markup, html};
 
-/// Whether `typed` is the number `n`: ASCII or Thai digits, with commas,
-/// spaces and no-break spaces ignored ("1,234", "๑๒๓๔"). A word such as
+/// Whether `typed` is the number `n`: ASCII or Thai digits, with commas
+/// and any whitespace ignored (spaces, tabs, no-break and narrow no-break
+/// spaces: "1,234", "1 234", "๑๒๓๔"). A word such as
 /// "ยืนยัน" or "confirm" never matches (#135): Staff confirm by reading
 /// and typing the reach, not by typing a generic word.
 ///
@@ -22,7 +23,7 @@ pub fn typed_count_ok(typed: Option<&str>, n: u64) -> bool {
     };
     let digits: Option<String> = t
         .chars()
-        .filter(|c| !matches!(c, ',' | ' ' | '\u{a0}'))
+        .filter(|c| *c != ',' && !c.is_whitespace())
         .map(|c| match c {
             '0'..='9' => Some(c),
             '๐'..='๙' => char::from_digit(c as u32 - '๐' as u32, 10),
@@ -54,7 +55,15 @@ mod tests {
 
     #[test]
     fn only_the_number_confirms() {
-        for ok in ["1234", " 1,234 ", "๑๒๓๔", "1 234", "1\u{a0}234"] {
+        for ok in [
+            "1234",
+            " 1,234 ",
+            "๑๒๓๔",
+            "1 234",
+            "1\u{a0}234",
+            "1\u{202f}234",
+            "1\t234",
+        ] {
             assert!(typed_count_ok(Some(ok), 1234), "{ok}");
         }
         let bad = [

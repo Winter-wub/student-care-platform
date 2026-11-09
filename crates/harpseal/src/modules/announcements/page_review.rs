@@ -6,8 +6,10 @@
 //! style, and the confirm POST must carry that N: [`everyone_ok`] counts
 //! again on the server and refuses a stale or missing one. A draft that
 //! reaches no chat account (no Student linked, or every Link unreachable)
-//! cannot be sent (#135): the button is disabled with the reason, and the
-//! confirm refuses it ([`nobody`]).
+//! cannot be sent now (#135): the button is disabled with the reason, and
+//! the confirm refuses it ([`nobody`]). A schedule still ahead is
+//! confirmable with a caution note: its recipients resolve when it goes
+//! out ([`goes_now`]).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -75,19 +77,21 @@ pub(super) async fn hold(
 }
 
 /// `None` when `row` does not go to everyone. Otherwise whether `posted`
-/// (the `reach` field) is the number of Students it reaches now.
-pub(super) async fn everyone_ok(
-    d: &Deployment,
-    row: &Row,
-    posted: Option<&str>,
-) -> Result<Option<bool>> {
+/// (the `reach` field) is the number of Students it reaches now, `c` (its
+/// Audience counted now).
+pub(super) fn everyone_ok(row: &Row, c: &Counts, posted: Option<&str>) -> Option<bool> {
     if !is_everyone(&row.audience) {
-        return Ok(None);
+        return None;
     }
-    let now = crate::audience::count(d, &row.audience).await?.students;
-    Ok(Some(
-        posted.and_then(|p| p.trim().parse::<usize>().ok()) == Some(now),
-    ))
+    Some(posted.and_then(|p| p.trim().parse::<usize>().ok()) == Some(c.students))
+}
+
+/// Whether confirming `row` at `now` (server clock, ms) sends it at once:
+/// no `send_at`, or one already past. A schedule still ahead resolves its
+/// recipients when it goes out, so reaching nobody yet does not block it
+/// (#135).
+pub(super) fn goes_now(row: &Row, now: i64) -> bool {
+    row.send_at.is_none_or(|t| t <= now)
 }
 
 /// Why a send that reaches `c` cannot go (#135): the catalog key of the
@@ -172,6 +176,9 @@ pub(super) async fn page(
             .unwrap_or(None),
         false => None,
     };
+    // Nobody to reach blocks only a send that goes now (#135).
+    let empty = nobody(&counts);
+    let blocked = empty.filter(|_| goes_now(&row, svc.now_ms()));
     let extra = crate::kernel::usage::line_extra(svc, &s.config)
         .await
         .unwrap_or(None);
@@ -185,8 +192,11 @@ pub(super) async fn page(
             div class="card" { (summary(&v, &row, &counts, &used, extra)) }
             (super::page_detail::preview(&v, &title, &body, row.require_ack))
         }
+        @if empty.is_some() && blocked.is_none() {
+            p class="note warn-note" { (v.t("announcements.review.nobody_later")) }
+        }
         div class="actions" {
-            @if let Some(why) = nobody(&counts) {
+            @if let Some(why) = blocked {
                 (crate::ui::blocked_button(&v.t("announcements.review.confirm"), &v.t(why), "review-blocked"))
             } @else {
                 form method="post" action=(format!("{detail}/confirm")) class="inline" {

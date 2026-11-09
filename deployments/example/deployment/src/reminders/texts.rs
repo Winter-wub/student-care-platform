@@ -163,6 +163,16 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("reminders.review_subject", "en", "Email subject: {subject}"),
     CatalogEntry::new("reminders.confirm", "th", "ยืนยันส่งเตือน {n} คน"),
     CatalogEntry::new("reminders.confirm", "en", "Send to {n} Students"),
+    // The confirm's label when it cannot be sent: no count (#135).
+    CatalogEntry::new("reminders.confirm_plain", "th", "ยืนยันส่งเตือน"),
+    CatalogEntry::new("reminders.confirm_plain", "en", "Send"),
+    // Names only for Staff who may view Students; codes for the others.
+    CatalogEntry::new("reminders.review_codes", "th", "รหัสนักศึกษา"),
+    CatalogEntry::new("reminders.review_codes", "en", "Student IDs"),
+    // The list form on the review step, when the list is too long to go
+    // back by a link.
+    CatalogEntry::new("reminders.edit_title", "th", "แก้ไขรายชื่อ"),
+    CatalogEntry::new("reminders.edit_title", "en", "Edit the list"),
     CatalogEntry::new("reminders.back", "th", "กลับไปแก้ไข"),
     CatalogEntry::new("reminders.back", "en", "Back to editing"),
     CatalogEntry::new(

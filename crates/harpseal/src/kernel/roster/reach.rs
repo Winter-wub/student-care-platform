@@ -50,6 +50,7 @@ pub(super) fn typed_field(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
         div class="field confirm-reach" {
             label for="roster-typed" { (v.t("kernel.roster.typed_label").replace("{n}", &n)) }
             input id="roster-typed" type="text" name=(FIELD) form=(FORM_ID) required
+                data-reach=(n)
                 autocomplete="off" spellcheck="false" enterkeyhint="done"
                 aria-invalid=[wrong.then_some("true")]
                 aria-describedby=[wrong.then_some("roster-typed-error")];

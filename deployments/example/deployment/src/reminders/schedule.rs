@@ -3,6 +3,8 @@
 
 use harpseal::{AppState, CurrentStaff, Statement, Value, ui};
 
+#[cfg(test)]
+use super::SCHEDULE;
 use super::{DAY_MS, HOUR, TAG};
 
 /// The weekly schedule (#135): when it runs, to whom, how many now, and
@@ -62,6 +64,13 @@ mod tests {
     /// Monday 2026-11-09 09:00 in Bangkok (02:00 UTC).
     const MONDAY_9AM: i64 = 1_794_189_600_000;
     const BANGKOK: i64 = 7 * 3_600_000;
+
+    #[test]
+    fn the_card_and_next_run_follow_the_cron_schedule() {
+        // The card says "every Monday at HOUR:00" and next_run counts to
+        // it: both break if SCHEDULE moves without them.
+        assert_eq!(SCHEDULE, format!("0 {HOUR} * * 1"));
+    }
 
     #[test]
     fn the_next_run_is_the_coming_monday_at_nine_local() {

@@ -183,6 +183,12 @@ pub(crate) const REVIEW: &[E] = th_en![
         "นักศึกษาในกลุ่มผู้รับนี้ติดต่อไม่ได้ทุกบัญชี (บล็อกบัญชีแชทไว้) จึงยังส่งไม่ได้ เลือกกลุ่มผู้รับใหม่ หรือรอให้นักศึกษาเลิกบล็อก",
         "Every chat account in this Audience is unreachable (the bot is blocked), so it cannot be sent. Choose another Audience, or wait until they unblock it."
     ),
+    // A schedule still ahead with nobody to reach yet: confirmable (#135).
+    (
+        "announcements.review.nobody_later",
+        "ยังไม่มีผู้รับตอนนี้ ระบบจะนับผู้รับใหม่ตอนถึงเวลาส่ง ถ้าตอนนั้นยังไม่มีนักศึกษาที่ผูกบัญชีในกลุ่มนี้ จะไม่มีใครได้รับ",
+        "Nobody would receive it right now. The recipients are counted again when it goes out; if no Student in this Audience has linked by then, nobody receives it."
+    ),
     (
         "announcements.review.nobody_refused",
         "ยังไม่ได้ส่ง เพราะไม่มีนักศึกษาที่ติดต่อได้ในกลุ่มผู้รับนี้",
