@@ -15,6 +15,10 @@
 //! `.list`, `.chip`, and `table.rows` (stacked cards below 900 px, a table
 //! from 900 px; give each `td` a `data-label`). Buttons: the default
 //! (brand), `.secondary`, `.done`, `.link`, and [`danger_button`].
+//!
+//! Dates and numbers Staff read go through [`local_datetime`] (`9 พ.ย. 2569
+//! 14:30`, Buddhist year, the Deployment's `utc_offset`) and [`number`]
+//! (`15,000`); ISO stays in the technical disclosure (#125).
 
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
@@ -23,6 +27,11 @@ use maud::{DOCTYPE, Markup, PreEscaped, html};
 use crate::{CurrentStaff, Error, PageState};
 
 mod shell;
+mod thai;
+
+pub use thai::{
+    local_date, local_datetime, number, thai_date, thai_datetime, thai_day, thai_month,
+};
 
 /// The stylesheet, served by `Deployment::router` at [`CSS_PATH`]:
 /// `ui.css`, then the back-office shell's `ui_shell.css` (#123).

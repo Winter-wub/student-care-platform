@@ -52,10 +52,25 @@ fn claim(module: &str, what: &'static str, key: &str) -> BuildError {
 }
 
 /// `[texts]` may only override keys some Module declares: a typo would
-/// otherwise be ignored silently.
+/// otherwise be ignored silently. It may also label a Role of `[roles]`
+/// (or the CLI's Administrator) with `kernel.role.<name>`, and name one of
+/// its own Locales with `kernel.locale.<tag>` (#125).
 pub(super) fn toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result<(), BuildError> {
+    use crate::auth::roles::{ADMINISTRATOR, LABEL_PREFIX};
+    let role_label = |k: &str| {
+        k.strip_prefix(LABEL_PREFIX)
+            .is_some_and(|name| name == ADMINISTRATOR || config.roles.contains_key(name))
+    };
+    // A Locale of the Deployment named in Thai: `kernel.locale.<tag>`.
+    let locale_name = |k: &str| {
+        k.strip_prefix("kernel.locale.")
+            .is_some_and(|tag| config.texts.contains_key(tag) || config.default_locale.0 == tag)
+    };
     for (locale, entries) in &config.texts {
-        if let Some(key) = entries.keys().find(|k| !catalog.knows(k)) {
+        if let Some(key) = entries
+            .keys()
+            .find(|k| !catalog.knows(k) && !role_label(k) && !locale_name(k))
+        {
             return Err(BuildError::UnknownText {
                 source: format!("deployment.toml [texts.{locale}]"),
                 key: key.clone(),

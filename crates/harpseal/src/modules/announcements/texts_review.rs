@@ -19,7 +19,7 @@ pub(crate) const REVIEW: &[E] = th_en![
     ),
     (
         "announcements.form.scope_groups",
-        "เลือกกลุ่ม: ตามข้อมูลนักศึกษาหรือกลุ่ม (Tag) ด้านล่าง",
+        "เลือกกลุ่ม: ตามข้อมูลนักศึกษาหรือป้ายด้านล่าง",
         "Choose groups: by the Student data or Tags below"
     ),
     (

@@ -69,14 +69,16 @@ impl Module for Fees {
     }
 
     fn register(&self, r: &mut ModuleRegistrar) {
-        r.permission(Permission::new(
-            IMPORT,
-            "Upload and import outstanding fees",
-        ))
-        .permission(Permission::new(
-            BANK_ACCOUNT_EDIT,
-            "Change the bank account Students pay fees into",
-        ))
+        r.permission(
+            Permission::new(IMPORT, "Upload and import outstanding fees").thai("นำเข้ายอดค้างชำระ"),
+        )
+        .permission(
+            Permission::new(
+                BANK_ACCOUNT_EDIT,
+                "Change the bank account Students pay fees into",
+            )
+            .thai("เปลี่ยนบัญชีธนาคารที่นักศึกษาใช้ชำระค่าธรรมเนียม"),
+        )
         .messages(texts::TEXTS)
         .messages(student::TEXTS)
         .setting(

@@ -18,6 +18,7 @@
 
 mod audit;
 mod audit_detail;
+mod audit_words;
 pub(crate) mod backups;
 mod module_settings;
 mod module_settings_texts;
@@ -28,6 +29,10 @@ mod staff_detail;
 mod staff_pages;
 mod texts;
 pub mod texts_api;
+mod texts_areas;
+mod texts_audit;
+mod texts_editable;
+mod texts_list;
 mod texts_pages;
 mod texts_staff;
 mod view;
@@ -58,6 +63,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     backups::register(r);
     r.messages(texts::DEFAULTS)
         .messages(texts::STAFF)
+        .messages(texts_audit::AUDIT)
         .messages(module_settings_texts::TEXTS)
         .back_office_page_in(
             crate::NavGroup::Admin,
@@ -118,7 +124,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             "/texts",
             "kernel.admin.texts.title",
             80,
-            get(texts_pages::list),
+            get(texts_list::list),
         )
         .back_office(SETTING, "/texts/consent", post(texts_pages::consent))
         .back_office(

@@ -116,17 +116,17 @@ fn count_box(
         div id="audience-count" class="card count" hx-post=(PATH)
             hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
             hx-target="this" hx-swap="outerHTML" aria-live="polite" {
-            p { strong { (v.t("announcements.form.students")) " " (c.students) } }
+            p { strong { (v.t("announcements.form.students")) " " (crate::ui::number(c.students)) } }
             @if let Some(p) = picked { (hand_picked(v, a, c, p)) }
             ul class="list" {
                 @for (kind, (active, unreachable)) in &c.per_channel {
                     li {
-                        (channel_label(kind)) ": " (active) " " (v.t("announcements.form.links"))
+                        (channel_label(kind)) ": " (crate::ui::number(*active)) " " (v.t("announcements.form.links"))
                         @if *unreachable > 0 {
                             " (" (unreachable) " " (v.t("announcements.form.unreachable_skipped")) ")"
                         }
                         @if metered(kind) {
-                            " · " (v.t("announcements.form.estimate_channel")) " " (active)
+                            " · " (v.t("announcements.form.estimate_channel")) " " (crate::ui::number(*active))
                         }
                         @if let Some((_, m)) = used.iter().find(|(k, _)| k == kind) {
                             " · " span class="month-used" { (month_used(v, m)) }
@@ -134,7 +134,7 @@ fn count_box(
                     }
                 }
             }
-            p class="estimate" { (v.t("announcements.form.estimate")) " " (units) " " (v.t("announcements.form.times")) }
+            p class="estimate" { (v.t("announcements.form.estimate")) " " (crate::ui::number(units)) " " (v.t("announcements.form.times")) }
         }
     }
 }

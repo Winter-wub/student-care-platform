@@ -41,7 +41,8 @@ pub const PATH: &str = "/reminders";
 /// The page action that drafts an Announcement to the pasted Students.
 pub const ANNOUNCE_PATH: &str = "/reminders/announce";
 /// Who may send the reminder from the page.
-pub const PERMISSION: Permission = Permission::new("reminders.send", "Send the fee reminder");
+pub const PERMISSION: Permission =
+    Permission::new("reminders.send", "Send the fee reminder").thai("ส่งเตือนชำระค่าธรรมเนียม");
 
 const DAY_MS: i64 = 86_400_000;
 

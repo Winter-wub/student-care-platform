@@ -8,17 +8,36 @@ use crate::{Error, Result, Services};
 /// Name of the Role the CLI gives the first Administrator.
 pub(crate) const ADMINISTRATOR: &str = "Administrator";
 
-/// Statements creating Role `name` if absent and granting `perms`.
+/// Prefix of the catalog key holding a Role's display label (#125):
+/// `kernel.role.<stored name>`, e.g. `kernel.role.Administrator`.
+pub(crate) const LABEL_PREFIX: &str = "kernel.role.";
+
+/// The name Staff read for Role `name`: its `kernel.role.<name>` text when
+/// the catalog has one (the Kernel ships "ผู้ดูแลระบบ" for
+/// [`ADMINISTRATOR`]; a Deployment adds its own in `[texts]`), else the
+/// stored name. The stored name never changes, so no migration is needed.
+pub(crate) fn label(catalog: &crate::Catalog, locale: &crate::Locale, name: &str) -> String {
+    let key = format!("{LABEL_PREFIX}{name}");
+    if catalog.knows(&key) {
+        catalog.t(locale, &key)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Statements creating Role `name` if absent and granting `perms`, with
+/// the id a new Role gets (an existing Role keeps its own).
 pub(crate) fn ensure_role(
     services: &Services,
     name: &str,
     perms: &[impl AsRef<str>],
-) -> Result<Vec<Statement>> {
+) -> Result<(String, Vec<Statement>)> {
+    let id = services.new_id()?;
     let mut stmts = vec![
         Statement::new(
             "INSERT INTO role (id, name, created_at) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING",
         )
-        .bind(services.new_id()?)
+        .bind(id.as_str())
         .bind(name)
         .bind(services.now_ms()),
     ];
@@ -32,7 +51,7 @@ pub(crate) fn ensure_role(
             .bind(name),
         );
     }
-    Ok(stmts)
+    Ok((id, stmts))
 }
 
 fn column(rows: &Rows) -> Vec<String> {

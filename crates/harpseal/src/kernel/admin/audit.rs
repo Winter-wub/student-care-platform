@@ -11,6 +11,7 @@ use axum::response::Response;
 use maud::{Markup, html};
 use serde::Deserialize;
 
+use super::audit_words as words;
 use super::view::{PER_PAGE, View, cut, enc, like, paging};
 use crate::audit::Target;
 use crate::port_types::{Rows, Statement, Value};
@@ -191,33 +192,6 @@ pub(super) fn entries(rows: &Rows) -> Vec<Entry> {
         .collect()
 }
 
-/// The actor as shown: the Staff name, else `kind:id`.
-pub(super) fn actor(e: &Entry) -> Markup {
-    html! {
-        @match (&e.actor_name, &e.actor_id) {
-            (Some(name), Some(id)) => a href=(format!("/admin/staff/{id}")) { (name) },
-            (None, Some(id)) => span class="code" { (e.actor_kind) ":" (id) },
-            _ => span class="code" { (e.actor_kind) },
-        }
-    }
-}
-
-/// The target, linked when it is a Student or a Staff member.
-pub(super) fn target(e: &Entry) -> Markup {
-    let kind = e.target_kind.as_deref().unwrap_or_default();
-    let id = e.target_id.as_deref().unwrap_or_default();
-    let href = match kind {
-        "student" => Some(format!("/admin/students/{id}")),
-        "staff" => Some(format!("/admin/staff/{id}")),
-        _ => None,
-    };
-    html! {
-        @if kind.is_empty() { span class="muted" { "–" } }
-        @else if let Some(h) = href { a href=(h) { (kind) ":" (id) } }
-        @else { span class="code" { (kind) ":" (id) } }
-    }
-}
-
 fn full(v: &View<'_>, f: &Filters, results: Markup) -> Response {
     let title = v.t("kernel.admin.audit.title");
     let field = |id: &str, name: &str, key: &str, value: &str, kind: &str| {
@@ -253,7 +227,7 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
     let l = |k: &str| v.t(k);
     html! {
         div id="audit-results" {
-            p class="muted count" { (l("kernel.admin.total")) " " (total) }
+            p class="muted count" { (l("kernel.admin.total")) " " (crate::ui::number(total)) }
             @if rows.is_empty() {
                 div class="card" { p { (l("kernel.admin.none")) } }
             } @else {
@@ -270,11 +244,11 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
                                 td data-label=(l("kernel.admin.at")) {
                                     a href=(format!("/admin/audit/{}", e.id)) { (v.time(e.at)) }
                                 }
-                                td data-label=(l("kernel.admin.audit.actor")) { (actor(e)) }
+                                td data-label=(l("kernel.admin.audit.actor")) { (words::actor(v, e)) }
                                 td data-label=(l("kernel.admin.audit.action")) {
-                                    a class="code" href=(format!("/admin/audit/{}", e.id)) { (e.action) }
+                                    a href=(format!("/admin/audit/{}", e.id)) { (words::action(v, &e.action)) }
                                 }
-                                td data-label=(l("kernel.admin.audit.target")) { (target(e)) }
+                                td data-label=(l("kernel.admin.audit.target")) { (words::target(v, e)) }
                             }
                         }
                     }
@@ -287,7 +261,7 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Entry], total: i64, page: i64, pag
                         @for e in rows {
                             li {
                                 a href=(format!("/admin/audit/{}", e.id)) {
-                                    (v.time(e.at)) " " span class="code" { (e.action) }
+                                    (v.time(e.at)) " " span class="code" { (words::raw(e)) }
                                 }
                                 span { (l("kernel.admin.audit.ip")) " " (e.ip.as_deref().unwrap_or("–")) }
                                 span class="code" { (l("kernel.admin.audit.request")) " " (e.request_id.as_deref().unwrap_or("–")) }

@@ -13,6 +13,7 @@ use super::store;
 use super::{package, package_page};
 use crate::kernel::students::view::channel_label;
 use crate::kernel::text::fill;
+use crate::ui::{number, thai_month};
 use crate::{AppState, CurrentStaff, PageState};
 
 /// Days in the chart: today and the 29 before.
@@ -79,7 +80,7 @@ fn card(
     cur: &package::Current,
 ) -> Markup {
     let t = |k: &str| s.catalog.t(&staff.locale, k);
-    let used = m.used().to_string();
+    let used = number(m.used());
     let level_key = match m.level {
         Level::Ok => "kernel.usage.level_ok",
         Level::Warn => "kernel.usage.level_warn",
@@ -98,10 +99,10 @@ fn card(
         section class="card usage" id=(format!("usage-{}", m.kind))
             data-channel=(m.kind) data-level=(m.level.as_str()) {
             h2 { (channel_label(&m.kind)) }
-            p class="muted" { (fill(&t("kernel.usage.this_month"), &[("month", month)])) }
+            p class="muted" { (fill(&t("kernel.usage.this_month"), &[("month", &thai_month(month))])) }
             @match (m.cap, m.percent()) {
                 (Some(cap), Some(percent)) => {
-                    @let cap = cap.to_string();
+                    @let cap = number(cap);
                     @let pct = percent.to_string();
                     p class="used" {
                         (fill(&t("kernel.usage.used_of"), &[("used", &used), ("cap", &cap), ("percent", &pct)]))
@@ -119,9 +120,9 @@ fn card(
             }
             @if m.kind == package::KIND { (package_page::section(s, staff, cur)) }
             dl class="kv usage-kv" {
-                dt { (t("kernel.usage.metered")) } dd class="metered" { (m.totals.metered) }
-                dt { (t("kernel.usage.free")) } dd class="free" { (m.totals.free) }
-                dt { (t("kernel.usage.failed")) } dd class="failed" { (m.totals.failed) }
+                dt { (t("kernel.usage.metered")) } dd class="metered" { (number(m.totals.metered)) }
+                dt { (t("kernel.usage.free")) } dd class="free" { (number(m.totals.free)) }
+                dt { (t("kernel.usage.failed")) } dd class="failed" { (number(m.totals.failed)) }
             }
             (chart(&m.kind, days, &daily, &labels))
             h3 { (t("kernel.usage.months")) }
@@ -134,10 +135,10 @@ fn card(
                     @for mo in months {
                         @let total = quota::in_month(rows, &m.kind, mo);
                         tr data-month=(mo) {
-                            td data-label=(t("kernel.usage.month")) { (mo) }
-                            td data-label=(labels.metered) { (total.metered) }
-                            td data-label=(labels.free) { (total.free) }
-                            td data-label=(labels.failed) { (total.failed) }
+                            td data-label=(t("kernel.usage.month")) { (thai_month(mo)) }
+                            td data-label=(labels.metered) { (number(total.metered)) }
+                            td data-label=(labels.free) { (number(total.free)) }
+                            td data-label=(labels.failed) { (number(total.failed)) }
                         }
                     }
                 }

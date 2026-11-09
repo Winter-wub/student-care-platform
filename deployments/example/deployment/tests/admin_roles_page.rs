@@ -39,13 +39,40 @@ async fn the_roles_page_lists_every_declared_permission() {
         .map(|p| p.id.split('.').next().unwrap())
         .collect();
     modules.dedup();
-    for m in ["kernel", "announcements", "fees", "reminders"] {
+    // Each Module's Permissions sit under a Thai heading (#125): the
+    // Kernel's own, else the title of the Module's first page.
+    for (m, legend) in [
+        ("kernel", "ระบบหลัก"),
+        ("announcements", "ประกาศข่าว"),
+        ("fees", "ยอดค้างชำระ"),
+        ("reminders", "เตือนชำระค่าธรรมเนียม"),
+    ] {
         assert!(modules.contains(&m), "{m} declares Permissions");
-        let legend = format!("<legend class=\"code\">{m}</legend>");
-        assert!(page.body.contains(&legend), "grouped under {m}");
+        let legend = format!("<legend>{legend}</legend>");
+        assert!(page.body.contains(&legend), "{m} grouped under {legend}");
     }
+    // Every Kernel and example Permission reads as a Thai sentence; its id
+    // is only the checkbox value and in the technical details.
+    let (main, tech) = page
+        .body
+        .split_once("<details class=\"tech\">")
+        .expect("disclosure");
     for p in declared {
         let checkbox = format!("name=\"permission\" value=\"{}\"", p.id);
-        assert!(page.body.contains(&checkbox), "no checkbox for {}", p.id);
+        assert!(main.contains(&checkbox), "no checkbox for {}", p.id);
+        let thai = p
+            .thai
+            .unwrap_or_else(|| panic!("{} has no Thai sentence", p.id));
+        assert!(
+            main.contains(&format!("<span>{thai}</span>")),
+            "{} reads {thai}",
+            p.id
+        );
+        assert!(!main.contains(&format!(">{}<", p.id)), "{} shown raw", p.id);
+        assert!(
+            tech.contains(&format!(">{}<", p.id)),
+            "{} in the details",
+            p.id
+        );
     }
 }

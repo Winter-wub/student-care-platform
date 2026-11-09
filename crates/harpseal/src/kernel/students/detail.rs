@@ -71,7 +71,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
                         dt { (v.t("kernel.students.email")) (badge("email")) }
                         dd { (shown(row.fields.email.clone().unwrap_or_default())) }
                         dt { (v.t("kernel.students.locale")) (badge("locale")) }
-                        dd { (row.fields.locale.0) }
+                        dd { (v.s.catalog.locale_name(&v.staff.locale, &row.fields.locale.0)) }
                         @for (key, spec) in v.s.config.roster.attributes_in_order() {
                             dt { (v.label(key, spec)) (badge(&attribute_field(key))) }
                             dd { (shown(v.shown(spec, row.fields.attributes.get(key)))) }
@@ -102,7 +102,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
                     @if events.is_empty() { p class="muted" { (v.t("kernel.students.security_none")) } }
                     ul class="list" {
                         @for (at, kind) in &events {
-                            li { code { (kind) } span class="muted" { (v.time(*at)) } }
+                            li { (crate::kernel::security::kind_label(&v.s.catalog, &v.staff.locale, kind)) " " span class="muted" { (v.time(*at)) } }
                         }
                     }
                 }

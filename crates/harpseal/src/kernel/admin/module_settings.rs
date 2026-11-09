@@ -87,11 +87,19 @@ async fn render(v: &View<'_>, all: &Settings, rejected: Option<Rejected<'_>>) ->
         h1 { (title) }
         p class="muted" { (v.t("kernel.admin.module_settings.intro")) }
         @for m in &modules {
-            h2 class="code" { (m) }
+            h2 { (super::roles_pages::group_name(v, m)) }
             @for (spec, c) in shown.iter().zip(&cards) {
                 @if spec.module == *m { (c) }
             }
         }
+        // Raw details (#125): each setting's key and Permission id.
+        (crate::ui::technical(v.s, v.staff, html! {
+            ul class="list" {
+                @for spec in &shown {
+                    li { (v.t(spec.label_key)) ": " code { (spec.key) } " · " code { (spec.permission) } }
+                }
+            }
+        }))
     };
     let status = match rejected {
         Some(_) => StatusCode::UNPROCESSABLE_ENTITY,
@@ -131,7 +139,7 @@ fn card(
                 div class="flash err" role="status" { (v.t("kernel.admin.module_settings.broken")) }
             }
             p class="muted" { (v.t(spec.help_key)) }
-            p class="muted" { code { (key) } " · " (v.t(spec.kind.label_key())) }
+            p class="muted" { (v.t(spec.kind.label_key())) }
             @if let Some((_, at, _)) = &stored {
                 p class="muted" { (v.t("kernel.admin.module_settings.updated")) " " (v.time(*at)) }
             }
@@ -157,10 +165,21 @@ fn card(
                     }
                     Some(current) => { p class="setting-value" { strong { (current) } } }
                 }
-                p class="muted" { (v.t("kernel.admin.module_settings.read_only")) " " code { (spec.permission) } }
+                p class="muted" {
+                    (crate::kernel::text::fill(&v.t("kernel.admin.module_settings.read_only"), &[("permission", &permission_label(v, spec.permission))]))
+                }
             }
         }
     }
+}
+
+/// The sentence Staff read for Permission `id`, else the id.
+fn permission_label(v: &View<'_>, id: &str) -> String {
+    v.s.deployment
+        .permissions()
+        .iter()
+        .find(|p| p.id == id)
+        .map_or_else(|| id.to_string(), |p| p.label().into_owned())
 }
 
 fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {

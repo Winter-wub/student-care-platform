@@ -11,7 +11,8 @@ use axum::response::Response;
 use maud::{Markup, html};
 use serde_json::{Map, Value as Json};
 
-use super::audit::{COLUMNS, FROM, actor, entries, target};
+use super::audit::{COLUMNS, FROM, entries};
+use super::audit_words as words;
 use super::view::{View, shown};
 use crate::audit::{self, Target};
 use crate::port_types::{Statement, Value};
@@ -52,16 +53,17 @@ pub(super) async fn page(
     let l = |k: &str| v.t(k);
     let body = html! {
         p { a href="/admin/audit" { "← " (l("kernel.admin.audit.back")) } }
-        h1 class="code" { (e.action) }
+        h1 { (words::action(&v, &e.action)) }
         section class="card" {
             dl class="facts" {
                 dt { (l("kernel.admin.at")) } dd { (v.time(e.at)) }
-                dt { (l("kernel.admin.audit.actor")) } dd { (actor(&e)) }
-                dt { (l("kernel.admin.audit.target")) } dd { (target(&e)) }
+                dt { (l("kernel.admin.audit.actor")) } dd { (words::actor(&v, &e)) }
+                dt { (l("kernel.admin.audit.target")) } dd { (words::target(&v, &e)) }
             }
         }
         // Raw details (#123): the IP, the browser and the request id.
         (crate::ui::technical(&s, &staff, html! {
+            p class="code" { (words::raw(&e)) }
             dl class="facts" {
                 dt { (l("kernel.admin.audit.ip")) } dd { (e.ip.as_deref().unwrap_or("–")) }
                 dt { (l("kernel.admin.audit.user_agent")) } dd { (ua.unwrap_or("–")) }
@@ -73,7 +75,7 @@ pub(super) async fn page(
             (diff(&v, before.as_ref(), after.as_ref()))
         }
     };
-    v.page(StatusCode::OK, &e.action, body)
+    v.page(StatusCode::OK, &words::action(&v, &e.action), body)
 }
 
 /// One row per top-level key of either side; changed rows marked.

@@ -94,7 +94,7 @@ async fn a_required_attribute_left_empty_is_refused() {
 async fn a_file_that_is_neither_csv_nor_xlsx_is_refused() {
     let (_, _, report) = refused("roster.pdf", b"%PDF-1.7").await;
     assert!(
-        report.contains("0,,รองรับเฉพาะไฟล์ .csv และ .xlsx"),
+        report.contains("ทั้งไฟล์,,รองรับเฉพาะไฟล์ .csv และ .xlsx"),
         "{report}"
     );
 }
@@ -103,7 +103,7 @@ async fn a_file_that_is_neither_csv_nor_xlsx_is_refused() {
 async fn a_csv_named_txt_is_refused() {
     let (_, _, report) = refused("roster.txt", &csv(0..2)).await;
     assert!(
-        report.contains("0,,รองรับเฉพาะไฟล์ .csv และ .xlsx"),
+        report.contains("ทั้งไฟล์,,รองรับเฉพาะไฟล์ .csv และ .xlsx"),
         "{report}"
     );
 }

@@ -48,7 +48,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.reason_hidden_roster_sheet",
-        "ชีตนี้ซ่อนอยู่แต่มีรายชื่อ: แบบ full จะทำให้นักศึกษาในชีตนี้กลายเป็นออก เลิกซ่อนหรือลบชีตก่อน",
+        "ชีตนี้ซ่อนอยู่แต่มีรายชื่อ ถ้านำเข้าแบบทั้งทะเบียน นักศึกษาในชีตนี้จะพ้นสภาพ ให้เลิกซ่อนหรือลบชีตนี้ก่อน แล้วอัปโหลดใหม่",
         "Hidden sheet with a roster: a full import would mark its Students left; unhide or delete it first"
     ),
     (

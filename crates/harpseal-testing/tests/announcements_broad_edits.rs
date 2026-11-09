@@ -74,7 +74,7 @@ async fn a_scheduled_group_send_edited_to_everyone_is_held_for_review() {
         page.contains(&format!("{DANGER}ส่งถึงทุกคน 3 คน</button>")),
         "{page}"
     );
-    assert!(page.contains("ส่งตามเวลา 2026-11-05 09:30"), "{page}");
+    assert!(page.contains("ส่งตามเวลา 5 พ.ย. 2569 09:30"), "{page}");
     // Without the review's reach it is refused; at 09:30 nothing goes out.
     let confirm = format!("/admin/announcements/{id}/confirm");
     let v = version(&w, &id).await;

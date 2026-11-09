@@ -464,6 +464,27 @@ no file behind. Backups leave kept uploads out, rows and files (see
 fees, one term per sheet, imported into the Module's own table by the Job
 `fees.import`.
 
+## Permissions in Thai
+
+A Permission is a short Thai sentence for Staff (#125): a verb and its
+object, no id, no English. Add it with `thai`, which is `const`:
+
+```rust
+pub const IMPORT: Permission = Permission::new("grades.import", "Upload course grades")
+    .thai("นำเข้าผลการเรียน");
+```
+
+The Roles page shows `Permission::label()`: the Thai sentence, else the
+English `description` (a Module written before #125 keeps building and
+shows that), else the id made readable. The id and the English
+description stay in the technical details. Group headings use the title
+of the Module's first back-office page, so a Module with a page needs
+nothing more.
+
+Label the Module's audit actions the same way, with a
+`<module>.audit.<action>` text: an action `grades.import` reads the text
+`grades.audit.import` ("นำเข้าผลการเรียน") in the audit log.
+
 ## A Module's back-office pages: navigation group and home card
 
 Every back-office page shares the Core shell (#123): a skip link to the
@@ -502,7 +523,7 @@ async fn fees_card(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusC
     Ok(if owing == 0 {
         StatusCard::new(CardState::Ok, tf("fees.home.clear", &[]))
     } else {
-        let n = owing.to_string();
+        let n = harpseal::ui::number(owing); // "1,250"
         StatusCard::new(CardState::Warn, tf("fees.home.owing", &[("n", &n)]))
             .action(tf("fees.home.open", &[]), "/admin/fees")
     })

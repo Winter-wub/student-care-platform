@@ -5,6 +5,7 @@
 use maud::{Markup, html};
 
 use super::quota::Totals;
+use crate::ui::{number, thai_day};
 
 /// Width of one day's slot in the SVG's user units.
 const SLOT: usize = 10;
@@ -42,7 +43,7 @@ pub(super) fn chart(kind: &str, days: &[String], totals: &[Totals], l: &Labels) 
                     @let hm = scale(t.metered);
                     @let hf = scale(t.failed);
                     g data-day=(day) {
-                        title { (day) ": " (l.metered) " " (t.metered) ", " (l.failed) " " (t.failed) }
+                        title { (thai_day(day)) ": " (l.metered) " " (number(t.metered)) ", " (l.failed) " " (number(t.failed)) }
                         rect class="bar-m" x=(x) y=(fmt(HEIGHT - hm)) width=(SLOT - 2) height=(fmt(hm)) {}
                         rect class="bar-f" x=(x) y=(fmt(HEIGHT - hm - hf)) width=(SLOT - 2) height=(fmt(hf)) {}
                     }
@@ -57,10 +58,10 @@ pub(super) fn chart(kind: &str, days: &[String], totals: &[Totals], l: &Labels) 
                     tbody {
                         @for (day, t) in days.iter().zip(totals).rev() {
                             tr data-day=(day) {
-                                td data-label=(l.day) { (day) }
-                                td data-label=(l.metered) { (t.metered) }
-                                td data-label=(l.free) { (t.free) }
-                                td data-label=(l.failed) { (t.failed) }
+                                td data-label=(l.day) { (thai_day(day)) }
+                                td data-label=(l.metered) { (number(t.metered)) }
+                                td data-label=(l.free) { (number(t.free)) }
+                                td data-label=(l.failed) { (number(t.failed)) }
                             }
                         }
                     }

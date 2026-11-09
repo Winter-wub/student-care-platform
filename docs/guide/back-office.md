@@ -395,6 +395,55 @@ message: `setting` is read on every Inbound, with no cache.
 one as a `.tar`, starts one now, and downloads all data as an Excel workbook
 without secret columns; see [Backups](backups.md).
 
+## Plain Thai for Staff (#125)
+
+Staff read the back office in Thai, in the words of `GLOSSARY.md`. Ids,
+catalog keys, config names and ISO dates stay in the "ข้อมูลทางเทคนิค"
+disclosure.
+
+- **Permissions** read as Thai sentences ("นำเข้ารายชื่อนักศึกษา"), grouped
+  under the Module's name as Staff know it: "ระบบหลัก" for the Kernel, else
+  the title of the Module's first back-office page. Give each Permission
+  its sentence with `Permission::new(id, description).thai("…")`. A Module
+  that has not yet done so shows its English `description`; see
+  [deployment.md](deployment.md#permissions-in-thai).
+- **Roles** keep the names stored in the database (`[roles]` is seeded
+  once, so renaming a Role in the TOML would create a new one and leave
+  Staff on the old one). Instead, label a Role in `[texts]`:
+
+  ```toml
+  [texts.th]
+  "kernel.role.General Staff" = "เจ้าหน้าที่ทั่วไป"
+  "kernel.role.Student Affairs Staff" = "เจ้าหน้าที่กิจการนักศึกษา"
+  ```
+
+  The Kernel already labels `Administrator` "ผู้ดูแลระบบ". The Staff and
+  Roles pages show the label; forms still post the stored name, and the
+  Roles page lists stored names in its technical details. No migration
+  is needed. `build()` refuses a label for a Role that `[roles]` does not
+  list (a typo); a Role created on the Roles page is named in Thai there.
+- **Locales** read as "ไทย" and "อังกฤษ" (`kernel.locale.<tag>`). Name
+  another Locale of the Deployment in `[texts]` the same way.
+- **Dates** read `9 พ.ย. 2569 14:30`: the Buddhist year, Thai month
+  abbreviations and a 24-hour clock in the Deployment's `utc_offset`.
+  Months read `พ.ย. 2569`. Numbers have thousands separators (`15,000`).
+  Module pages use the same helpers: `harpseal::ui::local_datetime(&s,
+  ms)`, `thai_date`, `thai_month`, `thai_day` and `number`.
+- **The audit log** reads each action as a sentence ("สร้างประกาศ") and
+  each actor and target by what it is ("ระบบ", "ประกาศ"); the raw action,
+  actor and target ids are in the disclosure. A Module labels its own
+  actions with a `<module>.audit.<rest>` text (`fees.import` →
+  `fees.audit.import`); an action without a label shows as written.
+- **Texts** are listed under the page they show on, with a search (text,
+  page or key) and a page filter. Each links by its Thai text; the key is
+  on the edit page's technical details. The page lists only texts read
+  through the saved edits (chat, Mini App, notices and emails). Role,
+  Locale and audit labels, and the texts of the home, Backups and usage
+  pages, are read from the catalog alone: change them in `[texts]`.
+- **Roster errors** say "ทั้งไฟล์" or "ทั้งชีต" for a problem with no row.
+  A header problem lists the headers the template expects, with a link to
+  the template.
+
 ## Branding
 
 `/admin/branding` (`kernel.setting.edit`, held by the Administrator) sets the

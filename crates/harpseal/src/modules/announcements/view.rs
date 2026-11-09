@@ -29,9 +29,12 @@ impl<'a> View<'a> {
         self.s.config.utc_offset_minutes().unwrap_or(0)
     }
 
-    /// `ms` as `YYYY-MM-DD HH:MM` local, or "-".
+    /// `ms` as a Thai date and time (`9 พ.ย. 2569 14:30`), or "-".
     pub(crate) fn time(&self, ms: Option<i64>) -> String {
-        ms.map_or_else(|| "-".into(), |ms| format_ms(ms, self.offset()))
+        ms.map_or_else(
+            || "-".into(),
+            |ms| crate::ui::thai_datetime(ms, self.offset()),
+        )
     }
 
     /// A whole back-office page.

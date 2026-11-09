@@ -57,7 +57,7 @@ async fn sums_only_the_local_calendar_month_with_free_and_failed() {
     let b = signed_in(&h, &app, "officer", "Officer").await;
     let r = b.get("/admin/usage").await;
     let c = card(&r.body, "fake");
-    assert!(c.contains("เดือนนี้ (2026-11)"));
+    assert!(c.contains("เดือนนี้ (พ.ย. 2569)"));
     assert!(c.contains("ใช้ไป 30 จาก 300 (10%)"));
     assert!(c.contains("<dd class=\"metered\">30</dd>"));
     assert!(c.contains("<dd class=\"free\">7</dd>"));
@@ -109,7 +109,7 @@ async fn a_channel_without_a_quota_shows_usage_and_never_warns() {
     let b = signed_in(&h, &app, "officer", "Officer").await;
     let r = b.get("/admin/usage").await;
     let c = card(&r.body, "fake2");
-    assert!(c.contains("ไม่ได้ตั้งโควตา: ใช้ไป 5000"), "{c}");
+    assert!(c.contains("ไม่ได้ตั้งโควตา: ใช้ไป 5,000"), "{c}");
     assert!(
         c.contains("data-level=\"ok\"") && !c.contains("role=\"progressbar\""),
         "{c}"

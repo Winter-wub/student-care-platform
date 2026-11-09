@@ -30,17 +30,40 @@ fn by_module(perms: &[Permission]) -> BTreeMap<&str, Vec<&Permission>> {
     m
 }
 
-/// Permission checkboxes named `permission`, grouped by Module.
-fn permission_boxes(perms: &[Permission], held: &[String]) -> Markup {
+/// A Module as Staff know it (#125): "ระบบหลัก" for the Kernel, else the
+/// title of the Module's first back-office page ("ประกาศข่าว"), else its
+/// own `<module>.title` or `<module>.menu` text, else "ส่วนเสริม".
+pub(super) fn group_name(v: &View<'_>, module: &str) -> String {
+    if module == crate::kernel::NAME {
+        return v.t("kernel.admin.roles.group_kernel");
+    }
+    let prefix = format!("{module}.");
+    if let Some(n) =
+        v.s.deployment
+            .nav_items()
+            .iter()
+            .find(|n| n.permission.starts_with(&prefix))
+    {
+        return v.t(n.title_key);
+    }
+    [format!("{module}.title"), format!("{module}.menu")]
+        .iter()
+        .find(|k| v.s.catalog.knows(k))
+        .map_or_else(|| v.t("kernel.admin.texts.area_module"), |k| v.t(k))
+}
+
+/// Permission checkboxes named `permission`, grouped by Module, each
+/// labelled with its Thai sentence (#125).
+fn permission_boxes(v: &View<'_>, perms: &[Permission], held: &[String]) -> Markup {
     html! {
         @for (module, list) in by_module(perms) {
             fieldset class="checks" {
-                legend class="code" { (module) }
+                legend { (group_name(v, module)) }
                 @for p in list {
                     label class="check" {
                         input type="checkbox" name="permission" value=(p.id)
                             checked[held.iter().any(|h| h == p.id)];
-                        " " span { (p.description) }
+                        " " span { (p.label()) }
                     }
                 }
             }
@@ -48,12 +71,25 @@ fn permission_boxes(perms: &[Permission], held: &[String]) -> Markup {
     }
 }
 
-/// Every Permission's id beside its description, for the technical
-/// details (#123).
+/// Every Permission's id beside its English description, for the
+/// technical details (#123).
 fn permission_ids(perms: &[Permission]) -> Markup {
     html! {
         ul class="list permission-ids" {
             @for p in perms { li { span class="code" { (p.id) } span class="muted" { (p.description) } } }
+        }
+    }
+}
+
+/// Each Role's stored name beside the label Staff read, for the
+/// technical details (#125).
+fn stored_names(v: &View<'_>, roles: &[&RoleRow]) -> Markup {
+    html! {
+        @if !roles.is_empty() {
+            p class="muted" { (v.t("kernel.admin.roles.stored")) }
+            ul class="list" {
+                @for r in roles { li { span class="code" { (r.name) } " " (v.role(&r.name)) } }
+            }
         }
     }
 }
@@ -87,14 +123,14 @@ async fn render_list(
         @for r in &all {
             section class="card" {
                 h2 {
-                    a href=(format!("/admin/roles/{}", r.id)) { (r.name) }
+                    a href=(format!("/admin/roles/{}", r.id)) { (v.role(&r.name)) }
                 }
-                p class="muted" { (l("kernel.admin.roles.holders")) " " (r.holders) }
+                p class="muted" { (l("kernel.admin.roles.holders")) " " (crate::ui::number(r.holders)) }
                 @for (module, list) in by_module(declared) {
                     @let held: Vec<&&Permission> = list.iter().filter(|p| r.permissions.iter().any(|h| h == p.id)).collect();
                     @if !held.is_empty() {
-                        p { span class="code" { (module) } ": "
-                            @for p in held { span class="chip" title=(p.id) { (p.description) } " " } }
+                        p { span class="perm-group" { (group_name(v, module)) } " "
+                            @for p in held { span class="chip" { (p.label()) } " " } }
                     }
                 }
             }
@@ -108,15 +144,16 @@ async fn render_list(
                     label for="role-name" { (l("kernel.admin.roles.name")) }
                     input id="role-name" name="name" value=(name) required maxlength="64";
                 }
-                (permission_boxes(declared, picked))
+                (permission_boxes(v, declared, picked))
                 button type="submit" { (l("kernel.admin.roles.create")) }
             }
         }
         // Raw details (#123): Roles from the TOML, Permission ids.
         (crate::ui::technical(v.s, v.staff, html! {
             @for r in all.iter().filter(|r| from_toml(v, &r.name)) {
-                p { (r.name) " " span class="chip" { (l("kernel.admin.roles.toml")) } }
+                p { (v.role(&r.name)) " " span class="chip" { (l("kernel.admin.roles.toml")) } }
             }
+            (stored_names(v, &all.iter().collect::<Vec<_>>()))
             (permission_ids(declared))
         }))
     };
@@ -149,6 +186,20 @@ pub(super) async fn create(
     let Ok(clean) = role_admin::clean_name(&name) else {
         return render_list(&v, &name, &perms, Some("kernel.admin.roles.err_name"), bad).await;
     };
+    // A name another Role is already shown as (#125): Staff could not
+    // tell the two apart.
+    match roles::list(&s.services).await {
+        Ok(all)
+            if all
+                .iter()
+                .any(|r| r.name != clean && v.role(&r.name) == clean) =>
+        {
+            let key = Some("kernel.admin.roles.err_label");
+            return render_list(&v, &name, &perms, key, bad).await;
+        }
+        Ok(_) => {}
+        Err(e) => return v.error(&e),
+    }
     let Ok(perms) = role_admin::clean_permissions(s.deployment.permissions(), &perms) else {
         return render_list(
             &v,
@@ -203,14 +254,14 @@ fn render_edit(
     let base = format!("/admin/roles/{}", role.id);
     let body = html! {
         p { a href="/admin/roles" { "← " (l("kernel.admin.roles.title")) } }
-        h1 { (role.name) }
-        p class="muted" { (l("kernel.admin.roles.holders")) " " (role.holders) }
+        h1 { (v.role(&role.name)) }
+        p class="muted" { (l("kernel.admin.roles.holders")) " " (crate::ui::number(role.holders)) }
         p class="muted" { (l("kernel.admin.roles.undeclared")) }
         form method="post" action=(base) class="card" {
             (v.staff.csrf_field())
             input type="hidden" name="version" value=(role.version());
             @if let Some(e) = error { p class="field-error" role="alert" { (l(e)) } }
-            (permission_boxes(v.s.deployment.permissions(), picked))
+            (permission_boxes(v, v.s.deployment.permissions(), picked))
             button type="submit" { (l("kernel.admin.save")) }
         }
         @if role.holders == 0 {
@@ -225,10 +276,11 @@ fn render_edit(
         // Raw details (#123): where the Role came from, Permission ids.
         (crate::ui::technical(v.s, v.staff, html! {
             @if from_toml(v, &role.name) { p class="muted" { (l("kernel.admin.roles.toml_help")) } }
+            (stored_names(v, &[role]))
             (permission_ids(v.s.deployment.permissions()))
         }))
     };
-    v.page(status, &role.name, body)
+    v.page(status, &v.role(&role.name), body)
 }
 
 pub(super) async fn update(

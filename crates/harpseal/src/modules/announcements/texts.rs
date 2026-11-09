@@ -218,7 +218,7 @@ pub(crate) const FORM: &[E] = th_en![
     // {count}
     (
         "announcements.form.notify_reach",
-        "แจ้งได้สูงสุด {count} คน (push ไม่เกิน {count} ครั้ง เฉพาะคนที่ข้อความภาษาของตัวเองเปลี่ยน)",
+        "แจ้งได้สูงสุด {count} คน (ใช้ข้อความที่คิดค่าบริการไม่เกิน {count} ข้อความ เฉพาะคนที่ข้อความในภาษาของตัวเองเปลี่ยน)",
         "up to {count} recipients (at most {count} pushes: only those whose own language's text changes)"
     ),
     // {left}
@@ -255,7 +255,7 @@ pub(crate) const FORM: &[E] = th_en![
         "ค่าใดค่าหนึ่ง คั่นด้วย ,",
         "any of, separated by ,"
     ),
-    ("announcements.form.tags", "กลุ่ม (Tag)", "Tags"),
+    ("announcements.form.tags", "ป้าย", "Tags"),
     (
         "announcements.form.include_unreachable",
         "นับบัญชีที่ติดต่อไม่ได้ด้วย (จะข้ามตอนส่ง)",
@@ -285,15 +285,15 @@ pub(crate) const FORM: &[E] = th_en![
     ),
     (
         "announcements.form.estimate_channel",
-        "ประมาณ push",
+        "ข้อความที่คิดค่าบริการประมาณ",
         "about pushes:"
     ),
     (
         "announcements.form.estimate",
-        "จะใช้ push ประมาณ",
+        "จะใช้ข้อความที่คิดค่าบริการประมาณ",
         "Will use about"
     ),
-    ("announcements.form.times", "ครั้ง", "metered pushes"),
+    ("announcements.form.times", "ข้อความ", "metered messages"),
     (
         "announcements.form.preview",
         "ตัวอย่างที่นักศึกษาเห็น",

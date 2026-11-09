@@ -135,7 +135,9 @@ async fn the_detail_shows_links_tags_consent_and_logs_the_read() {
     let scholarship = body.find(">ทุนเรียนดี<").unwrap();
     assert!(roster < msc && msc < manual && manual < scholarship);
     assert!(body.contains("ฉบับที่ 1"));
-    assert!(body.contains("otp.lockout") && body.contains("2026-11-05 07:00"));
+    // The event reads in Thai with a Thai date (#125), not its kind code.
+    assert!(body.contains("ใส่รหัสผิดเกินกำหนด") && body.contains("5 พ.ย. 2569 07:00"));
+    assert!(!body.contains("otp.lockout"));
     // A Viewer sees no edit, Tag, status, Manual Link or revoke forms.
     for hidden in ["/edit\"", "/tags\"", "/status\"", "/links\"", "/revoke\""] {
         assert!(!body.contains(hidden), "{hidden}");

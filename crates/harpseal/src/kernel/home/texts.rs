@@ -12,6 +12,12 @@ pub(super) const DEFAULTS: &[E] = &[
     E::new("kernel.backoffice.group_admin", "en", "Administration"),
     E::new("kernel.backoffice.technical", "th", "ข้อมูลทางเทคนิค"),
     E::new("kernel.backoffice.technical", "en", "Technical details"),
+    // Locale names (#125): `kernel.locale.<tag>`; a Deployment with another
+    // Locale names it in `[texts]` (see `Catalog::locale_name`).
+    E::new("kernel.locale.th", "th", "ไทย"),
+    E::new("kernel.locale.th", "en", "Thai"),
+    E::new("kernel.locale.en", "th", "อังกฤษ"),
+    E::new("kernel.locale.en", "en", "English"),
     E::new("kernel.home.title", "th", "ภาพรวมภาคเรียน"),
     E::new("kernel.home.title", "en", "This term at a glance"),
     E::new("kernel.home.intro", "th", "สถานะงานที่คุณดูแล และสิ่งที่ควรทำต่อ"),

@@ -6,18 +6,64 @@ use crate::message::{ActionId, Locale};
 
 /// One Permission a Module declares. Ids are `module.thing.verb`, global
 /// across the Deployment; Roles group them.
+///
+/// Staff read a Permission as a short Thai sentence (#125): give it one
+/// with [`Permission::thai`]. The back office shows [`Permission::label`];
+/// the id stays in the "ข้อมูลทางเทคนิค" disclosure.
+///
+/// ```
+/// use harpseal::Permission;
+/// const IMPORT: Permission = Permission::new("fees.import", "Upload outstanding fees")
+///     .thai("นำเข้ายอดค้างชำระ");
+/// assert_eq!(IMPORT.label(), "นำเข้ายอดค้างชำระ");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Permission {
     /// Global id, e.g. `kernel.student.view`.
     pub id: &'static str,
-    /// What it allows, for the Roles page.
+    /// What it allows, in English, for developers and the technical
+    /// details of the Roles page.
     pub description: &'static str,
+    /// What it allows, as Staff read it ("นำเข้ารายชื่อนักศึกษา"); `None`
+    /// for a Module written before #125 (see [`Permission::label`]).
+    pub thai: Option<&'static str>,
 }
 
 impl Permission {
     /// A Permission, usable in `const` items.
     pub const fn new(id: &'static str, description: &'static str) -> Self {
-        Self { id, description }
+        Self {
+            id,
+            description,
+            thai: None,
+        }
+    }
+
+    /// The same Permission with the sentence Staff read, in Thai: a verb
+    /// and its object, no id, no English ("ส่งเตือนชำระค่าธรรมเนียม").
+    pub const fn thai(mut self, sentence: &'static str) -> Self {
+        self.thai = Some(sentence);
+        self
+    }
+
+    /// What the back office shows: the Thai sentence; without one (a
+    /// Module that has not added it yet), the English description; without
+    /// that either, the id made readable (`fees.bank_account.edit` →
+    /// "fees: bank account edit").
+    pub fn label(&self) -> std::borrow::Cow<'static, str> {
+        match (self.thai, self.description.trim()) {
+            (Some(t), _) if !t.trim().is_empty() => t.into(),
+            (_, d) if !d.is_empty() => self.description.into(),
+            _ => readable_id(self.id).into(),
+        }
+    }
+}
+
+/// `fees.bank_account.edit` → `fees: bank account edit`.
+fn readable_id(id: &str) -> String {
+    match id.split_once('.') {
+        Some((module, rest)) => format!("{module}: {}", rest.replace(['.', '_'], " ")),
+        None => id.replace('_', " "),
     }
 }
 
@@ -165,6 +211,17 @@ impl Catalog {
             .map(String::as_str)
     }
 
+    /// The name Staff read for Locale `tag` in `locale` (#125): the text
+    /// `kernel.locale.<tag>` ("ไทย", "อังกฤษ"), else the tag itself.
+    pub fn locale_name(&self, locale: &Locale, tag: &str) -> String {
+        let key = format!("kernel.locale.{tag}");
+        if self.knows(&key) {
+            self.t(locale, &key)
+        } else {
+            tag.to_string()
+        }
+    }
+
     /// The Deployment's default Locale.
     pub fn default_locale(&self) -> Locale {
         self.default_locale.clone().unwrap_or_else(Locale::th)
@@ -211,5 +268,16 @@ mod tests {
         c.insert("en", "a", "a");
         assert_eq!(c.effective(&Locale::en()), Locale::en());
         assert_eq!(c.locales(), [Locale::en(), Locale::th()]);
+    }
+
+    #[test]
+    fn a_permission_reads_thai_then_its_description_then_its_id() {
+        let p = Permission::new("fees.import", "Upload fees");
+        assert_eq!(p.label(), "Upload fees", "a Module from before #125");
+        assert_eq!(p.thai("นำเข้ายอดค้างชำระ").label(), "นำเข้ายอดค้างชำระ");
+        assert_eq!(p.thai(" ").label(), "Upload fees");
+        let bare = Permission::new("fees.bank_account.edit", "");
+        assert_eq!(bare.label(), "fees: bank account edit");
+        assert_eq!(Permission::new("solo", " ").label(), "solo");
     }
 }

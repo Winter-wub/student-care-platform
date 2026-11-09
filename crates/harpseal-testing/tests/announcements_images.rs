@@ -25,12 +25,12 @@ async fn the_form_shows_the_hint_and_takes_files() {
         page.contains("data-md=\"image\""),
         "the toolbar's image button"
     );
-    assert!(!page.contains("ยังไม่ได้ตั้งค่า public_url"));
+    assert!(!page.contains("การ์ดในแชทจะยังไม่มีรูป"));
     // Without public_url the hint says chat Cards have no image yet.
     let w2 = boot().await;
     let b2 = signed_in(&w2, "Officer").await;
     let page = b2.get("/admin/announcements/new").await.body;
-    assert!(page.contains("ยังไม่ได้ตั้งค่า public_url"), "{page}");
+    assert!(page.contains("การ์ดในแชทจะยังไม่มีรูป"), "{page}");
 }
 
 #[tokio::test]

@@ -31,10 +31,9 @@ impl<'a> View<'a> {
         self.s.catalog.t(&self.staff.locale, key)
     }
 
-    /// `ms` as `YYYY-MM-DD HH:MM` in the Deployment's time zone.
+    /// `ms` as a Thai date and time in the Deployment's time zone.
     pub(super) fn time(&self, ms: i64) -> String {
-        let offset = self.s.config.utc_offset_minutes().unwrap_or(0);
-        crate::students::format_time(ms, offset)
+        crate::ui::local_datetime(self.s, ms)
     }
 
     /// The state as Staff read it.

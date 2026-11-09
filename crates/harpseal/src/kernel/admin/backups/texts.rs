@@ -18,10 +18,16 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.backup.disabled",
-        "ปิดการสำรองอัตโนมัติอยู่ ([backup] enabled = false) ยังกดสำรองเองได้",
+        "ระบบไม่ได้ตั้งให้สำรองอัตโนมัติ กด \"สำรองตอนนี้\" เพื่อสำรองเองได้",
         "Scheduled backups are off ([backup] enabled = false); you can still back up now."
     ),
     ("kernel.backup.now", "สำรองตอนนี้", "Back up now"),
+    // {size}
+    (
+        "kernel.backup.total",
+        "ชุดสำรองทั้งหมดใช้พื้นที่ {size}",
+        "All backups take {size}"
+    ),
     (
         "kernel.backup.requested",
         "เริ่มสำรองข้อมูลแล้ว รอสักครู่แล้วโหลดหน้านี้ใหม่",
@@ -39,20 +45,20 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.backup.export_note",
-        "หนึ่งชีตต่อหนึ่งตาราง ไม่รวมตารางงานระบบ (log, งาน, ข้อความขาออก) รหัสผ่าน โทเคน และค่าลับอื่น ๆ ไม่ใช่ชุดสำรองสำหรับกู้คืน",
+        "ข้อมูลแต่ละชุดอยู่คนละชีต ไม่รวมบันทึกการทำงานของระบบ งานเบื้องหลัง ข้อความขาออก รหัสผ่าน และข้อมูลลับอื่น ๆ ไฟล์นี้ใช้กู้คืนระบบไม่ได้",
         "One sheet per table, without the operational tables (logs, Jobs, outbound messages), password hashes, tokens and other secrets. Not a backup: it cannot be restored."
     ),
-    // {cells} {limit} {table} {table_cells}
+    // {cells} {limit} {table_cells} (the table's name is in the details)
     (
         "kernel.backup.export_too_big",
-        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ตารางที่ใหญ่ที่สุดคือ {table} ({table_cells} ช่อง) ให้ดาวน์โหลดตารางนั้นแยกจากรายการตารางด้านล่าง หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
-        "The data has {cells} cells, over the Excel download's limit of {limit}. The largest table is {table} ({table_cells} cells): download it alone from the table list, or raise [backup] max_export_cells on a native server."
+        "ข้อมูลมี {cells} ช่อง เกินขีดจำกัด {limit} ช่องของการดาวน์โหลดเป็น Excel ชุดข้อมูลที่ใหญ่ที่สุดมี {table_cells} ช่อง (ชื่อของชุดอยู่ใน \"ข้อมูลทางเทคนิค\" ท้ายหน้านี้) ให้ดาวน์โหลดชุดนั้นแยกจากหน้าสำรองข้อมูล หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
+        "The data has {cells} cells, over the Excel download's limit of {limit}. The largest table has {table_cells} cells (its name is under \"Technical details\" below): download it alone from the Backups page, or ask your server administrator to raise the limit."
     ),
-    // {table} {cells} {limit}
+    // {cells} {limit}
     (
         "kernel.backup.export_table_too_big",
-        "ตาราง {table} มี {cells} ช่อง เกินขีดจำกัด {limit} ช่อง ให้ดาวน์โหลดชุดสำรองแทน หรือเพิ่ม [backup] max_export_cells บนเซิร์ฟเวอร์ของตัวเอง",
-        "Table {table} alone has {cells} cells, over the limit of {limit}. Download a backup instead, or raise [backup] max_export_cells on a native server."
+        "ชุดข้อมูลนี้มี {cells} ช่อง เกินขีดจำกัด {limit} ช่อง ให้ดาวน์โหลดชุดสำรองแทน หรือขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด",
+        "This table alone has {cells} cells, over the limit of {limit}. Download a backup instead, or ask your server administrator to raise the limit."
     ),
     (
         "kernel.backup.tables",
@@ -80,7 +86,7 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ("kernel.backup.origin_manual", "สั่งเอง", "Manual"),
     ("kernel.backup.state_running", "กำลังสำรอง", "Running"),
     ("kernel.backup.state_done", "สำเร็จ", "Done"),
-    ("kernel.backup.state_failed", "ล้มเหลว", "Failed"),
+    ("kernel.backup.state_failed", "ไม่สำเร็จ", "Failed"),
     (
         "kernel.backup.download",
         "ดาวน์โหลด (.tar)",
@@ -93,8 +99,8 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.backup.failed_alert",
-        "การสำรองข้อมูลครั้งล่าสุดล้มเหลว",
-        "The latest backup failed."
+        "การสำรองข้อมูลครั้งล่าสุดไม่สำเร็จ ดูสาเหตุใน \"ข้อมูลทางเทคนิค\" ท้ายหน้า แล้วกด \"สำรองตอนนี้\" อีกครั้ง",
+        "The latest backup failed. See why under \"Technical details\" at the end of the page, then press \"Back up now\" again."
     ),
     (
         "kernel.backup.job_errors",

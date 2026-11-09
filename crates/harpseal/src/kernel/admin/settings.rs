@@ -94,23 +94,7 @@ pub(super) fn locales(catalog: &Catalog, config: &DeploymentConfig) -> Vec<Strin
         .collect()
 }
 
-/// Prefixes of texts the back office reads from the build-time catalog
-/// (its own pages), never through `setting`: an edit would not show, so
-/// the Texts page leaves them out.
-const BUILD_TIME: [&str; 5] = [
-    "kernel.admin.",
-    "kernel.auth.",
-    "kernel.backoffice.",
-    "kernel.students.",
-    "kernel.roster.",
-];
-
-/// Whether `key` is a catalog key the Texts page edits: read through
-/// `Texts::load` (chat flow, Module Actions, `/notice`), not a
-/// back-office page text.
-pub(super) fn editable(catalog: &Catalog, key: &str) -> bool {
-    catalog.knows(key) && !BUILD_TIME.iter().any(|p| key.starts_with(p))
-}
+pub(super) use super::texts_editable::editable;
 
 /// The compare-and-set token of a form: SHA-256 of the `setting` value
 /// it was rendered from (`-` for no row). A token instead of the text, so

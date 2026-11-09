@@ -164,8 +164,8 @@ async fn a_backup_carries_the_choice_and_the_restored_deployment_uses_it() {
     assert_eq!(b.login(&email_of("keeper"), PASSWORD).await.status, 303);
     let body = b.get("/admin/usage").await.body;
     let c = card(&body, "line");
-    assert!(c.contains("แพ็กเกจ Basic: 15000 ข้อความต่อเดือน"), "{c}");
-    assert!(c.contains("ใช้ไป 1000 จาก 15000"), "{c}");
+    assert!(c.contains("แพ็กเกจ Basic: 15,000 ข้อความต่อเดือน"), "{c}");
+    assert!(c.contains("ใช้ไป 1,000 จาก 15,000"), "{c}");
 }
 
 #[tokio::test]
@@ -194,7 +194,7 @@ async fn use_the_configured_value_removes_the_choice_and_follows_the_toml_again(
     let c = card(&body, "line");
     assert!(c.contains("ยังไม่ได้เลือกแพ็กเกจ ใช้ค่าจากไฟล์ตั้งค่า: 300"), "{c}");
     assert!(c.contains("<option value=\"config\" selected>"), "{c}");
-    assert!(c.contains("ใช้ไป 31500 จาก 300"), "{c}");
+    assert!(c.contains("ใช้ไป 31,500 จาก 300"), "{c}");
     // Audited as setting.reset (before = the choice, after = what applies).
     let rows = h
         .db()

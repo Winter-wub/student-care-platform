@@ -17,7 +17,7 @@ pub(super) fn card(v: &View<'_>, skipped: &[Skipped]) -> Markup {
     }
     html! {
         div class="card" data-skipped=(skipped.len()) {
-            h3 { (v.t("kernel.roster.skipped")) }
+            h2 { (v.t("kernel.roster.skipped")) }
             ul {
                 @for (first, last, s) in ranges(skipped).into_iter().take(SHOWN) {
                     li {
@@ -52,8 +52,14 @@ pub(super) fn report_fields<'a>(
     skipped
         .iter()
         .map(|s: &'a Skipped| {
+            // A whole sheet has no row: "ทั้งชีต", never "0" (#125).
+            let row = if s.row == 0 {
+                v.t("kernel.roster.report_whole_sheet")
+            } else {
+                s.row.to_string()
+            };
             let mut f = vec![
-                s.row.to_string(),
+                row,
                 s.text.clone(),
                 v.t(&format!("kernel.roster.skip_{}", s.reason)),
             ];

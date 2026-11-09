@@ -122,6 +122,10 @@ impl Deployment {
     pub fn permissions(&self) -> &[Permission] {
         &self.registry.permissions
     }
+    /// Every back-office navigation entry, sorted.
+    pub(crate) fn nav_items(&self) -> &[crate::auth::NavItem] {
+        &self.registry.nav
+    }
     /// The Verification Method.
     pub fn verification(&self) -> &dyn VerificationMethod {
         self.verification.as_ref()

@@ -8,7 +8,7 @@ use maud::{Markup, html};
 use serde_json::Value as Json;
 
 use crate::audit::{self, Actor, RequestCtx, Target};
-use crate::kernel::students::view::{format_ms, is_htmx};
+use crate::kernel::students::view::is_htmx;
 use crate::{CurrentStaff, Error, PageState, Result};
 
 /// Rows per list page.
@@ -30,9 +30,16 @@ impl<'a> View<'a> {
         self.s.catalog.t(&self.staff.locale, key)
     }
 
-    /// `ms` as `YYYY-MM-DD HH:MM` in the Deployment's time zone.
+    /// The name Staff read for Role `name` (#125): its `kernel.role.<name>`
+    /// text, else the stored name.
+    pub(super) fn role(&self, name: &str) -> String {
+        crate::auth::roles::label(&self.s.catalog, &self.staff.locale, name)
+    }
+
+    /// `ms` as a Thai date and time (`9 พ.ย. 2569 14:30`) in the
+    /// Deployment's time zone.
     pub(super) fn time(&self, ms: i64) -> String {
-        format_ms(ms, self.offset())
+        crate::ui::thai_datetime(ms, self.offset())
     }
 
     fn offset(&self) -> i32 {

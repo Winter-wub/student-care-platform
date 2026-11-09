@@ -60,7 +60,7 @@ pub(crate) const TEXTS: &[E] = &[
     E::new(
         "announcements.images.no_public_url",
         "th",
-        "ยังไม่ได้ตั้งค่า public_url รูปจะแสดงในมินิแอปเท่านั้น การ์ดในแชทจะยังไม่มีรูป",
+        "ตอนนี้รูปจะแสดงในมินิแอปเท่านั้น การ์ดในแชทจะยังไม่มีรูป เพราะระบบยังไม่ได้ตั้งที่อยู่เว็บสาธารณะ (แจ้งผู้ดูแลระบบให้ตั้ง public_url)",
     ),
     E::new(
         "announcements.images.no_public_url",

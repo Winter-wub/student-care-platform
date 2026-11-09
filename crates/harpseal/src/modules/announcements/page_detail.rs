@@ -76,7 +76,7 @@ pub(super) async fn page(
             (summary(&v, &row, &st))
             (hand_picked(&v, &row))
             (actions(&v, &row))
-            (texts_card(&texts))
+            (texts_card(&v, &texts))
             (images_card(&v, &images, &texts))
             (counts(&v, &st))
             (fragment)
@@ -226,12 +226,12 @@ fn images_card(v: &View<'_>, files: &[super::files::Stored], texts: &Texts) -> M
     }
 }
 
-fn texts_card(texts: &Texts) -> Markup {
+fn texts_card(v: &View<'_>, texts: &Texts) -> Markup {
     html! {
         div class="card" {
             @for (locale, (title, body)) in &texts.0 {
                 section lang=(locale) {
-                    p class="muted" { (locale) }
+                    p class="muted" { (v.s.catalog.locale_name(&v.staff.locale, locale)) }
                     strong { (title) }
                     p class="pre" { (body) }
                 }

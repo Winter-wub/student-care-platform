@@ -35,7 +35,7 @@ const BACK: &str = "/admin/usage#usage-line";
 /// who may edit it.
 pub(super) fn section(s: &PageState, staff: &CurrentStaff, cur: &Current) -> Markup {
     let t = |k: &str| s.catalog.t(&staff.locale, k);
-    let number = |n: u64| n.to_string();
+    let number = |n: u64| crate::ui::number(n);
     let summary = match cur.choice {
         Choice::Package(p) => fill(
             &t("kernel.usage.package.current"),
@@ -69,7 +69,7 @@ pub(super) fn section(s: &PageState, staff: &CurrentStaff, cur: &Current) -> Mar
             @if staff.can(EDIT) { (form(s, staff, cur)) }
             p class="muted" {
                 (t("kernel.usage.package.help")) " "
-                (fill(&t("kernel.usage.package.source"), &[("url", SOURCE_URL), ("date", SOURCE_DATE)]))
+                (fill(&t("kernel.usage.package.source"), &[("url", SOURCE_URL), ("date", &crate::ui::thai_day(SOURCE_DATE))]))
             }
         }
     }
@@ -96,7 +96,7 @@ fn form(s: &PageState, staff: &CurrentStaff, cur: &Current) -> Markup {
                         (t("kernel.usage.package.option_config"))
                     }
                     @for p in PACKAGES {
-                        @let limit = p.included.to_string();
+                        @let limit = crate::ui::number(p.included);
                         option value=(p.id) selected[chosen == p.id] {
                             (fill(&t("kernel.usage.package.option"), &[("name", p.name), ("limit", &limit)]))
                         }
