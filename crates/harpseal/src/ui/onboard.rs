@@ -9,7 +9,8 @@ use crate::{CurrentStaff, PageState};
 /// Students a "แจ้งนักศึกษา" link names at most. The link is a URL, so a
 /// longer list (or a query over [`MAX_PREFILL_QUERY`]) names no one and
 /// Staff choose the Audience on the form. A limit of the link only: the
-/// form takes any list Staff paste.
+/// form takes any list Staff paste. With eight-digit codes the query cap
+/// binds first, at about 790 codes.
 pub const MAX_PREFILL: usize = 1000;
 /// Longest query string a "แจ้งนักศึกษา" link carries, in bytes once
 /// encoded: well inside the URL limits of browsers, proxies and

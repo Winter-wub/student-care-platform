@@ -199,3 +199,62 @@ async fn finance_without_announcements_gets_only_the_way_back() {
     assert!(!next.contains("/admin/announcements/new"), "{next}");
     assert!(next.contains(&format!("href=\"{}\"", fees::BASE)), "{next}");
 }
+
+#[tokio::test]
+async fn the_result_follows_the_uploader_rule() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let admin = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&admin, "fees.csv", FEES_CSV.as_bytes()).await);
+    admin.post(&format!("{path}/confirm"), "").await;
+    tick(&h, &app).await;
+    assert_eq!(admin.get(&path).await.status, 200);
+    // Another Staff member with the same Permission: as before the Job,
+    // the upload is not theirs to see.
+    let finance = signed_in(&h, &app, "Finance").await;
+    let r = finance.get(&path).await;
+    assert_eq!(r.status, 404, "{}", r.body);
+    assert_eq!(next_step(&r.body), None);
+}
+
+#[tokio::test]
+async fn a_failed_job_whose_upload_is_gone_says_so_to_its_uploader_only() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let admin = signed_in(&h, &app, "Administrator").await;
+    let path = preview_path(&upload(&admin, "fees.csv", FEES_CSV.as_bytes()).await);
+    assert_eq!(admin.post(&format!("{path}/confirm"), "").await.status, 303);
+    let id = path.rsplit('/').next().unwrap();
+    // Lost behind the Job's back: it retries, then fails for good.
+    assert!(
+        harpseal::KeptUpload::finish(&h.services(), fees::NAME, id)
+            .await
+            .unwrap()
+    );
+    let mut failed = 0;
+    for _ in 0..6 {
+        let report = app
+            .deployment()
+            .tick(Timestamp(h.clock().now_ms()))
+            .await
+            .unwrap();
+        failed += report.failed;
+        h.clock().advance_ms(31 * 60_000);
+    }
+    assert_eq!(failed, 1, "failed for good");
+    // Sessions outlive the retries: sign in again.
+    assert_eq!(
+        admin
+            .login("administrator@sealbay.example", PASSWORD)
+            .await
+            .status,
+        303
+    );
+    let r = admin.get(&path).await;
+    assert_eq!(r.status, 409, "{}", r.body);
+    assert!(r.body.contains("นำเข้าไม่สำเร็จ"), "{}", r.body);
+    assert_eq!(next_step(&r.body), None);
+    let finance = signed_in(&h, &app, "Finance").await;
+    let r = finance.get(&path).await;
+    assert_eq!(r.status, 404, "not theirs: {}", r.body);
+}

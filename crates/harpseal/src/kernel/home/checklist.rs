@@ -35,9 +35,10 @@ enum Done {
     Sql(String),
 }
 
-/// Whether `[branding]` in the TOML differs from the default.
+/// Whether `[branding]` in the TOML differs from the default (a colour in
+/// either case).
 fn configured(b: &BrandingConfig) -> bool {
-    b.name.is_some() || b.logo.is_some() || b.primary_color != DEFAULT_PRIMARY
+    b.name.is_some() || b.logo.is_some() || !b.primary_color.eq_ignore_ascii_case(DEFAULT_PRIMARY)
 }
 
 /// The steps `staff` may see on this Deployment, in order.

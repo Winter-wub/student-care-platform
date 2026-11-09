@@ -55,6 +55,17 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     // List
     ("kernel.roster.recent", "การนำเข้าล่าสุด", "Recent imports"),
+    // Deprecated (#127): unused, kept so `[texts]` overrides still build.
+    ("kernel.roster.none", "ยังไม่มีการนำเข้า", "No imports yet"),
+    (
+        "kernel.roster.expected",
+        "หัวคอลัมน์ที่ไฟล์ต้องมี",
+        "Headers the file must have"
+    ),
+    ("kernel.roster.header", "หัวคอลัมน์", "Header"),
+    ("kernel.roster.holds", "ข้อมูล", "Holds"),
+    ("kernel.roster.optional", "เว้นว่างได้", "May be empty"),
+    ("kernel.roster.required", "ต้องมีค่า", "Required"),
     ("kernel.roster.when", "เมื่อ", "When"),
     ("kernel.roster.who", "โดย", "By"),
     ("kernel.roster.state", "สถานะ", "State"),

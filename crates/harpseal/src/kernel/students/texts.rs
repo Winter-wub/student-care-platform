@@ -35,6 +35,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.students.prev", "ก่อนหน้า", "Previous"),
     ("kernel.students.next", "ถัดไป", "Next"),
     ("kernel.students.page", "หน้า", "Page"),
+    // Deprecated (#127): unused, kept so `[texts]` overrides still build.
+    ("kernel.students.none", "ไม่พบนักศึกษา", "No Students found"),
     (
         "kernel.students.not_found",
         "ไม่พบนักศึกษาคนนี้",

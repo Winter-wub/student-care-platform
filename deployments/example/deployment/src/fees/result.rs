@@ -10,41 +10,67 @@ use maud::html;
 
 use super::{BASE, render, t};
 
-/// An imported upload: its row count, when, and the student codes whose
-/// balance still comes from it.
+/// An imported upload: its row count, when, how many balances still come
+/// from it, and their student codes when a link can name them.
 pub(super) struct Imported {
     rows: i64,
     at: i64,
+    still: i64,
     codes: Vec<String>,
 }
 
-/// The import of upload `id`, if its Job wrote it.
-pub(super) async fn imported(s: &AppState, id: &str) -> harpseal::Result<Option<Imported>> {
-    let q =
-        Statement::new("SELECT rows, imported_at FROM fees_import WHERE upload_id = ?").bind(id);
+/// The import of upload `id`, if its Job wrote it and `staff` uploaded it:
+/// the uploader rule of [`harpseal::Uploads::open`], which the kept upload
+/// followed before the Job deleted it. Imports from before #127 name no
+/// uploader and show to no one here.
+pub(super) async fn imported(
+    s: &AppState,
+    staff: &CurrentStaff,
+    id: &str,
+) -> harpseal::Result<Option<Imported>> {
+    let q = Statement::new(
+        "SELECT rows, imported_at, \
+         (SELECT COUNT(*) FROM fees_balance WHERE upload_id = fees_import.upload_id) AS still \
+         FROM fees_import WHERE upload_id = ? AND staff_id = ?",
+    )
+    .bind(id)
+    .bind(staff.id.as_str());
     let rows = s.services.db.query(q).await?;
     let int = |c: &str| rows.get(0, c).and_then(|v| v.as_i64());
-    let (Some(n), Some(at)) = (int("rows"), int("imported_at")) else {
+    let (Some(n), Some(at), Some(still)) = (int("rows"), int("imported_at"), int("still")) else {
         return Ok(None);
     };
-    let q = Statement::new(
-        "SELECT student_code FROM fees_balance WHERE upload_id = ? ORDER BY student_code",
-    )
-    .bind(id);
-    let found = s.services.db.query(q).await?;
-    let codes = (0..found.len())
-        .filter_map(|i| found.get(i, "student_code").and_then(|v| v.as_text()))
-        .map(str::to_string)
-        .collect();
-    Ok(Some(Imported { rows: n, at, codes }))
+    // The codes only when the file still names its Students exactly and a
+    // link could carry them (`ui::MAX_PREFILL`).
+    let max = i64::try_from(harpseal::ui::MAX_PREFILL).unwrap_or(i64::MAX);
+    let mut codes = Vec::new();
+    if still == n && n <= max {
+        let q = Statement::new(
+            "SELECT student_code FROM fees_balance WHERE upload_id = ? \
+             ORDER BY student_code LIMIT ?",
+        )
+        .bind(id)
+        .bind(max + 1);
+        let found = s.services.db.query(q).await?;
+        codes = (0..found.len())
+            .filter_map(|i| found.get(i, "student_code").and_then(|v| v.as_text()))
+            .map(str::to_string)
+            .collect();
+    }
+    Ok(Some(Imported {
+        rows: n,
+        at,
+        still,
+        codes,
+    }))
 }
 
 /// The result page, with the next step. When a later import replaced
 /// some of these balances, the file no longer names its Students exactly:
 /// the draft leaves the Audience to Staff.
 pub(super) fn page(s: &AppState, staff: &CurrentStaff, imp: &Imported) -> Response {
-    let exact = i64::try_from(imp.codes.len()).is_ok_and(|n| n == imp.rows);
-    let named: &[String] = if exact { &imp.codes } else { &[] };
+    let exact = imp.still == imp.rows;
+    let named: &[String] = &imp.codes;
     let n = harpseal::ui::number(imp.rows);
     let when = harpseal::ui::local_datetime(s, imp.at);
     let fact = s.catalog.tf(

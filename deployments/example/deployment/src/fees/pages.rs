@@ -57,20 +57,20 @@ pub(super) async fn preview(
     // Imported: the durable result, read from the Module's tables (the Job
     // deleted the kept upload), with the next step.
     // Unreadable: the upload's own state below still says where it stands.
-    if let Ok(Some(imp)) = result::imported(&s, &id).await {
+    if let Ok(Some(imp)) = result::imported(&s, &staff, &id).await {
         return result::page(&s, &staff, &imp);
     }
     let (kept, p) = match open(&s, &staff, &uploads, &id).await {
         Ok(x) => x,
         // A Job that failed for good may have outlived its upload.
-        Err(_) if job_failed(&s, &id).await => {
+        Err(_) if job_failed(&s, &id, &staff.id).await => {
             let text = t(&s, &staff, "fees.failed");
             return notice(&s, &staff, StatusCode::CONFLICT, &text);
         }
         Err(r) => return *r,
     };
     let action = |what: &str| format!("{BASE}/{}/{what}", kept.id);
-    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id).await;
+    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id, &staff.id).await;
     let body = html! {
         h1 { (t(&s, &staff, "fees.preview")) }
         p class="muted" { (kept.file_name) " · " span id="row-count" { (p.fees.len()) } }

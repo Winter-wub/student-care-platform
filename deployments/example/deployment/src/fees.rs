@@ -117,6 +117,10 @@ impl Module for Fees {
             "0002_fees_import",
             include_str!("../migrations/fees/0002_fees_import.sql"),
         )
+        .migration(
+            "0003_fees_import_staff",
+            include_str!("../migrations/fees/0003_fees_import_staff.sql"),
+        )
         .back_office_page(IMPORT, "/fees", "fees.title", 60, get(pages::page))
         .messages(status::TEXTS)
         .status_card(IMPORT, "fees.home.title", status::ORDER, status::card)
@@ -234,7 +238,9 @@ async fn confirm(
         }
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
-    let payload = serde_json::json!({ "upload": kept.id });
+    // The uploader rides along, so a failed Job's page follows the
+    // uploader rule once the upload itself is gone (#127).
+    let payload = serde_json::json!({ "upload": kept.id, "staff": kept.staff_id });
     let key = format!("{JOB}:{}", kept.id);
     match s.jobs.enqueue_unique(&key, JOB, payload, None).await {
         Ok(Some(_)) => {}
@@ -261,10 +267,16 @@ async fn confirm(
     see_other(&format!("{BASE}/{}", kept.id))
 }
 
-/// Whether the import Job of upload `id` failed for good.
-pub(crate) async fn job_failed(s: &AppState, id: &str) -> bool {
-    let q = Statement::new("SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed'")
-        .bind(format!("{JOB}:{id}"));
+/// Whether the import Job of upload `id`, confirmed by `staff_id` (the
+/// uploader: only they could open it to confirm), failed for good. A Job
+/// queued before #127 carries no uploader and answers `false`.
+pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str) -> bool {
+    let q = Statement::new(
+        "SELECT 1 FROM job WHERE unique_key = ? AND state = 'failed' \
+         AND json_extract(payload, '$.staff') = ?",
+    )
+    .bind(format!("{JOB}:{id}"))
+    .bind(staff_id);
     s.services.db.query(q).await.is_ok_and(|r| !r.is_empty())
 }
 
@@ -306,11 +318,13 @@ async fn run(cx: JobContext, job: Job) -> Result<()> {
     }
     let now = cx.services.now_ms();
     let rows = i64::try_from(p.fees.len()).unwrap_or(i64::MAX);
-    let record =
-        Statement::new("INSERT INTO fees_import (upload_id, rows, imported_at) VALUES (?, ?, ?)")
-            .bind(id)
-            .bind(rows)
-            .bind(now);
+    let record = Statement::new(
+        "INSERT INTO fees_import (upload_id, rows, imported_at, staff_id) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(rows)
+    .bind(now)
+    .bind(kept.staff_id.as_str());
     let stmts: Vec<Statement> = p
         .fees
         .iter()

@@ -79,6 +79,12 @@ pub(crate) const PAGES: &[E] = th_en![
     ),
     ("announcements.page.cancel", "ยกเลิก", "Cancel"),
     ("announcements.page.status", "สถานะ", "Status"),
+    // Deprecated (#127): unused, kept so `[texts]` overrides still build.
+    (
+        "announcements.page.none",
+        "ยังไม่มีประกาศ",
+        "No announcements yet."
+    ),
     ("announcements.page.time", "เวลา", "Time"),
     (
         "announcements.page.acked",

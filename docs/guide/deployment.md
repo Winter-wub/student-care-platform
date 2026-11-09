@@ -511,12 +511,17 @@ written its rows**, not right after the confirm: until then say the
 import is queued (or that it failed). Read that result from the Module's
 own tables, keyed by the upload id: the Job's `KeptUpload::finish`
 deletes the kept upload, so `uploads.open(&id)` finds nothing on a reload
-after the next tick. The example keeps one `fees_import` row per upload
-(written in the Job's batch) and the upload id on each balance:
+after the next tick. Keep the uploader rule `Uploads::open` applied: store
+`kept.staff_id` with your record and show the result only to that Staff
+member (the example also puts the uploader in the Job's payload, so a Job
+that failed after its upload was gone answers only them). The example
+keeps one `fees_import` row per upload (written in the Job's batch, with
+`staff_id`) and the upload id on each balance (indexed, migration
+`0003`):
 
 ```rust
 // GET /admin/grades/{id}
-if let Some(done) = imported(&s, &id).await? {      // your table, by upload id
+if let Some(done) = imported(&s, &id, &staff.id).await? {  // your table: upload id and uploader
     let back = s.catalog.t(&staff.locale, "grades.back_to_list");
     return page(html! {
         div class="flash ok" { … }
@@ -530,8 +535,9 @@ if let Some(done) = imported(&s, &id).await? {      // your table, by upload id
 (when the Announcements Module is mounted): a new announcement whose
 Audience is exactly those student codes (`ui::announce_href`; repeats
 are dropped). A link is a URL, so it names Students only up to
-`ui::MAX_PREFILL` (a thousand) codes and `ui::MAX_PREFILL_QUERY` (7 KB)
-of query; above either, or with an empty list, Staff choose the Audience
+`ui::MAX_PREFILL_QUERY` (7 KB) of query and `ui::MAX_PREFILL` (a
+thousand) codes; the 7 KB binds first for usual codes (about 790
+eight-digit codes). Above either, or with an empty list, Staff choose the Audience
 themselves on the form, which takes any list they paste. Nothing is saved
 or sent by the link: the draft goes through the usual review. The way
 back is always there. Pass an empty list when the file cannot name its

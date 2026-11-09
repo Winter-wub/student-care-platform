@@ -19,6 +19,7 @@ utc_offset = "+07:00"
 Administrator = [
     "kernel.student.view", "kernel.roster.view", "kernel.roster.import",
     "kernel.staff.manage", "kernel.audit.view", "kernel.security.view",
+    "kernel.setting.edit",
     "announcements.view", "announcements.send",
 ]
 Reader = ["kernel.student.view", "announcements.view"]
@@ -253,4 +254,40 @@ async fn the_editor_previews_say_what_will_appear_before_any_text() {
         .await;
     assert!(r.body.contains("class=\"mini-preview\""), "{}", r.body);
     assert!(!r.body.contains("ข้อความที่พิมพ์จะแสดงที่นี่"), "{}", r.body);
+}
+
+#[tokio::test]
+async fn overrides_of_texts_no_page_reads_still_build_and_are_not_offered() {
+    // A pinned Deployment that overrode the old empty-list texts (#127
+    // replaced them) keeps building; the Texts page does not offer them.
+    let deprecated = [
+        "kernel.admin.none",
+        "kernel.students.none",
+        "announcements.page.none",
+        "kernel.roster.none",
+        "kernel.roster.expected",
+        "kernel.roster.header",
+        "kernel.roster.holds",
+        "kernel.roster.required",
+        "kernel.roster.optional",
+    ];
+    let lines: Vec<String> = deprecated
+        .iter()
+        .map(|k| format!("\"{k}\" = \"ทับ {k}\""))
+        .collect();
+    let toml = format!("{CONFIG}\n[texts.th]\n{}\n", lines.join("\n"));
+    let h = Harness::new();
+    let d = h
+        .builder()
+        .config(DeploymentConfig::from_toml(&toml).unwrap())
+        .module(Announcements)
+        .build()
+        .expect("overrides of deprecated texts still build");
+    let app = h.boot(d).await;
+    h.create_staff("admin@sealbay.example", PASSWORD, &["Administrator"])
+        .await;
+    let b = as_who(&h, &app, "admin", "").await;
+    let page = b.get("/admin/texts?q=announcements.page").await.body;
+    assert!(!page.contains("ทับ announcements.page.none"), "{page}");
+    assert!(!page.contains("announcements.page.none"), "{page}");
 }

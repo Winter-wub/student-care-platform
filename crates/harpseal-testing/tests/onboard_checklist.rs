@@ -237,3 +237,15 @@ async fn without_the_announcements_module_its_step_is_not_drawn() {
     let got: Vec<String> = steps(&setup).into_iter().map(|(h, _)| h).collect();
     assert_eq!(got, ["/admin/branding", "/admin/roster", "/admin/staff"]);
 }
+
+#[tokio::test]
+async fn the_default_colour_in_capitals_is_still_the_default() {
+    let toml = format!("{CONFIG}\n[branding]\nprimary_color = \"#0B5CAD\"\n");
+    let (h, app) = boot_with(&toml).await;
+    let b = as_who(&h, &app, "admin", "").await;
+    let setup = block(&b.get("/admin").await.body).expect("fresh");
+    assert!(
+        !steps(&setup)[0].1,
+        "the default colour is not branding: {setup}"
+    );
+}
