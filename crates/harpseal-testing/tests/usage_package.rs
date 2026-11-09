@@ -57,15 +57,15 @@ async fn choosing_a_package_changes_the_limit_everywhere() {
     assert_eq!(stored(&h).await.as_deref(), Some("basic"));
     let body = b.get("/admin/usage").await.body;
     let c = card(&body, "line");
-    assert!(c.contains("แพ็กเกจ Basic: 15000 ข้อความต่อเดือน"), "{c}");
+    assert!(c.contains("แพ็กเกจ Basic: 15,000 ข้อความต่อเดือน"), "{c}");
     assert!(c.contains("ซื้อข้อความเพิ่มได้"), "{c}");
-    assert!(c.contains("ใช้ไป 1000 จาก 15000 (6%)"), "{c}");
+    assert!(c.contains("ใช้ไป 1,000 จาก 15,000 (6%)"), "{c}");
     assert!(c.contains("data-level=\"ok\""), "{c}");
     assert!(c.contains("<option value=\"basic\" selected>"), "{c}");
     assert_eq!(banner(&body), "<div id=\"usage-banner\"></div>");
     // The source and its date are on the page.
     assert!(c.contains("lineforbusiness.com/th/service/line-oa-features/broadcast-message"));
-    assert!(c.contains("2026-11-08"));
+    assert!(c.contains("8 พ.ย. 2569"));
 
     // Free has the same limit as the TOML but is another choice, and says
     // extra messages cannot be bought; Pro raises the limit.
@@ -80,7 +80,7 @@ async fn choosing_a_package_changes_the_limit_everywhere() {
     assert!(c.contains("data-level=\"over\""), "{c}");
     assert_eq!(choose(&b, "pro", "").await, "ok:kernel.usage.package.saved");
     let body = b.get("/admin/usage").await.body;
-    assert!(card(&body, "line").contains("ใช้ไป 1000 จาก 35000 (2%)"));
+    assert!(card(&body, "line").contains("ใช้ไป 1,000 จาก 35,000 (2%)"));
 }
 
 #[tokio::test]
@@ -109,8 +109,8 @@ async fn custom_is_a_validated_whole_number_and_unknown_packages_are_refused() {
     assert_eq!(stored(&h).await.as_deref(), Some("custom:2500"));
     let body = b.get("/admin/usage").await.body;
     let c = card(&body, "line");
-    assert!(c.contains("กำหนดเอง: 2500 ข้อความต่อเดือน"), "{c}");
-    assert!(c.contains("ใช้ไป 0 จาก 2500 (0%)"), "{c}");
+    assert!(c.contains("กำหนดเอง: 2,500 ข้อความต่อเดือน"), "{c}");
+    assert!(c.contains("ใช้ไป 0 จาก 2,500 (0%)"), "{c}");
     assert!(c.contains("<option value=\"custom\" selected>"), "{c}");
     assert!(c.contains("value=\"2500\""), "{c}");
 
@@ -144,10 +144,10 @@ async fn switching_in_mid_month_measures_the_month_so_far_against_the_new_limit(
 
     // The remaining budget under each limit: the month is not reset.
     for (package, custom, shows, level) in [
-        ("basic", "", "ใช้ไป 1000 จาก 15000 (6%)", "ok"),
-        ("custom", "1100", "ใช้ไป 1000 จาก 1100 (90%)", "warn"),
-        ("custom", "1000", "ใช้ไป 1000 จาก 1000 (100%)", "over"),
-        ("pro", "", "ใช้ไป 1000 จาก 35000 (2%)", "ok"),
+        ("basic", "", "ใช้ไป 1,000 จาก 15,000 (6%)", "ok"),
+        ("custom", "1100", "ใช้ไป 1,000 จาก 1,100 (90%)", "warn"),
+        ("custom", "1000", "ใช้ไป 1,000 จาก 1,000 (100%)", "over"),
+        ("pro", "", "ใช้ไป 1,000 จาก 35,000 (2%)", "ok"),
     ] {
         assert_eq!(
             choose(&b, package, custom).await,
@@ -270,7 +270,7 @@ async fn a_switch_between_reading_the_month_and_the_claim_does_not_block_the_new
     assert_eq!(h.emails().len(), 2, "{:?}", h.emails());
     assert!(h.emails()[1].subject.contains("80%"));
     let page = b.get("/admin/usage").await.body;
-    assert!(card(&page, "line").contains("ใช้ไป 12000 จาก 15000"));
+    assert!(card(&page, "line").contains("ใช้ไป 12,000 จาก 15,000"));
 }
 
 #[tokio::test]

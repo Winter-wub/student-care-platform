@@ -74,7 +74,6 @@ fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
                 dt { (v.t("kernel.roster.mode")) } dd { (v.mode(&imp.mode)) }
                 dt { (v.t("kernel.roster.when")) } dd { (v.time(imp.created_at)) }
                 dt { (v.t("kernel.roster.who")) } dd { (imp.staff) }
-                dt { "SHA-256" } dd class="code" { (imp.counts.sha256) }
             }
         }
         @match imp.state.as_str() {
@@ -89,17 +88,21 @@ fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
                 button class="secondary" type="submit" { (v.t("kernel.roster.mark_failed")) }
             }
         }
+        // Raw details (#125): the file's fingerprint.
+        (crate::ui::technical(v.s, v.staff, html! {
+            dl class="facts" { dt { "SHA-256" } dd class="code" { (imp.counts.sha256) } }
+        }))
     };
     v.page(StatusCode::OK, &title, body)
 }
 
 fn tally_rows(v: &View<'_>, t: &Tally) -> Markup {
     html! {
-        dt { (v.t("kernel.roster.new")) } dd { (t.new) }
-        dt { (v.t("kernel.roster.updated")) } dd { (t.updated) }
-        dt { (v.t("kernel.roster.unchanged")) } dd { (t.unchanged) }
-        dt { (v.t("kernel.roster.returning")) } dd { (t.returning) }
-        dt { (v.t("kernel.roster.skipped_by_override")) } dd { (t.skipped_by_override) }
+        dt { (v.t("kernel.roster.new")) } dd { (crate::ui::number(t.new)) }
+        dt { (v.t("kernel.roster.updated")) } dd { (crate::ui::number(t.updated)) }
+        dt { (v.t("kernel.roster.unchanged")) } dd { (crate::ui::number(t.unchanged)) }
+        dt { (v.t("kernel.roster.returning")) } dd { (crate::ui::number(t.returning)) }
+        dt { (v.t("kernel.roster.skipped_by_override")) } dd { (crate::ui::number(t.skipped_by_override)) }
     }
 }
 
@@ -112,18 +115,18 @@ fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
         (problems::warnings_card(v, imp))
         div class="card" {
             dl class="facts counts" {
-                dt { (v.t("kernel.roster.total")) } dd { (imp.total_rows) }
+                dt { (v.t("kernel.roster.total")) } dd { (crate::ui::number(imp.total_rows)) }
                 (tally_rows(v, &p.tally))
                 @if full {
                     dt { (v.t("kernel.roster.will_become_left")) }
-                    dd data-count="will_become_left" { (p.will_become_left) }
+                    dd data-count="will_become_left" { (crate::ui::number(p.will_become_left)) }
                     dt { (v.t("kernel.roster.kept_by_status")) }
-                    dd data-count="kept_by_status" { (p.kept_by_status) }
+                    dd data-count="kept_by_status" { (crate::ui::number(p.kept_by_status)) }
                 }
-                dt { (v.t("kernel.roster.active_before")) } dd { (p.active_before) }
+                dt { (v.t("kernel.roster.active_before")) } dd { (crate::ui::number(p.active_before)) }
             }
             @if !p.left_names.is_empty() {
-                h3 { (v.t("kernel.roster.left_names")) }
+                h2 { (v.t("kernel.roster.left_names")) }
                 ul class="names" { @for n in &p.left_names { li { (n) } } }
                 @if p.left_more > 0 { p class="muted" { (v.t("kernel.roster.more")) " +" (p.left_more) } }
             }
@@ -171,8 +174,8 @@ fn progress(v: &View<'_>, imp: &Import) -> Markup {
                 }
                 (super::view::compared(v, imp))
                 dl class="facts counts" {
-                    dt { (v.t("kernel.roster.links_revoked")) } dd { (c.links_revoked) }
-                    dt { (v.t("kernel.roster.notices_failed")) } dd { (c.notices_failed) }
+                    dt { (v.t("kernel.roster.links_revoked")) } dd { (crate::ui::number(c.links_revoked)) }
+                    dt { (v.t("kernel.roster.notices_failed")) } dd { (crate::ui::number(c.notices_failed)) }
                 }
                 @if let Some(at) = imp.finished_at { p class="muted" { (v.time(at)) } }
             }
@@ -189,13 +192,14 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
         div class="warn" role="alert" { (v.t("kernel.roster.refused")) }
         (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
-            p { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (f.total) } }
+            h2 { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (crate::ui::number(f.total)) } }
             (problems::classes(v, &f.classes))
             (problems::table(v, &f.problems))
             p { a class="btn secondary" href=(format!("{BASE}/{}/report.csv", imp.id)) {
                 (v.t("kernel.roster.report"))
             } }
         }
+        (problems::expected(v, &f.problems))
         (problems::warnings_card(v, imp))
     }
 }

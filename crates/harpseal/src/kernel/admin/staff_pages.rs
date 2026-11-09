@@ -48,7 +48,7 @@ pub(super) async fn list(State(s): State<AppState>, staff: CurrentStaff) -> Resp
             a class="btn" href="/admin/staff/new" { (l("kernel.admin.staff.create")) }
             a class="btn secondary" href="/admin/roles" { (l("kernel.admin.roles.title")) }
         }
-        p class="muted count" { (l("kernel.admin.total")) " " (rows.len()) }
+        p class="muted count" { (l("kernel.admin.total")) " " (crate::ui::number(rows.len())) }
         table class="rows staff" {
             thead { tr {
                 th { (l("kernel.admin.staff.name")) }
@@ -65,7 +65,7 @@ pub(super) async fn list(State(s): State<AppState>, staff: CurrentStaff) -> Resp
                         td data-label=(l("kernel.admin.staff.email")) { (r.email) }
                         td data-label=(l("kernel.admin.staff.status")) { (chips(&v, r)) }
                         td data-label=(l("kernel.admin.staff.roles")) {
-                            @for role in &r.roles { span class="chip" { (role) } " " }
+                            @for role in &r.roles { span class="chip" { (v.role(role)) } " " }
                         }
                     }
                 }
@@ -93,14 +93,15 @@ pub(super) async fn new_form(State(s): State<AppState>, staff: CurrentStaff) -> 
     render(&v, &f, None, StatusCode::OK).await
 }
 
-/// Role checkboxes named `role`, `held` checked.
-pub(super) fn role_boxes(all: &[RoleRow], held: &[String]) -> Markup {
+/// Role checkboxes named `role` (the stored name), `held` checked, each
+/// labelled as Staff read it (#125).
+pub(super) fn role_boxes(v: &View<'_>, all: &[RoleRow], held: &[String]) -> Markup {
     html! {
         fieldset class="checks" {
             @for r in all {
                 label class="check" {
                     input type="checkbox" name="role" value=(r.name) checked[held.contains(&r.name)];
-                    " " (r.name)
+                    " " (v.role(&r.name))
                 }
             }
         }
@@ -132,12 +133,14 @@ async fn render(v: &View<'_>, f: &Fields, error: Option<&str>, status: StatusCod
             div class="field" {
                 label for="staff-locale" { (l("kernel.admin.staff.locale")) }
                 select id="staff-locale" name="locale" {
-                    @for loc in &locales { option value=(loc) selected[&f.locale == loc] { (loc) } }
+                    @for loc in &locales {
+                        option value=(loc) selected[&f.locale == loc] { (v.s.catalog.locale_name(&v.staff.locale, loc)) }
+                    }
                 }
             }
             div class="field" {
                 label { (l("kernel.admin.staff.roles")) }
-                (role_boxes(&all, &f.roles))
+                (role_boxes(v, &all, &f.roles))
             }
             p class="muted" { (l("kernel.admin.staff.temp_help")) }
             button type="submit" { (title) }

@@ -31,6 +31,43 @@ fn has_warnings(problems: &[Problem]) -> bool {
     problems.iter().any(|p| !p.severity.is_blocking())
 }
 
+/// Reasons that are about the header row: the page lists the headers the
+/// template expects under them (#125).
+const HEADER_REASONS: [&str; 3] = ["missing_header", "unexpected_header", "no_header_row"];
+
+/// The row as Staff read it: a problem with the whole file or sheet has no
+/// row (stored as 0), so it says "ทั้งไฟล์" or "ทั้งชีต" rather than "แถว 0"
+/// (#125).
+fn row(v: &View<'_>, p: &Problem) -> String {
+    if p.row == 0 && !p.sheet.is_empty() {
+        v.t("kernel.roster.report_whole_sheet")
+    } else if p.row == 0 {
+        v.t("kernel.roster.report_whole_file")
+    } else {
+        crate::ui::number(p.row)
+    }
+}
+
+/// The headers the template expects, as a sentence, when any problem is
+/// about the header row; else nothing.
+pub(super) fn expected(v: &View<'_>, problems: &[Problem]) -> Markup {
+    if !problems
+        .iter()
+        .any(|p| HEADER_REASONS.contains(&p.reason.as_str()))
+    {
+        return html! {};
+    }
+    let headers = super::file::expected_headers(&v.s.config.roster).join(", ");
+    html! {
+        div class="card" id="expected-headers" {
+            p { (v.t("kernel.roster.expected_headers")) }
+            p { strong { (headers) } }
+            p class="muted" { (v.t("kernel.roster.expected_help")) " "
+                a href=(format!("{BASE}/template.csv")) { (v.t("kernel.roster.template")) } }
+        }
+    }
+}
+
 /// The column, with the cell when one is at fault: `เกรดเฉลี่ย (H2)`.
 fn column(p: &Problem) -> String {
     if p.cell.is_empty() {
@@ -79,9 +116,19 @@ fn listed(imp: &Import) -> (Vec<&Problem>, u64) {
 }
 
 /// The reason in the Staff member's Locale; a problem standing for several
-/// cells says how many and which rows come first.
+/// cells says how many and which rows come first. A header problem names
+/// the headers expected, so the CSV report says it too (#125).
 fn reason(v: &View<'_>, p: &Problem) -> String {
     let text = v.t(&format!("kernel.roster.reason_{}", p.reason));
+    let text = if p.reason == "no_header_row" {
+        let headers = super::file::expected_headers(&v.s.config.roster).join(", ");
+        format!(
+            "{text} ({}: {headers})",
+            v.t("kernel.roster.expected_short")
+        )
+    } else {
+        text
+    };
     let text = match what_fits(v, p) {
         Some(fits) => format!("{text}: {fits}"),
         None => text,
@@ -110,7 +157,7 @@ fn reason(v: &View<'_>, p: &Problem) -> String {
 /// How many problems each class has, as a list.
 pub(super) fn classes(v: &View<'_>, classes: &BTreeMap<String, u64>) -> Markup {
     html! {
-        h4 { (v.t("kernel.roster.by_class")) }
+        h3 { (v.t("kernel.roster.by_class")) }
         ul class="classes" {
             @for (class, n) in classes {
                 li data-class=(class) data-count=(n) {
@@ -140,7 +187,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                         @if sheets {
                             td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
                         }
-                        td data-label=(v.t("kernel.roster.report_row")) { (p.row) }
+                        td data-label=(v.t("kernel.roster.report_row")) { (row(v, p)) }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))
@@ -165,7 +212,7 @@ pub(super) fn warnings_card(v: &View<'_>, imp: &Import) -> Markup {
     }
     html! {
         div class="card" id="roster-warnings" data-warnings=(w.total) {
-            h3 { (v.t("kernel.roster.warnings")) " " strong data-count="warnings" { (w.total) } }
+            h2 { (v.t("kernel.roster.warnings")) " " strong data-count="warnings" { (crate::ui::number(w.total)) } }
             p class="muted" { (v.t("kernel.roster.warnings_help")) }
             (classes(v, &w.classes))
             (table(v, &w.problems))
@@ -216,7 +263,7 @@ pub(super) async fn report(
     let head: Vec<&str> = head.iter().map(String::as_str).collect();
     let mut lines = vec![super::csv::line(&head)];
     for p in &problems {
-        let row = p.row.to_string();
+        let row = row(&v, p);
         let reason = reason(&v, p);
         let column = column(p);
         let level = v.t(p.severity.key());

@@ -44,7 +44,7 @@ async fn a_real_send_lands_on_the_local_day_the_page_reads() {
     assert!(r.body.contains("ใช้ไป 1 จาก 300 (0%)"), "{}", r.body);
     let at = r.body.find("<tr data-day=\"2026-11-06\">").unwrap();
     assert!(r.body[at..].starts_with(
-        "<tr data-day=\"2026-11-06\"><td data-label=\"วันที่\">2026-11-06</td><td data-label=\"Push ที่คิดค่าบริการ\">1</td>"
+        "<tr data-day=\"2026-11-06\"><td data-label=\"วันที่\">6 พ.ย. 2569</td><td data-label=\"ข้อความที่คิดค่าบริการ\">1</td>"
     ));
 }
 

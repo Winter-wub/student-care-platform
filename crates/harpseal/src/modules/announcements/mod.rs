@@ -139,12 +139,14 @@ const PERMISSIONS: &[Permission] = &[
     Permission::new(
         "announcements.view",
         "See announcements and who acknowledged",
-    ),
+    )
+    .thai("ดูประกาศและรายชื่อผู้รับทราบ"),
     Permission::new(
         "announcements.send",
         "Create, edit, send and resend announcements",
-    ),
-    Permission::new("announcements.retract", "Withdraw announcements"),
+    )
+    .thai("เขียน แก้ไข และส่งประกาศ"),
+    Permission::new("announcements.retract", "Withdraw announcements").thai("ถอนประกาศ"),
 ];
 
 /// The built-in Announcements Module.

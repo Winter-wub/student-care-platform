@@ -10,7 +10,7 @@ use harpseal_testing::{Harness, START_MS};
 use usage_support::spy::boot_spied;
 use usage_support::*;
 
-const SUBJECT_WARN: &str = "[Seal Bay University (usage)] fake ใช้ไป 80% ของโควตาเดือน 2026-11";
+const SUBJECT_WARN: &str = "[Seal Bay University (usage)] fake ใช้ไป 80% ของโควตาเดือน พ.ย. 2569";
 
 /// Two active Administrators, a disabled one, and an Officer.
 async fn people(h: &Harness) {
@@ -56,7 +56,7 @@ async fn one_email_per_administrator_at_warn_then_at_over() {
     assert_eq!(e.subject, SUBJECT_WARN);
     assert!(
         e.text
-            .contains("ใช้ Push ที่คิดค่าบริการไปแล้ว 240 จาก 300 ครั้ง (80%) ในเดือน 2026-11")
+            .contains("ใช้ข้อความที่คิดค่าบริการไปแล้ว 240 จาก 300 ข้อความ (80%) ในเดือน พ.ย. 2569")
     );
     assert!(e.text.contains("/admin/usage"));
     watch(&app).await;
@@ -70,7 +70,7 @@ async fn one_email_per_administrator_at_warn_then_at_over() {
     let over = h.email().to(&email_of("admin1"));
     assert_eq!(
         over[1].subject,
-        "[Seal Bay University (usage)] fake ถึงโควตาเดือน 2026-11 แล้ว (100%)"
+        "[Seal Bay University (usage)] fake ถึงโควตาเดือน พ.ย. 2569 แล้ว (100%)"
     );
     use_percent(&h, 140).await;
     watch(&app).await;
@@ -253,7 +253,7 @@ async fn a_new_local_month_starts_over() {
     let e = h.email().last().unwrap();
     assert_eq!(
         e.subject,
-        "[Seal Bay University (usage)] fake ใช้ไป 80% ของโควตาเดือน 2026-12"
+        "[Seal Bay University (usage)] fake ใช้ไป 80% ของโควตาเดือน ธ.ค. 2569"
     );
     watch(&app).await;
     assert_eq!(h.emails().len(), 4);

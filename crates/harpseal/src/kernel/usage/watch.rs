@@ -307,16 +307,20 @@ async fn send(d: &Deployment, m: &ChannelMonth, rec: &Record, to: &[&Admin]) -> 
         return to.iter().map(|a| a.email.clone()).collect();
     };
     let org = crate::kernel::branding::org_name(d).await;
-    let (used, cap) = (m.used().to_string(), m.cap.unwrap_or(0).to_string());
+    let (used, cap) = (
+        crate::ui::number(m.used()),
+        crate::ui::number(m.cap.unwrap_or(0)),
+    );
     let percent = m.percent().unwrap_or(0).to_string();
     let channel = channel_label(&m.kind);
+    let month = crate::ui::thai_month(&rec.month);
     let args = [
         ("org", org.as_str()),
         ("channel", channel.as_str()),
         ("used", used.as_str()),
         ("cap", cap.as_str()),
         ("percent", percent.as_str()),
-        ("month", rec.month.as_str()),
+        ("month", month.as_str()),
         ("path", FULL_PATH),
     ];
     let subject_key = match rec.level {

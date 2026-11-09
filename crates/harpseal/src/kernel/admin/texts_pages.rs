@@ -1,96 +1,22 @@
-//! `/admin/texts` (`kernel.setting.edit`): every catalog key per Locale
-//! with its effective text and source (default / TOML / setting),
-//! searchable by key or text; `/admin/texts/{key}` edits one key per
-//! Locale (save or reset to default); `POST /admin/texts/consent` sets the
-//! Consent notice version.
+//! `/admin/texts` (`kernel.setting.edit`): the list is `texts_list.rs`;
+//! `/admin/texts/{key}` edits one key per Locale (save or reset to
+//! default), titled by its text and the page it shows on (#125); `POST
+//! /admin/texts/consent` sets the Consent notice version.
 
 use axum::Form;
-use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
 use serde::Deserialize;
 
 use super::settings::{self, Refused, TextRow};
 use super::texts_api::Written;
-use super::view::{View, cut};
+use super::texts_areas::area;
+use super::view::View;
 use crate::{Actor, AppState, CurrentStaff, RequestCtx};
 
-/// Longest preview of a text in the list, in characters.
-const PREVIEW_CHARS: usize = 120;
-
-/// `?q=`.
-#[derive(Debug, Default, Deserialize)]
-pub(super) struct Search {
-    #[serde(default)]
-    q: String,
-}
-
-fn preview(t: &str) -> String {
-    let mut p: String = t.chars().take(PREVIEW_CHARS).collect();
-    if t.chars().count() > PREVIEW_CHARS {
-        p.push('…');
-    }
-    p
-}
-
-pub(super) async fn list(
-    State(s): State<AppState>,
-    staff: CurrentStaff,
-    headers: HeaderMap,
-    Query(q): Query<Search>,
-) -> Response {
-    let v = View::new(&s, &staff);
-    let query = cut(&q.q, 100);
-    let loaded = async {
-        Ok::<_, crate::Error>((
-            settings::settings(&s.services).await?,
-            settings::stored_version(&s.services).await?,
-        ))
-    };
-    let (stored, version) = match loaded.await {
-        Ok(r) => r,
-        Err(e) => return v.error(&e),
-    };
-    let locales = settings::locales(&s.catalog, &s.config);
-    let needle = query.to_lowercase();
-    let rows: Vec<(String, Vec<TextRow>)> = settings::keys(&s.catalog)
-        .into_iter()
-        .map(|k| {
-            let per: Vec<TextRow> = locales
-                .iter()
-                .map(|l| settings::row(&s.catalog, &s.config, &stored, &k, l))
-                .collect();
-            (k, per)
-        })
-        .filter(|(k, per)| {
-            needle.is_empty()
-                || k.to_lowercase().contains(&needle)
-                || per
-                    .iter()
-                    .any(|r| r.effective().to_lowercase().contains(&needle))
-        })
-        .collect();
-    let results = results(&v, &locales, &rows);
-    v.listing(&headers, results, |results| {
-        let title = v.t("kernel.admin.texts.title");
-        let body = html! {
-            h1 { (title) }
-            (consent_card(&v, version.as_deref()))
-            form method="get" action="/admin/texts" class="card search" role="search" {
-                label for="texts-q" { (v.t("kernel.admin.texts.search")) }
-                input id="texts-q" type="search" name="q" value=(query) autocomplete="off"
-                    hx-get="/admin/texts" hx-trigger="input changed delay:250ms, search"
-                    hx-target="#texts-results" hx-swap="outerHTML" hx-push-url="true";
-            }
-            (results)
-            (crate::ui::technical(v.s, v.staff, html! { p { (v.t("kernel.admin.texts.tech_toml")) } }))
-        };
-        v.page(StatusCode::OK, &title, body)
-    })
-}
-
-fn source_chip(v: &View<'_>, r: &TextRow) -> Markup {
+pub(super) fn source_chip(v: &View<'_>, r: &TextRow) -> Markup {
     let class = match r.source {
         settings::Source::Setting => "chip override",
         settings::Source::Toml => "chip ok",
@@ -99,40 +25,7 @@ fn source_chip(v: &View<'_>, r: &TextRow) -> Markup {
     html! { span class=(class) { (v.t(r.source.key())) } }
 }
 
-fn results(v: &View<'_>, locales: &[String], rows: &[(String, Vec<TextRow>)]) -> Markup {
-    let key_label = v.t("kernel.admin.texts.key");
-    html! {
-        div id="texts-results" {
-            p class="muted count" { (v.t("kernel.admin.total")) " " (rows.len()) }
-            @if rows.is_empty() {
-                div class="card" { p { (v.t("kernel.admin.none")) } }
-            } @else {
-                table class="rows texts" {
-                    thead { tr {
-                        th { (key_label) }
-                        @for l in locales { th { (l) } }
-                    } }
-                    tbody {
-                        @for (key, per) in rows {
-                            tr {
-                                td class="code" data-label=(key_label) {
-                                    a href=(format!("/admin/texts/{key}")) { (key) }
-                                }
-                                @for r in per {
-                                    td data-label=(r.locale) {
-                                        span { (preview(r.effective())) " " (source_chip(v, r)) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn consent_card(v: &View<'_>, stored: Option<&str>) -> Markup {
+pub(super) fn consent_card(v: &View<'_>, stored: Option<&str>) -> Markup {
     let current = stored.unwrap_or(&v.s.config.consent.version);
     html! {
         section class="card" id="consent" {
@@ -222,15 +115,19 @@ async fn render(
     let locales = settings::locales(&v.s.catalog, &v.s.config);
     let action = format!("/admin/texts/{key}");
     let l = |k: &str| v.t(k);
+    let shown = area(v, key);
+    let title = preview_short(&v.s.catalog.t(&v.staff.locale, key));
     let body = html! {
         p { a href="/admin/texts" { "← " (l("kernel.admin.texts.back")) } }
-        h1 class="code" { (key) }
+        h1 { (title) }
+        p class="muted" { (l("kernel.admin.texts.shown_on")) " "
+            a href=(format!("/admin/texts?area={}", shown.id)) { (shown.name) } }
         @for loc in &locales {
             @let r = settings::row(&v.s.catalog, &v.s.config, &stored, key, loc);
             @let names = settings::placeholders(&r.base);
             @let err = rejected.as_ref().filter(|(rl, _, _)| *rl == loc.as_str());
             section class="card" {
-                h2 { (loc) " " (source_chip(v, &r)) }
+                h2 { (v.s.catalog.locale_name(&v.staff.locale, loc)) " " (source_chip(v, &r)) }
                 p class="muted" { (l("kernel.admin.texts.default")) }
                 p class="default-text" { (r.base) }
                 @if !names.is_empty() {
@@ -269,7 +166,17 @@ async fn render(
             p { (l("kernel.admin.texts.tech_toml")) }
         }))
     };
-    v.page(status, key, body)
+    v.page(status, &title, body)
+}
+
+/// A text short enough for a page title.
+fn preview_short(t: &str) -> String {
+    let line = t.lines().next().unwrap_or("");
+    let mut p: String = line.chars().take(60).collect();
+    if line.chars().count() > 60 || t.lines().nth(1).is_some() {
+        p.push('…');
+    }
+    p
 }
 
 /// One Locale's form.

@@ -15,6 +15,7 @@ use crate::backup::xlsx::{self, OPERATIONAL, Selection};
 use crate::kernel::admin::view::{View, enc};
 use crate::kernel::text::fill;
 use crate::port_types::{Statement, Value};
+use crate::ui::number;
 use crate::{AppState, CurrentStaff, Result, Services};
 
 /// Runs listed.
@@ -124,8 +125,8 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                         td data-label=(v.t("kernel.backup.contents")) {
                             @if let (Some(t), Some(n), Some(f)) = (r.tables, r.rows, r.files) {
                                 (fill(&v.t("kernel.backup.counts"), &[
-                                    ("tables", &t.to_string()), ("rows", &n.to_string()),
-                                    ("files", &f.to_string()),
+                                    ("tables", &number(t)), ("rows", &number(n)),
+                                    ("files", &number(f)),
                                 ]))
                             }
                         }

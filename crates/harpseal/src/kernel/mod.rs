@@ -38,29 +38,38 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
     Permission::new(
         "kernel.student.view",
         "See Students, their Links, Tags and Consent",
-    ),
+    )
+    .thai("ดูข้อมูลนักศึกษา การผูกบัญชี ป้าย และความยินยอม"),
     Permission::new(
         "kernel.student.edit",
         "Edit Student fields and Tags by hand",
-    ),
-    Permission::new(LINK_MANAGE, "Create Manual Links"),
-    Permission::new(LINK_REVOKE, "Revoke a Student's Link (Staff unlink)"),
-    Permission::new("kernel.roster.view", "See roster imports"),
-    Permission::new("kernel.roster.edit", "Edit roster data"),
-    Permission::new("kernel.roster.import", "Upload and apply roster files"),
-    Permission::new("kernel.usage.view", "See Channel usage and Quotas"),
-    Permission::new("kernel.security.view", "See Security Events"),
-    Permission::new("kernel.audit.view", "See the audit log"),
-    Permission::new("kernel.staff.manage", "Manage Staff accounts and Roles"),
+    )
+    .thai("แก้ไขข้อมูลและป้ายของนักศึกษา"),
+    Permission::new(LINK_MANAGE, "Create Manual Links").thai("ผูกบัญชีแชทให้นักศึกษาโดยเจ้าหน้าที่"),
+    Permission::new(LINK_REVOKE, "Revoke a Student's Link (Staff unlink)")
+        .thai("ยกเลิกการผูกบัญชีของนักศึกษา"),
+    Permission::new("kernel.roster.view", "See roster imports").thai("ดูประวัติการนำเข้ารายชื่อ"),
+    Permission::new("kernel.roster.edit", "Edit roster data").thai("แก้ไขข้อมูลรายชื่อนักศึกษา"),
+    Permission::new("kernel.roster.import", "Upload and apply roster files")
+        .thai("นำเข้ารายชื่อนักศึกษา"),
+    Permission::new("kernel.usage.view", "See Channel usage and Quotas")
+        .thai("ดูการใช้งานและโควตาข้อความ"),
+    Permission::new("kernel.security.view", "See Security Events").thai("ดูเหตุการณ์ความปลอดภัย"),
+    Permission::new("kernel.audit.view", "See the audit log").thai("ดูบันทึกการใช้งาน"),
+    Permission::new("kernel.staff.manage", "Manage Staff accounts and Roles")
+        .thai("จัดการบัญชีเจ้าหน้าที่และบทบาท"),
     Permission::new(
         "kernel.setting.edit",
         "Edit texts, the privacy notice version and the LINE package",
-    ),
-    Permission::new("kernel.backup.manage", "See the backups and back up now"),
+    )
+    .thai("แก้ไขข้อความ เวอร์ชันประกาศความเป็นส่วนตัว และแพ็กเกจ LINE"),
+    Permission::new("kernel.backup.manage", "See the backups and back up now")
+        .thai("ดูชุดสำรองข้อมูลและสั่งสำรองทันที"),
     Permission::new(
         "kernel.backup.download",
         "Download a backup or all data (Administrator-equivalent: backups hold password hashes)",
-    ),
+    )
+    .thai("ดาวน์โหลดชุดสำรองหรือข้อมูลทั้งหมด (เทียบเท่าผู้ดูแลระบบ)"),
 ];
 
 const MIGRATIONS: &[(&str, &str)] = &[

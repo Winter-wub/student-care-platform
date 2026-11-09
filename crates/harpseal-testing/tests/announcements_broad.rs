@@ -108,7 +108,7 @@ async fn confirm_opens_the_review_step_before_anything_is_sent() {
         .await
         .body;
     assert!(c.contains("นักศึกษา 3"), "{c}");
-    assert!(c.contains("ประมาณ push 2"), "{c}");
+    assert!(c.contains("ข้อความที่คิดค่าบริการประมาณ 2"), "{c}");
     assert!(
         page.contains(r#"<dd data-count="students"><strong>3 คน</strong>"#),
         "{page}"

@@ -147,7 +147,11 @@ async fn the_form_refuses_a_missing_thai_text_and_counts_the_audience_live() {
         .await;
     assert_eq!(c.status, 200);
     assert!(c.body.contains("นักศึกษา 3"), "{}", c.body);
-    assert!(c.body.contains("จะใช้ push ประมาณ 2 ครั้ง"), "{}", c.body);
+    assert!(
+        c.body.contains("จะใช้ข้อความที่คิดค่าบริการประมาณ 2 ข้อความ"),
+        "{}",
+        c.body
+    );
     // A draft is listed and confirmed from its page.
     let id = create(&b, &form("ร่าง", "ยังไม่ส่ง", "&do=draft")).await;
     assert_eq!(

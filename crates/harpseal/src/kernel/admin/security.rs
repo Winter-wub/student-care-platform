@@ -182,15 +182,9 @@ fn events(rows: &Rows) -> Vec<Event> {
         .collect()
 }
 
-/// A kind's label: `kernel.admin.kind.<kind with _>` when the catalog has
-/// it, else the kind itself.
+/// A kind's label (see [`crate::kernel::security::kind_label`]).
 fn kind_label(v: &View<'_>, kind: &str) -> String {
-    let key = format!("kernel.admin.kind.{}", kind.replace('.', "_"));
-    if v.s.catalog.knows(&key) {
-        v.t(&key)
-    } else {
-        kind.to_string()
-    }
+    crate::kernel::security::kind_label(&v.s.catalog, &v.staff.locale, kind)
 }
 
 fn full(v: &View<'_>, f: &Filters, kinds: &[String], results: Markup) -> Response {
@@ -206,7 +200,7 @@ fn full(v: &View<'_>, f: &Filters, kinds: &[String], results: Markup) -> Respons
                     select id="f-kind" name="kind" {
                         option value="" { (v.t("kernel.admin.all")) }
                         @for k in kinds {
-                            option value=(k) selected[*k == f.kind] { (kind_label(v, k)) " (" (k) ")" }
+                            option value=(k) selected[*k == f.kind] { (kind_label(v, k)) }
                         }
                     }
                 }
@@ -235,7 +229,7 @@ fn results(v: &View<'_>, f: &Filters, rows: &[Event], total: i64, page: i64, pag
     let label = |k: &str| v.t(k);
     html! {
         div id="security-results" {
-            p class="muted count" { (v.t("kernel.admin.total")) " " (total) }
+            p class="muted count" { (v.t("kernel.admin.total")) " " (crate::ui::number(total)) }
             @if rows.is_empty() {
                 div class="card" { p { (v.t("kernel.admin.none")) } }
             } @else {

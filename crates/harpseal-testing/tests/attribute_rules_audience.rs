@@ -44,7 +44,9 @@ async fn the_audience_form_shows_labels_and_posts_the_stored_value() {
     let stored = texts(&w, "SELECT audience FROM announcement").await;
     assert!(stored[0].contains("graduated"), "{stored:?}");
     let list = b.get("/admin/announcements").await.body;
-    assert!(list.contains("status: จบการศึกษา"), "{list}");
+    // The attribute reads by its label too (#125), not its key.
+    assert!(list.contains("สถานะ: จบการศึกษา"), "{list}");
+    assert!(!list.contains("status:"), "{list}");
     let detail = b.get(&format!("/admin/announcements/{id}")).await.body;
-    assert!(detail.contains("status: จบการศึกษา"), "{detail}");
+    assert!(detail.contains("สถานะ: จบการศึกษา"), "{detail}");
 }

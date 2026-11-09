@@ -14,16 +14,17 @@ async fn roles_are_created_edited_and_deleted_only_when_unused() {
     let list = admin.get("/admin/roles").await;
     assert_eq!(list.status, 200);
     assert!(
-        list.body.contains("<legend class=\"code\">kernel</legend>"),
-        "grouped by Module"
+        list.body.contains("<legend>ระบบหลัก</legend>"),
+        "grouped by Module, in Thai"
     );
     assert!(
-        list.body.contains("See Security Events"),
-        "descriptions shown"
+        list.body.contains("ดูเหตุการณ์ความปลอดภัย"),
+        "Permissions read as Thai sentences"
     );
+    assert!(list.body.contains("มาจากไฟล์ตั้งค่า"), "TOML Roles marked");
     assert!(
-        list.body.contains("จาก deployment.toml"),
-        "TOML Roles marked"
+        list.body.contains("<a href=\"/admin/roles/") && list.body.contains(">ผู้ดูแลระบบ</a>"),
+        "the Administrator Role reads in Thai"
     );
 
     let r = admin

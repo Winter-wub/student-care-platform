@@ -132,10 +132,17 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     (
         "kernel.admin.staff.err_roles",
-        "บทบาทที่เลือกไม่มีอยู่แล้ว",
-        "A Role ticked no longer exists"
+        "บทบาทที่เลือกถูกลบไปแล้ว โหลดหน้านี้ใหม่ แล้วเลือกบทบาทอีกครั้ง",
+        "A Role ticked no longer exists. Reload the page and tick the Roles again."
     ),
     // Roles
+    ("kernel.role.Administrator", "ผู้ดูแลระบบ", "Administrator"),
+    ("kernel.admin.roles.group_kernel", "ระบบหลัก", "Core"),
+    (
+        "kernel.admin.roles.stored",
+        "ชื่อบทบาทที่บันทึกไว้ในระบบ",
+        "Role names as stored"
+    ),
     ("kernel.admin.roles.title", "บทบาทและสิทธิ์", "Roles"),
     ("kernel.admin.roles.create", "สร้างบทบาท", "Create a Role"),
     ("kernel.admin.roles.created", "สร้างบทบาทแล้ว", "Role created"),
@@ -147,7 +154,7 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     (
         "kernel.admin.roles.toml",
-        "จาก deployment.toml",
+        "มาจากไฟล์ตั้งค่า",
         "from deployment.toml"
     ),
     (
@@ -184,7 +191,7 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     (
         "kernel.admin.roles.err_permission",
-        "มีสิทธิ์ที่ระบบไม่รู้จัก",
-        "Unknown Permission"
+        "มีสิทธิ์ที่ระบบไม่รู้จักแล้ว โหลดหน้านี้ใหม่ แล้วเลือกสิทธิ์อีกครั้ง",
+        "A Permission is no longer known. Reload the page and tick the Permissions again."
     ),
 ];

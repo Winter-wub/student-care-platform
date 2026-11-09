@@ -42,8 +42,8 @@ pub(super) const TEXTS: &[E] = th_en![
     ),
     (
         "kernel.admin.module_settings.read_only",
-        "ดูได้อย่างเดียว ต้องมีสิทธิ์",
-        "Read only; editing needs"
+        "ดูได้อย่างเดียว ถ้าต้องการแก้ไข ต้องมีสิทธิ์ \"{permission}\" ขอสิทธิ์นี้จากผู้ดูแลระบบ",
+        "Read only. Editing needs the Permission \"{permission}\": ask an Administrator for it."
     ),
     (
         "kernel.admin.module_settings.kind_text",

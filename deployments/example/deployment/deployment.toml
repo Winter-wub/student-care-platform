@@ -158,6 +158,15 @@ order = 3
 ข้อความนี้เป็นตัวอย่าง ไม่ใช่ประกาศจริงของสถาบันใด
 """
 "contact.reply" = "กองกิจการนักศึกษา อาคาร 1 ชั้น 2 เปิดจันทร์–ศุกร์ 08:30–16:30 น. โทร 0 0000 0000"
+# How Staff read the Roles above (#125). The stored names stay as they
+# are, so no Role is re-created and no grant is lost. The Kernel already
+# names Administrator "ผู้ดูแลระบบ".
+"kernel.role.Officer" = "เจ้าหน้าที่กิจการนักศึกษา"
+"kernel.role.Viewer" = "ผู้ดูข้อมูล"
+"kernel.role.Finance" = "เจ้าหน้าที่การเงิน"
 
 [texts.en]
 "contact.reply" = "Student Affairs, Building 1, 2nd floor. Mon–Fri 08:30–16:30. Tel. 0 0000 0000."
+"kernel.role.Officer" = "Student Affairs Officer"
+"kernel.role.Viewer" = "Viewer"
+"kernel.role.Finance" = "Finance"

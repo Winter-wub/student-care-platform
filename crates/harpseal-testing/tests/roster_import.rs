@@ -234,7 +234,14 @@ async fn a_deployment_without_a_roster_section_refuses_uploads() {
     let app = h.boot(h.builder().config(config).build().unwrap()).await;
     let b = signed_in(&h, &app, "Officer").await;
     let page = b.get("/admin/roster").await;
-    assert!(page.body.contains("[roster]"), "{}", page.body);
+    // Says what is missing and who can fix it, without the config key (#125).
+    assert!(
+        page.body.contains("ยังไม่ได้ตั้งค่าคอลัมน์ของไฟล์รายชื่อ"),
+        "{}",
+        page.body
+    );
+    assert!(page.body.contains("กรุณาแจ้งผู้ดูแลระบบ"), "{}", page.body);
+    assert!(!page.body.contains("[roster]"), "{}", page.body);
     assert!(!page.body.contains("name=\"file\""));
     let r = upload(&b, "a.csv", &csv(0..2), "full").await;
     assert_eq!(r.status, 303);

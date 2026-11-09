@@ -246,7 +246,9 @@ async fn an_export_over_the_cell_limit_is_refused_before_it_is_built() {
     let r = b.get("/admin/backups/export.xlsx").await;
     assert_eq!(r.status, 413, "{}", r.body);
     assert!(r.body.contains("id=\"export-too-big\""));
-    assert!(r.body.contains("max_export_cells"));
+    // Says what to do in Staff's words (#125), not the config key.
+    assert!(r.body.contains("ขอให้ผู้ดูแลเซิร์ฟเวอร์เพิ่มขีดจำกัด"));
+    assert!(!r.body.contains("max_export_cells"));
     assert_eq!(audits(&h, "data.export").await, 0);
 }
 

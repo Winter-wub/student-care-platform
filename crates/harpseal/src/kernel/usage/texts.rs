@@ -1,6 +1,6 @@
 //! Texts of the usage page, the Quota banner and the Quota emails (#26),
 //! Thai and English. Placeholders: `{channel}` (`LINE`), `{percent}`,
-//! `{used}`, `{cap}`, `{month}` (`YYYY-MM`), `{org}`, `{path}`.
+//! `{used}`, `{cap}`, `{month}` (`พ.ย. 2569`), `{org}`, `{path}`.
 
 use crate::manifest::CatalogEntry as E;
 
@@ -14,9 +14,10 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.usage.title", "การใช้งานและโควตา", "Usage and Quotas"),
     (
         "kernel.usage.intro",
-        "นับจาก Push ที่คิดค่าบริการ (หนึ่งครั้งต่อผู้รับต่อคำขอ) ตามวันในเขตเวลาของระบบ ระบบไม่หยุดส่งข้อความเมื่อถึงโควตา \
-         ช่อง \"ส่งไม่สำเร็จ\" นับครั้งที่ส่งไปยังแพลตฟอร์มแล้วล้มเหลว ข้อความที่ล้มเหลวสองครั้งแล้วส่งได้ในครั้งที่สามจึงนับ 2",
-        "Counts metered Pushes (one per request per recipient) by local day. Sending never stops at the Quota. \
+        "นับข้อความที่ระบบส่งถึงนักศึกษาเองและคิดค่าบริการ (นับหนึ่งครั้งต่อผู้รับ) ตามวันในเวลาท้องถิ่น \
+         ระบบยังส่งข้อความต่อแม้ถึงโควตาแล้ว ช่อง \"ส่งไม่สำเร็จ\" นับทุกครั้งที่ส่งไม่ผ่าน \
+         ข้อความที่ส่งไม่ผ่านสองครั้งแล้วส่งได้ในครั้งที่สามจึงนับเป็น 2",
+        "Counts the metered messages the system sends to Students on its own (one per recipient) by local day. Sending never stops at the Quota. \
          \"Failed sends\" counts failed attempts to the platform: a Message that fails twice and goes out the third time counts 2."
     ),
     // {month}
@@ -37,7 +38,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "ไม่ได้ตั้งโควตา: ใช้ไป {used}",
         "No Quota set: {used} used"
     ),
-    ("kernel.usage.metered", "Push ที่คิดค่าบริการ", "Metered pushes"),
+    (
+        "kernel.usage.metered",
+        "ข้อความที่คิดค่าบริการ",
+        "Metered messages"
+    ),
     ("kernel.usage.free", "ข้อความตอบกลับ (ฟรี)", "Free replies"),
     ("kernel.usage.failed", "ส่งไม่สำเร็จ", "Failed sends"),
     ("kernel.usage.level_ok", "ปกติ", "Normal"),
@@ -98,10 +103,10 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     // {channel} {used} {cap} {percent} {month} {path}
     (
         "kernel.usage.email_body",
-        "{channel} ใช้ Push ที่คิดค่าบริการไปแล้ว {used} จาก {cap} ครั้ง ({percent}%) ในเดือน {month}\n\n\
-         ระบบยังส่งข้อความต่อตามปกติ หากต้องการเพิ่มโควตา กรุณาติดต่อผู้ให้บริการช่องทาง\n\n\
-         เปิดหน้า Usage ในระบบหลังบ้าน ({path})",
-        "{channel} has used {used} of {cap} metered pushes ({percent}%) in {month}.\n\n\
+        "{channel} ใช้ข้อความที่คิดค่าบริการไปแล้ว {used} จาก {cap} ข้อความ ({percent}%) ในเดือน {month}\n\n\
+         ระบบยังส่งข้อความต่อตามปกติ หากต้องการเพิ่มโควตา กรุณาเปลี่ยนแพ็กเกจกับผู้ให้บริการช่องทาง\n\n\
+         ดูรายละเอียดได้ที่หน้าการใช้งานและโควตาในระบบหลังบ้าน ({path})",
+        "{channel} has used {used} of {cap} metered messages ({percent}%) in {month}.\n\n\
          Messages still go out. To raise the Quota, contact the Channel's provider.\n\n\
          Open the Usage page in the back office ({path})."
     ),

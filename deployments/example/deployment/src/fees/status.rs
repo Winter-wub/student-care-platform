@@ -92,7 +92,13 @@ pub async fn card(s: AppState, staff: CurrentStaff) -> Result<StatusCard> {
     }
     let offset = s.config.utc_offset_minutes()?;
     let (date, time) = next_reminder(s.services.now_ms(), offset);
-    let args = [("n", owing.to_string()), ("date", date), ("time", time)];
+    // Staff read `16 พ.ย. 2569` and `1,250` (#125).
+    let date = harpseal::ui::thai_day(&date);
+    let args = [
+        ("n", harpseal::ui::number(owing)),
+        ("date", date),
+        ("time", time),
+    ];
     let args: Vec<(&str, &str)> = args.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let card = StatusCard::new(CardState::Warn, tf("fees.home.owing", &args));
     Ok(if staff.can(crate::reminders::PERMISSION.id) {

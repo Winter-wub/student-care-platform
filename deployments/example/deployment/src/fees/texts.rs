@@ -6,6 +6,9 @@ use harpseal::CatalogEntry;
 pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("fees.title", "th", "ยอดค้างชำระ"),
     CatalogEntry::new("fees.title", "en", "Outstanding fees"),
+    // The audit log's words for `fees.import` (#125).
+    CatalogEntry::new("fees.audit.import", "th", "นำเข้ายอดค้างชำระ"),
+    CatalogEntry::new("fees.audit.import", "en", "Imported outstanding fees"),
     CatalogEntry::new("fees.file", "th", "ไฟล์ CSV หรือ XLSX (ไม่เกิน 4 MB)"),
     CatalogEntry::new("fees.file", "en", "CSV or XLSX file (up to 4 MB)"),
     CatalogEntry::new("fees.check", "th", "ตรวจไฟล์"),

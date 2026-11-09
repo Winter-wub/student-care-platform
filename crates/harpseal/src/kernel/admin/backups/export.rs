@@ -65,7 +65,8 @@ async fn send(
         } else {
             "kernel.backup.export_too_big"
         };
-        let (cells, limit, most) = (cells.to_string(), limit.to_string(), most.to_string());
+        let n = |x: u64| crate::ui::number(x);
+        let (cells, limit, most) = (n(cells), n(limit), n(*most));
         let args = [
             ("cells", cells.as_str()),
             ("limit", limit.as_str()),

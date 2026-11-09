@@ -87,7 +87,11 @@ async fn placeholders_must_match_the_default() {
 
     let dropped = admin.post(path, &save("th", "ไฟล์ใหญ่เกินไป", "-")).await;
     assert_eq!(dropped.status, 422);
-    assert!(dropped.body.contains("ข้อความขาดตัวแทนค่า"));
+    assert!(
+        dropped
+            .body
+            .contains("ข้อความนี้ขาดตัวแทนค่าต่อไปนี้ ใส่กลับเข้าไปแล้วบันทึกอีกครั้ง")
+    );
     assert!(
         dropped.body.contains("ไฟล์ใหญ่เกินไป"),
         "the value is kept in the form"

@@ -126,9 +126,47 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ("kernel.admin.texts.title", "ข้อความ", "Texts"),
     (
         "kernel.admin.texts.search",
-        "ค้นหาจากคีย์หรือข้อความ",
-        "Search by key or text"
+        "ค้นหาข้อความ",
+        "Search the texts"
     ),
+    ("kernel.admin.texts.area", "หน้าที่แสดง", "Shown on"),
+    ("kernel.admin.texts.all_areas", "ทุกหน้า", "Every page"),
+    ("kernel.admin.texts.find", "ค้นหา", "Search"),
+    (
+        "kernel.admin.texts.intro",
+        "ข้อความที่นักศึกษาและเจ้าหน้าที่เห็น จัดตามหน้าที่แสดง กดที่ข้อความเพื่อแก้ไข",
+        "The texts Students and Staff see, grouped by where they show. Open one to edit it."
+    ),
+    ("kernel.admin.texts.shown_on", "แสดงที่:", "Shown on:"),
+    (
+        "kernel.admin.texts.area_chat",
+        "แชทกับนักศึกษา",
+        "Chat with Students"
+    ),
+    ("kernel.admin.texts.area_app", "มินิแอป", "Mini App"),
+    ("kernel.admin.texts.area_menu", "เมนูในแชท", "Chat Menu"),
+    ("kernel.admin.texts.area_backup", "สำรองข้อมูล", "Backups"),
+    (
+        "kernel.admin.texts.area_branding",
+        "แบรนด์และรูปเมนู",
+        "Branding and menu images"
+    ),
+    (
+        "kernel.admin.texts.area_home",
+        "หน้าหลักของหลังบ้าน",
+        "Back-office home"
+    ),
+    (
+        "kernel.admin.texts.area_usage",
+        "การใช้งานและโควตา",
+        "Usage and Quotas"
+    ),
+    (
+        "kernel.admin.texts.area_roster",
+        "นำเข้ารายชื่อ",
+        "Roster import"
+    ),
+    ("kernel.admin.texts.area_other", "ทั่วไป", "General"),
     ("kernel.admin.texts.key", "คีย์", "Key"),
     ("kernel.admin.texts.back", "กลับไปที่ข้อความ", "Back to texts"),
     ("kernel.admin.texts.default", "ค่าตั้งต้น", "Default"),
@@ -143,7 +181,7 @@ pub(super) const DEFAULTS: &[E] = th_en![
     // The technical details (#123).
     (
         "kernel.admin.texts.tech_toml",
-        "ป้าย \"ไฟล์ตั้งค่า\" คือข้อความจาก [texts] ใน deployment.toml ข้อความที่แก้ในหลังบ้านจะใช้แทนค่านั้น",
+        "ข้อความที่มีเครื่องหมาย \"ไฟล์ตั้งค่า\" มาจาก [texts] ใน deployment.toml ข้อความที่แก้ในหลังบ้านจะใช้แทนค่านั้น",
         "\"config file\" marks a text from [texts] in deployment.toml; an edit here is used instead."
     ),
     (
@@ -168,23 +206,23 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.admin.texts.err_empty",
-        "ข้อความต้องไม่ว่าง",
-        "The text cannot be empty"
+        "ข้อความต้องไม่ว่าง กรุณาพิมพ์ข้อความแล้วบันทึกอีกครั้ง",
+        "The text cannot be empty. Type a text and save again."
     ),
     (
         "kernel.admin.texts.err_long",
-        "ข้อความยาวเกิน 5000 ตัวอักษร",
-        "The text is longer than 5000 characters"
+        "ข้อความยาวเกิน 5,000 ตัวอักษร กรุณาตัดให้สั้นลงแล้วบันทึกอีกครั้ง",
+        "The text is longer than 5,000 characters. Shorten it and save again."
     ),
     (
         "kernel.admin.texts.err_missing",
-        "ข้อความขาดตัวแทนค่า:",
-        "The text drops placeholders:"
+        "ข้อความนี้ขาดตัวแทนค่าต่อไปนี้ ใส่กลับเข้าไปแล้วบันทึกอีกครั้ง:",
+        "The text drops these placeholders. Put them back and save again:"
     ),
     (
         "kernel.admin.texts.err_unknown",
-        "ข้อความมีตัวแทนค่าที่ไม่รู้จัก:",
-        "The text adds unknown placeholders:"
+        "ข้อความมีตัวแทนค่าที่ระบบไม่รู้จัก ลบออกแล้วบันทึกอีกครั้ง:",
+        "The text has placeholders the system does not know. Remove them and save again:"
     ),
     (
         "kernel.admin.texts.consent_title",

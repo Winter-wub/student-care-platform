@@ -45,7 +45,9 @@ pub(super) async fn page(
     })
 }
 
-/// A short description of an Audience.
+/// A short description of an Audience, in the words Staff read: each
+/// attribute by its label ("ชั้นปี: 1", not `year: 1`) and each value by
+/// its label (#125).
 pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
     let mut parts: Vec<String> = a
         .attributes
@@ -53,11 +55,12 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
         .map(|(k, vals)| {
             let (locale, default) = (&v.staff.locale, &v.s.config.default_locale);
             let spec = v.s.config.roster.attributes.get(k);
+            let name = spec.map_or(k.as_str(), |s| s.label_in(k, locale, default));
             let shown: Vec<&str> = vals
                 .iter()
                 .map(|x| spec.map_or(x.as_str(), |s| s.value_label(x, locale, default)))
                 .collect();
-            format!("{k}: {}", shown.join(" / "))
+            format!("{name}: {}", shown.join(" / "))
         })
         .collect();
     if !a.tags.is_empty() {
@@ -71,7 +74,7 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
         parts.push(format!(
             "{}: {}",
             v.t("announcements.form.hand_picked"),
-            a.students.len()
+            crate::ui::number(a.students.len())
         ));
     }
     if parts.is_empty() {
@@ -109,7 +112,7 @@ fn results(v: &View<'_>, rows: &[Listed], page: i64, pages: i64) -> Markup {
                                     (v.time(l.row.sent_at.or(l.row.send_at).or(Some(l.row.created_at))))
                                 }
                                 td data-label=(v.t("announcements.form.audience")) { (audience_summary(v, &l.row.audience)) }
-                                td data-label=(v.t("announcements.page.acked")) { (l.acked) " / " (l.students) }
+                                td data-label=(v.t("announcements.page.acked")) { (crate::ui::number(l.acked)) " / " (crate::ui::number(l.students)) }
                             }
                         }
                     }

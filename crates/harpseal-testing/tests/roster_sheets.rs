@@ -60,7 +60,10 @@ async fn a_sheet_without_the_header_refuses_the_workbook_by_name() {
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     assert_eq!(report.lines().count(), 2, "one clear problem: {report}");
-    assert!(report.contains("สรุป,0,,ไม่พบแถวหัวคอลัมน์"), "{report}");
+    // No "row 0" (#125): the problem is the sheet's, and it names the
+    // headers the template expects.
+    assert!(report.contains("สรุป,ทั้งชีต,,\"ไม่พบแถวหัวคอลัมน์"), "{report}");
+    assert!(report.contains("คอลัมน์ที่ต้องมี: รหัสนักศึกษา, ชื่อ-สกุล"), "{report}");
 }
 
 const TRAILING: &[u8] =
@@ -124,7 +127,7 @@ async fn a_hidden_roster_sheet_blocks_a_full_import_and_is_listed_in_upsert() {
     let id = import_id(&r);
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
-    assert!(report.contains("ปี 2,0,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
+    assert!(report.contains("ปี 2,ทั้งชีต,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
     assert_eq!(int(&h, active, &[]).await, 5, "nobody became left");
     // In upsert nobody becomes left: it previews, listing the hidden sheet.
     let id = previewed(&b, "h.xlsx", HIDDEN_ROSTER, "upsert").await;
@@ -151,5 +154,6 @@ async fn a_hidden_old_cohort_missing_a_column_still_blocks_a_full_import() {
     let id = import_id(&r);
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
-    assert!(report.contains("ปี 0,0,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
+    assert!(report.contains("ปี 0,ทั้งชีต,,ชีตนี้ซ่อนอยู่แต่มีรายชื่อ"), "{report}");
+    assert!(report.contains("ปี 0,ทั้งชีต,,ข้ามชีตที่ซ่อนอยู่"), "{report}");
 }

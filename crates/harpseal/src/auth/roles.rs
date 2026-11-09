@@ -8,6 +8,23 @@ use crate::{Error, Result, Services};
 /// Name of the Role the CLI gives the first Administrator.
 pub(crate) const ADMINISTRATOR: &str = "Administrator";
 
+/// Prefix of the catalog key holding a Role's display label (#125):
+/// `kernel.role.<stored name>`, e.g. `kernel.role.Administrator`.
+pub(crate) const LABEL_PREFIX: &str = "kernel.role.";
+
+/// The name Staff read for Role `name`: its `kernel.role.<name>` text when
+/// the catalog has one (the Kernel ships "ผู้ดูแลระบบ" for
+/// [`ADMINISTRATOR`]; a Deployment adds its own in `[texts]`), else the
+/// stored name. The stored name never changes, so no migration is needed.
+pub(crate) fn label(catalog: &crate::Catalog, locale: &crate::Locale, name: &str) -> String {
+    let key = format!("{LABEL_PREFIX}{name}");
+    if catalog.knows(&key) {
+        catalog.t(locale, &key)
+    } else {
+        name.to_string()
+    }
+}
+
 /// Statements creating Role `name` if absent and granting `perms`.
 pub(crate) fn ensure_role(
     services: &Services,

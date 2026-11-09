@@ -3,7 +3,7 @@
 //! query each (the quota card reuses the banner's read of the request), run only on the home for Staff holding the card's
 //! Permission. (Announcements add their own card from their Module.)
 
-use crate::kernel::students::view::{channel_label, format_ms};
+use crate::kernel::students::view::channel_label;
 use crate::kernel::text::fill;
 use crate::kernel::usage::{self, Level};
 use crate::port_types::{Rows, Statement, Value};
@@ -24,7 +24,7 @@ impl Cx {
         self.s.catalog.t(&self.staff.locale, key)
     }
     fn time(&self, ms: i64) -> String {
-        format_ms(ms, self.s.config.utc_offset_minutes().unwrap_or(0))
+        crate::ui::local_datetime(&self.s, ms)
     }
     fn card(&self, state: CardState, fact: String) -> StatusCard {
         StatusCard::new(state, fact)

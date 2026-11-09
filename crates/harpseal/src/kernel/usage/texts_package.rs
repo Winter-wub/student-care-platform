@@ -56,9 +56,9 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.usage.package.help",
-        "โควตาเดือนนี้เปลี่ยนตามแพ็กเกจที่เลือกทันที ไม่ต้อง deploy ระบบไม่ได้ถาม LINE ว่าใช้แพ็กเกจไหน \
+        "โควตาเดือนนี้เปลี่ยนตามแพ็กเกจที่เลือกทันที ระบบไม่ได้ถาม LINE ว่าใช้แพ็กเกจไหน \
          จึงต้องเลือกให้ตรงกับที่สมัครไว้",
-        "This month's Quota follows the package at once, with no deploy. The system does not ask LINE which \
+        "This month's Quota follows the package at once. The system does not ask LINE which \
          package is in use, so choose the one you subscribed to."
     ),
     // {url} {date}

@@ -12,7 +12,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.title", "นำเข้ารายชื่อ", "Roster import"),
     (
         "kernel.roster.no_roster",
-        "ระบบนี้ยังไม่ได้กำหนดคอลัมน์ของไฟล์รายชื่อ ([roster] ใน deployment.toml) จึงยังนำเข้าไม่ได้",
+        "ระบบนี้ยังไม่ได้ตั้งค่าคอลัมน์ของไฟล์รายชื่อ จึงยังนำเข้าไม่ได้ กรุณาแจ้งผู้ดูแลระบบ",
         "This Deployment has no roster mapping ([roster] in deployment.toml), so files cannot be imported yet"
     ),
     // Upload
@@ -240,6 +240,23 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     // Report
     ("kernel.roster.report_row", "แถว", "Row"),
+    ("kernel.roster.report_whole_file", "ทั้งไฟล์", "Whole file"),
+    ("kernel.roster.report_whole_sheet", "ทั้งชีต", "Whole sheet"),
+    (
+        "kernel.roster.expected_headers",
+        "แถวหัวคอลัมน์ต้องมีชื่อคอลัมน์ตามแม่แบบดังนี้ (เรียงลำดับใดก็ได้):",
+        "The header row must hold the template's column names (in any order):"
+    ),
+    (
+        "kernel.roster.expected_short",
+        "คอลัมน์ที่ต้องมี",
+        "expected columns"
+    ),
+    (
+        "kernel.roster.expected_help",
+        "แก้ชื่อคอลัมน์ในไฟล์ให้ตรง แล้วอัปโหลดใหม่ หรือเริ่มจากแม่แบบ:",
+        "Rename the columns in the file to match and upload it again, or start from the template:"
+    ),
     ("kernel.roster.report_column", "คอลัมน์", "Column"),
     ("kernel.roster.report_reason", "ปัญหา", "Problem"),
     (
@@ -289,7 +306,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.reason_too_many_tags",
-        "กลุ่มเกิน 20 กลุ่มต่อคน",
+        "ป้ายเกิน 20 ป้ายต่อคน",
         "More than 20 Tags for one Student"
     ),
     (
@@ -334,12 +351,12 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.reason_bad_tag",
-        "ชื่อกลุ่มยาวเกิน 64 ตัวอักษร",
+        "ชื่อป้ายยาวเกิน 64 ตัวอักษร",
         "A Tag name is longer than 64 characters"
     ),
     (
         "kernel.roster.reason_tag_separator",
-        "ใช้ตัวคั่นกลุ่มผิด",
+        "ใช้ตัวคั่นป้ายผิด ดูตัวคั่นที่ถูกต้องในตารางหัวคอลัมน์ของหน้านำเข้ารายชื่อ",
         "Wrong Tag separator"
     ),
     (
@@ -359,8 +376,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.reason_not_date",
-        "ต้องเป็นวันที่ YYYY-MM-DD",
-        "Must be a date YYYY-MM-DD"
+        "ต้องเป็นวันที่แบบ ปี ค.ศ.-เดือน-วัน เช่น 2026-11-09",
+        "Must be a date as year-month-day, such as 2026-11-09"
     ),
     (
         "kernel.roster.reason_out_of_range",

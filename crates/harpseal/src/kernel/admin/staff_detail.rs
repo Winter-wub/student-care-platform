@@ -77,7 +77,7 @@ pub(super) async fn page(
                 form method="post" action=(form("roles")) {
                     (staff.csrf_field())
                     input type="hidden" name="version" value=(version);
-                    (role_boxes(&all, &row.roles))
+                    (role_boxes(&v, &all, &row.roles))
                     p class="muted" { (l("kernel.admin.staff.roles_help")) }
                     button type="submit" { (l("kernel.admin.save")) }
                 }

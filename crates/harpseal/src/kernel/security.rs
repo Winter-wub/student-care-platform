@@ -74,3 +74,15 @@ pub(crate) async fn record_staff(
     let stmt = insert(services, kind, None, None, Some(staff_id), details)?;
     services.db.execute(stmt).await.map(|_| ())
 }
+
+/// What Staff read for a Security Event kind: the text
+/// `kernel.admin.kind.<kind with _>` when the catalog has it, else the
+/// kind itself.
+pub(crate) fn kind_label(catalog: &crate::Catalog, locale: &crate::Locale, kind: &str) -> String {
+    let key = format!("kernel.admin.kind.{}", kind.replace('.', "_"));
+    if catalog.knows(&key) {
+        catalog.t(locale, &key)
+    } else {
+        kind.to_string()
+    }
+}

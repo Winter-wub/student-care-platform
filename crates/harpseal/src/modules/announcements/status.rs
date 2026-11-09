@@ -3,7 +3,6 @@
 //! a warning when a schedule is overdue.
 //! One query, for Staff holding `announcements.view`.
 
-use crate::kernel::students::view::format_ms;
 use crate::manifest::CatalogEntry as E;
 use crate::port_types::{Statement, Value};
 use crate::{AppState, CardState, CurrentStaff, Result, StatusCard};
@@ -77,7 +76,7 @@ pub(super) async fn card(s: AppState, staff: CurrentStaff) -> Result<StatusCard>
     let n = |c: &str| int(c).unwrap_or(0);
     let tf = |k: &str, args: &[(&str, &str)]| s.catalog.tf(&staff.locale, k, args);
     let t = |k: &str| tf(k, &[]);
-    let time = |ms: i64| format_ms(ms, s.config.utc_offset_minutes().unwrap_or(0));
+    let time = |ms: i64| crate::ui::local_datetime(&s, ms);
     let action = if staff.can("announcements.send") {
         (t("announcements.home.write"), "/admin/announcements/new")
     } else {
