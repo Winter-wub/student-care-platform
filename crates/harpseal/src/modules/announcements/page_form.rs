@@ -16,7 +16,6 @@ use super::notice;
 use super::store::{self, Row};
 use super::view::View;
 use super::{page_count, page_detail, page_editor, page_notice, page_pick, page_review, service};
-use crate::config::AttributeType;
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 /// Errors as (field, catalog key).
@@ -254,13 +253,12 @@ fn form_page(
     let scheduled = row.is_some_and(|r| r.status == "scheduled");
     let err = |field: &str| -> Markup { super::form_scope::field_errors(v, errors, field) };
     let d = |field: &str| super::form_scope::described(errors, field);
-    let roster = &v.s.config.roster;
     let body = html! {
         h1 { (title) }
         @if sent { p class="muted" { (v.t("announcements.form.sent_note")) } }
         form method="post" action=(action) enctype="multipart/form-data" class="card announcement-form" {
             (v.staff.csrf_field())
-            @if !errors.is_empty() { p class="flash err" role="alert" { (v.t("announcements.form.fix_errors")) } }
+            @if !errors.is_empty() || form.reselect { p class="flash err" role="alert" { (v.t("announcements.form.fix_errors")) } }
             @if let Some(version) = f.version { input type="hidden" name="version" value=(version); }
             @if let Some(r) = row { input type="hidden" name="announcement_id" value=(r.id); }
             fieldset aria-describedby=[d("th")] {
@@ -335,31 +333,7 @@ fn form_page(
                     (err("audience"))
                     (super::form_scope::field(v, f))
                     p class="muted" { (v.t("announcements.form.audience_help")) }
-                    // Each attribute is labelled (#129): a list of values is
-                    // a fieldset with a legend, a typed one a label tied to
-                    // its input.
-                    @for (key, spec) in roster.attributes_in_order() {
-                        @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
-                        @let label = spec.label_in(key, &v.staff.locale, &v.s.config.default_locale);
-                        @if spec.kind == AttributeType::Enum {
-                            fieldset class="checks" {
-                                legend { (label) }
-                                @for value in &spec.values {
-                                    label class="check" {
-                                        input type="checkbox" name=(format!("attr.{key}")) value=(value)
-                                            checked[chosen.contains(value)];
-                                        " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
-                                    }
-                                }
-                            }
-                        } @else {
-                            div class="field" {
-                                label for=(format!("attr-{key}")) { (label) }
-                                input id=(format!("attr-{key}")) name=(format!("attr.{key}")) value=(chosen.join(", "))
-                                    placeholder=(v.t("announcements.form.any_of"));
-                            }
-                        }
-                    }
+                    (super::form_scope::attributes(v, f))
                     div class="field" {
                         label for="tags" { (v.t("announcements.form.tags")) }
                         input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));

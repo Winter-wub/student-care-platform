@@ -5,21 +5,25 @@
 
 /* On the letterhead the ring is the bar's own ink: white (or Ledger Ink
    on a light TOML colour), at least 4.5:1 on the brand. */
-.bar :focus-visible, .mini-bar :focus-visible, .nav a[aria-current="page"]:focus-visible {
-  outline-color: var(--brand-ink);
-}
-.nav a[aria-current="page"]:focus-visible { outline-offset: -5px; }
+.bar :focus-visible, .mini-bar :focus-visible { outline-color: var(--brand-ink); }
+/* The current page's ring sits inside its brand fill, in the bar's ink. */
+.nav a[aria-current="page"]:focus-visible { outline: 3px solid var(--brand-ink); outline-offset: -5px; }
 
 /* Numbers line up in tables, facts, counts, meters and status cards. */
 table.rows td, .facts dd, .kv dd, .count, .pager, .usage, .status-card .fact,
 [data-count], .code { font-variant-numeric: tabular-nums; }
 
-/* Targets (WCAG 2.5.8): links in tables, lists, facts and the "back"
-   line are at least 24 px tall; a link inside a sentence keeps the
-   sentence's 1.6 line (25.6 px). Buttons and fields stay 48 px. */
-:where(.office main) :where(p, td, dd, li, .pager, .name) > a:not(.btn, .chip) {
+/* Targets (WCAG 2.5.8): links in tables, lists and facts, and the "back"
+   link (`a.back`), are at least 24 px tall. A link inside a sentence is
+   exempt and keeps the sentence's 1.6 line. Buttons and fields stay 48 px. */
+:where(.office main) :where(td, dd, li, .pager, .name) > a:not(.btn, .chip),
+:where(.office main) a.back {
   display: inline-block; min-height: 24px; line-height: 1.6;
 }
+
+/* A table whose columns follow the Deployment's config (the Students
+   list) scrolls inside its own focusable region, never the page. */
+.table-scroll { overflow-x: auto; }
 
 /* Checkboxes and radios: 20 px boxes in the brand, inside 48 px labels. */
 input[type="checkbox"], input[type="radio"] {
@@ -49,5 +53,4 @@ label.check input, label.choice input { width: 20px; height: 20px; }
    reduced motion it appears and goes at once, so the state still shows. */
 @media (prefers-reduced-motion: reduce) {
   .spinner { transition: none; }
-  html { scroll-behavior: auto; }
 }

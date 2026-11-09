@@ -58,7 +58,7 @@ pub(super) async fn page(
 fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
     let title = v.t("kernel.roster.import");
     let body = html! {
-        p { a href=(BASE) { "← " (v.t("kernel.roster.back")) } }
+        p { a class="back" href=(BASE) { "← " (v.t("kernel.roster.back")) } }
         h1 { (title) " " (v.state(&imp.state)) }
         div class="card" {
             dl class="facts" {
@@ -109,8 +109,11 @@ fn tally_rows(v: &View<'_>, t: &Tally) -> Markup {
 fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
     let p = &imp.counts.preview;
     let full = imp.mode == "full";
+    // One alert (#129): a mode no longer allowed blocks the import, so it
+    // is the one announced, not the leave warning.
+    let allowed = v.s.config.roster.allows_mode(&imp.mode);
     html! {
-        @if p.warning { div class="warn" { (v.t("kernel.roster.warning")) } }
+        @if p.warning { div class="warn" role=[v.alert().filter(|_| allowed)] { (v.t("kernel.roster.warning")) } }
         (super::skipped::card(v, &imp.counts.skipped))
         (problems::warnings_card(v, imp))
         div class="card" {
@@ -139,7 +142,7 @@ fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
                 @if v.s.config.roster.allows_mode(&imp.mode) {
                     (reach::confirm_form(v, imp))
                 } @else {
-                    div class="warn" { (v.t("kernel.roster.mode_no_longer")) }
+                    div class="warn" role=[v.alert()] { (v.t("kernel.roster.mode_no_longer")) }
                 }
                 form method="post" action=(format!("{BASE}/{}/cancel", imp.id)) {
                     (v.staff.csrf_field())
@@ -196,8 +199,9 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
         return html! { (progress(v, imp)) (problems::warnings_card(v, imp)) };
     }
     html! {
-        // Not a live region (#129): the flash already announced the refusal.
-        div class="warn" { (v.t("kernel.roster.refused")) }
+        // The live region only without a flash (#129): after the upload the
+        // flash announces the refusal.
+        div class="warn" role=[v.alert()] { (v.t("kernel.roster.refused")) }
         (super::skipped::card(v, &imp.counts.skipped))
         div class="card" {
             h2 { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (crate::ui::number(f.total)) } }

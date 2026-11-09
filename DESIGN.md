@@ -176,7 +176,7 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 
 ### Primary
 - **Harbour Teal** (#0f5c7a): the default institution colour, replaced per Deployment through `--brand`. It fills the top bar, primary buttons, progress bars, the current page and the Mini App avatar.
-- **Derived brand tokens (#129, `ui::brand`):** computed per Deployment from the brand with WCAG relative luminance, never eyeballed. `--brand-ink` (text on the brand) is white, or Ledger Ink when white is under 4.5:1 (only a TOML colour can be: the branding page refuses one on save with the same function). `--brand-text` (links, secondary buttons) is the brand darkened in 5 % steps until it is at least 4.5:1 on every light surface (Paper, Counter Mist, Chip Fog and the washes). `--focus` (the focus ring, checkboxes, the chart) is the brand darkened until at least 3:1 on the same surfaces. Harbour Teal and the default #0b5cad need no darkening (6.2:1 and up); a saved colour at the 4.5:1 edge (#767676, 4.2:1 on Counter Mist) gets a darker `--brand-text`; a yellow TOML colour (#ffd400) gets Ledger Ink text on the bar and a dark-gold ring.
+- **Derived brand tokens (#129, `ui::brand`):** computed per Deployment from the brand with WCAG relative luminance, never eyeballed. `--brand-ink` (text on the brand) is white, else Ledger Ink, else black, the first that reaches 4.5:1 (when white fails, black is at least 4.66:1, so one always does; only a TOML colour can need it: the branding page refuses one on save with the same function, and shows the ratio rounded down). `--brand-text` (links, secondary buttons) is the brand darkened in 5 % steps until it is at least 4.5:1 on every light surface (Paper, Counter Mist, Chip Fog and the washes). `--focus` (the focus ring, checkboxes, the chart) is the brand darkened until at least 3:1 on the same surfaces. Harbour Teal and the default #0b5cad need no darkening (6.2:1 and up); a saved colour at the 4.5:1 edge (#767676, 4.2:1 on Counter Mist) gets a darker `--brand-text`; a yellow TOML colour (#ffd400) gets Ledger Ink text on the bar and a dark-gold ring.
 
 ### Neutral
 - **Counter Mist** (#f4f6f8): the page ground behind every card.
@@ -218,7 +218,7 @@ The only colours Staff can give text in an Announcement body (`{red}…{/red}`),
 **Character:** one native family at a few sizes, so Thai and Latin render with the device's own hinting. Hierarchy comes from weight and size, not typeface contrast.
 
 ### Hierarchy
-A 1.25 ratio between heading levels (#129; was 16/16/18/22 px, at most 1.22), built from the title step: `--step-title` 1.125rem, `--step-section` × 1.25, `--step-page` × 1.25.
+A 1.25 ratio between heading levels in the back office (`.office`, #129; was 16/16/18/22 px, at most 1.22); the Mini App keeps its compact 22/18/16 px headings. Built from the title step: `--step-title` 1.125rem, `--step-section` × 1.25, `--step-page` × 1.25.
 - **Headline** (700, 1.7578rem ≈ 28 px, 1.4): page titles (`h1`), one per page.
 - **Section** (700, 1.40625rem ≈ 22.5 px, 1.4): section and card titles (`h2`).
 - **Title** (700, 1.125rem = 18 px, 1.4): subsections (`h3`), and the status card titles of the home ledger (an `h2` drawn at this step: a ledger row, not a section).
@@ -286,7 +286,8 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Focus:** the focus ring, and the border turns `--focus`.
 - **Labels and errors (#129):** every control has a tied `label`, or a `legend` when it is one of a group (Audience attributes with listed values are a fieldset). A form with errors shows one Refused summary (`role="alert"`); each field's message has an id the control or fieldset names with `aria-describedby`, and is not a live region itself. A page announces one message per update: the flash, or its own message, not both.
 - **Checkboxes and radios:** 20 px, `accent-color: var(--focus)`, inside a 48 px label.
-- **Targets:** links in tables, lists, facts and the "back" line are at least 24 px tall; buttons and fields 48 px.
+- **Targets:** links in tables, lists and facts, and the back link (`a.back`), are at least 24 px tall; a link inside a sentence is exempt; buttons and fields 48 px.
+- **Wide tables:** a table whose columns follow the config (the Students list, one per shown roster attribute) sits in a focusable `.table-scroll` region and scrolls there, never the page.
 - **Error:** the border turns Refused Ink (`aria-invalid`), with a 600-weight Refused Ink message below.
 
 ### Chips

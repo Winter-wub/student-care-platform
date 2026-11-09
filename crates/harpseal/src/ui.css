@@ -52,11 +52,15 @@ main {
   padding-right: max(var(--gutter), env(safe-area-inset-right));
 }
 .mini main { max-width: 560px; }
-/* Headings: 1.4 leaves Thai upper vowels and tone marks room on a second
-   line (1.3 nearly touched at 28 px); `balance` keeps short last lines off. */
-h1, h2, h3 { line-height: 1.4; text-wrap: balance; }
-h1 { font-size: var(--step-page); margin: 8px 0 16px; }
-h2 { font-size: var(--step-section); margin: 0 0 12px; }
+/* Headings: the Mini App keeps its compact sizes; the back office (and its
+   sign-in pages, `.office`) takes the 1.25 scale (#129). 1.4 leaves Thai
+   upper vowels and tone marks room on a second line (1.3 nearly touched
+   at 28 px); `balance` keeps short last lines off. */
+h1 { font-size: 1.375rem; line-height: 1.3; margin: 8px 0 16px; }
+h2 { font-size: 1.125rem; margin: 0 0 12px; }
+.office h1, .office h2, .office h3 { line-height: 1.4; text-wrap: balance; }
+.office h1 { font-size: var(--step-page); }
+.office h2 { font-size: var(--step-section); }
 p { margin: 0 0 12px; }
 a { color: var(--brand-text); text-underline-offset: .2em; }
 .muted { color: var(--muted); font-size: .875rem; }
@@ -169,7 +173,7 @@ table.rows td::before { content: attr(data-label); flex: 0 0 8rem; color: var(--
   background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-weight: 700;
 }
 .news > li { display: block; }
-.news h3 { font-size: var(--step-title); margin: 0 0 4px; }
+.news h3 { font-size: 1rem; margin: 0 0 4px; }
 .news .meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
 .foot { text-align: center; color: var(--muted); font-size: .8125rem; padding: 8px var(--gutter) 24px; }
 .notice h2 { margin-top: 20px; }
@@ -195,7 +199,8 @@ td.icons { flex-wrap: wrap; }
 .list form { margin: 0; }
 .links .name { flex: 0 0 auto; }
 .manual-link { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
-h3 { font-size: var(--step-title); margin: 16px 0 8px; }
+h3 { font-size: 1rem; margin: 12px 0 8px; }
+.office h3 { font-size: var(--step-title); margin: 16px 0 8px; }
 details summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; }
 
 /* Roster import (#24) */
@@ -206,7 +211,7 @@ label.choice { display: flex; align-items: flex-start; gap: 10px; min-height: va
   padding: 8px 0; font-weight: 400; cursor: pointer; }
 label.choice input { width: auto; min-height: 0; margin-top: 4px; flex: none; }
 input[type="file"] { padding: 8px; }
-progress { width: 100%; height: 16px; accent-color: var(--brand); }
+progress { width: 100%; height: 16px; accent-color: var(--focus); }
 .names { columns: 14rem auto; margin: 0; padding-left: 1.25rem; }
 /* The typed confirmation of a broad full replace (#120), above the buttons. */
 .confirm-reach { max-width: 36rem; }

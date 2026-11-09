@@ -52,7 +52,7 @@ pub(super) async fn page(
     let ua = rows.get(0, "user_agent").and_then(Value::as_text);
     let l = |k: &str| v.t(k);
     let body = html! {
-        p { a href="/admin/audit" { "← " (l("kernel.admin.audit.back")) } }
+        p { a class="back" href="/admin/audit" { "← " (l("kernel.admin.audit.back")) } }
         h1 { (words::action(&v, &e.action)) }
         section class="card" {
             dl class="facts" {

@@ -62,7 +62,10 @@ pub(crate) fn name(v: &str) -> Result<String, Refused> {
     Ok(v.to_string())
 }
 
-/// `#rrggbb` (lowercase) as red, green, blue.
+/// `#rrggbb` (lowercase) as red, green, blue. Stricter than
+/// `ui::brand::rgb` (which also reads the TOML's `#rgb`) on purpose: what
+/// the branding page saves is exactly `#rrggbb`, and a stored row of any
+/// other shape is refused when read back (`Chrome::of`).
 fn rgb(v: &str) -> Option<[u8; 3]> {
     let hex = v.strip_prefix('#')?;
     if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -90,7 +93,8 @@ pub(crate) fn color(v: &str) -> Result<String, Refused> {
     let ratio = contrast_with_white(c);
     if ratio < MIN_CONTRAST {
         return Err(Refused::new("kernel.branding.err_contrast")
-            .arg("ratio", format!("{ratio:.1}"))
+            // Rounded down, so a 4.47 refused never reads as "4.5".
+            .arg("ratio", format!("{:.1}", (ratio * 10.0).floor() / 10.0))
             .arg("min", format!("{MIN_CONTRAST:.1}")));
     }
     Ok(v)
@@ -233,6 +237,13 @@ mod tests {
         assert!((contrast_with_white([255, 255, 255]) - 1.0).abs() < 0.01);
         // #767676 is the classic AA edge: 4.54.
         assert!(color("#767676").is_ok() && color("#777777").is_err());
+        // #777777 is 4.48:1: shown as 4.4, never rounded up to the minimum.
+        let e = color("#777777").unwrap_err();
+        assert!(
+            e.args.contains(&("ratio", "4.4".to_string())),
+            "{:?}",
+            e.args
+        );
     }
 
     #[test]

@@ -114,9 +114,36 @@ fn is_live(attrs: &str) -> bool {
 ///   and at most one `role="status"` / `role="alert"` with text inside
 ///   `main` when the page loads (the flash or the page's own message, not
 ///   both).
+/// - **Ids:** no `id` twice, and every `label for`, `aria-describedby`
+///   and `aria-labelledby` names an `id` on the page.
 pub fn problems(html: &str) -> Vec<String> {
     let tags = tags(html);
     let mut out = Vec::new();
+
+    // Ids and the references to them.
+    let ids: Vec<&str> = tags
+        .iter()
+        .filter(|t| !t.end)
+        .filter_map(|t| attr(t.attrs, "id"))
+        .collect();
+    for (i, id) in ids.iter().enumerate() {
+        // Reported once, at its second use.
+        if ids[..i].iter().filter(|x| *x == id).count() == 1 {
+            out.push(format!("duplicate id {id}"));
+        }
+    }
+    for t in tags.iter().filter(|t| !t.end) {
+        for a in ["for", "aria-describedby", "aria-labelledby"] {
+            if a == "for" && t.name != "label" {
+                continue;
+            }
+            for target in attr(t.attrs, a).unwrap_or("").split_whitespace() {
+                if !ids.contains(&target) {
+                    out.push(format!("{} {a}=\"{target}\" names no id", t.name));
+                }
+            }
+        }
+    }
 
     // Headings.
     let mut last = 0u8;
@@ -235,6 +262,19 @@ mod tests {
             problems(r#"<input name="year_min" id="y">"#),
             ["unlabelled input name=year_min"]
         );
+    }
+
+    #[test]
+    fn ids_are_unique_and_references_resolve() {
+        let ok = r#"<label for="a">A</label><input id="a" aria-describedby="a-err b"><p id="a-err"></p><p id="b"></p>"#;
+        assert!(problems(ok).is_empty(), "{:?}", problems(ok));
+        assert_eq!(
+            problems(r#"<p id="x"></p><p id="x"></p><p id="x"></p>"#),
+            ["duplicate id x"]
+        );
+        let dangling =
+            r#"<label for="gone">A</label><input aria-label="A" aria-describedby="err-a">"#;
+        assert_eq!(problems(dangling).len(), 2, "{:?}", problems(dangling));
     }
 
     #[test]

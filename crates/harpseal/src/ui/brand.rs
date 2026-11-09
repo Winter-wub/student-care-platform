@@ -5,8 +5,8 @@
 //!
 //! - `--brand`: the colour itself; it fills the bar, primary buttons and
 //!   the current page in the navigation.
-//! - `--brand-ink`: text on `--brand`: white, else Ledger Ink when white
-//!   is under 4.5:1 (only a TOML colour can be: the branding page refuses
+//! - `--brand-ink`: text on `--brand`: white, else Ledger Ink, else black,
+//!   the first at least 4.5:1 (only a TOML colour can be: the branding page refuses
 //!   one on save, the same [`contrast`]).
 //! - `--brand-text`: links and brand-coloured text: the brand, darkened in
 //!   steps until it is at least 4.5:1 on every light surface.
@@ -16,6 +16,7 @@
 /// Ledger Ink, the body text colour.
 pub(crate) const INK: [u8; 3] = [0x17, 0x21, 0x2b];
 const WHITE: [u8; 3] = [0xff, 0xff, 0xff];
+const BLACK: [u8; 3] = [0, 0, 0];
 
 /// The light surfaces brand-coloured text and the ring may sit on: Paper,
 /// Counter Mist, Chip Fog, and the approved, refused, caution and
@@ -112,11 +113,12 @@ impl Tokens {
         let c = rgb(color)
             .or_else(|| rgb(crate::config::DEFAULT_PRIMARY))
             .unwrap_or(INK);
-        let ink = if contrast(WHITE, c) >= TEXT_MIN || contrast(WHITE, c) >= contrast(INK, c) {
-            WHITE
-        } else {
-            INK
-        };
+        // White, else Ledger Ink, else black: when white is under 4.5:1
+        // the brand's luminance is above 0.183, so black is at least 4.66:1.
+        let ink = [WHITE, INK]
+            .into_iter()
+            .find(|t| contrast(*t, c) >= TEXT_MIN)
+            .unwrap_or(BLACK);
         Tokens {
             brand: hex(c),
             brand_ink: hex(ink),
@@ -186,6 +188,33 @@ mod tests {
         // The AA edge is 4.2:1 on Counter Mist, so its text is darkened.
         assert_ne!(Tokens::of("#767676").brand_text, "#767676");
         assert_eq!(Tokens::of("#767676").focus, "#767676");
+    }
+
+    #[test]
+    fn text_on_any_brand_reaches_4_5() {
+        // Mid tones where white fails and Ledger Ink is close: #1e88e5 is
+        // white 3.7, ink 4.4, so it takes black.
+        for (c, ink) in [
+            ("#1e88e5", "#000000"),
+            ("#f44336", "#000000"),
+            ("#e65100", "#000000"),
+            ("#808080", "#000000"),
+            ("#ffd400", "#17212b"),
+            ("#0b5cad", "#ffffff"),
+        ] {
+            let t = Tokens::of(c);
+            assert_eq!(t.brand_ink, ink, "{c}");
+            let ratio = contrast(rgb(&t.brand_ink).unwrap(), rgb(c).unwrap());
+            assert!(ratio >= TEXT_MIN, "{c}: {ratio}");
+        }
+        // Every grey: one of the three always reaches 4.5:1.
+        for v in 0..=255u8 {
+            let t = Tokens::of(&hex([v, v, v]));
+            assert!(
+                contrast(rgb(&t.brand_ink).unwrap(), [v, v, v]) >= TEXT_MIN,
+                "{v}"
+            );
+        }
     }
 
     #[test]

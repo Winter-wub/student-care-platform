@@ -72,6 +72,98 @@ async fn upload_wrong_headers(b: &Browser<'_>) -> String {
     r.header("location").expect("to the import").to_string()
 }
 
+/// `parts` as `multipart/form-data` to `path`; a part `(name, Some(file), bytes)`
+/// is a file.
+async fn multipart(
+    b: &Browser<'_>,
+    path: &str,
+    parts: &[(&str, Option<&str>, &[u8])],
+) -> (u16, String) {
+    let boundary = "----sealbay-a11y-form";
+    let mut body = Vec::new();
+    for (name, file, value) in parts {
+        let head = match file {
+            Some(f) => format!(
+                "Content-Disposition: form-data; name=\"{name}\"; filename=\"{f}\"\r\nContent-Type: image/png"
+            ),
+            None => format!("Content-Disposition: form-data; name=\"{name}\""),
+        };
+        body.extend_from_slice(format!("--{boundary}\r\n{head}\r\n\r\n").as_bytes());
+        body.extend_from_slice(value);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    let req = Request::post(path)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let r = b.send(req).await;
+    (r.status.as_u16(), r.body)
+}
+
+/// The value of `<input name="{name}" … value="…">` in `page`.
+fn input_value(page: &str, name: &str) -> String {
+    let at = page.find(&format!("name=\"{name}\"")).expect(name);
+    let rest = &page[at..];
+    let v = rest.find("value=\"").expect("a value") + 7;
+    rest[v..].split('"').next().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn forms_with_errors_announce_once_and_tie_each_error_to_its_field() {
+    let h = Harness::new();
+    let app = seeded(&h).await;
+    let b = app.browser();
+    assert_eq!(b.login("admin@sealbay.example", PASSWORD).await.status, 303);
+
+    // An announcement without its Thai title, with an image to reselect.
+    b.get("/admin/announcements/new").await;
+    let token = b.csrf().unwrap();
+    let png = b"\x89PNG\r\n\x1a\nnot really";
+    let (status, page) = multipart(
+        &b,
+        "/admin/announcements/new",
+        &[
+            ("_csrf", None, token.as_bytes()),
+            ("title_th", None, b""),
+            ("body_th", None, b"x"),
+            ("scope", None, b"everyone"),
+            ("image1", Some("a.png"), png),
+        ],
+    )
+    .await;
+    assert_eq!(status, 422, "{page}");
+    assert!(
+        page.contains("id=\"err-th\"") && page.contains("id=\"err-reselect\""),
+        "{page}"
+    );
+    assert!(page.contains("aria-describedby=\"err-th\""), "{page}");
+    assert_eq!(a11y::problems(&page), Vec::<String>::new());
+
+    // A Student's edit with an email that is not one.
+    let list = b.get("/admin/students").await.body;
+    let student = links(&list)
+        .into_iter()
+        .find(|l| l.starts_with("/admin/students/0"))
+        .expect("a Student");
+    let edit = b.get(&format!("{student}/edit")).await.body;
+    let form = format!(
+        "version={}&display_name=Nok&email=not-an-email&locale=th",
+        input_value(&edit, "version")
+    );
+    let r = b.post(&format!("{student}/edit"), &form).await;
+    assert_eq!(r.status, 422, "{}", r.body);
+    assert!(
+        r.body.contains("aria-describedby=\"email-error\""),
+        "{}",
+        r.body
+    );
+    assert_eq!(a11y::problems(&r.body), Vec::<String>::new());
+}
+
 #[tokio::test]
 async fn back_office_pages_keep_heading_order_labels_and_one_message() {
     let h = Harness::new();

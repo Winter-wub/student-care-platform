@@ -47,7 +47,6 @@ main:focus { outline: none; }
 .nav a:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
 .nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); font-weight: 700; }
 .nav a[aria-current="page"]:hover { background: var(--brand); }
-.nav a[aria-current="page"]:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 .nav-group { margin: 16px 12px 4px; color: var(--muted); font-size: .875rem; font-weight: 600; }
 
 @media (min-width: 640px) {

@@ -58,7 +58,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
         html! { @if on { " " span class="chip override" { (v.t("kernel.students.override")) } } }
     };
     Ok(html! {
-        p { a href="/admin/students" { "← " (v.t("kernel.students.back")) } }
+        p { a class="back" href="/admin/students" { "← " (v.t("kernel.students.back")) } }
         h1 { (row.fields.display_name) " " (v.status_chip(&row.status)) (badge("status")) }
         p class="code" { (row.code) }
         div class="cols" {

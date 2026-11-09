@@ -118,7 +118,7 @@ async fn render_list(
     let title = v.t("kernel.admin.roles.title");
     let l = |k: &str| v.t(k);
     let body = html! {
-        p { a href="/admin/staff" { "← " (l("kernel.admin.staff.title")) } }
+        p { a class="back" href="/admin/staff" { "← " (l("kernel.admin.staff.title")) } }
         h1 { (title) }
         @for r in &all {
             section class="card" {
@@ -253,7 +253,7 @@ fn render_edit(
     let l = |k: &str| v.t(k);
     let base = format!("/admin/roles/{}", role.id);
     let body = html! {
-        p { a href="/admin/roles" { "← " (l("kernel.admin.roles.title")) } }
+        p { a class="back" href="/admin/roles" { "← " (l("kernel.admin.roles.title")) } }
         h1 { (v.role(&role.name)) }
         p class="muted" { (l("kernel.admin.roles.holders")) " " (crate::ui::number(role.holders)) }
         p class="muted" { (l("kernel.admin.roles.undeclared")) }

@@ -299,7 +299,7 @@ pub(super) fn field(
     err: &dyn Fn(&str) -> Markup,
 ) -> Markup {
     html! {
-        fieldset class="announcement-images" {
+        fieldset class="announcement-images" aria-describedby=[reselect.then_some("err-reselect")] {
             legend { (v.t("announcements.images.legend")) }
             p class="hint" { (v.t("announcements.images.hint")) }
             (hero_warning(v, images, bodies))
@@ -309,7 +309,8 @@ pub(super) fn field(
             }
             (err("images"))
             @if reselect {
-                p class="field-error" role="alert" { (v.t("announcements.images.reselect")) }
+                // Not a live region (#129): the form's summary announces.
+                p class="field-error" id="err-reselect" { (v.t("announcements.images.reselect")) }
             }
             @for (i, name) in SLOTS.iter().enumerate() {
                 @let n = (i + 1) as u8;

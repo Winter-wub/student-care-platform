@@ -209,6 +209,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "File checked. Review the numbers before you confirm"
     ),
     (
+        "kernel.roster.previewed_warning",
+        "ตรวจไฟล์แล้ว ระวัง: จะมีนักศึกษาพ้นสภาพเกิน 20% หรือไฟล์มีแถวน้อยกว่าทะเบียนปัจจุบัน",
+        "File checked. Careful: more than 20% of Students would become left, or the file is shorter than the roster"
+    ),
+    (
         "kernel.roster.flash_refused",
         "ไฟล์มีข้อผิดพลาด",
         "The file has errors"

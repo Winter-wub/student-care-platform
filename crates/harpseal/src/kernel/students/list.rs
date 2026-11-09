@@ -109,6 +109,9 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
             } @else if rows.is_empty() {
                 (crate::ui::no_match(&v.t("kernel.empty.students_no_match"), (&v.t("kernel.empty.clear_search"), "/admin/students")))
             } @else {
+                // Columns grow with the roster's attributes: a wide table
+                // scrolls inside this region, never the page (#129).
+                div class="table-scroll" role="region" tabindex="0" aria-label=(v.t("kernel.students.title")) {
                 table class="rows students" {
                     thead { tr {
                         th { (v.t("kernel.students.name")) }
@@ -140,6 +143,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                             }
                         }
                     }
+                }
                 }
             }
             @if pages > 1 {

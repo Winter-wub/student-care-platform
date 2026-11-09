@@ -61,7 +61,8 @@ fn cost_lines(v: &View<'_>, c: &Cost) -> Markup {
                         " · " span class="month-used" { (month_used(v, m)) }
                     }
                     @if let Some(left) = month.and_then(|m| over(m, *n)) {
-                        p class="field-error" role="alert" {
+                        // Inside the polite `#notify-cost`: no alert of its own (#129).
+                        p class="field-error" {
                             (fill(&v.t("announcements.form.notify_over"), &[("left", &left.to_string())]))
                         }
                     }

@@ -160,7 +160,12 @@ pub fn import_id(r: &TestResponse) -> String {
 pub async fn previewed(b: &Browser<'_>, name: &str, bytes: &[u8], mode: &str) -> String {
     let r = upload(b, name, bytes, mode).await;
     assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(flash(b), "ok:kernel.roster.previewed");
+    // Previewed, with or without the leave warning in the flash (#129).
+    let f = flash(b);
+    assert!(
+        f == "ok:kernel.roster.previewed" || f == "err:kernel.roster.previewed_warning",
+        "{f}"
+    );
     import_id(&r)
 }
 

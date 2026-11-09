@@ -68,7 +68,7 @@ pub(super) async fn page(
     let locked = row.locked_until.is_some() || row.failed_logins > 0;
     let form = |path: &str| format!("{base}/{path}");
     let body = html! {
-        p { a href="/admin/staff" { "← " (l("kernel.admin.staff.back")) } }
+        p { a class="back" href="/admin/staff" { "← " (l("kernel.admin.staff.back")) } }
         h1 { (row.display_name) " " (chips(&v, &row)) }
         p class="code" { (row.email) }
         div class="cols" {

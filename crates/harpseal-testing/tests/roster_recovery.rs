@@ -34,7 +34,12 @@ async fn an_import_whose_job_died_gives_the_slot_up() {
     )
     .await;
     let again = upload(&b, "b.csv", &csv(0..3), "full").await;
-    assert_eq!(flash(&b), "ok:kernel.roster.previewed", "the slot is free");
+    // Previewed (3 rows against a roster of 500 carries the leave warning).
+    assert_eq!(
+        flash(&b),
+        "err:kernel.roster.previewed_warning",
+        "the slot is free"
+    );
     assert_ne!(import_id(&again), id);
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let error = import_text(&h, &id, "error").await;
