@@ -1,12 +1,7 @@
 # Channels: LINE and Telegram
 
-Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
-Outside dev mode (`DeploymentBuilder::dev(true)`; the example's
-`HARPSEAL_DEV_ROUTES=1`) the back office does not offer the Fake Channel:
-no empty Link row, no Manual Link to it, no usage line. That is display
-only: it still takes webhooks and Mini App sign-ins, and a Link on it is
-still listed and can be revoked. An adapter for demos or tests says so with
-`Channel::dev_only` (#131).
+Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`; outside dev
+mode (`DeploymentBuilder::dev`) Staff are not offered it, display only (#131).
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ## Writing an adapter
