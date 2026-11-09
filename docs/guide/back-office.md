@@ -124,7 +124,7 @@ nobody becomes left). The form lists `upsert` first and preselects `[roster] def
 (default `upsert`, #120), and a request that sends no mode uses it too. A
 `full` preview's confirm button names how many Students will become left
 ("ยืนยัน: N คนจะพ้นสภาพ") in the danger style; when the preview also shows the
-red warning, Staff must type that number or the word "ยืนยัน" first, and a
+red warning, Staff must type that number first (#135: only the number), and a
 confirm without it is refused and changes nothing. The warning gives the numbers
 ("48 จาก 50 คน (96%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท 40 บัญชี", or, for a
 file shorter than the roster, its rows against the active Students), and the
