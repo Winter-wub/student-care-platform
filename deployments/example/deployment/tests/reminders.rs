@@ -1,97 +1,14 @@
 //! The example's fee reminder (#73): the weekly Job notifies the Students
 //! tagged `fee_due` (chat when linked, email otherwise), and Staff send it
-//! now to pasted student IDs from the back office; neither repeats.
+//! now to pasted student IDs from the back office, through a review step
+//! (#135, tested in `reminders_review.rs`); neither repeats.
 
-use example_deployment::{Secrets, builder, reminders};
-use harpseal::{Statement, Timestamp};
-use harpseal_channel_fake::FakeChannel;
-use harpseal_testing::{Harness, TestApp};
+mod reminders_support;
 
-/// Monday 2026-11-09 09:00 in Bangkok (02:00 UTC).
-const MONDAY_9AM: i64 = 1_794_189_600_000;
-const MIN: i64 = 60_000;
-
-fn secrets() -> Secrets {
-    Secrets::from_lookup(|k| match k {
-        "LINE_LIFF_ID" => Some("1234567890-AbCdEfGh".into()),
-        "TELEGRAM_WEB_APP_URL" => Some("https://app.seal-bay.invalid/tg".into()),
-        _ => None,
-    })
-}
-
-async fn run(h: &Harness, sql: &str) {
-    h.db()
-        .execute(Statement::new(sql.to_string()))
-        .await
-        .unwrap();
-}
-
-/// Karn (linked, tagged), Mali (email only, tagged), Niran (linked, not
-/// tagged).
-async fn boot(h: &Harness) -> TestApp {
-    let d = builder(h.services(), secrets())
-        .unwrap()
-        .dev(true)
-        .channel(h.fake_channel())
-        .build()
-        .expect("the example Deployment builds");
-    let app = h.boot(d).await;
-    for (id, code, name, email) in [
-        ("s1", "68010001", "Karn Seal", "NULL"),
-        ("s2", "68010002", "Mali Tern", "'mali@seal-bay.invalid'"),
-        ("s3", "68010003", "Niran Gull", "NULL"),
-    ] {
-        run(
-            h,
-            &format!(
-                "INSERT INTO student (id, student_code, display_name, email, locale, \
-                 created_at, updated_at) VALUES ('{id}', '{code}', '{name}', {email}, 'th', 1, 1)"
-            ),
-        )
-        .await;
-    }
-    for id in ["s1", "s3"] {
-        run(
-            h,
-            &format!(
-                "INSERT INTO channel_account (id, channel, external_id, first_seen_at, \
-                 flow_state, updated_at) VALUES ('a-{id}', 'fake', 'u-{id}', 1, 'linked', 1)"
-            ),
-        )
-        .await;
-        run(
-            h,
-            &format!(
-                "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
-                 linked_at, updated_at) VALUES ('l-{id}', '{id}', 'a-{id}', 'fake', 'active', \
-                 'email_otp', 1, 1)"
-            ),
-        )
-        .await;
-    }
-    run(
-        h,
-        "INSERT INTO tag (id, name, created_at) VALUES ('t1', 'fee_due', 1)",
-    )
-    .await;
-    for id in ["s1", "s2"] {
-        run(
-            h,
-            &format!(
-                "INSERT INTO student_tag (student_id, tag_id, source, added_at) \
-                 VALUES ('{id}', 't1', 'roster', 1)"
-            ),
-        )
-        .await;
-    }
-    app
-}
-
-fn chats(h: &Harness, id: &str) -> usize {
-    h.fake_channel()
-        .sent_to(&FakeChannel::account(format!("u-{id}")))
-        .len()
-}
+use example_deployment::reminders;
+use harpseal::Timestamp;
+use harpseal_testing::Harness;
+use reminders_support::*;
 
 #[tokio::test]
 async fn the_monday_job_reminds_the_tagged_students_once() {
@@ -148,7 +65,16 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     let form = b.get("/admin/reminders").await.body;
     let at = form.find("name=\"key\" value=\"").unwrap() + "name=\"key\" value=\"".len();
     let key = &form[at..at + form[at..].find('"').unwrap()];
-    let post = format!("key={key}&ids=68010003%0A68010002%0A68019999");
+    let ids = "ids=68010003%0A68010002%0A68019999";
+    // "ส่งเตือนตอนนี้" opens the review step (#135): nothing is sent yet.
+    let review = b
+        .post("/admin/reminders", &format!("key={key}&{ids}"))
+        .await;
+    assert_eq!(review.status, 200, "{}", review.body);
+    assert!(review.body.contains("ตรวจก่อนส่งเตือน"), "{}", review.body);
+    assert_eq!(chats(&h, "s3"), 0, "the review sends nothing");
+    assert!(h.email().to("mali@seal-bay.invalid").is_empty());
+    let post = format!("key={key}&{ids}&reviewed=1&reach=2");
     let r = b.post("/admin/reminders", &post).await;
     assert_eq!(r.status, 200, "{}", r.body);
     for seen in [
@@ -161,7 +87,9 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     assert_eq!(chats(&h, "s3"), 1);
 
     // A form without its key is refused, never sent under a shared one.
-    let r = b.post("/admin/reminders", "key=&ids=68010003").await;
+    let r = b
+        .post("/admin/reminders", "key=&ids=68010003&reviewed=1&reach=1")
+        .await;
     assert_eq!(r.status, 400);
     assert_eq!(chats(&h, "s3"), 1);
 

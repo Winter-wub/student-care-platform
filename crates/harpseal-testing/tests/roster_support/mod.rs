@@ -182,12 +182,24 @@ pub fn previewed<'a>(
 }
 
 /// Confirms import `id` (after loading its page for the token), typing
-/// "ยืนยัน" in case its reach asks for it (#120).
+/// the number its typed field asks for (`data-reach`) when it has one
+/// (#120; only the number confirms since #135).
 pub async fn confirm(b: &Browser<'_>, id: &str) -> TestResponse {
-    confirm_typed(b, id, Some(TYPED_WORD)).await
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    let asked = if page.contains(r#"name="typed""#) {
+        let n = page
+            .split(r#"data-reach=""#)
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .unwrap_or_else(|| panic!("a typed field without data-reach: {page}"));
+        format!("typed={n}")
+    } else {
+        String::new()
+    };
+    b.post(&format!("/admin/roster/{id}/confirm"), &asked).await
 }
 
-/// "ยืนยัน", form-encoded.
+/// "ยืนยัน", form-encoded: no longer a confirmation (#135).
 pub const TYPED_WORD: &str = "%E0%B8%A2%E0%B8%B7%E0%B8%99%E0%B8%A2%E0%B8%B1%E0%B8%99";
 
 /// Confirms import `id` with `typed` (form-encoded) as the typed

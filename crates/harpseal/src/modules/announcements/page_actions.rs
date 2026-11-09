@@ -3,7 +3,8 @@
 //! the version the page showed and answers 303 + flash. A confirm comes
 //! from the review step only (#120): without `reviewed` it goes there, and
 //! a send to everyone (a confirm or a resend) must carry the reach the
-//! page showed, counted again here.
+//! page showed, counted again here; a draft that would go now to nobody
+//! is refused (#135).
 
 use axum::Form;
 use axum::extract::{Path, State};
@@ -119,17 +120,27 @@ pub(super) async fn confirm(
         Ok(r) => r,
         Err(resp) => return *resp,
     };
+    // One clock read for the checks and the send-now-or-schedule choice.
+    let now = s.services.now_ms();
     if row.status == "draft" {
-        match review::everyone_ok(&s.deployment, &row, p.reach.as_deref()).await {
-            Ok(Some(false)) => {
-                return v.redirect(&to_review, false, "announcements.review.changed");
-            }
-            Ok(_) => {}
+        // The Audience counted once, for both checks.
+        let c = match crate::audience::count(&s.deployment, &row.audience).await {
+            Ok(c) => c,
             Err(e) => return v.error(&e),
+        };
+        // Nobody to reach, for a send that goes now (#135): the review
+        // step's button is disabled; a post that skips it is refused the
+        // same way. A schedule still ahead resolves its recipients later.
+        if review::nobody(&c).is_some() && review::goes_now(&row, now) {
+            return v.redirect(&to_review, false, "announcements.review.nobody_refused");
+        }
+        if review::everyone_ok(&row, &c, p.reach.as_deref()) == Some(false) {
+            return v.redirect(&to_review, false, "announcements.review.changed");
         }
     }
     let version = p.version;
-    let r = service::confirm(&s.deployment, &id, version, &Actor::staff(&staff), &ctx).await;
+    let actor = Actor::staff(&staff);
+    let r = service::confirm_at(&s.deployment, &id, version, &actor, &ctx, now).await;
     match r {
         Ok(true) => v.redirect(&back(&id), true, "announcements.flash.scheduled"),
         Ok(false) => v.redirect(&back(&id), true, "announcements.flash.sending"),

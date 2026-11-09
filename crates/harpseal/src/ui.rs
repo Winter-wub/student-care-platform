@@ -28,11 +28,13 @@ use crate::{CurrentStaff, Error, PageState};
 
 pub(crate) mod brand;
 mod busy;
+mod confirm;
 mod onboard;
 mod onboard_texts;
 mod shell;
 mod thai;
 
+pub use confirm::{blocked_button, typed_count_ok};
 pub(crate) use onboard::{HelpColumn, upload_panel};
 pub use onboard::{
     MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
@@ -57,7 +59,7 @@ pub const CSS: &str = concat!(
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=18";
+const CSS_HREF: &str = "/static/app.css?v=19";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

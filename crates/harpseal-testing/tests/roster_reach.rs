@@ -1,6 +1,7 @@
 //! Confirmation in proportion to reach (#120): a `full` preview's confirm
 //! names how many Students will become left in the danger style, and a
-//! warned one needs that number (or "ยืนยัน") typed, checked on the server.
+//! warned one needs that number typed (only the number since #135, never
+//! the word "ยืนยัน"), checked on the server.
 
 mod roster_support;
 
@@ -98,9 +99,16 @@ async fn a_warned_full_replace_needs_the_reach_typed_and_refuses_anything_else()
         "{page}"
     );
     assert!(page.contains(TYPED) && page.contains("required"), "{page}");
-    assert!(page.contains("พิมพ์ 3 หรือคำว่า ยืนยัน"), "{page}");
+    assert!(page.contains("พิมพ์ตัวเลข 3 เพื่อยืนยัน"), "{page}");
     // No field, an empty one, a wrong number: refused, nothing changes.
-    for typed in [None, Some(""), Some("2"), Some("4"), Some("yes")] {
+    for typed in [
+        None,
+        Some(""),
+        Some("2"),
+        Some("4"),
+        Some("yes"),
+        Some(TYPED_WORD),
+    ] {
         let r = confirm_typed(&b, &id, typed).await;
         assert_eq!(r.status, 303, "{typed:?}: {}", r.body);
         let to = r.header("location").unwrap();
@@ -111,7 +119,7 @@ async fn a_warned_full_replace_needs_the_reach_typed_and_refuses_anything_else()
     // The page says what to do, next to the field.
     let page = preview_page(&b, &format!("{id}?typed=wrong")).await;
     assert!(page.contains(r#"aria-invalid="true""#), "{page}");
-    assert!(page.contains("ข้อความไม่ตรง พิมพ์ 3"), "{page}");
+    assert!(page.contains("ตัวเลขไม่ตรง พิมพ์ตัวเลข 3"), "{page}");
     // The number confirms.
     let r = confirm_typed(&b, &id, Some("3")).await;
     assert_eq!(
@@ -130,12 +138,18 @@ async fn a_warned_full_replace_needs_the_reach_typed_and_refuses_anything_else()
 }
 
 #[tokio::test]
-async fn the_word_confirms_a_warned_full_replace_too() {
+async fn the_word_no_longer_confirms_a_warned_full_replace() {
+    // #135: "ยืนยัน" and "confirm" are refused; only the number confirms.
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     on_roster(&h, 0..5).await;
     let id = previewed(&b, "a.csv", &csv(0..2), "full", true).await;
-    assert_eq!(confirm_typed(&b, &id, Some(TYPED_WORD)).await.status, 303);
+    for word in [TYPED_WORD, "confirm", "Confirm"] {
+        assert_eq!(confirm_typed(&b, &id, Some(word)).await.status, 303);
+        assert_eq!(flash(&b), "err:kernel.roster.typed_refused", "{word}");
+        unchanged(&h, &app, &id, 5).await;
+    }
+    assert_eq!(confirm_typed(&b, &id, Some("3")).await.status, 303);
     assert_eq!(flash(&b), "ok:kernel.roster.confirmed");
     assert_eq!(import_text(&h, &id, "state").await, "queued");
 }

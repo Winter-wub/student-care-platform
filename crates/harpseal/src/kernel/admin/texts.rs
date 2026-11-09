@@ -232,6 +232,9 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "After a change, every linked Student is asked to accept the notice again with their next message. A version a Student already accepted will not ask them again."
     ),
     ("kernel.admin.texts.consent_new", "ฉบับใหม่", "New version"),
+    // Deprecated (#135): the card's button opens the review step now
+    // (`kernel.admin.consent.review`). Kept so a `[texts]` override of it
+    // still builds.
     (
         "kernel.admin.texts.consent_save",
         "เปลี่ยนฉบับ",

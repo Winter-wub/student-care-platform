@@ -4,7 +4,12 @@
 //! when it goes out, and the bubble; then "ยืนยันส่ง" and "กลับไปแก้ไข".
 //! A draft to everyone confirms with "ส่งถึงทุกคน N คน" in the danger
 //! style, and the confirm POST must carry that N: [`everyone_ok`] counts
-//! again on the server and refuses a stale or missing one.
+//! again on the server and refuses a stale or missing one. A draft that
+//! reaches no chat account (no Student linked, or every Link unreachable)
+//! cannot be sent now (#135): the button is disabled with the reason, and
+//! the confirm refuses it ([`nobody`]). A schedule still ahead is
+//! confirmable with a caution note: its recipients resolve when it goes
+//! out ([`goes_now`]).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -72,19 +77,35 @@ pub(super) async fn hold(
 }
 
 /// `None` when `row` does not go to everyone. Otherwise whether `posted`
-/// (the `reach` field) is the number of Students it reaches now.
-pub(super) async fn everyone_ok(
-    d: &Deployment,
-    row: &Row,
-    posted: Option<&str>,
-) -> Result<Option<bool>> {
+/// (the `reach` field) is the number of Students it reaches now, `c` (its
+/// Audience counted now).
+pub(super) fn everyone_ok(row: &Row, c: &Counts, posted: Option<&str>) -> Option<bool> {
     if !is_everyone(&row.audience) {
-        return Ok(None);
+        return None;
     }
-    let now = crate::audience::count(d, &row.audience).await?.students;
-    Ok(Some(
-        posted.and_then(|p| p.trim().parse::<usize>().ok()) == Some(now),
-    ))
+    Some(posted.and_then(|p| p.trim().parse::<usize>().ok()) == Some(c.students))
+}
+
+/// Whether confirming `row` at `now` (server clock, ms) sends it at once:
+/// no `send_at`, or one already past. A schedule still ahead resolves its
+/// recipients when it goes out, so reaching nobody yet does not block it
+/// (#135).
+pub(super) fn goes_now(row: &Row, now: i64) -> bool {
+    row.send_at.is_none_or(|t| t <= now)
+}
+
+/// Why a send that reaches `c` cannot go (#135): the catalog key of the
+/// reason when no chat account would get it, `None` otherwise. Unreachable
+/// Links are skipped by the send, so they do not count.
+pub(super) fn nobody(c: &Counts) -> Option<&'static str> {
+    if c.per_channel.values().any(|(active, _)| *active > 0) {
+        return None;
+    }
+    Some(if c.students == 0 {
+        "announcements.review.nobody"
+    } else {
+        "announcements.review.nobody_reachable"
+    })
 }
 
 /// How many of `a`'s Students have a live Link, when `a` also counts
@@ -155,6 +176,9 @@ pub(super) async fn page(
             .unwrap_or(None),
         false => None,
     };
+    // Nobody to reach blocks only a send that goes now (#135).
+    let empty = nobody(&counts);
+    let blocked = empty.filter(|_| goes_now(&row, svc.now_ms()));
     let extra = crate::kernel::usage::line_extra(svc, &s.config)
         .await
         .unwrap_or(None);
@@ -168,15 +192,28 @@ pub(super) async fn page(
             div class="card" { (summary(&v, &row, &counts, &used, extra)) }
             (super::page_detail::preview(&v, &title, &body, row.require_ack))
         }
+        @if empty.is_some() && blocked.is_none() {
+            p class="note warn-note" { (v.t("announcements.review.nobody_later")) }
+        }
         div class="actions" {
-            form method="post" action=(format!("{detail}/confirm")) class="inline" {
-                (v.staff.csrf_field())
-                input type="hidden" name="version" value=(row.version);
-                input type="hidden" name=(REVIEWED) value="1";
-                @if everyone {
-                    (everyone_button(&v, counts.students, live))
-                } @else {
-                    button type="submit" { (v.t("announcements.review.confirm")) }
+            @if let Some(why) = blocked {
+                (crate::ui::blocked_button(&v.t("announcements.review.confirm"), &v.t(why), "review-blocked"))
+            } @else {
+                form method="post" action=(format!("{detail}/confirm")) class="inline" {
+                    (v.staff.csrf_field())
+                    input type="hidden" name="version" value=(row.version);
+                    input type="hidden" name=(REVIEWED) value="1";
+                    // A schedule ahead to everyone with nobody yet: the plain
+                    // label beside the caution note, never "ส่งถึงทุกคน 0
+                    // คน"; the reach still goes for the recount.
+                    @if everyone && empty.is_none() {
+                        (everyone_button(&v, counts.students, live))
+                    } @else if everyone {
+                        input type="hidden" name=(REACH) value=(counts.students);
+                        button type="submit" { (v.t("announcements.review.confirm")) }
+                    } @else {
+                        button type="submit" { (v.t("announcements.review.confirm")) }
+                    }
                 }
             }
             a class="btn secondary" href=(format!("{detail}/edit")) { (v.t("announcements.review.back")) }

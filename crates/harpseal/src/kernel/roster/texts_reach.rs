@@ -17,17 +17,17 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.typed_label",
-        "พิมพ์ {n} หรือคำว่า ยืนยัน เพื่อยืนยันว่า {n} คนนี้จะพ้นสภาพและถูกยกเลิกการเชื่อมบัญชีแชท",
-        "Type {n} or the word ยืนยัน to confirm that these {n} Students become left and lose their chat Links"
+        "พิมพ์ตัวเลข {n} เพื่อยืนยันว่านักศึกษา {n} คนนี้จะพ้นสภาพและถูกยกเลิกการเชื่อมบัญชีแชท",
+        "Type the number {n} to confirm that these {n} Students become left and lose their chat Links"
     ),
     (
         "kernel.roster.typed_wrong",
-        "ข้อความไม่ตรง พิมพ์ {n} หรือคำว่า ยืนยัน แล้วกดยืนยันอีกครั้ง",
-        "That does not match. Type {n} or ยืนยัน, then confirm again"
+        "ตัวเลขไม่ตรง พิมพ์ตัวเลข {n} แล้วกดยืนยันอีกครั้ง",
+        "That number does not match. Type {n}, then confirm again"
     ),
     (
         "kernel.roster.typed_refused",
-        "ยังไม่ได้นำเข้า เพราะข้อความยืนยันไม่ตรง",
-        "Nothing was imported: the typed confirmation did not match"
+        "ยังไม่ได้นำเข้า เพราะตัวเลขที่พิมพ์ไม่ตรงกับจำนวนที่จะพ้นสภาพ",
+        "Nothing was imported: the number typed did not match"
     ),
 ];
