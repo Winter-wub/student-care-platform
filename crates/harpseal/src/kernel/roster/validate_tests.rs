@@ -130,6 +130,7 @@ fn file_errors_become_reports() {
         missing: vec!["อีเมล".into()],
         unexpected: vec!["หมายเหตุ".into()],
         whole: None,
+        found: Vec::new(),
     }]));
     assert_eq!(p[0], Problem::new(1, "อีเมล", "missing_header"));
     assert_eq!(p[1], Problem::new(1, "หมายเหตุ", "unexpected_header"));

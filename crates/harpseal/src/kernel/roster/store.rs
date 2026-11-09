@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
+use super::diff::Change;
 use super::validate::{Problem, Record};
 use crate::message::Locale;
 use crate::port_types::{Rows, Statement, Value};
@@ -60,6 +61,26 @@ pub(crate) struct Preview {
     pub(crate) left_names: Vec<String>,
     /// How many more will become left than `left_names` lists.
     pub(crate) left_more: u64,
+    /// Whether the preview carries the per-Student lists below (#134);
+    /// `false` for a preview stored before them.
+    pub(crate) detailed: bool,
+    /// The first changes of listed Students, in file order, at most
+    /// `diff::SHOWN_CHANGES`; the rest are in the stored list.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) changes: Vec<Change>,
+    /// Who will become left, by student code, with their live Links, at
+    /// most `diff::SHOWN_LEAVING`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) leaving: Vec<Change>,
+    /// Live chat Links of everyone who will become left.
+    pub(crate) links_cut: u64,
+}
+
+impl Preview {
+    /// Listed Students the import changes: new, updated and returning.
+    pub(crate) fn changed(&self) -> u64 {
+        self.tally.new + self.tally.updated + self.tally.returning
+    }
 }
 
 /// `roster_import.counts`. The file hash is `sha256` (a key ending in
@@ -138,6 +159,10 @@ pub(crate) struct Failure {
     pub(crate) classes: BTreeMap<String, u64>,
     /// Why the Job failed (never file contents).
     pub(crate) job: Option<String>,
+    /// The header row of each sheet whose headers differ (#134), so the
+    /// page sets what the file has beside what it needs.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) headers: Vec<super::file::FoundHeaders>,
 }
 
 /// One `roster_import` row.

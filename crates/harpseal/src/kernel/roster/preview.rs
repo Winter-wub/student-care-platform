@@ -9,7 +9,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::json;
 
-use super::file;
+use super::diff::{self, Change, SHOWN_CHANGES, SHOWN_LEAVING};
+use super::file::{self, FoundHeaders};
 use super::intake::{self, Checked};
 use super::store::{self, BUSY, Counts, Existing, Failure, Import, Preview, Tally, Warned};
 use super::validate::{Problem, Valid};
@@ -66,6 +67,7 @@ pub(crate) async fn upload(
     crate::check_file_key(&key)?;
     let sha256 = crate::auth::sha256_hex(&bytes);
     let read = intake::read(s, config, &name, &bytes, mode).await?;
+    let read = intake::refuse_example(read, &intake::Example::of(d.catalog(), config));
     let content_type = if file::is_xlsx(&name) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     } else {
@@ -85,7 +87,12 @@ pub(crate) async fn upload(
         key: &key,
         name: &name,
     };
-    let out = record(s, &row, counts, read.result, mode == "full", ctx).await;
+    let input = Input {
+        read: read.result,
+        headers: read.headers,
+        full: mode == "full",
+    };
+    let out = record(s, &row, counts, input, ctx).await;
     if !matches!(out, Ok(Uploaded::Previewed(..) | Uploaded::Refused(_)))
         && row_absent(s, &id).await
     {
@@ -95,6 +102,7 @@ pub(crate) async fn upload(
         // objects stay unless it is surely absent.
         let _ = s.files.delete(&key).await;
         let _ = s.files.delete(&super::rows::key(&id)).await;
+        let _ = s.files.delete(&diff::key(&id)).await;
     }
     out
 }
@@ -105,17 +113,26 @@ async fn row_absent(s: &Services, id: &str) -> bool {
     s.db.query(q).await.is_ok_and(|r| r.is_empty())
 }
 
-/// Writes the import row (and, for a valid file, its parsed rows first):
-/// `failed` with the report, or `previewed` while the slot is free.
+/// What reading the upload found, for [`record`].
+struct Input {
+    read: core::result::Result<Checked, Vec<Problem>>,
+    /// The header rows of a file refused for its headers (#134).
+    headers: Vec<FoundHeaders>,
+    full: bool,
+}
+
+/// Writes the import row (and, for a valid file, its parsed rows and its
+/// changes first): `failed` with the report, or `previewed` while the
+/// slot is free.
 async fn record(
     s: &Services,
     row: &NewRow<'_>,
     mut counts: Counts,
-    read: core::result::Result<Checked, Vec<Problem>>,
-    full: bool,
+    input: Input,
     ctx: &RequestCtx,
 ) -> Result<Uploaded> {
-    let Checked { valid, existing } = match read {
+    let full = input.full;
+    let Checked { valid, existing } = match input.read {
         Ok(c) => c,
         Err(problems) => {
             let (blocking, warned): (Vec<_>, Vec<_>) =
@@ -126,13 +143,30 @@ async fn record(
                 classes: warnings::classes(&blocking),
                 problems: warnings::kept(blocking),
                 job: None,
+                headers: input.headers,
             };
             let stmts = row.statements(s, &counts, Some(&failure), 0, ctx, None)?;
             s.db.batch(stmts).await?;
             return Ok(Uploaded::Refused(row.id.to_string()));
         }
     };
-    counts.preview = preview(&valid, &existing, full);
+    // Live Links matter only to those who will become left (#134).
+    let links = if full {
+        diff::live_links(s).await?
+    } else {
+        HashMap::new()
+    };
+    let (preview, changes) = preview(&valid, &existing, full, &links);
+    counts.preview = preview;
+    if !changes.is_empty() {
+        s.files
+            .put(
+                &diff::key(row.id),
+                diff::encode(&changes)?,
+                "application/jsonl",
+            )
+            .await?;
+    }
     counts.warnings = Warned::new(valid.warnings.clone());
     let parsed = super::rows::encode(&valid.records)?;
     counts.rows_sha256 = crate::auth::sha256_hex(&parsed);
@@ -286,19 +320,30 @@ fn json_err(e: serde_json::Error) -> Error {
     Error::Invalid(format!("roster counts: {e}"))
 }
 
-/// Compares the file with the Students.
-fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> Preview {
+/// Compares the file with the Students: the preview, and every change
+/// Student by Student (#134; `links`: live Links per Student id).
+pub(super) fn preview(
+    valid: &Valid,
+    existing: &HashMap<String, Existing>,
+    full: bool,
+    links: &HashMap<String, u64>,
+) -> (Preview, Vec<Change>) {
     let mut tally = Tally::default();
     let mut listed = HashSet::new();
+    let mut changes = Vec::new();
     for rec in &valid.records {
         listed.insert(rec.code.as_str());
-        tally.add(&store::classify(existing.get(&rec.code), rec).0);
+        let e = existing.get(&rec.code);
+        let (t, m) = store::classify(e, rec);
+        tally.add(&t);
+        changes.extend(diff::change(e, rec, &t, &m));
     }
     let active: Vec<_> = existing
         .iter()
         .filter(|(_, e)| e.fields.status == "active")
         .collect();
     let mut leaving: Vec<&str> = Vec::new();
+    let mut leavers = Vec::new();
     let mut kept_by_status = 0;
     if full {
         for (code, e) in &active {
@@ -309,14 +354,16 @@ fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> P
                 kept_by_status += 1;
             } else {
                 leaving.push(&e.fields.display_name);
+                leavers.push(diff::leaving(code, e, links));
             }
         }
     }
     leaving.sort_unstable();
+    leavers.sort_unstable_by(|a, b| a.code.cmp(&b.code));
     let left = leaving.len() as u64;
     let active_before = active.len() as u64;
     let shrinking = full && (valid.records.len() as u64) < active_before;
-    Preview {
+    let preview = Preview {
         tally,
         will_become_left: left,
         kept_by_status,
@@ -329,5 +376,11 @@ fn preview(valid: &Valid, existing: &HashMap<String, Existing>, full: bool) -> P
             .take(MAX_LEFT_NAMES)
             .map(str::to_string)
             .collect(),
-    }
+        detailed: true,
+        changes: changes.iter().take(SHOWN_CHANGES).cloned().collect(),
+        leaving: leavers.iter().take(SHOWN_LEAVING).cloned().collect(),
+        links_cut: leavers.iter().map(|c| c.links).sum(),
+    };
+    changes.extend(leavers);
+    (preview, changes)
 }

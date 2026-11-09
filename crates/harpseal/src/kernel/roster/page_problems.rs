@@ -26,6 +26,16 @@ fn has_sheets_in(problems: &[&Problem]) -> bool {
     problems.iter().any(|p| !p.sheet.is_empty())
 }
 
+/// Whether any problem names its Student (#134; older reports do not).
+fn has_students<'a>(mut problems: impl Iterator<Item = &'a Problem>) -> bool {
+    problems.any(|p| !p.student.is_empty())
+}
+
+/// The Student as Staff read it: `68010001 นกน้อย ทะเลใส`.
+fn student(p: &Problem) -> String {
+    format!("{} {}", p.student, p.name).trim().to_string()
+}
+
 /// Whether any problem is a warning (reports stored before #71 have none).
 fn has_warnings(problems: &[Problem]) -> bool {
     problems.iter().any(|p| !p.severity.is_blocking())
@@ -178,11 +188,13 @@ pub(super) fn classes(v: &View<'_>, classes: &BTreeMap<String, u64>) -> Markup {
 /// problems have them.
 pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
     let (sheets, levels) = (has_sheets(problems), has_warnings(problems));
+    let students = has_students(problems.iter().take(SHOWN));
     html! {
         table class="rows" {
             thead { tr {
                 @if sheets { th { (v.t("kernel.roster.report_sheet")) } }
                 th class="num" { (v.t("kernel.roster.report_row")) }
+                @if students { th { (v.t("kernel.roster.report_student")) } }
                 th { (v.t("kernel.roster.report_column")) }
                 th { (v.t("kernel.roster.report_reason")) }
                 @if levels { th { (v.t("kernel.roster.report_severity")) } }
@@ -194,6 +206,11 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                             td data-label=(v.t("kernel.roster.report_sheet")) { (p.sheet) }
                         }
                         td class="num" data-label=(v.t("kernel.roster.report_row")) { (row(v, p, true)) }
+                        @if students {
+                            td data-label=(v.t("kernel.roster.report_student")) {
+                                span class="code" { (p.student) } " " (p.name)
+                            }
+                        }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))
@@ -255,13 +272,19 @@ pub(super) async fn report(
     let skipped = &imp.counts.skipped;
     let sheets = has_sheets_in(&problems) || skipped.iter().any(|s| !s.sheet.is_empty());
     let levels = problems.iter().any(|p| !p.severity.is_blocking());
+    let students = has_students(problems.iter().copied());
     let mut head = vec![
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
         v.t("kernel.roster.report_reason"),
     ];
+    // Last (#134), so the columns older reports had keep their places.
+    let student_at = head.len() + usize::from(levels);
     if levels {
         head.push(v.t("kernel.roster.report_severity"));
+    }
+    if students {
+        head.push(v.t("kernel.roster.report_student"));
     }
     if sheets {
         head.insert(0, v.t("kernel.roster.report_sheet"));
@@ -273,16 +296,23 @@ pub(super) async fn report(
         let reason = reason(&v, p);
         let column = column(p);
         let level = v.t(p.severity.key());
+        let who = student(p);
         let mut fields = vec![row.as_str(), column.as_str(), reason.as_str()];
         if levels {
             fields.push(level.as_str());
+        }
+        if students {
+            fields.push(who.as_str());
         }
         if sheets {
             fields.insert(0, &p.sheet);
         }
         lines.push(super::csv::line(&fields));
     }
-    for f in super::skipped::report_fields(&v, skipped, sheets) {
+    for mut f in super::skipped::report_fields(&v, skipped, sheets) {
+        if students {
+            f.resize(student_at + usize::from(sheets) + 1, String::new());
+        }
         lines.push(super::csv::line(
             &f.iter().map(String::as_str).collect::<Vec<_>>(),
         ));

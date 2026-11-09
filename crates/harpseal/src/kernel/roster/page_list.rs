@@ -45,7 +45,7 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
 /// The modes the form offers: the allowed ones, `upsert` first (#120: a
 /// full replace is a deliberate choice), the Deployment's default
 /// preselected.
-fn upload_form(v: &View<'_>) -> Markup {
+pub(super) fn upload_form(v: &View<'_>) -> Markup {
     let roster = &v.s.config.roster;
     let offered = ["upsert", "full"]
         .into_iter()
@@ -107,7 +107,8 @@ fn list(v: &View<'_>, imports: &[Import]) -> Markup {
     }
 }
 
-/// The header row of a file this Deployment accepts.
+/// The header row of a file this Deployment accepts, and one fictional
+/// example row.
 pub(super) async fn template(State(s): State<AppState>, staff: CurrentStaff) -> Response {
     let v = View::new(&s, &staff);
     if !super::has_mapping(&s.config.roster) {
@@ -115,7 +116,15 @@ pub(super) async fn template(State(s): State<AppState>, staff: CurrentStaff) -> 
     }
     let headers = expected_headers(&s.config.roster);
     let refs: Vec<&str> = headers.iter().map(String::as_str).collect();
-    let body = csv_body([super::csv::line(&refs)]);
+    // One fictional example row under the headers (#134), from the help
+    // panel's examples in template order. An upload that still holds it
+    // is refused (`intake::refuse_example`).
+    let example: Vec<String> = super::page_help::columns(&v, &s.config.roster)
+        .into_iter()
+        .map(|c| c.example)
+        .collect();
+    let example: Vec<&str> = example.iter().map(String::as_str).collect();
+    let body = csv_body([super::csv::line(&refs), super::csv::line(&example)]);
     download(
         "text/csv; charset=utf-8",
         "roster-template.csv",

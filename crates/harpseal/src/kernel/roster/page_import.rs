@@ -15,7 +15,7 @@ use maud::{Markup, html};
 use super::page_problems as problems;
 use super::reach;
 use super::service::{self, Outcome};
-use super::store::{self, Counts, Import, Tally};
+use super::store::{self, Counts, Import};
 use super::view::{BASE, IMPORT, View, download, is_fragment};
 use crate::audit::{self, Actor, RequestCtx, Target};
 use crate::{AppState, CurrentStaff};
@@ -77,7 +77,7 @@ fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
             }
         }
         @match imp.state.as_str() {
-            "previewed" => (preview(v, imp, wrong)),
+            "previewed" => (super::page_preview::preview(v, imp, wrong)),
             "failed" => (failed(v, imp)),
             _ => { (progress(v, imp)) (problems::warnings_card(v, imp)) }
         }
@@ -94,63 +94,6 @@ fn full(v: &View<'_>, imp: &Import, wrong: bool) -> Response {
         }))
     };
     v.page(StatusCode::OK, &title, body)
-}
-
-fn tally_rows(v: &View<'_>, t: &Tally) -> Markup {
-    html! {
-        dt { (v.t("kernel.roster.new")) } dd { (crate::ui::number(t.new)) }
-        dt { (v.t("kernel.roster.updated")) } dd { (crate::ui::number(t.updated)) }
-        dt { (v.t("kernel.roster.unchanged")) } dd { (crate::ui::number(t.unchanged)) }
-        dt { (v.t("kernel.roster.returning")) } dd { (crate::ui::number(t.returning)) }
-        dt { (v.t("kernel.roster.skipped_by_override")) } dd { (crate::ui::number(t.skipped_by_override)) }
-    }
-}
-
-fn preview(v: &View<'_>, imp: &Import, wrong: bool) -> Markup {
-    let p = &imp.counts.preview;
-    let full = imp.mode == "full";
-    // One alert (#129): a mode no longer allowed blocks the import, so it
-    // is the one announced, not the leave warning.
-    let allowed = v.s.config.roster.allows_mode(&imp.mode);
-    html! {
-        @if p.warning { div class="warn" role=[v.alert().filter(|_| allowed)] { (v.t("kernel.roster.warning")) } }
-        (super::skipped::card(v, &imp.counts.skipped))
-        (problems::warnings_card(v, imp))
-        div class="card" {
-            dl class="facts counts" {
-                dt { (v.t("kernel.roster.total")) } dd { (crate::ui::number(imp.total_rows)) }
-                (tally_rows(v, &p.tally))
-                @if full {
-                    dt { (v.t("kernel.roster.will_become_left")) }
-                    dd data-count="will_become_left" { (crate::ui::number(p.will_become_left)) }
-                    dt { (v.t("kernel.roster.kept_by_status")) }
-                    dd data-count="kept_by_status" { (crate::ui::number(p.kept_by_status)) }
-                }
-                dt { (v.t("kernel.roster.active_before")) } dd { (crate::ui::number(p.active_before)) }
-            }
-            @if !p.left_names.is_empty() {
-                h2 { (v.t("kernel.roster.left_names")) }
-                ul class="names" { @for n in &p.left_names { li { (n) } } }
-                @if p.left_more > 0 { p class="muted" { (v.t("kernel.roster.more")) " +" (p.left_more) } }
-            }
-        }
-        @if v.staff.can(IMPORT) {
-            @if v.s.config.roster.allows_mode(&imp.mode) {
-                (reach::typed_field(v, imp, wrong))
-            }
-            div class="actions" {
-                @if v.s.config.roster.allows_mode(&imp.mode) {
-                    (reach::confirm_form(v, imp))
-                } @else {
-                    div class="warn" role=[v.alert()] { (v.t("kernel.roster.mode_no_longer")) }
-                }
-                form method="post" action=(format!("{BASE}/{}/cancel", imp.id)) {
-                    (v.staff.csrf_field())
-                    button class="secondary" type="submit" { (v.t("kernel.roster.cancel")) }
-                }
-            }
-        }
-    }
 }
 
 /// The part HTMX refreshes: progress while `queued` / `running` (and it
@@ -199,6 +142,10 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
     let f = imp.failure.clone().unwrap_or_default();
     if f.job.is_some() {
         return html! { (progress(v, imp)) (problems::warnings_card(v, imp)) };
+    }
+    // A header error (#134): found beside expected, and a new upload.
+    if super::page_headers::applies(&f) {
+        return super::page_headers::page(v, imp, &f);
     }
     html! {
         // The live region only without a flash (#129): after the upload the

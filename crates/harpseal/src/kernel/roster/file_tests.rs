@@ -61,10 +61,16 @@ fn headers_must_match_exactly() {
             let HeaderMismatch {
                 missing,
                 unexpected,
+                found,
                 ..
             } = &sheets[0];
             assert_eq!(*missing, vec!["ชื่อ-สกุล".to_string()]);
             assert_eq!(*unexpected, vec!["ชื่อ".to_string(), "หมายเหตุ".into()]);
+            // The row as found, in file order, for the page (#134).
+            assert_eq!(found.len(), 9);
+            assert_eq!(found[1], "ชื่อ");
+            let e = FileError::Headers(sheets.clone());
+            assert_eq!(e.found_headers()[0].found, *found);
         }
         other => panic!("{other:?}"),
     }

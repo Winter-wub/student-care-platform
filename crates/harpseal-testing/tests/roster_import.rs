@@ -222,7 +222,14 @@ async fn the_template_has_the_configured_headers_with_a_bom() {
     let r = b.get("/admin/roster/template.csv").await;
     assert_eq!(r.status, 200);
     assert_eq!(r.header("content-type"), Some("text/csv; charset=utf-8"));
-    assert_eq!(r.body, format!("\u{feff}{HEADERS}\r\n"));
+    // The headers, then one fictional example row (#134).
+    assert_eq!(
+        r.body,
+        format!(
+            "\u{feff}{HEADERS}\r\n68010001,นกน้อย ทะเลใส,noknoi@student.example,th,\
+             \"ชมรมดนตรี;ทุนเรียนดี\",MSC,1,2.50\r\n"
+        )
+    );
 }
 
 #[tokio::test]

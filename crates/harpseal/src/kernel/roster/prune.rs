@@ -2,7 +2,8 @@
 //! takes up to [`PER_TICK`] imports past `counts.keep_file_until` that
 //! still have a file and are not `queued` / `running` (a `previewed` one
 //! that old was abandoned; confirming it now fails its Job),
-//! deletes the original and its parsed rows (`rows.rs`) from the
+//! deletes the original, its parsed rows (`rows.rs`) and its list of
+//! changes (`diff.rs`, #134) from the
 //! FileStore, then, in one batch, writes the audit row `roster.file.prune`
 //! (actor `system`) and clears `file_key` to `''` (the column is
 //! `NOT NULL`; a backup skips empty keys). The objects go first: a failed
@@ -53,8 +54,10 @@ pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<Pruned> {
 /// Deletes one import's objects, then audits and clears `file_key`.
 async fn prune_one(s: &Services, id: &str, key: &str, name: &str) -> Result<u64> {
     let rows_key = super::rows::key(id);
+    let diff_key = super::diff::key(id);
     s.files.delete(key).await?;
     s.files.delete(&rows_key).await?;
+    s.files.delete(&diff_key).await?;
     let cond = Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND file_key = ?)")
         .bind(id)
         .bind(key);
@@ -65,7 +68,9 @@ async fn prune_one(s: &Services, id: &str, key: &str, name: &str) -> Result<u64>
         "roster.file.prune",
         Some(&Target::new("roster_import", id)),
         Some(json!({ "file_name": name, "stored": true })),
-        Some(json!({ "stored": false, "keys": [key, rows_key], "reason": "kept for one year" })),
+        Some(
+            json!({ "stored": false, "keys": [key, rows_key, diff_key], "reason": "kept for one year" }),
+        ),
         &RequestCtx::default(),
         cond,
     )?;

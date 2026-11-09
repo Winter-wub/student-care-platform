@@ -64,6 +64,35 @@ pub(crate) struct HeaderMismatch {
     /// `only_footer` (the footer rule would skip every row under the
     /// header).
     pub(crate) whole: Option<&'static str>,
+    /// The headers found on that row (the closest row to one), in file
+    /// order (#134); empty for `only_footer`.
+    pub(crate) found: Vec<String>,
+}
+
+/// The header row of one sheet of a refused file (#134), stored with the
+/// failure so the page can set it beside the headers expected.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct FoundHeaders {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) sheet: String,
+    pub(crate) found: Vec<String>,
+}
+
+impl FileError {
+    /// The header rows found in the sheets whose headers differ.
+    pub(crate) fn found_headers(&self) -> Vec<FoundHeaders> {
+        let FileError::Headers(sheets) = self else {
+            return Vec::new();
+        };
+        sheets
+            .iter()
+            .filter(|m| !m.found.is_empty())
+            .map(|m| FoundHeaders {
+                sheet: m.sheet.clone(),
+                found: m.found.clone(),
+            })
+            .collect()
+    }
 }
 
 /// A row or sheet the import left out, shown on the preview and in the
@@ -171,6 +200,7 @@ pub(crate) fn read(
                         missing: Vec::new(),
                         unexpected,
                         whole: None,
+                        found: table.headers().to_vec(),
                     });
                     continue;
                 }
@@ -193,6 +223,7 @@ pub(crate) fn read(
                 missing: Vec::new(),
                 unexpected: Vec::new(),
                 whole: Some("only_footer"),
+                found: Vec::new(),
             }),
         }
     }
@@ -231,6 +262,9 @@ fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
             unexpected(&e.headers, expected)
         },
         missing: if no_header { Vec::new() } else { e.missing },
+        // The closest row as found, also when it holds none of the
+        // columns: Staff see what the file starts with (#134).
+        found: e.headers.into_iter().filter(|h| !h.is_empty()).collect(),
         sheet: e.sheet,
         row: e.row,
         whole: no_header.then_some("no_header_row"),

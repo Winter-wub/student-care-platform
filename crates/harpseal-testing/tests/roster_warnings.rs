@@ -11,8 +11,9 @@ use roster_support::*;
 
 const OK: &str = "s@student.sealbay.example";
 
-/// One row per class: 2 has no email, 3 a malformed one, 4 an empty
-/// optional gpa, 5 and 6 share an email; 7 is complete.
+/// One row per class: 2 has no email, 3 a malformed one, 5 and 6 share an
+/// email; 4 leaves its optional gpa empty, which is fine (#134); 7 is
+/// complete.
 fn warned_file() -> Vec<u8> {
     csv_lines(&[
         "68000002,ปลา,,,,MSC,1,3.0",
@@ -43,26 +44,35 @@ async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
     let b = signed_in(&h, &app, "Officer").await;
     let id = previewed(&b, "w.csv", &warned_file(), "full", false).await;
     let w = &counts(&h, &id).await["warnings"];
-    assert_eq!(w["total"], 5);
+    assert_eq!(w["total"], 4);
     assert_eq!(w["classes"]["missing_email"], 1);
     assert_eq!(w["classes"]["invalid_email"], 1);
-    assert_eq!(w["classes"]["empty_attribute"], 1);
+    assert!(
+        w["classes"]["empty_attribute"].is_null(),
+        "a blank gpa is fine"
+    );
     assert_eq!(w["classes"]["duplicate_email"], 2, "both rows are named");
 
     let page = b.get(&format!("/admin/roster/{id}")).await;
     assert!(page.body.contains("ยืนยันนำเข้า"), "it can be confirmed");
-    assert!(page.body.contains("data-warnings=\"5\""), "{}", page.body);
+    assert!(page.body.contains("data-warnings=\"4\""), "{}", page.body);
     for (class, n) in [
         ("missing_email", 1),
         ("invalid_email", 1),
         ("duplicate_email", 2),
-        ("empty_attribute", 1),
     ] {
         let tag = format!("data-class=\"{class}\" data-count=\"{n}\"");
         assert!(page.body.contains(&tag), "{tag}");
     }
-    assert_eq!(page.body.matches("data-severity=\"warning\"").count(), 5);
+    assert_eq!(page.body.matches("data-severity=\"warning\"").count(), 4);
     assert!(!page.body.contains("data-severity=\"blocking\""));
+    // Each warning names its Student (#134).
+    assert!(
+        page.body
+            .contains("<span class=\"code\">68000002</span> ปลา"),
+        "{}",
+        page.body
+    );
     // The warning says what it means for onboarding.
     assert!(page.body.contains("เริ่มเชื่อมบัญชีแชทไม่ได้"), "{}", page.body);
 
@@ -76,10 +86,10 @@ async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
     assert_eq!(int(&h, sql, &[]).await, 1);
     let sql = "SELECT count(*) FROM student WHERE student_code = '68000002' AND email IS NULL";
     assert_eq!(int(&h, sql, &[]).await, 1);
-    assert_eq!(counts(&h, &id).await["warnings"]["total"], 5, "kept after");
+    assert_eq!(counts(&h, &id).await["warnings"]["total"], 4, "kept after");
     let done = b.get(&format!("/admin/roster/{id}")).await;
     assert!(
-        done.body.contains("data-warnings=\"5\""),
+        done.body.contains("data-warnings=\"4\""),
         "still on the page"
     );
 }
@@ -92,26 +102,26 @@ async fn the_report_of_a_file_that_imports_lists_its_warnings() {
     let r = b.get(&format!("/admin/roster/{id}/report.csv")).await;
     assert_eq!(r.status, 200);
     assert!(
-        r.body.starts_with("\u{feff}แถว,คอลัมน์,ปัญหา,ระดับ\r\n"),
+        r.body.starts_with("\u{feff}แถว,คอลัมน์,ปัญหา,ระดับ,นักศึกษา\r\n"),
         "{}",
         r.body
     );
-    let line = |row: usize, col: &str, text: &str| {
+    // The level, then the Student (#134), last.
+    let line = |row: usize, col: &str, text: &str, who: &str| {
         let l = r
             .body
             .lines()
             .find(|l| l.starts_with(&format!("{row},{col},")));
         assert!(
-            l.is_some_and(|l| l.contains(text) && l.ends_with(",เตือน")),
+            l.is_some_and(|l| l.contains(text) && l.ends_with(&format!(",เตือน,{who}"))),
             "{row} {text}"
         );
     };
-    line(2, "อีเมล", "ไม่มีอีเมล");
-    line(3, "อีเมล", "รูปแบบอีเมลไม่ถูกต้อง");
-    line(4, "เกรดเฉลี่ย", "ช่องนี้ว่าง");
-    line(5, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น");
-    line(6, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น");
-    assert_eq!(r.body.lines().count(), 6, "{}", r.body);
+    line(2, "อีเมล", "ไม่มีอีเมล", "68000002 ปลา");
+    line(3, "อีเมล", "รูปแบบอีเมลไม่ถูกต้อง", "68000003 กุ้ง");
+    line(5, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000005 ปู");
+    line(6, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000006 ม้า");
+    assert_eq!(r.body.lines().count(), 5, "{}", r.body);
 }
 
 #[tokio::test]
@@ -177,11 +187,11 @@ async fn a_deployment_can_make_a_warning_class_blocking() {
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     let lines: Vec<&str> = report.lines().collect();
     assert!(
-        lines[1].starts_with("3,อีเมล,") && lines[1].ends_with(",ต้องแก้"),
+        lines[1].starts_with("3,อีเมล,") && lines[1].ends_with(",ต้องแก้,68000003 กุ้ง"),
         "{report}"
     );
-    assert!(lines[2..].iter().all(|l| l.ends_with(",เตือน")), "{report}");
-    assert_eq!(lines.len(), 6, "{report}");
+    assert!(lines[2..].iter().all(|l| l.contains(",เตือน,")), "{report}");
+    assert_eq!(lines.len(), 5, "{report}");
 }
 
 #[tokio::test]
@@ -193,7 +203,8 @@ async fn a_class_that_is_not_made_blocking_still_only_warns() {
         "68000003,กุ้ง,nok@sealbay,,,MSC,1,3.0",
     ]);
     let id = previewed(&b, "w.csv", &file, "full", false).await;
-    assert_eq!(counts(&h, &id).await["warnings"]["total"], 3);
+    // A missing and a malformed email; the blank gpa is fine (#134).
+    assert_eq!(counts(&h, &id).await["warnings"]["total"], 2);
 }
 
 #[tokio::test]
@@ -209,12 +220,13 @@ async fn blocking_problems_are_reported_with_the_warnings_and_refuse_the_file() 
     let id = import_id(&r);
     assert_eq!(import_text(&h, &id, "state").await, "failed");
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
+    // A blocking problem names no Student; the warnings do (#134).
     assert!(
-        report.contains("3,รหัสนักศึกษา,รหัสนักศึกษาซ้ำกับแถวก่อนหน้า,ต้องแก้"),
+        report.contains("3,รหัสนักศึกษา,รหัสนักศึกษาซ้ำกับแถวก่อนหน้า,ต้องแก้,\r\n"),
         "{report}"
     );
     assert!(
-        report.contains("4,รหัสนักศึกษา,รหัสนักศึกษาไม่ตรงรูปแบบ,ต้องแก้"),
+        report.contains("4,รหัสนักศึกษา,รหัสนักศึกษาไม่ตรงรูปแบบ,ต้องแก้,\r\n"),
         "{report}"
     );
     assert!(report.contains("2,อีเมล,ไม่มีอีเมล"), "{report}");
@@ -236,11 +248,14 @@ async fn a_refused_file_shows_its_warnings_apart_from_the_blocking_problems() {
         "one blocking: {page}"
     );
     assert!(
-        page.contains("id=\"roster-warnings\" data-warnings=\"2\""),
+        page.contains("id=\"roster-warnings\" data-warnings=\"1\""),
         "{page}"
     );
     let c = counts(&h, &id).await;
-    assert_eq!(c["warnings"]["total"], 2, "a missing email and a blank gpa");
+    assert_eq!(
+        c["warnings"]["total"], 1,
+        "a missing email; a blank gpa is fine (#134)"
+    );
 }
 
 #[tokio::test]
@@ -253,27 +268,35 @@ async fn a_failed_job_still_shows_the_warnings_of_the_import() {
     ))
     .await;
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
-    assert!(page.contains("data-warnings=\"5\""), "{page}");
+    assert!(page.contains("data-warnings=\"4\""), "{page}");
 }
 
 #[tokio::test]
-async fn blank_optional_cells_make_one_warning_per_column() {
-    let (h, app) = boot().await;
-    let b = signed_in(&h, &app, "Officer").await;
+async fn blank_optional_cells_raise_nothing_unless_the_deployment_blocks_them() {
     let lines: Vec<String> = (1..=8)
         .map(|n| format!("6800000{n},นก{n},n{n}@student.sealbay.example,,,MSC,1,"))
         .collect();
     let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
-    let id = previewed(&b, "b.csv", &csv_lines(&refs), "full", false).await;
-    let c = counts(&h, &id).await;
-    assert_eq!(c["warnings"]["total"], 8, "cells");
-    assert_eq!(c["warnings"]["problems"].as_array().unwrap().len(), 1);
+    let file = csv_lines(&refs);
+    // By default a blank optional column is fine (#134).
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "b.csv", &file, "full", false).await;
+    assert_eq!(total(&counts(&h, &id).await), 0);
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    assert!(!page.contains("id=\"roster-warnings\""), "{page}");
+    // `[roster] blocking = ["empty_attribute"]` refuses it: one problem per
+    // column, with the count and the first rows.
+    let (h, app) = boot_blocking("[\"empty_attribute\"]").await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = import_id(&upload(&b, "b.csv", &file, "full").await);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(
         page.contains("data-class=\"empty_attribute\" data-count=\"8\""),
         "{page}"
     );
-    assert_eq!(page.matches("data-severity=\"warning\"").count(), 1);
+    assert_eq!(page.matches("data-severity=\"blocking\"").count(), 1);
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     assert!(report.contains("2,เกรดเฉลี่ย,"), "{report}");
     assert!(report.contains("8 แถว เช่นแถว 2, 3, 4, 5, 6, …"), "{report}");

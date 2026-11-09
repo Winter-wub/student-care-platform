@@ -56,6 +56,12 @@ pub(crate) struct Problem {
     /// The first rows of such a problem.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) rows: Vec<usize>,
+    /// The Student a problem of a warning class is about (#134): student
+    /// code and name as the row holds them; empty for other problems.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) student: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) name: String,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -73,7 +79,16 @@ impl Problem {
             severity: Severity::Blocking,
             count: 0,
             rows: Vec::new(),
+            student: String::new(),
+            name: String::new(),
         }
+    }
+
+    /// The same problem, naming the Student by `code` and `name`.
+    pub(crate) fn about(mut self, code: &str, name: &str) -> Self {
+        self.student = code.into();
+        self.name = name.into();
+        self
     }
 
     /// How many cells it counts as in a total: [`Problem::count`], else 1.
@@ -249,7 +264,10 @@ pub(crate) fn validate_against(
                     attributes.insert(key.to_string(), v);
                 }
                 Ok(None) if row.unreadable().any(|(h, _, _)| h == spec.column) => {}
-                Ok(None) => blanks.add(sheet, &spec.column, n),
+                // A blank optional cell is fine (#134); a Deployment that
+                // lists `empty_attribute` in `[roster] blocking` refuses it.
+                Ok(None) if roster.blocks("empty_attribute") => blanks.add(sheet, &spec.column, n),
+                Ok(None) => {}
                 Err(e) => sink.bad(row, &spec.column, attr_reason(e)),
             }
         }
@@ -269,7 +287,10 @@ pub(crate) fn validate_against(
     let blocks = |class: &str| roster.blocks(class);
     // Latest row first, so an insert does not move the places still to come.
     for (index, row, sheet) in emails.shared(taken, &codes).into_iter().rev() {
-        let p = Problem::new(row, &roster.email, "duplicate_email").on(sheet);
+        let r = &records[index];
+        let p = Problem::new(row, &roster.email, "duplicate_email")
+            .on(sheet)
+            .about(&r.code, &r.fields.display_name);
         sink.list
             .insert(ends[index], p.with_severity(blocks("duplicate_email")));
     }
@@ -301,10 +322,16 @@ impl<'a> Sink<'a> {
         self.push(p);
     }
 
-    /// A problem of a warning `class`: blocking only if the Deployment says so.
+    /// A problem of a warning `class`: blocking only if the Deployment
+    /// says so. It names its Student (#134).
     fn class(&mut self, row: &Row, column: &str, class: &str) {
         let p = Problem::new(row.number(), column, class).on(row.sheet());
         let blocks = self.roster.blocks(class);
+        let get = |c: &str| row.get(c).unwrap_or_default();
+        let p = p.about(
+            get(&self.roster.student_code),
+            get(&self.roster.display_name),
+        );
         self.push(p.with_severity(blocks));
     }
 

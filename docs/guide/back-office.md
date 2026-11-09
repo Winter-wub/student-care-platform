@@ -114,14 +114,19 @@ before, and any other key is refused.
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page
-lists them and offers `template.csv`), choose `full` (Students missing from the
+lists them and offers `template.csv`: the headers and one fictional example row,
+#134; a file that still holds that row, its code, name and email together, is
+refused naming the row), choose `full` (Students missing from the
 file become left and lose their Links) or `upsert` (add and update only;
 nobody becomes left). The form lists `upsert` first and preselects `[roster] default_mode`
 (default `upsert`, #120), and a request that sends no mode uses it too. A
 `full` preview's confirm button names how many Students will become left
 ("ยืนยัน: N คนจะพ้นสภาพ") in the danger style; when the preview also shows the
 red warning, Staff must type that number or the word "ยืนยัน" first, and a
-confirm without it is refused and changes nothing. That number is from the
+confirm without it is refused and changes nothing. The warning gives the numbers
+("48 จาก 50 คน (96%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท 40 บัญชี", or, for a
+file shorter than the roster, its rows against the active Students), and the
+typed field names it and the leaving figure with `aria-describedby` (#134). That number is from the
 preview (upload time); the left phase runs when the import's Job does, so a
 Student added or edited by hand in between can move the actual count. A Deployment whose files
 never list every Student (one file per cohort) sets `modes = ["upsert"]` and
@@ -130,7 +135,11 @@ asking for `full` is refused with 400 and imports nothing (`modes` must not be
 empty, hold only `full` / `upsert` and include `default_mode`; without a
 `default_mode`, the form preselects `upsert` when listed, else the only mode; a bad value stops
 the Deployment from building). The preview and the import page name the mode.
-A **blocking** problem refuses the
+A file refused for its header row states it once and sets the columns found in
+the file (each marked as matching, or unknown or repeated) beside the columns
+expected (those every row must fill apart from those that may be empty, each
+marked as present or missing), with the template and an upload form on the same
+page (#134). A **blocking** problem refuses the
 whole file with a CSV report: an empty or malformed student id, a duplicate id in
 the file, a required value missing or off its type, list or range, an unreadable value,
 data in a column without a header, a hidden roster sheet in `full` mode. A
@@ -142,7 +151,11 @@ so Staff can fix it on the Student's page), `duplicate_email` (the address is us
 another Student in the file, or by one who keeps it after the import: not left, not
 a `full` import's leavers, not given another address by the file; a row whose email
 Staff set by hand is not compared) and `empty_attribute` (an optional attribute with
-no value: one warning per column and sheet, with the count and the first rows). A
+no value). Each warning names its Student (code and name) on the page and in a
+last `report.csv` column, `นักศึกษา` (#134). **Since #134 a blank optional cell
+raises no warning by default**: an optional column may be left empty. A
+Deployment that lists `empty_attribute` in `[roster] blocking` still refuses the
+file, one problem per column and sheet with the count and the first rows. A
 Deployment makes classes blocking with `[roster] blocking = ["invalid_email",
 "duplicate_email"]` (only these four names are accepted; anything else stops the
 Deployment from building). A file with only warnings imports after Confirm, and
@@ -177,14 +190,23 @@ unreadable (type long ids as text). An Excel error cell
 and cell of each problem; a student id repeated in two sheets is a
 duplicate.
 Emails must be ASCII (letters, digits and symbols; an address with Thai
-characters is an `invalid_email`). A preview shows new / updated / unchanged /
-returning / fields kept by manual edits and, for `full`, will become left /
-kept active because Staff set the status; Confirm runs the Job
+characters is an `invalid_email`). A preview leads with what changes (#134):
+new, updated and will become left as three large figures (leaving in the refused
+colour when anyone leaves, with the chat Links it cuts), then unchanged /
+returning / fields kept by manual edits / kept active because Staff set the
+status / rows / active before on one line. Under them, collapsed, who changes:
+student code, name and each changed field as old → new, labelled with the
+`[roster]` labels (an enum value with its label); and the leaving list: code,
+name and the live Links each loses. Both are computed once at upload and kept
+with the import (the first 100 changes and 200 leavers); the whole list is
+stored as `roster-diff/<import id>.jsonl` and downloaded as `changes.csv`
+(`kernel.roster.view`, audit `roster.changes.download`). Confirm runs the Job
 `kernel.roster.import` in 500-row chunks (the page polls its progress), and the
 done page shows each preview number next to what was imported. One import at a
 time; the file stays in the FileStore under `roster/<import id>/` (its parsed
-rows under `roster-rows/<import id>.jsonl`) for one year, then the per-minute
-tick deletes both (audit `roster.file.prune`); the import's page and report
+rows under `roster-rows/<import id>.jsonl`, its changes under
+`roster-diff/<import id>.jsonl`) for one year, then the per-minute tick deletes
+them (audit `roster.file.prune`); the import's page, report and capped lists
 stay.
 Try it with `deployments/example/data/roster.csv` (or `.xlsx`).
 

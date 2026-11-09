@@ -49,13 +49,15 @@ pub use thai::{
 /// `ui.css`, then the back-office shell's `ui_shell.css` (#123), the
 /// help panels, empty states and checklist of `ui_onboard.css` (#127),
 /// the focus, target, chip and motion rules of `ui_access.css` (#129),
-/// and the states, rhythm and wrapping of `ui_states.css` (#131).
+/// the states, rhythm and wrapping of `ui_states.css` (#131), and the
+/// roster preview's figures and lists of `ui_roster.css` (#134).
 pub const CSS: &str = concat!(
     include_str!("ui.css"),
     include_str!("ui_shell.css"),
     include_str!("ui_onboard.css"),
     include_str!("ui_access.css"),
-    include_str!("ui_states.css")
+    include_str!("ui_states.css"),
+    include_str!("ui_roster.css")
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
