@@ -150,7 +150,11 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     let post = format!("key={key}&ids=68010003%0A68010002%0A68019999");
     let r = b.post("/admin/reminders", &post).await;
     assert_eq!(r.status, 200, "{}", r.body);
-    for seen in ["68010003: chat", "68010002: email", "68019999: skipped"] {
+    for seen in [
+        "68010003</span>: ส่งทางแชทแล้ว",
+        "68010002</span>: ส่งทางอีเมลแล้ว",
+        "68019999</span>: ข้าม",
+    ] {
         assert!(r.body.contains(seen), "{seen}: {}", r.body);
     }
     assert_eq!(chats(&h, "s3"), 1);

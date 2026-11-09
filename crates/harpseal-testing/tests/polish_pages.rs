@@ -110,7 +110,7 @@ async fn main_forms_carry_the_busy_state() {
     ] {
         let page = admin.get(path).await.body;
         assert_eq!(
-            page.matches("setTimeout(function(){hold(f,by)").count(),
+            page.matches("addEventListener('pageshow'").count(),
             1,
             "{path}"
         );
@@ -151,4 +151,47 @@ async fn main_forms_carry_the_busy_state() {
     // The Mini App gets no busy script: it is not a back-office page.
     let notice = app.get("/notice").await.body;
     assert!(!notice.contains("aria-busy"), "{notice}");
+}
+
+#[tokio::test]
+async fn the_pressed_named_button_is_never_held_back() {
+    // The branding form has three named submit buttons (op=preview, save,
+    // reset): the busy script must leave the pressed one in the post, so
+    // it never sets `disabled` (checked in a real browser for the PR:
+    // "ดูตัวอย่าง" still answers the preview).
+    let h = Harness::new();
+    let app = boot_with(&h, true, false).await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let page = admin.get("/admin/branding").await.body;
+    for op in ["preview", "save"] {
+        let button = format!("type=\"submit\" name=\"op\" value=\"{op}\"");
+        assert!(page.contains(&button), "{op}: {page}");
+    }
+    let script = &page[page.rfind("<script>").unwrap()..];
+    assert!(!script.contains(".disabled") && !script.contains("disabled=true"));
+    assert!(!script.contains("setTimeout"), "no timed release");
+}
+
+#[tokio::test]
+async fn a_dev_only_channels_quota_shows_only_in_dev_mode() {
+    // The banner and the home's quota card read the Channels Staff are
+    // shown; the watcher still reads every one.
+    for dev in [true, false] {
+        let h = Harness::new();
+        let src = format!("{CONFIG}\n[quotas.fake]\nmetered_per_month = 300\n");
+        let config = DeploymentConfig::from_toml(&src).unwrap();
+        let app = h
+            .boot(h.builder().dev(dev).config(config).build().unwrap())
+            .await;
+        h.db()
+            .execute(Statement::new(
+                "INSERT INTO usage_daily (channel, day, metered) VALUES ('fake', '2026-11-05', 280)",
+            ))
+            .await
+            .unwrap();
+        let (admin, _) = signed_in(&h, &app, "Administrator").await;
+        let home = admin.get("/admin").await.body;
+        assert_eq!(home.contains("usage-line"), dev, "dev {dev}: {home}");
+        assert_eq!(home.contains("280"), dev, "dev {dev}: the quota card");
+    }
 }

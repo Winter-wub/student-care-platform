@@ -16,7 +16,7 @@ button.done:hover, button.done:active { border-color: var(--ok-ink); }
 button.link:hover, a:hover { text-decoration-thickness: 2px; }
 :is(button, .btn):not(.link):active { translate: 0 1px; }
 .chips a.chip:hover { background: var(--line); }
-.chips a.chip:active { background: var(--field-edge); color: var(--on-fill); }
+.chips a.chip:active { background: var(--chip-ink); color: var(--on-fill); }
 .menu > summary:hover, .tech > summary:hover { background: var(--bg); }
 .tech > summary:hover { color: var(--ink); border-radius: var(--radius); }
 :is(input, select, textarea):not(:disabled, [aria-invalid="true"]):hover { border-color: var(--muted); }
@@ -28,11 +28,11 @@ button.link:hover, a:hover { text-decoration-thickness: 2px; }
 :is(input, select, textarea):disabled {
   background: var(--bg); color: var(--muted); border-color: var(--line); cursor: not-allowed;
 }
-/* Busy: a form that is posting (`aria-busy`, set by `ui::BUSY_JS`) holds
-   its submit buttons disabled and rings the one pressed (`data-busy`); an
-   HTMX request rings its own submit button and marks its target busy. */
-form[aria-busy="true"], [aria-busy="true"] { cursor: progress; }
-form[aria-busy="true"] :is(button, .btn):disabled { cursor: progress; }
+/* Busy: a form that is posting (`aria-busy`, set by `ui::busy`) marks
+   its submit buttons `aria-disabled` (drawn as disabled; a repeat is
+   cancelled, nothing is `disabled`) and rings the one pressed
+   (`data-busy`); an HTMX form also rings through `htmx-request`. */
+form[aria-busy="true"], form[aria-busy="true"] :is(button, .btn)[aria-disabled="true"] { cursor: progress; }
 :is(button, .btn)[data-busy]::after,
 form.htmx-request button[type="submit"]::after,
 button.htmx-request::after {
@@ -51,9 +51,9 @@ button.htmx-request::after {
    gets more room above it (24) than below (12); buttons in a row never
    touch: an action row is `.actions` (12 apart), and two buttons side by
    side anywhere else keep the same 12. */
-.field { margin-bottom: var(--gutter); }
-label { margin-bottom: var(--space-sm); }
-label.check, label.choice { margin-bottom: 0; }
+.office .field { margin-bottom: var(--gutter); }
+.office label { margin-bottom: var(--space-sm); }
+.office :is(label.check, label.choice) { margin-bottom: 0; }
 :where(.office main) :where(table, .table-scroll, .card, .list, ul, ol, form, p, dl, div, details, section) + h2 {
   margin-top: var(--space-lg);
 }
@@ -79,15 +79,15 @@ form.inline label { margin: 0; white-space: nowrap; }
 form.inline input:not([type="checkbox"], [type="radio"]) { flex: 1 1 10rem; width: auto; min-width: 0; }
 form.inline :is(button, .btn) { white-space: nowrap; }
 .list .name, a.name { overflow-wrap: break-word; }
-/* A stacked row (phones): the caption in its own column and every part
-   of the value under each other in the other, so a name, its chip and a
-   note never squeeze each other into single letters. */
+/* A stacked row (phones): the caption floats in its own 8rem column,
+   beside every part of the value however many there are, and the value
+   flows as text in the rest, so a name, its chip and a note wrap
+   instead of squeezing each other into single letters; the Link icons
+   stay one row that wraps. */
 @container (max-width: 859.98px) {
-  table.rows td { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0 var(--space-md);
-    justify-items: start; align-items: baseline; }
-  table.rows td::before { grid-row: 1 / span 9; }
-  table.rows td > * { grid-column: 2; min-width: 0; max-width: 100%; }
-  table.rows td > * + * { margin-top: var(--space-xs); }
+  table.rows td { display: flow-root; padding-left: calc(8rem + var(--space-md)); }
+  table.rows td::before { float: left; width: 8rem; margin-left: calc(-8rem - var(--space-md)); }
+  table.rows td .li { margin-right: var(--space-md); }
 }
 /* A table (wider): numbers right-aligned in tabular figures. */
 @container (min-width: 860px) {

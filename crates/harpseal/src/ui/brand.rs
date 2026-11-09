@@ -100,22 +100,32 @@ fn darkened(c: [u8; 3], min: f64) -> [u8; 3] {
     INK
 }
 
-/// `c` mixed 15 % toward `to`.
-fn mixed(c: [u8; 3], to: [u8; 3]) -> [u8; 3] {
-    let m = |a: u8, b: u8| ((u16::from(a) * 85 + u16::from(b) * 15 + 50) / 100) as u8;
+/// `c` mixed `pct` % toward `to`.
+fn mixed(c: [u8; 3], to: [u8; 3], pct: u16) -> [u8; 3] {
+    let m = |a: u8, b: u8| ((u16::from(a) * (100 - pct) + u16::from(b) * pct + 50) / 100) as u8;
     [m(c[0], to[0]), m(c[1], to[1]), m(c[2], to[2])]
 }
 
-/// The press fill: `c` moved away from `ink`; at black or white, where
-/// that leaves it unchanged, toward the ink instead (still far above
-/// 4.5:1 there).
+/// The least contrast between the brand and its press fill, so a hover
+/// is seen even on a near-black or near-white brand.
+pub(crate) const PRESS_MIN: f64 = 1.15;
+
+/// The press fill: `c` moved away from `ink` (15 %, then in 5 % steps
+/// up to 60 %) until it differs from `c` by [`PRESS_MIN`] and keeps the
+/// ink at 4.5:1; at black or white, where moving away cannot, toward the
+/// ink instead under the same two rules.
 fn pressed(c: [u8; 3], ink: [u8; 3]) -> [u8; 3] {
-    let away = mixed(c, if ink == WHITE { BLACK } else { WHITE });
-    if away != c {
-        away
-    } else {
-        mixed(c, if ink == WHITE { WHITE } else { BLACK })
+    let away = if ink == WHITE { BLACK } else { WHITE };
+    let toward = if ink == WHITE { WHITE } else { BLACK };
+    for to in [away, toward] {
+        for pct in (15..=60).step_by(5) {
+            let d = mixed(c, to, pct);
+            if contrast(c, d) >= PRESS_MIN && contrast(ink, d) >= TEXT_MIN {
+                return d;
+            }
+        }
     }
+    mixed(c, away, 15)
 }
 
 /// The derived tokens of one brand colour, as `#rrggbb`.
@@ -244,7 +254,10 @@ mod tests {
 
     #[test]
     fn the_pressed_fill_keeps_the_ink_readable() {
-        for c in ["#0f5c7a", "#767676", "#ffd400", "#1e88e5", "#000000"] {
+        for c in [
+            "#0f5c7a", "#767676", "#ffd400", "#1e88e5", "#000000", "#050505", "#0a0a0a", "#ffffff",
+            "#fafafa", "#f0f0f0",
+        ] {
             let t = Tokens::of(c);
             let (ink, fill, press) = (
                 rgb(&t.brand_ink).unwrap(),
@@ -252,8 +265,8 @@ mod tests {
                 rgb(&t.brand_press).unwrap(),
             );
             assert_ne!(t.brand_press, t.brand, "{c}");
-            let keeps = contrast(ink, press) >= contrast(ink, fill);
-            assert!(keeps || contrast(ink, press) >= 15.0, "{c}");
+            assert!(contrast(ink, press) >= TEXT_MIN, "{c}");
+            assert!(contrast(fill, press) >= PRESS_MIN, "{c}: {}", t.brand_press);
         }
         assert_eq!(Tokens::of("#0f5c7a").brand_press, "#0d4e68");
     }

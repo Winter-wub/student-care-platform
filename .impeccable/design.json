@@ -95,7 +95,7 @@
         "role": "primary",
         "displayName": "Brand Press",
         "canonical": "#0d4e68",
-        "description": "Derived per Deployment (#131, ui::brand): the brand moved 15 % away from its ink. A primary button's hover and active fill; the ink only gains contrast."
+        "description": "Derived per Deployment (#131, ui::brand): the brand moved 15 % (up to 60 %) away from its ink until it differs by at least 1.15:1, toward the ink at black or white. A primary button's hover and active fill; the ink stays at 4.5:1."
       }
     },
     "typographyMeta": {
@@ -257,8 +257,8 @@
       "name": "Busy Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "A submit whose form is posting (#131): the form is aria-busy, its submit buttons are disabled, and the pressed one keeps its label and adds a drawn ring.",
-      "html": "<button class=\"ds-btn-busy\" disabled data-busy>ยืนยันนำเข้า</button>",
+      "description": "A submit whose form is posting (#131): the form is aria-busy, its submit buttons are aria-disabled (a repeat submit is cancelled, nothing is disabled, so the pressed button's value still goes), and the pressed one keeps its label and adds a drawn ring.",
+      "html": "<button class=\"ds-btn-busy\" aria-disabled=\"true\" data-busy>ยืนยันนำเข้า</button>",
       "css": ".ds-btn-busy{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:0 20px;font:inherit;font-weight:600;border-radius:10px;border:1px solid #dde3e9;background:#e8eef3;color:#5b6b7a;cursor:progress}.ds-btn-busy::after{content:\"\";width:1em;height:1em;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:ds-turn .8s linear infinite}@keyframes ds-turn{to{rotate:1turn}}@media (prefers-reduced-motion:reduce){.ds-btn-busy::after{animation:none;border-style:dotted;border-right-color:currentColor}}"
     }
   ],

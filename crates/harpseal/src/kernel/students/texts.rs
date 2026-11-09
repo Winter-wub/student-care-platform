@@ -270,6 +270,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Cannot link: no such account on that channel (it must have written to the bot), or the Student has left"
     ),
     (
+        "kernel.students.link_dev_only",
+        "ผูกไม่ได้: ช่องทางนี้มีไว้ทดสอบระบบเท่านั้น เลือกช่องทางอื่น",
+        "Cannot link: this channel is for testing only; choose another channel"
+    ),
+    (
         "kernel.students.link_conflict",
         "ผูกไม่ได้: นักศึกษามีบัญชีที่เชื่อมอยู่ในช่องทางนี้แล้ว หรือบัญชีนี้เชื่อมกับคนอื่นอยู่",
         "Cannot link: the Student already has a live Link on this channel, or the account is linked to someone else"

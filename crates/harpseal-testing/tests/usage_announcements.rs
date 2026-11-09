@@ -49,7 +49,10 @@ async fn the_estimate_shows_used_of_the_cap_with_a_quota() {
     let h = Harness::new().with_fake_profile(FakeProfile::LineLike);
     let src = format!("{CONFIG}\n[quotas.fake]\nmetered_per_month = 300\n");
     let config = DeploymentConfig::from_toml(&src).unwrap();
+    // Dev mode: the Fake Channel stands in for LINE here, and only dev
+    // mode shows a dev-only Channel's Quota (#131).
     let d = Deployment::builder()
+        .dev(true)
         .config(config.clone())
         .runtime(h.services())
         .channel(h.fake_channel())

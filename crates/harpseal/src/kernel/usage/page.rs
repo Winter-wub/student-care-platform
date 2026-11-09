@@ -39,12 +39,7 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
         }
     };
     // A dev-only Channel (the Fake) is not shown outside dev mode (#131).
-    let kinds: Vec<String> = s
-        .deployment
-        .staff_channel_kinds()
-        .iter()
-        .map(|k| k.as_str().to_string())
-        .collect();
+    let kinds = store::staff_kinds(&s.deployment);
     let caps = package::caps_with(&s.config, &cur);
     let this = quota::month(&rows, &kinds, &caps, &month);
     let title = t("kernel.usage.title");

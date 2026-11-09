@@ -141,6 +141,13 @@ pub(super) async fn manual_link(
     let v = View::new(&s, &staff);
     let f = map(form);
     let get = |k: &str| f.get(k).map(String::as_str).unwrap_or_default();
+    // A dev-only Channel (the Fake) takes no Manual Link outside dev mode
+    // (#131): the back office does not offer it, and a crafted post is
+    // refused here.
+    let channel = get("channel");
+    if s.deployment.channel(channel).is_some() && !s.deployment.staff_sees_channel(channel) {
+        return v.redirect(&back(&id), false, "kernel.students.link_dev_only");
+    }
     let actor = Actor::staff(&staff);
     let done = links::manual_link(
         &s.deployment,

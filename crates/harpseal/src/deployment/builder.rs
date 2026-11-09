@@ -50,8 +50,9 @@ impl DeploymentBuilder {
         self.verification = Some(Arc::new(v));
         self
     }
-    /// Dev mode (#131): the back office also shows the Channels that are
-    /// [`Channel::dev_only`] (the Fake Channel). Off by default; turn it on
+    /// Dev mode (#131): the back office also offers the Channels that are
+    /// [`Channel::dev_only`] (the Fake Channel): their empty Link rows,
+    /// Manual Link and usage. Display only; off by default; turn it on
     /// only for a local demo or tests, never in production.
     pub fn dev(mut self, on: bool) -> Self {
         self.dev = on;
