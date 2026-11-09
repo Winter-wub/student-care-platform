@@ -150,6 +150,16 @@ impl Deployment {
     pub(crate) fn channel_kinds(&self) -> Vec<crate::ChannelKind> {
         self.channels.iter().map(|c| c.kind()).collect()
     }
+
+    /// The kinds Staff see in the back office (#131): every Channel but a
+    /// [`crate::Channel::dev_only`] one, unless built in dev mode.
+    pub(crate) fn staff_channel_kinds(&self) -> Vec<crate::ChannelKind> {
+        self.channels
+            .iter()
+            .filter(|c| self.dev || !c.dev_only())
+            .map(|c| c.kind())
+            .collect()
+    }
 }
 
 async fn webhook(

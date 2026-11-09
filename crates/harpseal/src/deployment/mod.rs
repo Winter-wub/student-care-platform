@@ -39,6 +39,8 @@ pub struct Deployment {
     services: Services,
     queue: crate::jobs::Jobs,
     channels: Vec<Arc<dyn Channel>>,
+    /// Built with [`DeploymentBuilder::dev`]: Staff see dev-only Channels.
+    dev: bool,
     verification: Arc<dyn VerificationMethod>,
     catalog: Arc<Catalog>,
     registry: Arc<Registry>,

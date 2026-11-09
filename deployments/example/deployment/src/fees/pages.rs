@@ -63,14 +63,14 @@ pub(super) async fn preview(
     let (kept, p) = match open(&s, &staff, &uploads, &id).await {
         Ok(x) => x,
         // A Job that failed for good may have outlived its upload.
-        Err(_) if job_failed(&s, &id, &staff.id).await => {
+        Err(_) if job_failed(&s, &id, &staff.id, false).await => {
             let text = t(&s, &staff, "fees.failed");
             return notice(&s, &staff, StatusCode::CONFLICT, &text);
         }
         Err(r) => return *r,
     };
     let action = |what: &str| format!("{BASE}/{}/{what}", kept.id);
-    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id, &staff.id).await;
+    let failed = kept.confirmed_at.is_some() && job_failed(&s, &kept.id, &staff.id, true).await;
     let body = html! {
         h1 { (t(&s, &staff, "fees.preview")) }
         p class="muted" { (kept.file_name) " · " span id="row-count" { (p.fees.len()) } }
@@ -82,12 +82,26 @@ pub(super) async fn preview(
                 }
             } }
         }
-        table class="rows" id="fees" { tbody {
-            @for f in &p.fees {
-                tr { td { (f.sheet) } td { (f.row) } td class="code" { (f.code) }
-                     td { (f.name) } td { (baht(f.satang)) } }
+        // Captions on every cell, amounts right-aligned (#131).
+        @let (sheet, row) = (t(&s, &staff, "fees.col_sheet"), t(&s, &staff, "fees.col_row"));
+        @let sheets = p.fees.iter().any(|f| !f.sheet.is_empty());
+        table class="rows" id="fees" {
+            thead { tr {
+                @if sheets { th { (sheet) } }
+                th class="num" { (row) } th { (CODE) } th { (NAME) } th class="num" { (AMOUNT) }
+            } }
+            tbody {
+                @for f in &p.fees {
+                    tr {
+                        @if sheets { td data-label=(sheet) { (f.sheet) } }
+                        td class="num" data-label=(row) { (f.row) }
+                        td class="code" data-label=(CODE) { (f.code) }
+                        td data-label=(NAME) { (f.name) }
+                        td class="num" data-label=(AMOUNT) { (baht(f.satang)) }
+                    }
+                }
             }
-        } }
+        }
         @if !p.skipped.is_empty() || !p.hidden.is_empty() {
             h2 { (t(&s, &staff, "fees.skipped")) }
             ul id="skipped" {

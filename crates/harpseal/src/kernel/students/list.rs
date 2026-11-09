@@ -89,7 +89,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
             .into_iter()
             .filter(|(_, a)| a.shown_in_list)
             .collect();
-    let kinds = v.s.deployment.channel_kinds();
+    let kinds = v.s.deployment.staff_channel_kinds();
     let href = |p: i64| {
         let q = super::form::urlencode(query);
         let m = if missing { "&missing=1" } else { "" };

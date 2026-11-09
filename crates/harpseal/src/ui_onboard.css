@@ -31,13 +31,13 @@
 .tick.done { background: var(--ok-ink); border-color: var(--ok-ink); }
 .tick.done::after {
   content: ""; position: absolute; left: 6px; top: 2px; width: 5px; height: 10px;
-  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  border: solid var(--on-fill); border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 .checklist li[data-done] .name { color: var(--muted); }
 
 .preview-placeholder {
   margin: 0; padding: 12px 14px; color: var(--muted);
-  border: 1px dashed var(--field-edge); border-radius: 14px;
+  border: 1px dashed var(--field-edge); border-radius: var(--radius-bubble);
 }
 
 table.rows + .card.empty { margin-top: var(--gutter); }

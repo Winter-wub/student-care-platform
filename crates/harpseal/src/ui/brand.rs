@@ -12,6 +12,9 @@
 //!   steps until it is at least 4.5:1 on every light surface.
 //! - `--focus`: the focus ring: the brand, darkened until at least 3:1 on
 //!   every light surface (WCAG 1.4.11 and 2.4.13's contrast).
+//! - `--brand-press` (#131): a primary button's hover and active fill: the
+//!   brand moved 15 % away from its ink (darker under white ink, lighter
+//!   under dark ink), so the ink only gains contrast.
 
 /// Ledger Ink, the body text colour.
 pub(crate) const INK: [u8; 3] = [0x17, 0x21, 0x2b];
@@ -97,6 +100,24 @@ fn darkened(c: [u8; 3], min: f64) -> [u8; 3] {
     INK
 }
 
+/// `c` mixed 15 % toward `to`.
+fn mixed(c: [u8; 3], to: [u8; 3]) -> [u8; 3] {
+    let m = |a: u8, b: u8| ((u16::from(a) * 85 + u16::from(b) * 15 + 50) / 100) as u8;
+    [m(c[0], to[0]), m(c[1], to[1]), m(c[2], to[2])]
+}
+
+/// The press fill: `c` moved away from `ink`; at black or white, where
+/// that leaves it unchanged, toward the ink instead (still far above
+/// 4.5:1 there).
+fn pressed(c: [u8; 3], ink: [u8; 3]) -> [u8; 3] {
+    let away = mixed(c, if ink == WHITE { BLACK } else { WHITE });
+    if away != c {
+        away
+    } else {
+        mixed(c, if ink == WHITE { WHITE } else { BLACK })
+    }
+}
+
 /// The derived tokens of one brand colour, as `#rrggbb`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Tokens {
@@ -104,6 +125,7 @@ pub(crate) struct Tokens {
     pub(crate) brand_ink: String,
     pub(crate) brand_text: String,
     pub(crate) focus: String,
+    pub(crate) brand_press: String,
 }
 
 impl Tokens {
@@ -124,6 +146,9 @@ impl Tokens {
             brand_ink: hex(ink),
             brand_text: hex(darkened(c, TEXT_MIN)),
             focus: hex(darkened(c, MARK_MIN)),
+            // Away from the ink: white ink on a darker fill, dark ink on a
+            // lighter one, so the label's contrast never drops.
+            brand_press: hex(pressed(c, ink)),
         }
     }
 
@@ -131,8 +156,8 @@ impl Tokens {
     /// value is a `#rrggbb` written here, never the input).
     pub(crate) fn css(&self) -> String {
         format!(
-            "--brand:{};--brand-ink:{};--brand-text:{};--focus:{}",
-            self.brand, self.brand_ink, self.brand_text, self.focus
+            "--brand:{};--brand-ink:{};--brand-text:{};--focus:{};--brand-press:{}",
+            self.brand, self.brand_ink, self.brand_text, self.focus, self.brand_press
         )
     }
 }
@@ -215,6 +240,22 @@ mod tests {
                 "{v}"
             );
         }
+    }
+
+    #[test]
+    fn the_pressed_fill_keeps_the_ink_readable() {
+        for c in ["#0f5c7a", "#767676", "#ffd400", "#1e88e5", "#000000"] {
+            let t = Tokens::of(c);
+            let (ink, fill, press) = (
+                rgb(&t.brand_ink).unwrap(),
+                rgb(c).unwrap(),
+                rgb(&t.brand_press).unwrap(),
+            );
+            assert_ne!(t.brand_press, t.brand, "{c}");
+            let keeps = contrast(ink, press) >= contrast(ink, fill);
+            assert!(keeps || contrast(ink, press) >= 15.0, "{c}");
+        }
+        assert_eq!(Tokens::of("#0f5c7a").brand_press, "#0d4e68");
     }
 
     #[test]

@@ -227,6 +227,13 @@ pub trait Channel: Send + Sync {
     fn menu_art(&self) -> Option<&dyn MenuArt> {
         None
     }
+    /// A Channel for demos and tests only (the Fake Channel), which Staff
+    /// do not see in the back office (Links, usage) unless the Deployment
+    /// is built with [`crate::DeploymentBuilder::dev`] (#131). It still
+    /// receives webhooks and sends. Default `false`.
+    fn dev_only(&self) -> bool {
+        false
+    }
 
     /// Derived from the accessors above.
     fn capabilities(&self) -> Capabilities {

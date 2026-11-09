@@ -109,4 +109,9 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
         "en",
         "The import failed. Ask an administrator, then upload again.",
     ),
+    // The preview's column captions (#131): on a phone each cell names its column.
+    CatalogEntry::new("fees.col_sheet", "th", "ชีต"),
+    CatalogEntry::new("fees.col_sheet", "en", "Sheet"),
+    CatalogEntry::new("fees.col_row", "th", "แถว"),
+    CatalogEntry::new("fees.col_row", "en", "Row"),
 ];

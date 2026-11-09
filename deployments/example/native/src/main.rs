@@ -19,7 +19,7 @@ mod dev;
 use std::sync::Arc;
 use std::time::Duration;
 
-use example_deployment::{Secrets, deployment_with_fake};
+use example_deployment::{Secrets, deployment_with_fake_in};
 use harpseal_runtime_native::{NativeSettings, serve, services, spawn_ticker};
 
 #[tokio::main]
@@ -46,7 +46,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         dev::check_safe(&settings.addr, &secret)?;
         services.email = Arc::new(captured.clone());
     }
-    let (d, fake) = deployment_with_fake(services, secrets)?;
+    let (d, fake) = deployment_with_fake_in(services, secrets, dev_mode)?;
     let d = Arc::new(d);
     let report = d.migrate().await?;
     println!(

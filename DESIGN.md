@@ -3,6 +3,7 @@ name: harpseal
 description: Back office and Mini App of a student care Core, branded per institution.
 colors:
   harbour-teal: "#0f5c7a"
+  brand-press: "#0d4e68"
   on-brand: "#ffffff"
   counter-mist: "#f4f6f8"
   paper: "#ffffff"
@@ -75,6 +76,7 @@ spacing:
   sm: "8px"
   md: "12px"
   gutter: "16px"
+  lg: "24px"
   tap: "48px"
 components:
   button-primary:
@@ -162,7 +164,7 @@ The back office is a well-run registrar's counter. Papers are stacked neatly, ev
 
 It is built first for non-technical Staff, and it works on a phone. Tap targets are 48 px everywhere. Tables become stacked cards when the content is narrower than 860 px. Nothing scrolls sideways at 360 px. The same stylesheet serves the Mini App, narrowed to one 560 px column, so a Student's page and a Staff page feel like the same institution. The brand colour is a per-Deployment variable (`--brand`), so the system must look right in any institution's colour, not only in Harbour Teal.
 
-This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure, #127 upload help, empty states, next step and first-run checklist). It is the reference to improve on, not a ceiling.
+This document records the incumbent system as of the start of the back-office revamp (#116), updated as each step lands (#120 danger button, #123 navigation, status card and technical disclosure, #127 upload help, empty states, next step and first-run checklist, #131 states, rhythm and wrapping). It is the reference to improve on, not a ceiling.
 
 **Key Characteristics:**
 - Calm and trustworthy: flat surfaces, thin rules, a single accent.
@@ -176,7 +178,7 @@ A cool, low-contrast neutral field with one institutional accent, plus three fix
 
 ### Primary
 - **Harbour Teal** (#0f5c7a): the default institution colour, replaced per Deployment through `--brand`. It fills the top bar, primary buttons, progress bars, the current page and the Mini App avatar.
-- **Derived brand tokens (#129, `ui::brand`):** computed per Deployment from the brand with WCAG relative luminance, never eyeballed. `--brand-ink` (text on the brand) is white, else Ledger Ink, else black, the first that reaches 4.5:1 (when white fails, black is at least 4.66:1, so one always does; only a TOML colour can need it: the branding page refuses one on save with the same function, and shows the ratio rounded down). `--brand-text` (links, secondary buttons) is the brand darkened in 5 % steps until it is at least 4.5:1 on every light surface (Paper, Counter Mist, Chip Fog and the washes). `--focus` (the focus ring, checkboxes, the chart) is the brand darkened until at least 3:1 on the same surfaces. Harbour Teal and the default #0b5cad need no darkening (6.2:1 and up); a saved colour at the 4.5:1 edge (#767676, 4.2:1 on Counter Mist) gets a darker `--brand-text`; a yellow TOML colour (#ffd400) gets Ledger Ink text on the bar and a dark-gold ring.
+- **Derived brand tokens (#129, `ui::brand`):** computed per Deployment from the brand with WCAG relative luminance, never eyeballed. `--brand-ink` (text on the brand) is white, else Ledger Ink, else black, the first that reaches 4.5:1 (when white fails, black is at least 4.66:1, so one always does; only a TOML colour can need it: the branding page refuses one on save with the same function, and shows the ratio rounded down). `--brand-text` (links, secondary buttons) is the brand darkened in 5 % steps until it is at least 4.5:1 on every light surface (Paper, Counter Mist, Chip Fog and the washes). `--focus` (the focus ring, checkboxes, the chart) is the brand darkened until at least 3:1 on the same surfaces. `--brand-press` (#131, a primary button's hover and active fill) is the brand moved 15 % away from its ink: darker under white ink, lighter under dark ink, so the label only gains contrast (Harbour Teal → #0d4e68). Harbour Teal and the default #0b5cad need no darkening (6.2:1 and up); a saved colour at the 4.5:1 edge (#767676, 4.2:1 on Counter Mist) gets a darker `--brand-text`; a yellow TOML colour (#ffd400) gets Ledger Ink text on the bar and a dark-gold ring.
 
 ### Neutral
 - **Counter Mist** (#f4f6f8): the page ground behind every card.
@@ -218,7 +220,7 @@ The only colours Staff can give text in an Announcement body (`{red}…{/red}`),
 **Character:** one native family at a few sizes, so Thai and Latin render with the device's own hinting. Hierarchy comes from weight and size, not typeface contrast.
 
 ### Hierarchy
-A 1.25 ratio between heading levels in the back office (`.office`, #129; was 16/16/18/22 px, at most 1.22); the Mini App keeps its compact 22/18/16 px headings. Built from the title step: `--step-title` 1.125rem, `--step-section` × 1.25, `--step-page` × 1.25.
+A 1.25 ratio between heading levels in the back office (`.office`, #129; was 16/16/18/22 px, at most 1.22); the Mini App keeps its compact 22/18/16 px headings. The Mini App's meta lines (`.muted`, `.app-meta`) sit on its own .875rem step, its checkboxes are 20 px inside 48 px labels, and its status chips carry the same 1px edges as the back office's; they are named under `.mini` (#131) so a back-office change cannot move them. Built from the title step: `--step-title` 1.125rem, `--step-section` × 1.25, `--step-page` × 1.25.
 - **Headline** (700, 1.7578rem ≈ 28 px, 1.4): page titles (`h1`), one per page.
 - **Section** (700, 1.40625rem ≈ 22.5 px, 1.4): section and card titles (`h2`).
 - **Title** (700, 1.125rem = 18 px, 1.4): subsections (`h3`), and the status card titles of the home ledger (an `h2` drawn at this step: a ledger row, not a section).
@@ -237,7 +239,8 @@ A 1.25 ratio between heading levels in the back office (`.office`, #129; was 16/
 - **Containers:** a single centred column. `main` is at most 960px wide with a 16 px gutter that respects safe-area insets. The Mini App narrows to 560px.
 - **Content breakpoints are container queries on `main` (#123),** not the viewport, because the side navigation takes 15rem from 640 px. `main`'s content box is about the window minus 32 px without the navigation, minus 272 px with it.
 - **Two-column pages:** from a 860 px content width, `.cols` splits 3:2. Form pairs (`.row2`) and `.facts` sit side by side from 600 px.
-- **Spacing:** 4, 8, 12 and 16 px steps. 16 px is the gutter and the card padding.
+- **Spacing:** 4, 8, 12 and 16 px steps (`--space-xs` … `--gutter`), plus 24 px (`--space-lg`) above a section heading that follows other content: more room above a heading than below it (#131). 16 px is the gutter, the card padding and the gap under a field; a label sits 8 px over its control.
+- **Action rows:** buttons side by side sit in an `.actions` row, 12 px apart, after the content they act on, primary first. Two buttons never touch.
 - **Responsive tables:** `table.rows` are stacked cards with an inline caption per cell (`data-label`) below a 860 px content width (a 900 px window without the navigation, about 1130 px with it), and a real table above.
 - **Dense lists:** use `.list`, divided by top rules, rather than tables.
 - **Back-office shell:** from 640 px a 15rem navigation column and the content column (`main`, at most 960 px); below 640 px one column under the menu row.
@@ -260,10 +263,10 @@ Softly rounded, never pill-shaped except for chips.
 | Cards, fieldsets, tables (desktop), tiles | 12 px |
 | Buttons, inputs, flashes | 10 px |
 | Preview bubbles | 14 px |
-| Meters | 6 px |
+| Meters, logo tiles | 6 px |
 | Chips | fully round |
 
-Borders are always 1 px.
+Borders are always 1 px. Every radius is a token (`--radius`, `--radius-control`, `--radius-bubble`, `--radius-meter`); chips use 999px.
 
 ## Components
 
@@ -276,6 +279,7 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Danger:** Refused Ink fill with white text (9.3:1), for an action in proportion to its reach: one that sends to every Student or makes many of them left (#120). The label names the reach ("ยืนยัน: 20 คนจะพ้นสภาพ", "ส่งถึงทุกคน 50 คน"). It never follows the brand, hovers darker (#6f1515) and has its own solid 3px Refused Ink focus ring at a 2px offset, so a red institution colour cannot hide it. Use `ui::danger_button`; a broad action above its threshold also asks Staff to type the reach, checked on the server.
 - **Done:** Approved Wash with Approved Ink, for completed states such as an acknowledgement.
 - **Link button:** text only and underlined, for low-weight actions inside lists.
+- **States (#131), all from tokens:** hover and active move a fill one step: the brand to `--brand-press`, Paper to Counter Mist then Chip Fog; active also sinks 1 px. Disabled is Chip Fog with Slate Note text (4.6:1) and a Rule Line border, `not-allowed`. Busy: a form that is posting is `aria-busy="true"`, its submit buttons are disabled (after the browser collected the form, so the pressed button's value still goes), and the pressed one keeps its label and adds a 1em drawn ring that turns (still and dotted under reduced motion). An HTMX request marks its target `aria-busy` and rings its form's submit button through HTMX's own `htmx-request` class. One inline script (`ui::busy`), no library; a page restored from the back/forward cache, or a download that never navigates, lets go.
 - **Focus:** one solid 3px `--focus` ring at a 2px offset on every focusable element (links in text and tables included); on the bar and the current page it is `--brand-ink`. Was the brand at 35 % alpha (1.79:1).
 
 ### Cards / Containers
@@ -308,7 +312,7 @@ Sturdy and plain: big, obvious, forgiving controls. The look of a well-designed 
 - **Usage banner:** a strip under the bar in caution or refused colours.
 
 ### Responsive data table (signature)
-The `table.rows` pattern carries Staff's daily lists (Students, imports, audit). Below 900 px each row becomes a bordered card and each cell shows its column name as a caption. Above 900 px it is a single bordered table with muted headers.
+The `table.rows` pattern carries Staff's daily lists (Students, imports, audit). Below 900 px each row becomes a bordered card and each cell shows its column name as a caption in an 8rem column, with every part of the value (a name, its chip, a note) stacked in the other column, so nothing is squeezed into single letters (#131). Above 900 px it is a single bordered table with muted headers. Number columns (`.num`: counts, amounts, row numbers, sizes) are right-aligned in tabular figures and never break.
 
 ### Status card (signature, #123)
 The `/admin` home is "this term at a glance": one Paper card holding a ledger of status cards divided by Rule Lines, sorted by order. Each card is a **title with a state chip**, **one fact** (a short Thai sentence with the number that matters) and **one next action** (a secondary button). Kernel cards: the last roster import, announcements, the message quota, the last backup; Modules add their own (the example's fees card). Only cards the Staff member's Permissions allow are drawn.
@@ -339,9 +343,10 @@ The announcement preview draws a chat bubble: Paper, 14px radius, at most 22rem 
 ## Do's and Don'ts
 
 ### Do:
+- **Do** take every state (hover, active, disabled, busy) and every colour or radius from a token; a one-off value becomes a token first (#131).
 - **Do** use `--brand` for the top bar and the primary action, `--brand-text` for links and `--focus` for the ring. Assume the brand can be any institution colour.
 - **Do** compute a contrast before choosing a colour, and keep text at 4.5:1 and marks (borders, rings, meters) at 3:1.
-- **Do** respect `prefers-reduced-motion`: the only motion, the HTMX spinner fade, is instant under it.
+- **Do** respect `prefers-reduced-motion`: the only motion, the HTMX spinner fade and the busy ring, is instant or still under it.
 - **Do** keep every interactive element at least 48px tall and wide.
 - **Do** separate surfaces with Rule Line borders and tone, not shadows.
 - **Do** use the fixed status pairs (Approved, Refused, Caution) for every state message.

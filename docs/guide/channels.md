@@ -1,6 +1,10 @@
 # Channels: LINE and Telegram
 
 Setting up the real Channels. The Fake Channel needs only `FAKE_SECRET`.
+Staff see the Fake Channel in the back office (Links, usage) only in dev
+mode (`DeploymentBuilder::dev(true)`; the example's `HARPSEAL_DEV_ROUTES=1`);
+it still takes webhooks either way. An adapter for demos or tests says so
+with `Channel::dev_only` (#131).
 Back to the [README](https://github.com/Winter-wub/student-care-platform#readme).
 
 ## Writing an adapter

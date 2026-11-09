@@ -38,7 +38,13 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
             return respond(&s, &staff, StatusCode::INTERNAL_SERVER_ERROR, &text, body);
         }
     };
-    let kinds = store::kinds(&s.deployment);
+    // A dev-only Channel (the Fake) is not shown outside dev mode (#131).
+    let kinds: Vec<String> = s
+        .deployment
+        .staff_channel_kinds()
+        .iter()
+        .map(|k| k.as_str().to_string())
+        .collect();
     let caps = package::caps_with(&s.config, &cur);
     let this = quota::month(&rows, &kinds, &caps, &month);
     let title = t("kernel.usage.title");
@@ -128,17 +134,17 @@ fn card(
             h3 { (t("kernel.usage.months")) }
             table class="rows months" aria-label=(format!("{} ({})", t("kernel.usage.months"), m.kind)) {
                 thead { tr {
-                    th { (t("kernel.usage.month")) } th { (labels.metered) }
-                    th { (labels.free) } th { (labels.failed) }
+                    th { (t("kernel.usage.month")) } th class="num" { (labels.metered) }
+                    th class="num" { (labels.free) } th class="num" { (labels.failed) }
                 } }
                 tbody {
                     @for mo in months {
                         @let total = quota::in_month(rows, &m.kind, mo);
                         tr data-month=(mo) {
                             td data-label=(t("kernel.usage.month")) { (thai_month(mo)) }
-                            td data-label=(labels.metered) { (number(total.metered)) }
-                            td data-label=(labels.free) { (number(total.free)) }
-                            td data-label=(labels.failed) { (number(total.failed)) }
+                            td class="num" data-label=(labels.metered) { (number(total.metered)) }
+                            td class="num" data-label=(labels.free) { (number(total.free)) }
+                            td class="num" data-label=(labels.failed) { (number(total.failed)) }
                         }
                     }
                 }

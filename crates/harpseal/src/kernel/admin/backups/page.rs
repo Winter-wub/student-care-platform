@@ -107,7 +107,7 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
         table class="rows" id="backups" aria-label=(v.t("kernel.backup.title")) {
             thead { tr {
                 th { (v.t("kernel.backup.started")) } th { (v.t("kernel.backup.state")) }
-                th { (v.t("kernel.backup.size")) } th { (v.t("kernel.backup.contents")) } th {}
+                th class="num" { (v.t("kernel.backup.size")) } th { (v.t("kernel.backup.contents")) } th {}
             } }
             tbody {
                 @for r in runs {
@@ -121,7 +121,7 @@ fn table(v: &View<'_>, runs: &[Run]) -> Markup {
                                 (v.t(&format!("kernel.backup.state_{}", r.state)))
                             }
                         }
-                        td data-label=(v.t("kernel.backup.size")) { (human_bytes(r.bytes)) }
+                        td class="num" data-label=(v.t("kernel.backup.size")) { (human_bytes(r.bytes)) }
                         td data-label=(v.t("kernel.backup.contents")) {
                             @if let (Some(t), Some(n), Some(f)) = (r.tables, r.rows, r.files) {
                                 (fill(&v.t("kernel.backup.counts"), &[
@@ -177,7 +177,7 @@ fn table_list(v: &View<'_>, tables: &[(String, u64, u64)]) -> Markup {
         section class="card" id="backup-tables" {
             h2 { (v.t("kernel.backup.tables")) }
             table class="rows" aria-label=(v.t("kernel.backup.tables")) {
-                thead { tr { th { (v.t("kernel.backup.table")) } th { (v.t("kernel.backup.rows")) } th {} } }
+                thead { tr { th { (v.t("kernel.backup.table")) } th class="num" { (v.t("kernel.backup.rows")) } th {} } }
                 tbody {
                     @for (name, rows, _) in tables {
                         tr data-table=(name) {
@@ -187,7 +187,7 @@ fn table_list(v: &View<'_>, tables: &[(String, u64, u64)]) -> Markup {
                                     br; span class="muted" { (v.t("kernel.backup.not_in_all")) }
                                 }
                             }
-                            td data-label=(v.t("kernel.backup.rows")) { (rows) }
+                            td class="num" data-label=(v.t("kernel.backup.rows")) { (number(*rows)) }
                             td {
                                 a class="btn secondary" download
                                     href=(format!("/admin/backups/export/{}", enc(name))) { "Excel" }
