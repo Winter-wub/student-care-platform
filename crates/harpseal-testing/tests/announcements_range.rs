@@ -23,8 +23,8 @@ fn config() -> String {
     )
 }
 
-/// Five linked Students in year 2: GPAs 3.0, 3.5 and 4.0, none, and a
-/// text that is not a number.
+/// Eight linked Students in year 2: GPAs 3.0, 3.5 and 4.0; none; a text
+/// that is not a number; JSON null; an empty text; and "3.5" as text.
 async fn world() -> World {
     let w = boot_config(&config(), 500).await;
     for (id, gpa) in [
@@ -33,6 +33,9 @@ async fn world() -> World {
         ("g3", r#","gpa":4"#),
         ("g4", ""),
         ("g5", r#","gpa":"สาม""#),
+        ("g6", r#","gpa":null"#),
+        ("g7", r#","gpa":"""#),
+        ("g8", r#","gpa":"3.5""#),
     ] {
         let attrs = format!(r#"{{"programme":"MSC","year":2{gpa}}}"#);
         student(&w.h, id, "th", "active", &attrs).await;
@@ -60,13 +63,18 @@ async fn bounds_are_inclusive_and_a_missing_or_text_value_never_matches() {
     for (rules, n, who) in [
         ("attr_min.gpa=3.0&attr_max.gpa=3.5", "2", "g1, g2"),
         ("attr_min.gpa=3.5", "2", "g2, g3"),
-        ("attr_max.gpa=3", "1", "g1 only: never g4 or g5"),
-        ("attr_min.gpa=0", "3", "every number, never g4 or g5"),
+        ("attr_max.gpa=3", "1", "g1 only: never g4 to g8"),
+        ("attr_min.gpa=0", "3", "every number, never g4 to g8"),
+        (
+            "attr_min.gpa=-1,000&attr_max.gpa=1,000",
+            "3",
+            "a bound read as a roster number",
+        ),
         ("attr_min.gpa=3.5&attr_max.gpa=3.5", "1", "g2"),
         // AND-ed with the other filters.
         ("attr_min.gpa=3&attr.year=3", "0", "nobody in year 3"),
         // Neither bound: no range, the year alone.
-        ("attr_min.gpa=&attr_max.gpa=+&attr.year=2", "5", "all five"),
+        ("attr_min.gpa=&attr_max.gpa=+&attr.year=2", "8", "all eight"),
     ] {
         let c = b.post(COUNT, &format!("scope=groups&{rules}")).await;
         assert_eq!(c.status, 200);
@@ -240,14 +248,68 @@ async fn an_old_saved_audience_keeps_its_exact_values() {
     ] {
         assert!(used.body.contains(want), "{want}: {}", used.body);
     }
-    // Posted back as shown, it counts as before: g2 only.
+    // Posted back as shown, it counts as before #156: exact text, so g2
+    // and g8 (whose "3.5" is text).
     let c = b
         .post(
             COUNT,
             "scope=groups&attr.year=2&attr.year=7&attr.gpa=3.5&attr_min.gpa=&attr_max.gpa=",
         )
         .await;
-    assert_eq!(counted(&c.body), "1", "{}", c.body);
+    assert_eq!(counted(&c.body), "2", "{}", c.body);
+}
+
+#[tokio::test]
+async fn a_year_range_is_kept_though_the_year_is_drawn_as_checkboxes() {
+    let w = world().await;
+    // Saved through the API, or before the year had `min` and `max`.
+    insert(
+        &w,
+        "sa-yr",
+        r#"{"v":1,"attributes":{"programme":["MSC"]},"ranges":{"year":{"min":"2","max":"3"}},"tags":[]}"#,
+    )
+    .await;
+    let b = opened(&w).await;
+    let used = b.post(&format!("{LIST}/use"), "saved_audience=sa-yr").await;
+    assert_eq!(used.status, 200, "{}", used.body);
+    for want in [
+        r#"name="attr_min.year" value="2""#,
+        r#"name="attr_max.year" value="3""#,
+        r#"name="attr.programme" value="MSC" checked"#,
+    ] {
+        assert!(used.body.contains(want), "{want}: {}", used.body);
+    }
+    assert!(
+        !used.body.contains(r#"name="attr.year""#),
+        "no checkboxes: {}",
+        used.body
+    );
+    // Saved again as the fieldset posts it, the range is still there.
+    let posted = "scope=groups&attr.programme=MSC&attr_min.year=2&attr_max.year=3";
+    let s = b
+        .post(
+            LIST,
+            &format!("{posted}&saved_name={}", urlencode("ปีสองสาม")),
+        )
+        .await;
+    assert_eq!(s.status, 200, "{}", s.body);
+    let saved = texts(
+        &w,
+        "SELECT audience ->> '$.ranges.year.min' || '-' || (audience ->> '$.ranges.year.max') \
+         FROM saved_audience WHERE id <> 'sa-yr'",
+    )
+    .await;
+    assert_eq!(saved, ["2-3"]);
+    // And a draft keeps it through its edit form.
+    let id = create(&b, &form("ปี", "ข้อความ", &format!("&{posted}"))).await;
+    let edit = b.get(&format!("/admin/announcements/{id}/edit")).await;
+    assert!(
+        edit.body.contains(r#"name="attr_min.year" value="2""#),
+        "{}",
+        edit.body
+    );
+    let c = b.post(COUNT, posted).await;
+    assert_eq!(counted(&c.body), "8", "{}", c.body);
 }
 
 #[tokio::test]

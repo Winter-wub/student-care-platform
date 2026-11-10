@@ -8,10 +8,14 @@
 //!   the bounds: a missing or non-numeric value never matches, so a range
 //!   never widens an Audience.
 //! - Ranges are AND-ed with every other filter, as attributes are.
+//! - A bound is read as a roster number is ([`crate::sheet::number`]):
+//!   `12,500` and `12500` are the same; the number, not the text, is bound
+//!   in the query.
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{AttributeType, RosterConfig};
+use crate::config::RosterConfig;
+use crate::sheet::{Blank, number};
 use crate::{Error, Result};
 
 /// An inclusive range over one numeric attribute. Bounds are kept as typed
@@ -55,20 +59,17 @@ impl Range {
         self.min.is_none() && self.max.is_none()
     }
 
-    /// The bounds as numbers, checked: at least one, each finite, the
-    /// lower not above the upper.
+    /// The bounds as numbers ([`crate::sheet::number`]), checked: at
+    /// least one, each finite, the lower not above the upper.
     pub fn bounds(&self) -> std::result::Result<(Option<f64>, Option<f64>), RangeError> {
-        if self.is_empty() {
-            return Err(RangeError::Empty);
-        }
         let num = |b: &Option<String>| match b {
             None => Ok(None),
-            Some(s) => match s.trim().parse::<f64>() {
-                Ok(n) if n.is_finite() => Ok(Some(n)),
-                _ => Err(RangeError::NotNumber),
-            },
+            Some(s) => number(s, Blank::Missing).map_err(|_| RangeError::NotNumber),
         };
         let (min, max) = (num(&self.min)?, num(&self.max)?);
+        if min.is_none() && max.is_none() {
+            return Err(RangeError::Empty);
+        }
         if let (Some(lo), Some(hi)) = (min, max)
             && lo > hi
         {
@@ -76,11 +77,6 @@ impl Range {
         }
         Ok((min, max))
     }
-}
-
-/// Whether `kind` takes a range: `integer` and `number`.
-pub fn numeric(kind: AttributeType) -> bool {
-    matches!(kind, AttributeType::Integer | AttributeType::Number)
 }
 
 /// Checks each range against the roster schema: a known numeric attribute
@@ -92,7 +88,7 @@ pub(super) fn check<'a>(
     for (key, range) in ranges {
         match roster.attributes.get(key) {
             None => return Err(Error::Invalid(format!("unknown attribute `{key}`"))),
-            Some(spec) if !numeric(spec.kind) => {
+            Some(spec) if !spec.kind.is_numeric() => {
                 return Err(Error::Invalid(format!("`{key}` is not a number")));
             }
             Some(_) => {}
@@ -106,18 +102,24 @@ pub(super) fn check<'a>(
 
 /// Appends `range`'s condition on `key` to `sql` and its binds to
 /// `params`: the value must be a JSON number (`json_type` integer or
-/// real) within each given bound.
+/// real) within each given bound. `range` passed [`check`]; an unusable
+/// one selects nobody.
 pub(super) fn push_sql(key: &str, range: &Range, sql: &mut String, params: &mut Vec<String>) {
     let path = format!("$.\"{key}\"");
     sql.push_str(" AND json_type(s.attributes, ?) IN ('integer', 'real')");
     params.push(path.clone());
-    for (bound, op) in [(&range.min, ">="), (&range.max, "<=")] {
+    let Ok((min, max)) = range.bounds() else {
+        sql.push_str(" AND 0");
+        return;
+    };
+    for (bound, op) in [(min, ">="), (max, "<=")] {
         if let Some(b) = bound {
             sql.push_str(&format!(
                 " AND CAST(json_extract(s.attributes, ?) AS REAL) {op} CAST(? AS REAL)"
             ));
             params.push(path.clone());
-            params.push(b.trim().to_string());
+            // `Display` of an `f64` never uses an exponent.
+            params.push(b.to_string());
         }
     }
 }
@@ -131,6 +133,11 @@ mod tests {
         assert_eq!(Range::new(" ", "").bounds(), Err(RangeError::Empty));
         assert_eq!(Range::new("3", "x").bounds(), Err(RangeError::NotNumber));
         assert_eq!(Range::new("inf", "").bounds(), Err(RangeError::NotNumber));
+        assert_eq!(Range::new("1e3", "").bounds(), Err(RangeError::NotNumber));
+        assert_eq!(
+            Range::new("1,000", "12,500.5").bounds(),
+            Ok((Some(1000.0), Some(12500.5)))
+        );
         assert_eq!(Range::new("3.5", "3").bounds(), Err(RangeError::Reversed));
         assert_eq!(Range::new("3", "3").bounds(), Ok((Some(3.0), Some(3.0))));
         assert_eq!(Range::new("", " 2.5 ").bounds(), Ok((None, Some(2.5))));

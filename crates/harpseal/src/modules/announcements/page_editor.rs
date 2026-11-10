@@ -315,7 +315,7 @@ fn shell(state: &str, inner: Markup) -> Markup {
 pub(super) fn said(line: &str, oob: bool) -> Markup {
     html! {
         div id="preview-said" class="visually-hidden" role="status" aria-live="polite"
-            hx-swap-oob=[oob.then_some("true")] { (line) }
+            hx-swap-oob=[oob.then_some("innerHTML")] { (line) }
     }
 }
 

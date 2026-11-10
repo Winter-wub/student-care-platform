@@ -149,7 +149,7 @@ pub(crate) fn stale_ranges<'a>(
             !roster
                 .attributes
                 .get(*k)
-                .is_some_and(|s| crate::audience::numeric(s.kind))
+                .is_some_and(|s| s.kind.is_numeric())
         })
         .collect()
 }

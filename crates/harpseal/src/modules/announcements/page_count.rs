@@ -75,7 +75,7 @@ pub(super) async fn fragment(
 fn said(line: &str, oob: bool) -> Markup {
     html! {
         div id="count-said" class="visually-hidden" role="status" aria-live="polite"
-            hx-swap-oob=[oob.then_some("true")] { (line) }
+            hx-swap-oob=[oob.then_some("innerHTML")] { (line) }
     }
 }
 

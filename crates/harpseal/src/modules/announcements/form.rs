@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::service::Draft;
 use super::store::{Row, Texts};
 use super::view::{end_of_day, input_date, input_datetime, local_datetime};
-use crate::audience::{Audience, MAX_STUDENTS, Range, RangeError, numeric, parse_student_ids};
+use crate::audience::{Audience, MAX_STUDENTS, Range, RangeError, parse_student_ids};
 use crate::config::{AttributeType, RosterConfig};
 
 /// Longest title and body, in characters.
@@ -317,13 +317,19 @@ impl Fields {
         // numbers, the lower not above the upper.
         let before = errors.len();
         for (key, range) in &audience.ranges {
-            let numeric = roster.attributes.get(key).is_some_and(|s| numeric(s.kind));
-            errors.push(match range.bounds() {
-                _ if !numeric => ("audience", "announcements.form.bad_audience"),
-                Err(RangeError::Reversed) => ("audience", "announcements.form.range_reversed"),
-                Err(_) => ("audience", "announcements.form.range_not_number"),
-                Ok(_) => continue,
-            });
+            let numeric = roster
+                .attributes
+                .get(key)
+                .is_some_and(|s| s.kind.is_numeric());
+            if !numeric {
+                errors.push(("audience", "announcements.form.bad_audience"));
+            } else if let Err(e) = range.bounds() {
+                let why = match e {
+                    RangeError::Reversed => "announcements.form.range_reversed",
+                    _ => "announcements.form.range_not_number",
+                };
+                errors.push(("audience", why));
+            }
         }
         let ranged = errors.len() > before;
         if audience.students.len() > MAX_STUDENTS {

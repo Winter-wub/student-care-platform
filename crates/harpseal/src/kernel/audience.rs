@@ -35,7 +35,7 @@ use crate::{Deployment, Error, Result};
 
 mod range;
 
-pub use range::{Range, RangeError, numeric};
+pub use range::{Range, RangeError};
 
 /// Most Tags in one Audience.
 pub const MAX_TAGS: usize = 20;

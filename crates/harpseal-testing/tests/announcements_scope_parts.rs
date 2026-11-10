@@ -138,7 +138,7 @@ async fn the_count_says_one_line_only_when_it_changes() {
         .await;
     assert_eq!(changed.body.matches(r#"id="count-said""#).count(), 1);
     assert!(
-        changed.body.contains(r#"hx-swap-oob="true""#),
+        changed.body.contains(r#"hx-swap-oob="innerHTML""#),
         "{}",
         changed.body
     );

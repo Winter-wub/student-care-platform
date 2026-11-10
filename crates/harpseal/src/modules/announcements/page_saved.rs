@@ -58,7 +58,7 @@ if(f)f.focus();});})();"#;
 pub(super) fn status(text: &str, oob: bool) -> Markup {
     html! {
         div id="saved-status" class="visually-hidden" role="status" aria-live="polite"
-            hx-swap-oob=[oob.then_some("true")] { (text) }
+            hx-swap-oob=[oob.then_some("innerHTML")] { (text) }
     }
 }
 

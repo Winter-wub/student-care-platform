@@ -5,7 +5,9 @@
 //! - an `integer` with `min` and `max` at most [`MAX_CHECKS`] apart (a
 //!   year): a checkbox per whole number; a value saved outside them stays
 //!   as one more checked box, so it is never dropped;
-//! - another `integer` or a `number` (a GPA): "ตั้งแต่" and "ถึง" boxes
+//! - another `integer` or a `number` (a GPA), or any numeric attribute
+//!   the form already holds a range for (a year range saved through the
+//!   API or before the year had `min` and `max`): "ตั้งแต่" and "ถึง" boxes
 //!   (`attr_min.<key>`, `attr_max.<key>`, a [`Range`]); exact values saved
 //!   before #156 stay in a typed box under them;
 //! - `text` and `date`: one typed box, any of the values separated by
@@ -18,7 +20,7 @@ use maud::{Markup, html};
 
 use super::form::Fields;
 use super::view::View;
-use crate::audience::{Range, numeric};
+use crate::audience::Range;
 use crate::config::{AttributeSpec, AttributeType};
 use crate::kernel::text::fill;
 
@@ -43,8 +45,13 @@ fn whole_numbers(spec: &AttributeSpec) -> Option<Vec<String>> {
     (lo <= hi && hi - lo < MAX_CHECKS).then(|| (lo..=hi).map(|n| n.to_string()).collect())
 }
 
-fn control(v: &View<'_>, spec: &AttributeSpec, chosen: &[String]) -> Control {
+fn control(v: &View<'_>, spec: &AttributeSpec, chosen: &[String], ranged: bool) -> Control {
     let (locale, default) = (&v.staff.locale, &v.s.config.default_locale);
+    // A range the form holds is always drawn as one: checkboxes would
+    // drop it and widen the Audience (exact values stay under it).
+    if ranged && spec.kind.is_numeric() {
+        return Control::Range;
+    }
     if spec.kind == AttributeType::Enum {
         let label = |x: &String| spec.value_label(x, locale, default).to_string();
         let values = spec.values.iter().map(|x| (x.clone(), label(x))).collect();
@@ -61,7 +68,7 @@ fn control(v: &View<'_>, spec: &AttributeSpec, chosen: &[String]) -> Control {
         }
         return Control::Checks(values.into_iter().map(|x| (x.clone(), x)).collect(), true);
     }
-    if numeric(spec.kind) {
+    if spec.kind.is_numeric() {
         Control::Range
     } else {
         Control::Typed
@@ -75,7 +82,8 @@ pub(super) fn attributes(v: &View<'_>, f: &Fields) -> Markup {
         @for (key, spec) in roster.attributes_in_order() {
             @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
             @let label = spec.label_in(key, &v.staff.locale, &v.s.config.default_locale);
-            @match control(v, spec, &chosen) {
+            @let ranged = f.ranges.get(key).is_some_and(|(lo, hi)| !lo.trim().is_empty() || !hi.trim().is_empty());
+            @match control(v, spec, &chosen, ranged) {
                 Control::Checks(values, short) => {
                     fieldset class="checks" {
                         legend { (label) }
