@@ -55,6 +55,29 @@ pub(super) fn prefilled(q: &[(String, String)]) -> Fields {
     }
 }
 
+/// The student codes of a "ประกาศถึงที่เลือก" over a whole Students list
+/// filter (#145), too many for a link to carry: `from=students` with the
+/// list's `q` and `missing`, read again here
+/// ([`crate::kernel::students::codes_matching`]). `None` (a bare form)
+/// without `kernel.student.view`, when nobody or more than 2,000 Students
+/// match, or when the read fails. Only a draft is filled in.
+pub(super) async fn from_students(
+    s: &crate::AppState,
+    staff: &crate::CurrentStaff,
+    q: &[(String, String)],
+) -> Option<Vec<String>> {
+    let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, x)| x.as_str());
+    if get("from") != Some("students") || !staff.can("kernel.student.view") {
+        return None;
+    }
+    let missing = matches!(get("missing"), Some("1" | "on" | "true"));
+    let roster = &s.config.roster;
+    crate::kernel::students::codes_matching(&s.services, roster, get("q").unwrap_or(""), missing)
+        .await
+        .ok()
+        .flatten()
+}
+
 /// The errors of `field` under one id, `err-<field>`, that the field's
 /// control or fieldset names with `aria-describedby` (#129). Not a live
 /// region: the form's summary above announces once.

@@ -110,6 +110,27 @@ pub(crate) struct ListRow {
     pub(crate) missing: Vec<Missing>,
 }
 
+/// The list's `WHERE` clause for search `q` (name or code) and, with
+/// `only_missing` and a `roster`, missing data (#71), with its parameters
+/// in order. The bulk actions (#145) select by the same filter.
+pub(super) async fn list_filter(
+    s: &Services,
+    q: &str,
+    roster: Option<&RosterConfig>,
+    only_missing: bool,
+) -> Result<(String, Vec<Value>)> {
+    let pattern = crate::sql_like::like(q.trim(), true);
+    let mut filter =
+        "WHERE (display_name LIKE ? ESCAPE '\\' OR student_code LIKE ? ESCAPE '\\')".to_string();
+    let mut binds = vec![Value::from(pattern.clone()), Value::from(pattern)];
+    if let (true, Some(roster)) = (only_missing, roster) {
+        let (cond, extra) = missing::condition(s, roster).await?;
+        filter = format!("{filter} AND {cond}");
+        binds.extend(extra);
+    }
+    Ok((filter, binds))
+}
+
 /// One page of [`search`].
 pub(crate) struct Found {
     pub(crate) rows: Vec<ListRow>,
@@ -137,18 +158,10 @@ pub(crate) async fn search_with(
     roster: Option<&RosterConfig>,
     only_missing: bool,
 ) -> Result<Found> {
-    let pattern = crate::sql_like::like(q.trim(), true);
-    let mut filter =
-        "WHERE (display_name LIKE ? ESCAPE '\\' OR student_code LIKE ? ESCAPE '\\')".to_string();
-    let mut extra = Vec::new();
-    if let (true, Some(roster)) = (only_missing, roster) {
-        let (cond, binds) = missing::condition(s, roster).await?;
-        filter = format!("{filter} AND {cond}");
-        extra = binds;
-    }
+    let (filter, binds) = list_filter(s, q, roster, only_missing).await?;
     let with_filter = |st: Statement| {
-        let mut st = st.bind(pattern.clone()).bind(pattern.clone());
-        st.params.extend(extra.iter().cloned());
+        let mut st = st;
+        st.params.extend(binds.iter().cloned());
         st
     };
     let count = with_filter(Statement::new(format!(

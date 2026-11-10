@@ -27,11 +27,7 @@ pub async fn add_manual_tag(
     ctx: &RequestCtx,
 ) -> Result<()> {
     let s = d.services();
-    let name = name.trim();
-    let n = name.chars().count();
-    if n == 0 || n > MAX_TAG_CHARS || name.chars().any(char::is_control) {
-        return Err(Error::Invalid("tag name".into()));
-    }
+    let name = valid_name(name).ok_or_else(|| Error::Invalid("tag name".into()))?;
     load(s, student_id).await?;
     let before = read::manual_tag_names(s, student_id).await?;
     let mut after = before.clone();
@@ -130,7 +126,15 @@ pub async fn remove_manual_tag(
     Ok(())
 }
 
-fn staff_of(actor: &Actor) -> Option<String> {
+/// `name` trimmed, when it can name a manual Tag: 1 to 64 characters,
+/// no control characters.
+pub(super) fn valid_name(name: &str) -> Option<&str> {
+    let name = name.trim();
+    let n = name.chars().count();
+    (n > 0 && n <= MAX_TAG_CHARS && !name.chars().any(char::is_control)).then_some(name)
+}
+
+pub(super) fn staff_of(actor: &Actor) -> Option<String> {
     match actor {
         Actor::Staff(id) => Some(id.clone()),
         _ => None,

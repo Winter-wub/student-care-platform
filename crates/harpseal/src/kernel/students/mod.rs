@@ -8,6 +8,9 @@
 //! (`kernel.link.revoke`, Staff unlink), both through [`crate::links`],
 //! with the Manual Link picker's list of recent unlinked accounts loaded on
 //! request (`kernel.link.manage`, #143).
+//! Bulk actions on the list's selection (#145, `page_bulk`): add or
+//! remove a manual Tag (`kernel.student.edit`), unlink
+//! (`kernel.link.revoke`) and "ประกาศถึงที่เลือก" (`announcements.send`).
 //!
 //! **Manual edits win over the roster** (#8): a field Staff edit by hand is
 //! listed in `student.manual_overrides` (`display_name`, `email`,
@@ -21,20 +24,27 @@
 //! only if that audit row exists. A lost race is [`crate::Error::Conflict`].
 
 mod actions;
+mod bulk;
+mod bulk_write;
 mod detail;
 mod edit;
 pub(crate) mod email;
 mod form;
 mod list;
+mod list_bulk;
 mod missing;
+mod page_bulk;
+mod page_bulk_review;
 mod pick;
 mod pick_view;
 mod read;
 mod service;
 mod tags;
 pub(crate) mod texts;
+mod texts_bulk;
 pub(crate) mod view;
 
+pub(crate) use bulk::codes_matching;
 pub(crate) use read::search;
 
 /// The Manual Link picker's query (#143), for the query-plan test only.
@@ -186,6 +196,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     const LINK: &str = LINK_MANAGE;
     const REVOKE: &str = LINK_REVOKE;
     r.messages(texts::DEFAULTS)
+        .messages(texts_bulk::DEFAULTS)
         .back_office_page(
             VIEW,
             "/students",
@@ -194,6 +205,9 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(list::page),
         )
         .back_office(VIEW, "/students/{id}", get(detail::page))
+        // Bulk actions (#145): each action checks its own Permission.
+        .back_office(VIEW, "/students/bulk", post(page_bulk::submit))
+        .back_office(VIEW, "/students/bulk/count", post(page_bulk::count))
         .back_office(
             EDIT,
             "/students/{id}/edit",

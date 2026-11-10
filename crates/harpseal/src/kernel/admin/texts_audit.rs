@@ -355,6 +355,11 @@ pub(super) const AUDIT: &[E] = th_en![
         "Removed a Tag"
     ),
     (
+        "kernel.admin.audit.action.student_unlink",
+        "ยกเลิกการเชื่อมบัญชีของนักศึกษา",
+        "Unlinked a Student"
+    ),
+    (
         "kernel.admin.audit.action.student_override_clear",
         "ล้างค่าที่แก้ด้วยมือ",
         "Cleared a hand edit"

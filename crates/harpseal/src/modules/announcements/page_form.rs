@@ -43,14 +43,19 @@ fn with_images(
 }
 
 /// A new draft; `?scope=students&students=…` prefills the Audience
-/// ([`super::form_scope::prefilled`], #127).
+/// ([`super::form_scope::prefilled`], #127), and so does a Students list
+/// filter (`from=students`, [`super::form_scope::from_students`], #145).
 pub(super) async fn new_page(
     State(s): State<AppState>,
     staff: CurrentStaff,
     Query(q): Query<Vec<(String, String)>>,
 ) -> Response {
     let v = View::new(&s, &staff);
-    let fields = super::form_scope::prefilled(&q);
+    let mut fields = super::form_scope::prefilled(&q);
+    if let Some(codes) = super::form_scope::from_students(&s, &staff, &q).await {
+        fields.scope = "students".into();
+        fields.students = codes.join("\n");
+    }
     let form = Form::new(None, &fields);
     form_page(&v, StatusCode::OK, &form, &[], None)
 }
