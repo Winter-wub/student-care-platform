@@ -105,7 +105,8 @@ pub struct StudentPicker<'a> {
 
 impl<'a> StudentPicker<'a> {
     /// A picker posting its codes under `field` (also the textarea's `id`;
-    /// lowercase ASCII letters, digits and `_`, at most 32), searching
+    /// lowercase ASCII letters, digits and `_`, at most 32, not one of the
+    /// picker's own `q`, `pf`, `pmax`, `op`, `code`, `paste`), searching
     /// through `route` (the one mounted with
     /// [`crate::ModuleRegistrar::student_picker`]), and labelled `label`.
     /// Limit [`crate::audience::MAX_STUDENTS`] until [`Self::max`].
@@ -145,7 +146,7 @@ impl<'a> StudentPicker<'a> {
     pub async fn render(&self, s: &PageState, staff: &CurrentStaff) -> Result<Markup> {
         if !field_ok(self.field) {
             return Err(Error::Invalid(format!(
-                "picker field {:?}: use a-z, 0-9 and _, at most {MAX_FIELD}",
+                "picker field {:?}: use a-z, 0-9 and _, at most {MAX_FIELD}, and not q, pf, pmax, op, code or paste",
                 self.field
             )));
         }
@@ -208,9 +209,14 @@ impl<'a> StudentPicker<'a> {
     }
 }
 
-/// Whether `f` is a usable field name: it goes into ids and selectors.
+/// The picker's own request names: a field cannot take one.
+const RESERVED: [&str; 6] = ["q", "pf", "pmax", "op", "code", "paste"];
+
+/// Whether `f` is a usable field name: it goes into ids and selectors, and
+/// is posted beside the picker's own names ([`RESERVED`]).
 pub(crate) fn field_ok(f: &str) -> bool {
     !f.is_empty()
+        && !RESERVED.contains(&f)
         && f.len() <= MAX_FIELD
         && f.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
@@ -348,6 +354,12 @@ mod tests {
             "a\"",
             "x</script>",
             &"a".repeat(33),
+            "q",
+            "pf",
+            "pmax",
+            "op",
+            "code",
+            "paste",
         ] {
             assert!(!field_ok(bad), "{bad}");
         }

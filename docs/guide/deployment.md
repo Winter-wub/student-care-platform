@@ -588,7 +588,8 @@ let field = ui::StudentPicker::new("ids", PICK, &t("reminders.ids"))
   searched and shown only to Staff who also hold `kernel.student.view`;
   others search by code and see codes, and the page never reads their
   names. Search lists at most 8 Students: codes that start with what was
-  typed (case-sensitive, through the code's index), then, from two
+  typed, or with it in upper case ("b65" finds "B6512345"), read
+  through the code's index, then, from two
   characters on, names that contain it.
 - **Texts are neutral** ("เลือกได้ไม่เกิน 40 คน เกินมา 2 คน", "2 คนพ้นสภาพ
   แล้ว"), so any form can use the picker (Saved Audiences, bulk actions).
@@ -598,7 +599,9 @@ let field = ui::StudentPicker::new("ids", PICK, &t("reminders.ids"))
   clicks queue: each change is sent after the one before has come back,
   carrying the latest list.
 - **Field names** are lowercase ASCII letters, digits and `_` (at most
-  32), since they become element ids; another name is `Error::Invalid`.
+  32), since they become element ids, and not one of the picker's own
+  (`q`, `pf`, `pmax`, `op`, `code`, `paste`); another name is
+  `Error::Invalid`.
 - **Starting points:** prefill with `.codes(…)` from your own data. The
   example's reminders page has "เริ่มจากรายการค้างชำระ" (`?from=fees`),
   which preselects the active Students who owe a fee, the first 40 by code.

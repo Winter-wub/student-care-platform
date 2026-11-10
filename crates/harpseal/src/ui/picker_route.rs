@@ -99,45 +99,69 @@ pub(crate) async fn resolve(s: &PageState, codes: &[String], names: bool) -> Res
 /// One search hit: (code, name, left).
 type Hit = (String, String, bool);
 
-/// Students whose code starts with `q`, then (with `names`, and `q` of
-/// at least [`MIN_NAME_QUERY`] characters) those whose name contains it;
-/// each part active first, by code: at most [`RESULTS`] and whether there
-/// are more.
-///
-/// The code part is a range on the code's unique index (`>= q` and below
-/// `q` followed by the last code point), so it reads only the matching
-/// rows; it is case-sensitive, as codes are. A name can match anywhere, so
-/// that part reads the table, but stops once enough rows are found.
+/// The code part of [`find`]: codes in `[?, ? || U+10FFFF)`, by code. A
+/// range on the code's unique index, walked in index order, so SQLite stops
+/// after the `LIMIT` rows (no sort of the whole range).
+pub(crate) const CODE_SQL: &str = "SELECT student_code, display_name, status FROM student \
+     WHERE student_code >= ? AND student_code < ? || char(1114111) \
+     ORDER BY student_code LIMIT ?";
+
+/// The name part of [`find`]: names containing the pattern, in no order.
+/// `%q%` cannot use an index, so this is a scan of the student table; with
+/// no `ORDER BY` it stops at the `LIMIT`th match, and reads the whole table
+/// only when fewer match.
+pub(crate) const NAME_SQL: &str = "SELECT student_code, display_name, status FROM student \
+     WHERE display_name LIKE ? ESCAPE '\\' LIMIT ?";
+
+/// Students whose code starts with `q` (as typed, and in upper case when
+/// that differs, so "b65" finds "B6512345"), then (with `names`, and `q`
+/// of at least [`MIN_NAME_QUERY`] characters) those whose name contains
+/// it: at most [`RESULTS`] and whether there are more. Each part is
+/// sorted here, active first, by code, over the rows SQL returned (at most
+/// [`RESULTS`] + 1 each), so neither query sorts in SQL. See [`CODE_SQL`]
+/// and [`NAME_SQL`] for what each reads.
 pub(crate) async fn find(s: &PageState, q: &str, names: bool) -> Result<(Vec<Hit>, bool)> {
-    let want = (RESULTS + 1) as i64;
-    let codes = Statement::new(
-        "SELECT student_code, display_name, status FROM student \
-         WHERE student_code >= ? AND student_code < ? || char(1114111) \
-         ORDER BY status = 'left', student_code LIMIT ?",
-    )
-    .bind(q.to_string())
-    .bind(q.to_string())
-    .bind(want);
-    let mut hits = rows_to_hits(&s.services.db.query(codes).await?);
+    let want = RESULTS + 1;
+    let upper = q.to_ascii_uppercase();
+    let mut prefixes = vec![q];
+    if upper != q {
+        prefixes.push(&upper);
+    }
+    let mut hits: Vec<Hit> = Vec::new();
+    for p in prefixes {
+        let st = Statement::new(CODE_SQL)
+            .bind(p.to_string())
+            .bind(p.to_string())
+            .bind(want as i64);
+        hits.extend(rows_to_hits(&s.services.db.query(st).await?));
+    }
+    // Each prefix gave its first `want` by code: the first `want` of both.
+    hits.sort_by(|a, b| a.0.cmp(&b.0));
+    hits.dedup_by(|a, b| a.0 == b.0);
+    hits.truncate(want);
+    left_last(&mut hits);
     if names && hits.len() <= RESULTS && q.chars().count() >= MIN_NAME_QUERY {
         // Rows the code part found are skipped here, not in SQL: at most
-        // RESULTS of them.
-        let by_name = Statement::new(
-            "SELECT student_code, display_name, status FROM student \
-             WHERE display_name LIKE ? ESCAPE '\\' \
-             ORDER BY status = 'left', student_code LIMIT ?",
-        )
-        .bind(like(q, true))
-        .bind(want + hits.len() as i64);
-        for h in rows_to_hits(&s.services.db.query(by_name).await?) {
-            if !hits.iter().any(|x| x.0 == h.0) {
-                hits.push(h);
-            }
-        }
+        // RESULTS of them, so ask for that many more.
+        let st = Statement::new(NAME_SQL)
+            .bind(like(q, true))
+            .bind((want + hits.len()) as i64);
+        let mut by_name: Vec<Hit> = rows_to_hits(&s.services.db.query(st).await?)
+            .into_iter()
+            .filter(|h| !hits.iter().any(|x| x.0 == h.0))
+            .collect();
+        by_name.sort_by(|a, b| a.0.cmp(&b.0));
+        left_last(&mut by_name);
+        hits.extend(by_name);
     }
     let more = hits.len() > RESULTS;
     hits.truncate(RESULTS);
     Ok((hits, more))
+}
+
+/// Left Students after the active ones, keeping each group's order.
+fn left_last(hits: &mut [Hit]) {
+    hits.sort_by_key(|h| h.2);
 }
 
 fn rows_to_hits(rows: &crate::Rows) -> Vec<Hit> {
@@ -319,4 +343,56 @@ async fn edit(
         }
     };
     Html(body.into_string()).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CODE_SQL, NAME_SQL};
+
+    /// The Core's schema, every top-level migration in order.
+    fn schema() -> rusqlite::Connection {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "sql"))
+            .collect();
+        files.sort();
+        for f in files {
+            c.execute_batch(&std::fs::read_to_string(&f).unwrap())
+                .unwrap_or_else(|e| panic!("{}: {e}", f.display()));
+        }
+        c
+    }
+
+    fn plan(c: &rusqlite::Connection, sql: &str, args: &[&dyn rusqlite::ToSql]) -> String {
+        let mut st = c.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+        let rows = st
+            .query_map(args, |r| r.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        rows.join("\n")
+    }
+
+    #[test]
+    fn the_code_search_walks_the_index_and_never_sorts() {
+        let c = schema();
+        let p = plan(&c, CODE_SQL, &[&"6", &"6", &9]);
+        assert!(
+            p.contains("USING INDEX") || p.contains("USING COVERING INDEX"),
+            "{p}"
+        );
+        assert!(p.contains("student_code>? AND student_code<?"), "{p}");
+        assert!(!p.contains("TEMP B-TREE"), "no sort before the LIMIT: {p}");
+    }
+
+    #[test]
+    fn the_name_search_is_a_scan_with_no_sort() {
+        let c = schema();
+        let p = plan(&c, NAME_SQL, &[&"%ab%", &9]);
+        assert!(p.contains("SCAN"), "{p}");
+        assert!(!p.contains("TEMP B-TREE"), "{p}");
+    }
 }

@@ -104,6 +104,26 @@ async fn search_finds_by_code_prefix_or_name_limited_and_escaped() {
     );
     assert!(!r.contains(r#"aria-label="เพิ่ม 68010001""#), "{r}");
     assert!(r.contains(r#"aria-label="เพิ่ม 68010002""#), "{r}");
+    // A code with letters is found as typed or in lower case.
+    run(
+        &h,
+        "INSERT INTO student (id, student_code, display_name, locale, created_at, updated_at) \
+         VALUES ('b', 'B6512345', 'Booby', 'th', 1, 1)",
+    )
+    .await;
+    for q in ["B65", "b65"] {
+        let r = b.get(&search(q)).await.body;
+        assert!(r.contains("B6512345"), "{q}: {r}");
+    }
+    // A left Student comes after the active ones.
+    run(
+        &h,
+        "UPDATE student SET status = 'left' WHERE student_code = '68010001'",
+    )
+    .await;
+    let r = b.get(&search("680100")).await.body;
+    let (a, l) = (r.find("68010002").unwrap(), r.find("68010001").unwrap());
+    assert!(a < l, "{r}");
     // One letter does not search names (it would match nearly everyone).
     let r = b.get(&search("P")).await.body;
     assert!(r.contains("ไม่พบนักศึกษาที่ตรงกัน"), "{r}");

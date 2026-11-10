@@ -604,6 +604,7 @@ dependencies = [
  "http-body-util",
  "maud",
  "pbkdf2",
+ "rusqlite",
  "rust_xlsxwriter",
  "serde",
  "serde_json",
