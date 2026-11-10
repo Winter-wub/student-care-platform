@@ -66,7 +66,7 @@ async fn a_full_import_without_the_optional_columns_keeps_the_stored_values() {
     assert!(card.contains("กลุ่มผู้รับที่เลือกตามป้ายเหล่านี้"), "{card}");
     // The new Student has no email and cannot Link by themselves (M1).
     assert!(
-        card.contains("data-count=\"no_email_absent\">1 คนจะไม่มีอีเมล"),
+        card.contains("data-count=\"no_email_absent\">1 คนไม่มีอีเมล คนที่ยังไม่ได้ผูกบัญชี"),
         "{card}"
     );
     // Only the year changes: nothing is cleared.

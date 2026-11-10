@@ -28,7 +28,7 @@ A person on the roster, identified by student ID. The only kind of person who ta
 _Avoid_: user, member, end user
 
 **Roster warning** (คำเตือนทะเบียน):
-A problem found in a roster file that does not stop the import: a missing, malformed or shared email, or an empty optional attribute. The row imports and the preview and report list it. A problem that stops the import (a malformed or duplicate student ID, an unreadable value) is _blocking_; a Deployment may make any warning class blocking. A Student with no email, an invalid email or an empty attribute shows as having missing data on the Students list; a shared email is only a warning, and the chat flow refuses to onboard such a Student (Staff link them by hand). A file may leave the email column out (#154) unless a missing email is blocking: it raises no per-row warning, the Students keep their stored email, and the preview counts those left without one.
+A problem found in a roster file that does not stop the import: a missing, malformed or shared email, or an empty optional attribute. The row imports and the preview and report list it. A problem that stops the import (a malformed or duplicate student ID, an unreadable value) is _blocking_; a Deployment may make any warning class blocking. A Student with no email, an invalid email or an empty attribute shows as having missing data on the Students list; a shared email is only a warning, and the chat flow refuses to onboard such a Student (Staff link them by hand). A file may leave the email column out unless a missing email is blocking: it raises no per-row warning, the Students keep their stored email, and the preview counts those left without one.
 _Avoid_: soft error
 
 **Staff** (เจ้าหน้าที่):

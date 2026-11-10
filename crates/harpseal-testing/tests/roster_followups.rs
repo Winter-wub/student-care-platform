@@ -248,10 +248,16 @@ async fn one_failing_object_does_not_hold_back_the_other_prunes() {
         r.errors
     );
     let keys = "SELECT count(*) FROM audit_log WHERE action = 'roster.file.prune' \
-                AND json_extract(after, '$.keys[0]') = ? AND json_extract(after, '$.keys[1]') = ?";
+                AND json_extract(after, '$.keys[0]') = ? AND json_extract(after, '$.keys[1]') = ? \
+                AND json_extract(after, '$.keys[2]') = ?";
     let pruned_key = format!("roster/{}/b.csv", ids[1]);
     let rows_key = format!("roster-rows/v2/{}.jsonl", ids[1]);
-    assert_eq!(int(&h, keys, &[&pruned_key, &rows_key]).await, 1);
+    // The rows key of an upload before #154 is deleted and listed too.
+    let legacy_key = format!("roster-rows/{}.jsonl", ids[1]);
+    assert_eq!(
+        int(&h, keys, &[&pruned_key, &rows_key, &legacy_key]).await,
+        1
+    );
     assert!(r.to_string().ends_with("and 1 roster files"), "{r}");
 }
 

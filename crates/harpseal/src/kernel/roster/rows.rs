@@ -16,7 +16,9 @@
 //! not know and would clear on confirm. After a rollback such a binary
 //! finds no `roster-rows/<id>.jsonl`, falls back to the original file and
 //! refuses it (its reader needs every column), so nothing is cleared.
-//! This binary still reads rows stored before #154 ([`legacy_key`]).
+//! This binary still reads rows stored before #154 ([`legacy_key`]). A
+//! rollback that outlasts the one-year window can orphan `v2` rows: the
+//! older binary's prune deletes only the legacy key.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -178,5 +180,20 @@ mod tests {
         assert_eq!(slice(&stored, 50, 50).unwrap(), vec![]);
         assert!(slice(&stored, 45, 60).is_err(), "fewer lines than asked");
         assert!(slice(b"{\"row\":1}\n", 0, 1).is_err());
+    }
+
+    #[test]
+    fn an_unknown_field_to_keep_refuses_the_rows() {
+        // #154: a name this binary does not know (a newer one's) is never
+        // dropped, or the field would be cleared on confirm.
+        let line = |keep: &str| {
+            format!(
+                "{{\"row\":2,\"code\":\"68010001\",\"name\":\"นก\",\"locale\":\"th\",\"keep\":[{keep}]}}\n"
+            )
+        };
+        let known = slice(line("\"email\",\"attributes.gpa\"").as_bytes(), 0, 1).unwrap();
+        assert_eq!(known[0].keep.len(), 2);
+        assert!(slice(line("\"status\"").as_bytes(), 0, 1).is_err());
+        assert!(slice(line("\"attributes.\"").as_bytes(), 0, 1).is_err());
     }
 }

@@ -32,8 +32,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.absent_no_email",
-        "{n} คนจะไม่มีอีเมล จึงผูกบัญชีแชตเองไม่ได้ จนกว่าเจ้าหน้าที่จะเพิ่มอีเมลหรือผูกบัญชีให้",
-        "{n} Students will have no email, so they cannot link their chat account until Staff add one or link them by hand"
+        "{n} คนไม่มีอีเมล คนที่ยังไม่ได้ผูกบัญชีจะผูกบัญชีแชทเองไม่ได้ จนกว่าเจ้าหน้าที่จะเพิ่มอีเมลหรือผูกบัญชีให้",
+        "{n} Students have no email: those not yet linked cannot link their chat account until Staff add one or link them by hand"
     ),
     (
         "kernel.roster.header_absent",

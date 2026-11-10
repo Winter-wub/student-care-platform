@@ -213,7 +213,7 @@ preview keeps its figures and says so in one line, and `changes.csv` answers
 `kernel.roster.import` in 500-row chunks (the page polls its progress), and the
 done page shows each preview number next to what was imported. One import at a
 time; the file stays in the FileStore under `roster/<import id>/` (its parsed
-rows under `roster-rows/<import id>.jsonl`, its changes under
+rows under `roster-rows/v2/<import id>.jsonl`, its changes under
 `roster-diff/<import id>.*`) for one year, then the per-minute tick deletes
 them (audit `roster.file.prune`) and drops the Students the import's row names
 (who left, and the Student of each warning); the import's page and report
