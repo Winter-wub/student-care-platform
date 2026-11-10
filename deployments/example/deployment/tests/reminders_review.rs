@@ -1,4 +1,4 @@
-//! The review step of "ส่งเตือนตอนนี้" and the weekly schedule card (#135):
+//! The review step of "ตรวจก่อนส่งเตือน" (#157) and the weekly schedule card (#135):
 //! who gets it and how, names only for Staff who may view Students, a send
 //! to nobody disabled with the reason, long lists edited on the page.
 
@@ -119,9 +119,10 @@ async fn the_page_shows_the_weekly_schedule() {
     let page = b.get("/admin/reminders").await.body;
     assert!(page.contains("ส่งอัตโนมัติทุกสัปดาห์"), "{page}");
     assert!(
-        page.contains("ทุกวันจันทร์ เวลา 09:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย fee_due"),
+        page.contains("ทุกวันจันทร์ เวลา 09:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย “ค้างชำระค่าธรรมเนียม”"),
         "{page}"
     );
+    assert!(!page.contains("fee_due"), "no raw Tag name (#157): {page}");
     assert!(page.contains("ตอนนี้มี 2 คน"), "Karn and Mali: {page}");
     assert!(page.contains("ครั้งถัดไป"), "{page}");
 }

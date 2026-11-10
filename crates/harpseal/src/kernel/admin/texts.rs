@@ -67,12 +67,12 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.admin.kind.link_duplicate_attempt",
-        "พยายามเชื่อมรหัสที่เชื่อมแล้ว",
+        "พยายามผูกรหัสที่ผูกแล้ว",
         "Claim of a linked student ID"
     ),
     (
         "kernel.admin.kind.link_shared_email",
-        "พยายามเชื่อมรหัสที่อีเมลซ้ำกับคนอื่น",
+        "พยายามผูกรหัสที่อีเมลซ้ำกับคนอื่น",
         "Claim of a student ID whose email is shared"
     ),
     (
@@ -251,7 +251,7 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.admin.texts.consent_help",
-        "เมื่อเปลี่ยนฉบับ นักศึกษาที่เชื่อมบัญชีแล้วจะได้รับประกาศให้ยอมรับใหม่ในข้อความถัดไป ยกเว้นฉบับที่นักศึกษาเคยยอมรับแล้ว ระบบจะไม่ถามซ้ำ",
+        "เมื่อเปลี่ยนฉบับ นักศึกษาที่ผูกบัญชีแล้วจะได้รับประกาศให้ยอมรับใหม่ในข้อความถัดไป ยกเว้นฉบับที่นักศึกษาเคยยอมรับแล้ว ระบบจะไม่ถามซ้ำ",
         "After a change, every linked Student is asked to accept the notice again with their next message. A version a Student already accepted will not ask them again."
     ),
     ("kernel.admin.texts.consent_new", "ฉบับใหม่", "New version"),

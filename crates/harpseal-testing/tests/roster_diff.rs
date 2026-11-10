@@ -65,7 +65,7 @@ async fn the_preview_leads_with_what_changes_and_lists_who() {
     assert_eq!(after(&page, "data-count=\"will_become_left\""), "3");
     assert_eq!(
         after(&page, "data-count=\"links_cut\""),
-        "ตัดการเชื่อมบัญชีแชท 1 บัญชี"
+        "ตัดการผูกบัญชีแชท 1 บัญชี"
     );
     // The other counts on the quieter line.
     assert_eq!(after(&page, "data-count=\"unchanged\""), "2");
@@ -74,7 +74,7 @@ async fn the_preview_leads_with_what_changes_and_lists_who() {
     // The alarm in numbers, and the typed field tied to it and the figure.
     assert_eq!(
         after(&page, "<div class=\"warn\" id=\"roster-alarm\""),
-        "3 จาก 6 คน (50%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท 1 บัญชี \
+        "3 จาก 6 คน (50%) จะพ้นสภาพ และถูกตัดการผูกบัญชีแชท 1 บัญชี \
          ตรวจให้แน่ใจว่าไฟล์นี้เป็นทะเบียนของภาคเรียนนี้ก่อนยืนยัน"
     );
     assert!(

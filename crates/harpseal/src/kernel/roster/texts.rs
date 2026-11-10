@@ -25,7 +25,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.mode", "แบบการนำเข้า", "Import mode"),
     (
         "kernel.roster.mode_full_help",
-        "ทั้งทะเบียน: ใครไม่อยู่ในไฟล์จะพ้นสภาพและถูกยกเลิกการเชื่อมบัญชีแชท",
+        "ทั้งทะเบียน: ใครไม่อยู่ในไฟล์จะพ้นสภาพและถูกยกเลิกการผูกบัญชีแชท",
         "Whole roster: anyone missing from the file becomes left and loses their chat Links"
     ),
     (
@@ -154,7 +154,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.links_revoked",
-        "ยกเลิกการเชื่อมบัญชี",
+        "ยกเลิกการผูกบัญชี",
         "Links revoked"
     ),
     (

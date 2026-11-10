@@ -42,7 +42,7 @@ async fn the_roles_page_lists_every_declared_permission() {
     // Each Module's Permissions sit under a Thai heading (#125): the
     // Kernel's own, else the title of the Module's first page.
     for (m, legend) in [
-        ("kernel", "ระบบหลัก"),
+        ("kernel", "นักศึกษา เจ้าหน้าที่ และการตั้งค่า"),
         ("announcements", "ประกาศข่าว"),
         ("fees", "ยอดค้างชำระ"),
         ("reminders", "เตือนชำระค่าธรรมเนียม"),

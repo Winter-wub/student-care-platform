@@ -14,7 +14,8 @@ async fn roles_are_created_edited_and_deleted_only_when_unused() {
     let list = admin.get("/admin/roles").await;
     assert_eq!(list.status, 200);
     assert!(
-        list.body.contains("<legend>ระบบหลัก</legend>"),
+        list.body
+            .contains("<legend>นักศึกษา เจ้าหน้าที่ และการตั้งค่า</legend>"),
         "grouped by Module, in Thai"
     );
     assert!(

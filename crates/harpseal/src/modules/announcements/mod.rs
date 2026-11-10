@@ -51,7 +51,7 @@
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **Confirmation in proportion to reach** (#120): the Audience is an
 //!   explicit choice (`scope`: ทุกคน / เลือกกลุ่ม / เลือกรายคน; empty filters
-//!   never mean everyone), and "ยืนยันส่ง" opens a review step
+//!   never mean everyone), and "ตรวจก่อนส่ง" (#157) opens a review step
 //!   (`page_review`). What guards what:
 //!   - the review step and its `reviewed` field only guard against an
 //!     accidental click, for group and hand-picked sends: a POST can carry
@@ -110,6 +110,7 @@ mod student;
 mod sweep;
 mod texts;
 mod texts_audience;
+mod texts_form;
 mod texts_review;
 mod texts_saved;
 mod view;
@@ -200,7 +201,7 @@ impl Module for Announcements {
         )
         .messages(texts::CHAT)
         .messages(texts::PAGES)
-        .messages(texts::FORM)
+        .messages(texts_form::FORM)
         .messages(texts_review::REVIEW)
         .messages(texts_saved::SAVED)
         .messages(texts_audience::AUDIENCE)

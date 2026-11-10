@@ -181,7 +181,7 @@ fn actions(v: &View<'_>, row: &Row) -> Markup {
             @if send && matches!(st, "draft" | "scheduled" | "sent") {
                 a class="btn secondary" href=(format!("/admin/announcements/{}/edit", row.id)) { (v.t("announcements.action.edit")) }
             }
-            // #120: "ยืนยันส่ง" opens the review step first.
+            // #120: "ตรวจก่อนส่ง" (#157) opens the review step first.
             @if send && st == "draft" {
                 a class="btn" href=(super::page_review::path(&row.id)) { (v.t("announcements.action.confirm")) }
             }

@@ -30,9 +30,10 @@ fn by_module(perms: &[Permission]) -> BTreeMap<&str, Vec<&Permission>> {
     m
 }
 
-/// A Module as Staff know it (#125): "ระบบหลัก" for the Kernel, else the
-/// title of the Module's first back-office page ("ประกาศข่าว"), else its
-/// own `<module>.title` or `<module>.menu` text, else "ส่วนเสริม" with
+/// A Module as Staff know it (#125): "นักศึกษา เจ้าหน้าที่ และการตั้งค่า"
+/// for the Kernel (#157: "ระบบหลัก" was jargon), else the title of the
+/// Module's first back-office page ("ประกาศข่าว"), else its own
+/// `<module>.title` or `<module>.menu` text, else "ส่วนเสริม" with
 /// the Module's name, "ส่วนเสริม (contact)": several Modules without a
 /// title must not read the same on the Roles page or in the Texts filter
 /// (#131).

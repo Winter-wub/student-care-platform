@@ -1,5 +1,5 @@
 //! `GET /admin/announcements/{id}/review` (#120): the step between
-//! "ยืนยันส่ง" and the send. A calm summary of a draft: who it reaches
+//! "ตรวจก่อนส่ง" (#157) and the send. A calm summary of a draft: who it reaches
 //! (counted as the form's count box counts), the message quota it uses,
 //! when it goes out, and the bubble; then "ยืนยันส่ง" and "กลับไปแก้ไข".
 //! A draft to everyone confirms with "ส่งถึงทุกคน N คน" in the danger

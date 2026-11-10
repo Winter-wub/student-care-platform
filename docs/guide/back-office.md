@@ -126,7 +126,7 @@ nobody becomes left). The form lists `upsert` first and preselects `[roster] def
 ("ยืนยัน: N คนจะพ้นสภาพ") in the danger style; when the preview also shows the
 red warning, Staff must type that number first (#135: only the number), and a
 confirm without it is refused and changes nothing. The warning gives the numbers
-("48 จาก 50 คน (96%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท 40 บัญชี", or, for a
+("48 จาก 50 คน (96%) จะพ้นสภาพ และถูกตัดการผูกบัญชีแชท 40 บัญชี", or, for a
 file shorter than the roster, its rows against the active Students), and the
 typed field names it and the leaving figure with `aria-describedby` (#134). That number is from the
 preview (upload time); the left phase runs when the import's Job does, so a
@@ -248,7 +248,7 @@ The Audience is an explicit choice (#120): "ทุกคน", "เลือก�
 attribute value or Tag) or "เลือกรายคน" (at least one ID). None is
 preselected on a new announcement, and empty filters no longer mean everyone:
 a form without a choice, or with a choice and nothing in it, is refused in
-Thai and nothing is saved. "ยืนยันส่ง" saves a draft and opens a review step
+Thai and nothing is saved. "ตรวจก่อนส่ง" saves a draft and opens a review step
 (`/admin/announcements/{id}/review`) before anything is sent or scheduled: the
 bubble, the Students and accounts per Channel (counted as the form counts), the
 message quota in plain Thai ("จะใช้ข้อความ LINE ประมาณ N ข้อความ จากโควตาเดือนนี้ที่เหลือ
@@ -458,7 +458,7 @@ catalog keys, config names and ISO dates stay in the "ข้อมูลทา�
 disclosure.
 
 - **Permissions** read as Thai sentences ("นำเข้ารายชื่อนักศึกษา"), grouped
-  under the Module's name as Staff know it: "ระบบหลัก" for the Kernel, else
+  under the Module's name as Staff know it: "นักศึกษา เจ้าหน้าที่ และการตั้งค่า" for the Kernel, else
   the title of the Module's first back-office page. Give each Permission
   its sentence with `Permission::new(id, description).thai("…")`. A Module
   that has not yet done so shows its English `description`; see

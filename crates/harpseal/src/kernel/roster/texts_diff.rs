@@ -16,7 +16,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.what_changes", "สิ่งที่จะเปลี่ยน", "What changes"),
     (
         "kernel.roster.links_cut",
-        "ตัดการเชื่อมบัญชีแชท {n} บัญชี",
+        "ตัดการผูกบัญชีแชท {n} บัญชี",
         "{n} chat Links cut"
     ),
     (
@@ -26,7 +26,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.alarm_left",
-        "{left} จาก {active} คน ({pct}%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท {links} บัญชี ตรวจให้แน่ใจว่าไฟล์นี้เป็นทะเบียนของภาคเรียนนี้ก่อนยืนยัน",
+        "{left} จาก {active} คน ({pct}%) จะพ้นสภาพ และถูกตัดการผูกบัญชีแชท {links} บัญชี ตรวจให้แน่ใจว่าไฟล์นี้เป็นทะเบียนของภาคเรียนนี้ก่อนยืนยัน",
         "{left} of {active} Students ({pct}%) will become left and {links} chat Links will be cut. Make sure this file is this term's roster before you confirm"
     ),
     (
