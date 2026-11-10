@@ -3,13 +3,15 @@
 //! `.csv`) or every worksheet of an XLSX (named `.xlsx`); any other name
 //! (`.txt`, none) is refused, whatever it holds. In each non-empty sheet
 //! the header row is found among the first rows (title rows above it are
-//! skipped) and must match the `[roster]` columns exactly (trimmed); a
-//! sheet without it is refused by name. Totals and notes rows below the
-//! data (the reader's footer rule, with the `integer` and `number`
-//! attribute columns as numeric) and hidden sheets are skipped and listed
-//! ([`Skipped`]) for the preview and the report; empty sheets and rows are
-//! skipped silently. Cells are trimmed and an empty cell is absent. Pure:
-//! no I/O.
+//! skipped) and must hold the required `[roster]` columns exactly
+//! (trimmed); a sheet without them is refused by name. A column that may
+//! be empty may also be left out (#154): it is listed as [`Absent`], and
+//! the import keeps what each listed Student has stored in it. Totals and
+//! notes rows below the data (the reader's footer rule, with the
+//! `integer` and `number` attribute columns as numeric) and hidden sheets
+//! are skipped and listed ([`Skipped`]) for the preview and the report;
+//! empty sheets and rows are skipped silently. Cells are trimmed and an
+//! empty cell is absent. Pure: no I/O.
 
 use serde::{Deserialize, Serialize};
 
@@ -113,11 +115,51 @@ pub(crate) struct Skipped {
 pub(crate) struct Read {
     pub(crate) rows: Vec<Row>,
     pub(crate) skipped: Vec<Skipped>,
+    /// The may-be-empty columns a sheet leaves out (#154).
+    pub(crate) absent: Vec<Absent>,
 }
 
-/// The headers a file must have, in template order: student id, name,
-/// email, the Locale and Tags columns if mapped, then the attributes in
-/// display order.
+/// The may-be-empty columns one sheet leaves out (#154), in template
+/// order: its rows keep the stored values of these columns.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Absent {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) sheet: String,
+    pub(crate) columns: Vec<String>,
+}
+
+/// The columns `sheet` leaves out, per `absent`.
+pub(crate) fn absent_in<'a>(absent: &'a [Absent], sheet: &str) -> &'a [String] {
+    absent
+        .iter()
+        .find(|a| a.sheet == sheet)
+        .map_or(&[], |a| a.columns.as_slice())
+}
+
+/// The headers a file must hold (#154): the student id, the name and the
+/// attributes that may not be empty; the email when `[roster] blocking`
+/// refuses a missing one, and every attribute when it refuses an empty
+/// one (a column left out would otherwise slip past the rule). The others
+/// may be left out.
+pub(crate) fn required_headers(roster: &RosterConfig) -> Vec<String> {
+    let mut v = vec![roster.student_code.clone(), roster.display_name.clone()];
+    if roster.blocks("missing_email") {
+        v.push(roster.email.clone());
+    }
+    let all = roster.blocks("empty_attribute");
+    v.extend(
+        roster
+            .attributes_in_order()
+            .into_iter()
+            .filter(|(_, a)| !a.optional || all)
+            .map(|(_, a)| a.column.clone()),
+    );
+    v
+}
+
+/// The headers a file may have (the template's), in template order:
+/// student id, name, email, the Locale and Tags columns if mapped, then
+/// the attributes in display order.
 pub(crate) fn expected_headers(roster: &RosterConfig) -> Vec<String> {
     let mut v = vec![
         roster.student_code.clone(),
@@ -137,6 +179,7 @@ pub(crate) fn expected_headers(roster: &RosterConfig) -> Vec<String> {
 
 /// Reads every sheet into data rows, checking the headers against
 /// `roster`; see [`read`].
+#[cfg(test)]
 pub(crate) fn parse(
     bytes: &[u8],
     file_name: &str,
@@ -157,11 +200,12 @@ pub(crate) fn read(
     let book = Workbook::open_with(bytes, file_name, Limits::new(MAX_ROWS, MAX_COLUMNS))
         .map_err(sheet_error)?;
     let expected = expected_headers(roster);
+    let required = required_headers(roster);
     let numeric = roster
         .attributes
         .values()
         .filter(|a| matches!(a.kind, AttributeType::Integer | AttributeType::Number));
-    let spec = TableSpec::new(expected.clone())
+    let spec = TableSpec::new(required.clone())
         .key(roster.student_code.clone())
         .skip_footer(numeric.map(|a| a.column.clone()));
     let mut out = Read::default();
@@ -204,6 +248,17 @@ pub(crate) fn read(
                     });
                     continue;
                 }
+                let gone: Vec<String> = expected
+                    .iter()
+                    .filter(|h| !table.headers().contains(h))
+                    .cloned()
+                    .collect();
+                if !gone.is_empty() {
+                    out.absent.push(Absent {
+                        sheet: s.name().to_string(),
+                        columns: gone,
+                    });
+                }
                 let (rows, footer) = table.into_parts();
                 out.rows.extend(rows);
                 out.skipped.extend(footer.into_iter().map(|f| Skipped {
@@ -216,7 +271,7 @@ pub(crate) fn read(
                     return Err(FileError::TooManyRows);
                 }
             }
-            Err(TableError::Header(e)) => mismatches.push(not_found(e, &expected)),
+            Err(TableError::Header(e)) => mismatches.push(not_found(e, &expected, &required)),
             Err(_) => mismatches.push(HeaderMismatch {
                 sheet: s.name().to_string(),
                 row: 0,
@@ -253,8 +308,11 @@ fn sheet_error(e: SheetError) -> FileError {
 
 /// The closest row's mismatch (a repeated column is unexpected); when it
 /// holds none of the columns, one "no header row" problem for the sheet.
-fn not_found(e: HeaderError, expected: &[String]) -> HeaderMismatch {
-    let no_header = e.missing.len() == expected.len() && e.repeated.is_empty();
+fn not_found(e: HeaderError, expected: &[String], required: &[String]) -> HeaderMismatch {
+    // No row holds a required column, nor one that may be left out.
+    let no_header = e.missing.len() == required.len()
+        && e.repeated.is_empty()
+        && !e.headers.iter().any(|h| expected.contains(h));
     HeaderMismatch {
         unexpected: if no_header {
             Vec::new()

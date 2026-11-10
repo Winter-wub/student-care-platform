@@ -10,10 +10,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Map;
 
-use super::file::{FileError, HeaderMismatch, Row};
+use super::file::{Absent, FileError, HeaderMismatch, Row, absent_in};
+use super::keep::Kept;
 use super::warnings::{self, Severity, Taken};
 use crate::config::{AttrError, DeploymentConfig};
 use crate::kernel::students::email::is_email;
@@ -32,86 +32,7 @@ pub(crate) const MAX_TAGS: usize = 20;
 /// unless they are the configured separator.
 const TAG_SEPARATORS: [char; 3] = [',', ';', '|'];
 
-/// One problem of a file. `reason` is a code; the text is
-/// `kernel.roster.reason_<code>`. `row` 0 is the file (or the sheet) as a
-/// whole. `sheet` names the XLSX sheet (empty for a CSV) and `cell` the
-/// cell (`H2`) when one cell is at fault; both are left out of the stored
-/// JSON when empty, so reports stored before #70 read unchanged. So is
-/// `severity` (#71) when it is `blocking`, which every older problem is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Problem {
-    pub(crate) row: usize,
-    pub(crate) column: String,
-    pub(crate) reason: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) sheet: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) cell: String,
-    #[serde(default, skip_serializing_if = "Severity::is_blocking")]
-    pub(crate) severity: Severity,
-    /// Cells this problem stands for when it is one of several of a
-    /// column (`empty_attribute`, #71); 0 for a problem of one place.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub(crate) count: u64,
-    /// The first rows of such a problem.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) rows: Vec<usize>,
-    /// The Student a problem of a warning class is about (#134): student
-    /// code and name as the row holds them; empty for other problems.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) student: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub(crate) name: String,
-}
-
-fn is_zero(n: &u64) -> bool {
-    *n == 0
-}
-
-impl Problem {
-    pub(crate) fn new(row: usize, column: &str, reason: &str) -> Self {
-        Self {
-            row,
-            column: column.into(),
-            reason: reason.into(),
-            sheet: String::new(),
-            cell: String::new(),
-            severity: Severity::Blocking,
-            count: 0,
-            rows: Vec::new(),
-            student: String::new(),
-            name: String::new(),
-        }
-    }
-
-    /// The same problem, naming the Student by `code` and `name`.
-    pub(crate) fn about(mut self, code: &str, name: &str) -> Self {
-        self.student = code.into();
-        self.name = name.into();
-        self
-    }
-
-    /// How many cells it counts as in a total: [`Problem::count`], else 1.
-    pub(crate) fn weight(&self) -> u64 {
-        self.count.max(1)
-    }
-
-    /// The same problem as a warning unless `blocks`.
-    pub(crate) fn with_severity(mut self, blocks: bool) -> Self {
-        self.severity = if blocks {
-            Severity::Blocking
-        } else {
-            Severity::Warning
-        };
-        self
-    }
-
-    /// The same problem on `sheet`.
-    pub(crate) fn on(mut self, sheet: &str) -> Self {
-        self.sheet = sheet.into();
-        self
-    }
-}
+pub(crate) use super::problem::Problem;
 
 /// One valid row: the Student it describes.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +42,9 @@ pub(crate) struct Record {
     pub(crate) fields: StudentFields,
     /// Roster Tag names, deduplicated, in file order.
     pub(crate) tags: Vec<String>,
+    /// Fields whose column the row's sheet leaves out (#154). A listed
+    /// Student keeps what is stored in them ([`super::keep::resolve`]).
+    pub(crate) keep: Vec<Kept>,
 }
 
 /// A valid file.
@@ -166,16 +90,32 @@ fn header_problems(m: &HeaderMismatch) -> Vec<Problem> {
 }
 
 /// Checks every row; `Err` holds every problem found, warnings included.
+#[cfg(test)]
 pub(crate) fn validate(rows: &[Row], config: &DeploymentConfig) -> Result<Valid, Vec<Problem>> {
     validate_against(rows, config, &Taken::default())
 }
 
 /// [`validate`], also warning about an email an existing Student uses
 /// (`taken`, see [`warnings::taken`]).
+#[cfg(test)]
 pub(crate) fn validate_against(
     rows: &[Row],
     config: &DeploymentConfig,
     taken: &Taken,
+) -> Result<Valid, Vec<Problem>> {
+    validate_in(rows, config, taken, &[])
+}
+
+/// Checks every row; `Err` holds every problem found, warnings included.
+/// Warns about an email an existing Student uses (`taken`, see
+/// [`warnings::taken`]). A sheet may leave out the may-be-empty columns
+/// `absent` lists (#154): those cells are not checked, and the records
+/// keep the stored values.
+pub(crate) fn validate_in(
+    rows: &[Row],
+    config: &DeploymentConfig,
+    taken: &Taken,
+    absent: &[Absent],
 ) -> Result<Valid, Vec<Problem>> {
     let roster = &config.roster;
     let pattern = config.student.id_pattern.as_deref();
@@ -196,6 +136,9 @@ pub(crate) fn validate_against(
     for row in rows {
         let (n, sheet) = (row.number(), row.sheet());
         let before = sink.list.len();
+        let gone = absent_in(absent, sheet);
+        let has = |c: &str| !gone.iter().any(|g| g == c);
+        let mut keep = Vec::new();
         for column in row.unheaded() {
             sink.bad(row, column, "no_header");
         }
@@ -215,6 +158,8 @@ pub(crate) fn validate_against(
         }
         let email = row.get(&roster.email);
         match email {
+            // No column: the stored email stays, and a new Student has none.
+            None if !has(&roster.email) => keep.push(Kept::Email),
             None => {
                 empty_email += 1;
                 sink.class(row, &roster.email, "missing_email");
@@ -224,6 +169,10 @@ pub(crate) fn validate_against(
         }
         let locale = match &roster.locale {
             Some(l) => match row.get(&l.column) {
+                None if !has(&l.column) => {
+                    keep.push(Kept::Locale);
+                    default_locale.clone()
+                }
                 None => default_locale.clone(),
                 Some(v) if is_locale(v) => Locale(v.to_string()),
                 Some(_) => {
@@ -234,7 +183,9 @@ pub(crate) fn validate_against(
             None => default_locale.clone(),
         };
         let mut tags: Vec<String> = Vec::new();
-        if let Some(t) = &roster.tags {
+        if roster.tags.as_ref().is_some_and(|t| !has(&t.column)) {
+            keep.push(Kept::Tags);
+        } else if let Some(t) = &roster.tags {
             let cell = row.get(&t.column).unwrap_or_default();
             let foreign = TAG_SEPARATORS
                 .iter()
@@ -257,6 +208,10 @@ pub(crate) fn validate_against(
         }
         let mut attributes = Map::new();
         for (key, spec) in roster.attributes_in_order() {
+            if !has(&spec.column) {
+                keep.push(Kept::Attribute(key.to_string()));
+                continue;
+            }
             // An enum cell may name the value by its label (#81).
             let cell = row.get(&spec.column).unwrap_or_default();
             match spec.parse_import(cell, &config.default_locale) {
@@ -281,6 +236,7 @@ pub(crate) fn validate_against(
             code: code.to_string(),
             fields,
             tags,
+            keep,
         });
     }
     let codes: BTreeSet<&str> = seen.keys().map(String::as_str).collect();
@@ -290,7 +246,8 @@ pub(crate) fn validate_against(
         let r = &records[index];
         let p = Problem::new(row, &roster.email, "duplicate_email")
             .on(sheet)
-            .about(&r.code, &r.fields.display_name);
+            .about(&r.code, &r.fields.display_name)
+            .showing(r.fields.email.as_deref().unwrap_or_default());
         sink.list
             .insert(ends[index], p.with_severity(blocks("duplicate_email")));
     }
@@ -319,7 +276,7 @@ impl<'a> Sink<'a> {
     /// A problem that always blocks.
     fn bad(&mut self, row: &Row, column: &str, reason: &str) {
         let p = Problem::new(row.number(), column, reason).on(row.sheet());
-        self.push(p);
+        self.push(echo(p, row, column));
     }
 
     /// A problem of a warning `class`: blocking only if the Deployment
@@ -332,7 +289,7 @@ impl<'a> Sink<'a> {
             get(&self.roster.student_code),
             get(&self.roster.display_name),
         );
-        self.push(p.with_severity(blocks));
+        self.push(echo(p, row, column).with_severity(blocks));
     }
 
     /// `Ok` with the warnings when nothing blocks, else every problem.
@@ -345,6 +302,14 @@ impl<'a> Sink<'a> {
             empty_email,
             warnings: self.list,
         })
+    }
+}
+
+/// `p` echoing the value of `row`'s cell under `column` (#154), if any.
+fn echo(p: Problem, row: &Row, column: &str) -> Problem {
+    match row.get(column) {
+        Some(v) if !v.is_empty() => p.showing(v),
+        _ => p,
     }
 }
 

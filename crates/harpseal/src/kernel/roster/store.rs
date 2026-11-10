@@ -52,6 +52,10 @@ pub(crate) struct Preview {
     /// by hand: they stay active (0 in `upsert`).
     pub(crate) kept_by_status: u64,
     pub(crate) empty_email: u64,
+    /// Listed Students left without an email because the file leaves the
+    /// email column out (#154): new ones, and those with none stored. They
+    /// cannot Link through the chat flow. Also counted in `empty_email`.
+    pub(crate) no_email_absent: u64,
     /// Active Students before the import.
     pub(crate) active_before: u64,
     /// Left > 20% of the active roster, or a `full` file shorter than it.
@@ -92,6 +96,10 @@ pub(crate) struct Counts {
     /// sheets, shown on the preview and in the report.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) skipped: Vec<super::file::Skipped>,
+    /// The may-be-empty columns the file leaves out (#154), per sheet:
+    /// the preview says listed Students keep what is stored in them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) absent: Vec<super::file::Absent>,
     /// The warnings of a file that imports (#71), shown on the preview and
     /// in the report.
     #[serde(skip_serializing_if = "Warned::is_empty")]

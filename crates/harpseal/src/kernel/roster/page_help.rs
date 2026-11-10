@@ -30,6 +30,7 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
         holds: v.t(key),
         required,
         example,
+        may_omit: !required,
     };
     let mut rows = vec![
         col(
@@ -44,10 +45,11 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
             true,
             v.t("kernel.upload.example_name"),
         ),
+        // Required when `[roster] blocking` refuses a missing email (#154).
         col(
             &roster.email,
             "kernel.students.email",
-            false,
+            roster.blocks("missing_email"),
             v.t("kernel.upload.example_email"),
         ),
     ];
@@ -90,11 +92,15 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
         if let Some(range) = a.range_text() {
             holds = format!("{holds} ({range})");
         }
+        // An empty optional attribute that `[roster] blocking` refuses is
+        // required too, header and value (#154).
+        let required = !a.optional || roster.blocks("empty_attribute");
         rows.push(HelpColumn {
             header: a.column.clone(),
             holds,
-            required: !a.optional,
+            required,
             example: example(a),
+            may_omit: !required,
         });
     }
     rows

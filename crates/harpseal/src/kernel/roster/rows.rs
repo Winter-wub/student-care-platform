@@ -10,6 +10,15 @@
 //! from a backup, which carries only `file_key` objects, or an import
 //! uploaded before #46), the chunk falls back to the original file. It is
 //! deleted with the original after a year (`prune.rs`).
+//!
+//! Since #154 the rows are written under `roster-rows/v2/` ([`key`]): a
+//! record may list fields to keep, which a binary from before #154 would
+//! not know and would clear on confirm. After a rollback such a binary
+//! finds no `roster-rows/<id>.jsonl`, falls back to the original file and
+//! refuses it (its reader needs every column), so nothing is cleared.
+//! This binary still reads rows stored before #154 ([`legacy_key`]). A
+//! rollback that outlasts the one-year window can orphan `v2` rows: the
+//! older binary's prune deletes only the legacy key.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -21,8 +30,13 @@ use crate::module::JobContext;
 use crate::students::StudentFields;
 use crate::{Error, Result};
 
-/// The FileStore key of import `id`'s parsed rows.
+/// The FileStore key of import `id`'s parsed rows (#154: versioned).
 pub(crate) fn key(id: &str) -> String {
+    format!("roster-rows/v2/{id}.jsonl")
+}
+
+/// Where rows stored before #154 are (read, and deleted, still).
+pub(crate) fn legacy_key(id: &str) -> String {
     format!("roster-rows/{id}.jsonl")
 }
 
@@ -39,6 +53,9 @@ struct Line {
     attributes: Map<String, Json>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
+    /// Fields whose column the sheet leaves out (#154).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    keep: Vec<String>,
 }
 
 /// The records as JSON Lines.
@@ -53,6 +70,7 @@ pub(crate) fn encode(records: &[Record]) -> Result<Vec<u8>> {
             locale: r.fields.locale.0.clone(),
             attributes: r.fields.attributes.clone(),
             tags: r.tags.clone(),
+            keep: r.keep.iter().map(super::keep::Kept::name).collect(),
         };
         serde_json::to_writer(&mut out, &line).map_err(|_| Error::Invalid("roster rows".into()))?;
         out.push(b'\n');
@@ -83,6 +101,13 @@ pub(crate) fn slice(bytes: &[u8], from: usize, to: usize) -> Result<Vec<Record>>
                 code: line.code,
                 fields,
                 tags: line.tags,
+                // A name this binary does not know refuses the rows, never
+                // drops the field (it would be cleared).
+                keep: line
+                    .keep
+                    .iter()
+                    .map(|k| super::keep::Kept::parse(k).ok_or_else(bad))
+                    .collect::<Result<_>>()?,
             })
         })
         .collect()
@@ -97,9 +122,15 @@ pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<
     let from = usize::try_from(imp.applied_rows).unwrap_or(usize::MAX);
     let total = usize::try_from(imp.total_rows).unwrap_or(0);
     let to = from.saturating_add(size).min(total);
-    if !imp.counts.rows_sha256.is_empty()
-        && let Some(bytes) = s.files.get(&key(&imp.id)).await?
-    {
+    let stored = if imp.counts.rows_sha256.is_empty() {
+        None
+    } else {
+        match s.files.get(&key(&imp.id)).await? {
+            Some(b) => Some(b),
+            None => s.files.get(&legacy_key(&imp.id)).await?,
+        }
+    };
+    if let Some(bytes) = stored {
         if crate::auth::sha256_hex(&bytes) != imp.counts.rows_sha256 {
             return Err(Error::Invalid("the stored roster rows changed".into()));
         }
@@ -113,9 +144,10 @@ pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<
     if crate::auth::sha256_hex(&bytes) != imp.counts.sha256 {
         return Err(Error::Invalid("the stored roster file changed".into()));
     }
-    let rows = super::file::parse(&bytes, &imp.file_name, &cx.config.roster)
+    let read = super::file::read(&bytes, &imp.file_name, &cx.config.roster)
         .map_err(|_| Error::Invalid("the stored roster file no longer reads".into()))?;
-    let valid = super::validate::validate(&rows, &cx.config)
+    let taken = super::warnings::Taken::default();
+    let valid = super::validate::validate_in(&read.rows, &cx.config, &taken, &read.absent)
         .map_err(|_| Error::Invalid("the stored roster file no longer validates".into()))?;
     // The rows the preview counted, or the import would apply something
     // else (a `[roster]` mapping changed since the upload).
@@ -148,5 +180,20 @@ mod tests {
         assert_eq!(slice(&stored, 50, 50).unwrap(), vec![]);
         assert!(slice(&stored, 45, 60).is_err(), "fewer lines than asked");
         assert!(slice(b"{\"row\":1}\n", 0, 1).is_err());
+    }
+
+    #[test]
+    fn an_unknown_field_to_keep_refuses_the_rows() {
+        // #154: a name this binary does not know (a newer one's) is never
+        // dropped, or the field would be cleared on confirm.
+        let line = |keep: &str| {
+            format!(
+                "{{\"row\":2,\"code\":\"68010001\",\"name\":\"นก\",\"locale\":\"th\",\"keep\":[{keep}]}}\n"
+            )
+        };
+        let known = slice(line("\"email\",\"attributes.gpa\"").as_bytes(), 0, 1).unwrap();
+        assert_eq!(known[0].keep.len(), 2);
+        assert!(slice(line("\"status\"").as_bytes(), 0, 1).is_err());
+        assert!(slice(line("\"attributes.\"").as_bytes(), 0, 1).is_err());
     }
 }

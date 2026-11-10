@@ -163,3 +163,32 @@ fn without_a_pattern_codes_follow_the_chat_flow_default() {
     assert!(bad.iter().all(|p| p.reason == "bad_code"));
     assert!(validate(&rows("SBU-2026-01,นก,,,,MSC,1,\n"), &c).is_ok());
 }
+
+#[test]
+fn a_column_left_out_is_kept_not_checked() {
+    // #154: no email column, so no "missing email" warning per row.
+    let c = test_config();
+    let text = "รหัสนักศึกษา,ชื่อ-สกุล,หลักสูตร,ชั้นปี\n68010001,นก,MSC,1\n";
+    let read = crate::kernel::roster::file::read(text.as_bytes(), "r.csv", &c.roster).unwrap();
+    let v = validate_in(&read.rows, &c, &Taken::default(), &read.absent).unwrap();
+    assert!(v.warnings.is_empty(), "{:?}", v.warnings);
+    assert_eq!(v.empty_email, 0);
+    let keep = &v.records[0].keep;
+    use crate::kernel::roster::keep::Kept;
+    let want = [
+        Kept::Email,
+        Kept::Locale,
+        Kept::Tags,
+        Kept::Attribute("gpa".into()),
+    ];
+    assert_eq!(keep, &want);
+}
+
+#[test]
+fn a_bad_cell_echoes_its_value() {
+    let got = check("6801OO05,นก,,,,MSC,1,\n").unwrap_err();
+    let p = got.iter().find(|p| p.reason == "bad_code").unwrap();
+    assert_eq!(p.value, "6801OO05");
+    let p = got.iter().find(|p| p.reason == "missing_email").unwrap();
+    assert!(p.value.is_empty(), "an empty cell echoes nothing");
+}

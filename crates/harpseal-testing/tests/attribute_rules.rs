@@ -272,7 +272,9 @@ async fn an_english_staff_member_is_told_the_labels_the_import_reads() {
     let id = import_id(&r);
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     assert!(report.contains("กำลังศึกษา (current)"), "{report}");
-    assert!(!report.contains("Studying"), "{report}");
+    // The cell is echoed as the file holds it (#154), never offered.
+    assert!(!report.contains("Studying (current)"), "{report}");
+    assert!(report.contains(",Studying"), "{report}");
     let page = b.get(&format!("/admin/roster/{id}")).await.body;
     assert!(page.contains("กำลังศึกษา (current)"), "{page}");
     assert!(!page.contains("Studying (current)"), "{page}");

@@ -164,7 +164,7 @@ fn failed(v: &View<'_>, imp: &Import) -> Markup {
         div class="card" {
             h2 { (v.t("kernel.roster.problems")) ": " strong data-count="problems" { (crate::ui::number(f.total)) } }
             (problems::classes(v, &f.classes))
-            (problems::table(v, &f.problems))
+            (problems::table(v, &f.problems, &f.headers))
             p { a class="btn secondary" href=(format!("{BASE}/{}/report.csv", imp.id)) {
                 (v.t("kernel.roster.report"))
             } }

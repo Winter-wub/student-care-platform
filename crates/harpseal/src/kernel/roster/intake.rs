@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use super::file::{self, FoundHeaders, Skipped};
+use super::file::{self, Absent, FoundHeaders, Skipped};
 use super::preview::MAX_FILE_BYTES;
 use super::store::{self, Existing};
 use super::validate::{self, Problem, Valid};
@@ -23,6 +23,8 @@ pub(super) struct Checked {
 pub(super) struct Read {
     /// Rows and sheets left out (also when the file is refused later).
     pub(super) skipped: Vec<Skipped>,
+    /// The may-be-empty columns a sheet leaves out (#154).
+    pub(super) absent: Vec<Absent>,
     /// The checked file, or every problem found (warnings included).
     pub(super) result: core::result::Result<Checked, Vec<Problem>>,
     /// The header rows of the sheets whose headers differ (#134).
@@ -41,6 +43,7 @@ pub(super) async fn read(
 ) -> Result<Read> {
     let refused = |problems| Read {
         skipped: Vec::new(),
+        absent: Vec::new(),
         result: Err(problems),
         headers: Vec::new(),
     };
@@ -61,8 +64,10 @@ pub(super) async fn read(
     let examples = example.rows(&rows.rows, &config.roster);
     let full = mode == "full";
     let skipped = rows.skipped;
+    let absent = rows.absent;
     let with = |result| Read {
         skipped: skipped.clone(),
+        absent: absent.clone(),
         result: with_examples(&examples, result),
         headers: Vec::new(),
     };
@@ -71,7 +76,8 @@ pub(super) async fn read(
         return Ok(with(Err(p)));
     }
     // A file refused for what is in it never needs the Students.
-    let valid = match validate::validate(&rows.rows, config) {
+    let none = warnings::Taken::default();
+    let valid = match validate::validate_in(&rows.rows, config, &none, &absent) {
         Ok(v) => v,
         Err(p) => return Ok(with(Err(p))),
     };
@@ -82,7 +88,7 @@ pub(super) async fn read(
     let valid = if existing.is_empty() {
         valid
     } else {
-        match validate::validate_against(&rows.rows, config, &taken) {
+        match validate::validate_in(&rows.rows, config, &taken, &absent) {
             Ok(v) => v,
             Err(p) => return Ok(with(Err(p))),
         }

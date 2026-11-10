@@ -14,7 +14,7 @@ async fn chunks_read_the_parsed_rows_not_the_original_file() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;
     let id = previewed(&b, "big.csv", &csv(0..1200), "upsert", false).await;
-    let rows_key = format!("roster-rows/{id}.jsonl");
+    let rows_key = format!("roster-rows/v2/{id}.jsonl");
     assert!(
         h.files().keys().contains(&rows_key),
         "{:?}",
@@ -41,7 +41,7 @@ async fn without_the_parsed_rows_a_chunk_reads_the_original_file() {
     let id = previewed(&b, "a.xlsx", XLSX_50, "upsert", false).await;
     // A Deployment restored from a backup has only the original.
     h.files()
-        .delete(&format!("roster-rows/{id}.jsonl"))
+        .delete(&format!("roster-rows/v2/{id}.jsonl"))
         .await
         .unwrap();
     confirm(&b, &id).await;
@@ -58,7 +58,7 @@ async fn changed_parsed_rows_fail_the_import() {
     let forged = String::from_utf8(csv(0..3))
         .unwrap()
         .replace("นักศึกษา 1", "x");
-    let rows_key = format!("roster-rows/{id}.jsonl");
+    let rows_key = format!("roster-rows/v2/{id}.jsonl");
     h.files()
         .put(&rows_key, forged.into_bytes(), "application/jsonl")
         .await
@@ -95,7 +95,7 @@ async fn stored_files_are_deleted_a_year_after_upload_and_audited() {
     )
     .await;
     let file_key = import_text(&h, &id, "file_key").await;
-    let rows_key = format!("roster-rows/{id}.jsonl");
+    let rows_key = format!("roster-rows/v2/{id}.jsonl");
     // Its changes (#134): the whole list and the page's head.
     let diff_keys = [
         format!("roster-diff/{id}.jsonl"),
@@ -194,7 +194,7 @@ async fn the_fallback_refuses_a_file_that_now_reads_differently() {
     // Restored without the parsed rows, under a `[roster]` that still
     // accepts the file but reads `ชั้นปี` as a number (1.0, not 1).
     h.files()
-        .delete(&format!("roster-rows/{id}.jsonl"))
+        .delete(&format!("roster-rows/v2/{id}.jsonl"))
         .await
         .unwrap();
     let changed = CONFIG.replace(
@@ -248,10 +248,16 @@ async fn one_failing_object_does_not_hold_back_the_other_prunes() {
         r.errors
     );
     let keys = "SELECT count(*) FROM audit_log WHERE action = 'roster.file.prune' \
-                AND json_extract(after, '$.keys[0]') = ? AND json_extract(after, '$.keys[1]') = ?";
+                AND json_extract(after, '$.keys[0]') = ? AND json_extract(after, '$.keys[1]') = ? \
+                AND json_extract(after, '$.keys[2]') = ?";
     let pruned_key = format!("roster/{}/b.csv", ids[1]);
-    let rows_key = format!("roster-rows/{}.jsonl", ids[1]);
-    assert_eq!(int(&h, keys, &[&pruned_key, &rows_key]).await, 1);
+    let rows_key = format!("roster-rows/v2/{}.jsonl", ids[1]);
+    // The rows key of an upload before #154 is deleted and listed too.
+    let legacy_key = format!("roster-rows/{}.jsonl", ids[1]);
+    assert_eq!(
+        int(&h, keys, &[&pruned_key, &rows_key, &legacy_key]).await,
+        1
+    );
     assert!(r.to_string().ends_with("and 1 roster files"), "{r}");
 }
 

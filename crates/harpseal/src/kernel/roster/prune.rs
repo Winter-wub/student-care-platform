@@ -61,11 +61,13 @@ pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<Pruned> {
 
 /// `counts` and `error` without the Students they name (#134): the names
 /// of those who left (`left_names`, stored before #134) and the Student
-/// a problem names. The counts, rows and reasons stay.
+/// a problem names, and the value it echoes (#154). The counts, rows and
+/// reasons stay.
 fn scrub(counts: &str, error: Option<&str>) -> (String, Option<String>) {
     let anonymous = |p: &mut Problem| {
         p.student.clear();
         p.name.clear();
+        p.value.clear();
     };
     // Counts that no longer read stay as they are, never reset.
     let counts = match serde_json::from_str::<Counts>(counts) {
@@ -94,10 +96,13 @@ async fn prune_one(
     kept: (String, Option<String>),
 ) -> Result<u64> {
     let (id, key, name) = row;
-    let rows_key = super::rows::key(id);
+    // Both rows keys are deleted (rows stored before #154 sit under the
+    // legacy one), and the audit lists both.
+    let (rows_key, legacy_key) = (super::rows::key(id), super::rows::legacy_key(id));
     let (diff_key, head_key) = (super::diff::key(id), super::diff::head_key(id));
     s.files.delete(key).await?;
     s.files.delete(&rows_key).await?;
+    s.files.delete(&legacy_key).await?;
     super::diff::delete(s, id).await?;
     let cond = Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND file_key = ?)")
         .bind(id)
@@ -110,7 +115,7 @@ async fn prune_one(
         Some(&Target::new("roster_import", id)),
         Some(json!({ "file_name": name, "stored": true })),
         Some(
-            json!({ "stored": false, "keys": [key, rows_key, diff_key, head_key], "reason": "kept for one year" }),
+            json!({ "stored": false, "keys": [key, rows_key, legacy_key, diff_key, head_key], "reason": "kept for one year" }),
         ),
         &RequestCtx::default(),
         cond,

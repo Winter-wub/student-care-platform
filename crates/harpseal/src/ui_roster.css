@@ -27,3 +27,13 @@ details.changes > summary { font-weight: 600; color: var(--brand-text); }
 .leaving-count { color: var(--err-ink); font-variant-numeric: tabular-nums; }
 /* The header error: found beside expected. */
 .header-list .chip { flex: none; }
+/* #154: the header an unknown one is close to, under it; the value a
+   row's problem echoes, under its column, cut by the server and wrapped
+   anywhere so a long token never scrolls sideways at 360 px; a slashed
+   zero tells 0 from O (`6801OO05`). */
+.header-list .hint { flex: 1 1 100%; color: var(--muted); font-size: .875rem; }
+.header-list .hint .code-head { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.bad-value { display: block; margin-top: var(--space-xs); color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.bad-value code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink); font-weight: 600; font-variant-numeric: slashed-zero; }
+/* #154: a full import's left-out columns, set in caution. */
+.card.absent-full { border-color: var(--caution-edge); }

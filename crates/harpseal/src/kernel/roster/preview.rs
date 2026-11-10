@@ -75,6 +75,7 @@ pub(crate) async fn upload(
     let counts = Counts {
         sha256,
         skipped: read.skipped,
+        absent: read.absent,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
     };
@@ -100,6 +101,7 @@ pub(crate) async fn upload(
         // objects stay unless it is surely absent.
         let _ = s.files.delete(&key).await;
         let _ = s.files.delete(&super::rows::key(&id)).await;
+        let _ = s.files.delete(&super::rows::legacy_key(&id)).await;
         let _ = diff::delete(s, &id).await;
     }
     out
@@ -330,9 +332,15 @@ pub(super) fn preview(
     let mut tally = Tally::default();
     let mut listed = HashSet::new();
     let mut changes = Vec::new();
+    let mut no_email_absent = 0;
     for rec in &valid.records {
         listed.insert(rec.code.as_str());
         let e = existing.get(&rec.code);
+        // A column the file leaves out keeps what is stored (#154).
+        let rec = &*super::keep::resolve(e, rec);
+        if rec.fields.email.is_none() && rec.keep.contains(&super::keep::Kept::Email) {
+            no_email_absent += 1;
+        }
         let (t, m) = store::classify(e, rec);
         tally.add(&t);
         changes.extend(diff::change(e, rec, &t, &m));
@@ -363,7 +371,8 @@ pub(super) fn preview(
         tally,
         will_become_left: left,
         kept_by_status,
-        empty_email: valid.empty_email as u64,
+        empty_email: valid.empty_email as u64 + no_email_absent,
+        no_email_absent,
         active_before,
         warning: left * 5 > active_before || shrinking,
         // The leavers are in the stored head (#134), not in `counts`.
