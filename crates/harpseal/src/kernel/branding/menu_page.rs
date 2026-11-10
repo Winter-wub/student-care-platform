@@ -3,8 +3,9 @@
 //! The section shows each Menu's image in use (saved, or the Channel's
 //! configured one) with its tap areas drawn over it. `POST
 //! /admin/branding/menu`: `op=preview` checks the uploaded images
-//! ([`super::apply::check`]) and draws their tap areas for every Locale's
-//! Menu, saving nothing (the images travel on as base64 fields);
+//! ([`super::apply::check`]) for every Locale's Menu and draws the tap
+//! areas of the Staff member's Locale (labels in their language), saving
+//! nothing (the images travel on as base64 fields);
 //! `op=apply` saves them through [`super::apply::save`] (stage on the
 //! platform, then one batch, then the re-link Jobs); `op=reset` returns to
 //! the configured images the same way. `GET /admin/branding/menu/{slot}`
@@ -47,6 +48,16 @@ const SLOTS: [(MenuSlot, &str, &str); 2] = [
     ),
 ];
 
+/// Whether `layouts` (one per Locale's Menu) have the same size and tap
+/// areas, labels aside: why the section draws only one Locale's.
+fn same_areas(layouts: &[crate::MenuLayout]) -> bool {
+    let bounds = |l: &crate::MenuLayout| {
+        let areas = l.areas.iter().map(|a| (a.x, a.y, a.width, a.height));
+        (l.width, l.height, areas.collect::<Vec<_>>())
+    };
+    layouts.windows(2).all(|w| bounds(&w[0]) == bounds(&w[1]))
+}
+
 fn art(s: &PageState) -> Option<&dyn MenuArt> {
     s.deployment.channels().find_map(|c| c.menu_art())
 }
@@ -79,8 +90,18 @@ pub(super) async fn section(v: &View<'_>, f: MenuForm) -> crate::Result<Markup> 
         });
     };
     let saved = Saved::load(&s.services).await?;
-    let (_, menus) = apply::menus(&s.deployment).await?;
-    let menus: Vec<_> = menus.into_iter().map(|(_, m)| m).collect();
+    // Every Locale's Menu has the same tap areas (asserted below); draw
+    // the Staff member's own, so a Thai page labels them in Thai (#141),
+    // with the same Locale rule as `Deployment::menu_with`. The check on
+    // preview and apply still covers every Locale.
+    let (_, all) = apply::menus(&s.deployment).await?;
+    let locale = s.catalog.effective(&v.staff.locale);
+    let menus: Vec<_> = all
+        .iter()
+        .filter(|(l, _)| *l == locale)
+        .map(|(_, m)| m.clone())
+        .collect();
+    let all: Vec<_> = all.into_iter().map(|(_, m)| m).collect();
     let jobs = pending(s).await?;
     let mut figures = Vec::new();
     for (slot, name, label) in SLOTS {
@@ -97,6 +118,11 @@ pub(super) async fn section(v: &View<'_>, f: MenuForm) -> crate::Result<Markup> 
             "kernel.branding.menu_configured"
         };
         let layouts = art.check(slot, &bytes, &menus).unwrap_or_default();
+        debug_assert!(
+            art.check(slot, &bytes, &all)
+                .map_or(true, |l| same_areas(&l)),
+            "the Locales' Menus differ in their tap areas"
+        );
         figures.push((slot, name, label, state, src, layouts));
     }
     let caption = v.t("kernel.branding.menu_areas");

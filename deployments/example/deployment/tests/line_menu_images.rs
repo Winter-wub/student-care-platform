@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use axum::body::Body;
 use example_deployment::menu_images::{LOCKED_PNG, LOCKED_VAR, UNLOCKED_PNG, UNLOCKED_VAR};
 use example_deployment::{Secrets, builder};
-use harpseal::{HttpClient, Statement};
+use harpseal::{HttpClient, Locale, NewStaff, Statement};
 use harpseal_channel_line::{SIGNATURE_HEADER, sign};
 use harpseal_testing::{Harness, RecordedRequest, RecordingHttp, TestApp};
 use serde_json::{Value, json};
@@ -282,4 +282,39 @@ async fn configured_files_are_what_gets_uploaded() {
     // (this image) with the same three cells.
     assert_eq!(created(&linked)["size"]["height"], 1686);
     assert_eq!(created(&linked)["areas"].as_array().unwrap().len(), 3);
+}
+
+/// `/admin/branding` as a new Administrator in `locale`.
+async fn branding_as(h: &Harness, app: &TestApp, locale: &str) -> String {
+    let (email, password) = (
+        format!("admin-{locale}@sealbay.example"),
+        "kelp forest at dawn",
+    );
+    let mut s = NewStaff::new(&email, "Admin", password, Locale::new(locale));
+    s.roles = vec!["Administrator".into()];
+    h.create_staff_with(s).await;
+    let b = app.browser();
+    assert_eq!(b.login(&email, password).await.status, 303);
+    let page = b.get("/admin/branding").await;
+    assert_eq!(page.status, 200);
+    // One drawing per Menu image (locked, unlocked), in one Locale only.
+    let figures = page.body.matches("<figure class=\"menu-preview\"").count();
+    assert_eq!(figures, 2, "{locale}");
+    page.body
+}
+
+#[tokio::test]
+async fn the_branding_preview_labels_the_tap_areas_in_the_staff_members_locale() {
+    let h = Harness::new();
+    let app = boot(&h, &LineApi::default(), secrets(&[])).await;
+    let th = branding_as(&h, &app, "th").await;
+    assert!(th.contains(">ข่าวล่าสุด</text>"), "{th}");
+    assert!(!th.contains("Latest news"), "{th}");
+    let en = branding_as(&h, &app, "en").await;
+    assert!(en.contains(">Latest news</text>"), "{en}");
+    assert!(!en.contains(">ข่าวล่าสุด</text>"), "{en}");
+    // A Locale with no texts (so no Menu of its own): the default Locale's.
+    let ja = branding_as(&h, &app, "ja").await;
+    assert!(ja.contains(">ข่าวล่าสุด</text>"), "{ja}");
+    assert!(!ja.contains("Latest news"), "{ja}");
 }

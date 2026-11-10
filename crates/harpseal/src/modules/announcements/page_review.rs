@@ -298,7 +298,7 @@ fn quota_lines(
     extra: Option<bool>,
 ) -> Vec<String> {
     let channel = channel_label(kind);
-    let n = units.to_string();
+    let n = crate::ui::number(units);
     let cap = used
         .iter()
         .find(|(k, _)| k == kind)
@@ -314,7 +314,7 @@ fn quota_lines(
         &[
             ("channel", &channel),
             ("n", &n),
-            ("left", &left.to_string()),
+            ("left", &crate::ui::number(left)),
         ],
     )];
     let over = (units as u64).saturating_sub(left);
@@ -326,7 +326,7 @@ fn quota_lines(
             (false, _) => "announcements.review.quota_over_warn",
         };
         let text = v.t(key);
-        lines.push(fill(&text, &[("over", &over.to_string())]));
+        lines.push(fill(&text, &[("over", &crate::ui::number(over))]));
     }
     lines
 }

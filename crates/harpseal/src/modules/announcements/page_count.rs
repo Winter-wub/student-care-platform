@@ -178,11 +178,11 @@ fn hand_picked(v: &View<'_>, a: &Audience, c: &Counts, p: &HandPicked) -> Markup
 
 /// "ใช้ไปแล้ว X/Y เดือนนี้" (or without a Quota, "ใช้ไปแล้ว X เดือนนี้").
 pub(super) fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
-    let used = m.used.to_string();
+    let used = crate::ui::number(m.used);
     match m.cap {
         Some(cap) => fill(
             &v.t("kernel.usage.send_used"),
-            &[("used", &used), ("cap", &cap.to_string())],
+            &[("used", &used), ("cap", &crate::ui::number(cap))],
         ),
         None => fill(&v.t("kernel.usage.send_used_no_cap"), &[("used", &used)]),
     }
