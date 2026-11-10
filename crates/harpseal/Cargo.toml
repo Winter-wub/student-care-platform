@@ -27,6 +27,10 @@ serde_json.workspace = true
 calamine.workspace = true
 rust_xlsxwriter.workspace = true
 
+[dev-dependencies]
+# Unit tests that ask SQLite for a query plan (native only).
+rusqlite.workspace = true
+
 [features]
 # Sample first-slice messages for adapter tests (issue #3). Test-only, not a platform flag.
 fixtures = []

@@ -12,9 +12,10 @@ use maud::{Markup, html};
 use serde::Deserialize;
 
 use super::audit_words as words;
-use super::view::{PER_PAGE, View, cut, enc, like, paging};
+use super::view::{PER_PAGE, View, cut, enc, paging};
 use crate::audit::Target;
 use crate::port_types::{Rows, Statement, Value};
+use crate::sql_like::like;
 use crate::{AppState, CurrentStaff, RequestCtx, Result};
 
 /// Actor kinds of `audit_log.actor_kind`.

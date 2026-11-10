@@ -11,10 +11,11 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use serde_json::Value as Json;
 
-use super::view::{PER_PAGE, View, cut, enc, like, paging, pairs, short_id};
+use super::view::{PER_PAGE, View, cut, enc, paging, pairs, short_id};
 use crate::audit::Target;
 use crate::kernel::students::view::channel_label;
 use crate::port_types::{Rows, Statement, Value};
+use crate::sql_like::like;
 use crate::{AppState, CurrentStaff, RequestCtx, Result, Services};
 
 /// Kinds the Core writes, offered even before one happened.

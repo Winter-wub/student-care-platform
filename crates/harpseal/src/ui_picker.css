@@ -1,0 +1,35 @@
+/* Student picker (#146, `ui::StudentPicker`): the picked Students as
+   chips, each with its own 48 px "ลบ"; unknown codes on the Refused pair
+   and left Students on the Caution pair, each with a 1px edge (#129) and a
+   word, never colour alone. Chips wrap, so nothing scrolls sideways at
+   360 px. The search hits are a `.list`; the paste box is a disclosure. */
+.picker-count { margin: 0 0 var(--space-xs); font-variant-numeric: tabular-nums; }
+.picker-chips { list-style: none; margin: var(--space-sm) 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.picker-chips > li { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-xs);
+  min-height: var(--tap); max-width: 100%; padding: 0 0 0 var(--space-md); border-radius: 999px;
+  background: var(--chip-bg); color: var(--chip-ink); border: 1px solid transparent; overflow-wrap: anywhere; }
+.picker-chips > li.err { background: var(--err-bg); color: var(--err-ink); border-color: var(--err-edge); }
+.picker-chips > li.warn { background: var(--caution-bg); color: var(--caution-ink); border-color: var(--caution-edge); }
+.picker-code { font-weight: 600; font-variant-numeric: tabular-nums; }
+.picker-flag { font-size: .875rem; font-weight: 600; }
+.picker-chips button.link { min-height: var(--tap); min-width: var(--tap); padding: 0 var(--space-md); color: inherit; border-radius: 999px; }
+.picker-chips button.link:hover { background: var(--line); }
+.picker-chips > li.err button.link:hover { background: var(--card); }
+.picker-chips > li.warn button.link:hover { background: var(--card); }
+.picker-status:empty { display: none; }
+.picker-status { margin: 0 0 var(--space-sm); color: var(--muted); }
+.picker-results:not(:empty) { margin: var(--space-sm) 0 var(--space-md); }
+.picker-found .picker-name { flex: 1 1 10rem; min-width: 0; }
+.picker-found .picker-code { color: var(--ink); }
+.picker-found button, .picker-found .picker-picked { margin-left: auto; }
+.picker-found .picker-picked { font-weight: 600; color: var(--muted); }
+details.picker-paste { margin-top: var(--space-md); }
+details.picker-paste > summary { min-height: var(--tap); display: flex; align-items: center;
+  font-weight: 600; color: var(--brand-text); cursor: pointer; }
+.picker > .actions, .picker-js .actions { margin-top: var(--space-sm); }
+/* "ล้างรายชื่อทั้งหมด" is a link: the brand's text colour, 48 px tall. */
+.picker-js .actions button.link { color: var(--brand-text); min-height: var(--tap); }
+/* A Module's starting point above the picker ("เริ่มจากรายการค้างชำระ")
+   keeps a gutter below it. */
+.picker-start { margin-bottom: var(--gutter); }
