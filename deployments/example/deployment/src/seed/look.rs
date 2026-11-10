@@ -3,6 +3,11 @@
 //! [`harpseal::branding`] and [`harpseal::usage`] as the acting
 //! Administrator, each only while nothing is saved, so an Administrator's
 //! own choice survives a forced re-run.
+//!
+//! "Unset" is what the read says: a value saved equal to `deployment.toml`'s
+//! is no setting, so it reads as unset and the seed's value replaces it;
+//! and the read and the save are two steps, so a save landing in between
+//! can be overwritten. Good enough for demo data, which is all this is.
 
 use harpseal::usage::LinePackage;
 use harpseal::{Actor, Deployment, RequestCtx};

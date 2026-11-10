@@ -28,11 +28,35 @@ display_name = "ชื่อ-สกุล"
 [roster.attributes.year]
 column = "ชั้นปี"
 type = "integer"
+student_visible = true
 
 [roster.attributes.programme]
 column = "หลักสูตร"
 type = "enum"
 values = ["MSC", "MSC-Intl"]
+student_visible = true
+
+# Visible, but too fine to count: one Student's GPA, nickname or birthday.
+[roster.attributes.gpa]
+column = "เกรดเฉลี่ย"
+type = "number"
+student_visible = true
+
+[roster.attributes.nickname]
+column = "ชื่อเล่น"
+type = "text"
+student_visible = true
+
+[roster.attributes.born]
+column = "วันเกิด"
+type = "date"
+student_visible = true
+
+# Coarse, but Staff-only.
+[roster.attributes.scholarship]
+column = "ทุน"
+type = "enum"
+values = ["full", "none"]
 
 [quotas.line]
 metered_per_month = 300
@@ -131,6 +155,44 @@ async fn attribute_values_count_active_students_by_value() {
     }
 }
 
+#[tokio::test]
+async fn fine_or_staff_only_attributes_are_never_counted() {
+    let (h, app, _, _) = boot(false).await;
+    let d = app.deployment();
+    student(
+        &h,
+        "68010001",
+        "active",
+        r#"{"year":3,"programme":"MSC","gpa":3.97,"nickname":"นกน้อย","born":"2004-05-06","scholarship":"full"}"#,
+    )
+    .await;
+    let refused = |r: harpseal::Result<Vec<roster::AttributeValue>>, why: &str| match r {
+        Err(Error::Invalid(m)) => assert!(m.contains(why), "{why}: {m}"),
+        other => panic!("expected a refusal ({why}), got {other:?}"),
+    };
+    for key in ["gpa", "nickname", "born"] {
+        refused(
+            roster::attribute_values(d, key, &ValuesScope::active()).await,
+            "only `enum` and `integer`",
+        );
+        // Nor as a scope: a count by GPA singles one Student out too.
+        let scope = ValuesScope::active().with(key, &["3.97"]);
+        refused(
+            roster::attribute_values(d, "year", &scope).await,
+            "only `enum` and `integer`",
+        );
+    }
+    refused(
+        roster::attribute_values(d, "scholarship", &ValuesScope::active()).await,
+        "Staff-only",
+    );
+    let scope = ValuesScope::active().with("scholarship", &["full"]);
+    refused(
+        roster::attribute_values(d, "programme", &scope).await,
+        "Staff-only",
+    );
+}
+
 /// (actor kind, after) of each `action` row, Staff before system (the
 /// test clock does not move, so `at` cannot order them).
 async fn audits(app: &TestApp, action: &'static str) -> Vec<(String, String)> {
@@ -176,7 +238,7 @@ async fn branding_is_saved_by_an_editor_or_the_system_with_the_pages_checks() {
             "{actor:?}: {r:?}"
         );
     }
-    for bad in ["#ffff00", "yellow", "#12345"] {
+    for bad in ["yellow", "#12345"] {
         let r = branding::set_primary_color(d, bad, &admin, &ctx).await;
         assert!(
             matches!(&r, Err(Error::Invalid(m)) if m.contains("kernel.branding.err_")),

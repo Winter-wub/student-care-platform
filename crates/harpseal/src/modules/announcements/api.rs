@@ -37,7 +37,10 @@ pub struct NewAnnouncement {
     /// Send at this instant (ms, to the minute) instead of at once.
     pub send_at: Option<i64>,
     /// Images and PDFs (#164), checked as the form checks its uploads
-    /// (see [`AnnouncementFile`]). Empty by default.
+    /// (see [`AnnouncementFile`]). Empty by default. [`create_draft`]
+    /// copies their bytes; [`create_draft_owned`] moves them. **On
+    /// Workers attach at most one PDF per call** (as the form does): every
+    /// copy of a 10 MB PDF counts against the isolate's 128 MB.
     pub files: Vec<AnnouncementFile>,
 }
 
@@ -101,10 +104,23 @@ pub async fn create_draft(
     ctx: &RequestCtx,
 ) -> Result<String> {
     crate::auth::roles::require(d.services(), actor, SEND_PERMISSION).await?;
+    create_draft_owned(d, new.clone(), actor, ctx).await
+}
+
+/// [`create_draft`] taking the announcement by value, so the files' bytes
+/// move to the FileStore instead of being copied first: the one to use
+/// with files on Workers (see [`NewAnnouncement::files`]).
+pub async fn create_draft_owned(
+    d: &Deployment,
+    mut new: NewAnnouncement,
+    actor: &Actor,
+    ctx: &RequestCtx,
+) -> Result<String> {
+    crate::auth::roles::require(d.services(), actor, SEND_PERMISSION).await?;
     let offset = d.config().utc_offset_minutes().unwrap_or(0);
     let now = d.services().now_ms();
     let draft = new.fields(offset).draft(&d.config().roster, offset, now);
-    let files = super::api_files::edits(&new.files);
+    let files = super::api_files::edits(std::mem::take(&mut new.files));
     let draft = match (draft, files) {
         (Ok(mut draft), Ok(files)) => {
             draft.files = files;

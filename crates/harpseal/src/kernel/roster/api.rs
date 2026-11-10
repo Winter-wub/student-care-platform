@@ -5,8 +5,10 @@
 //! that Staff member.
 //!
 //! [`attribute_values`] (#164) lists an attribute's distinct values with
-//! their Student counts, for a Module's filter or report (no Permission:
-//! counts name nobody).
+//! their Student counts, for a Module's filter or report: `enum` and
+//! `integer` attributes marked `student_visible` only, since a group of one
+//! names a Student. It checks no Permission: a caller that shows the counts
+//! to Staff checks `kernel.student.view` first.
 
 pub use super::values::{AttributeValue, ValuesScope, attribute_values};
 use super::{preview, service};

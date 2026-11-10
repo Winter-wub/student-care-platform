@@ -310,10 +310,13 @@ PDFs: `AnnouncementFile::image(n, name, content_type, bytes)` (slots 1 to
 4096 pixels a side) and `AnnouncementFile::pdf(n, name, content_type,
 bytes)` (slots 1 to 3: named `.pdf`, at most 10 MB, no active content).
 These are the create form's checks; `content_type` must also agree with
-the bytes. Unlike the form (one new PDF per save, for a Worker's memory),
-one call may fill all three PDF slots. A refusal is `Error::Invalid`
-naming every catalog key (the text checks' and the files' together), and
-nothing is written. There is no alt-text field, as on the form: the body
+the bytes, and a slot out of range is refused (`…bad_slot`). A refusal is
+`Error::Invalid` naming every catalog key (the text checks' and the files'
+together), and nothing is written. `create_draft(d, &new, …)` copies the
+files' bytes once; `create_draft_owned(d, new, …)` moves them. Natively one
+call may fill all three PDF slots; **on Workers attach at most one PDF per
+call**, as the form does (one new PDF per save): a 10 MB PDF held twice or
+three times counts against the isolate's 128 MB. There is no alt-text field, as on the form: the body
 places image `N` with its alt (`![alt](image:N)`), and an image it does
 not place is shown after it with the alt `<label> N`. The audit row lists
 slots, never names or bytes.
@@ -336,14 +339,20 @@ saved), so a seed can leave an Administrator's choice alone.
 **Roster attribute values** (#164). `harpseal::roster::attribute_values(d,
 key, &ValuesScope)` lists the distinct values of `[roster.attributes.<key>]`
 with how many Students hold each, for a Module's filter or report, so it
-never reads `student.attributes` itself. `ValuesScope::active()` counts
+never reads `student.attributes` itself. A group of one names a Student
+(the GPA of the only Student in a programme and year is theirs), so the
+attribute counted and every scope attribute must be an `enum` or an
+`integer` marked `student_visible = true`; a `number`, `text` or `date`
+attribute, or a Staff-only one, is `Error::Invalid`. `ValuesScope::active()` counts
 `active` Students; set `include_left` to count `left` ones too, and
 `.with(key, &[values])` to keep Students whose other attribute is one of
 those values (as an Audience's attribute filter, at most 50 values).
 Values are the stored JSON value as text (`2`, `MSC`), numeric attributes
 in numeric order; a Student without the attribute is not counted; an
-undeclared key is `Error::Invalid`. It needs no Permission and writes no
-audit row: counts name nobody.
+undeclared key is `Error::Invalid`. It checks no Permission and writes no
+audit row, and a count of 1 can still single someone out: a page that
+shows the counts to Staff checks `kernel.student.view` first, and one that
+shows them to Students hides small groups.
 
 `RequestCtx::cli().seeded()` adds `"seed": true` to the `after` of every
 audit row written with it, so demo data stays distinguishable

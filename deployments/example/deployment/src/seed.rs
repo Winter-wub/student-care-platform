@@ -367,7 +367,7 @@ async fn announce(d: &Deployment, actor: &Actor, ctx: &RequestCtx) -> Result<usi
         if exists.rows[0][0].as_i64().unwrap_or(0) > 0 {
             continue;
         }
-        let id = announcements::create_draft(d, &new, actor, ctx).await?;
+        let id = announcements::create_draft_owned(d, new, actor, ctx).await?;
         if schedule {
             announcements::confirm(d, &id, 0, actor, ctx).await?;
         }

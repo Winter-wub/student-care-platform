@@ -171,7 +171,37 @@ async fn the_forms_checks_refuse_and_nothing_is_written() {
         ),
         (
             vec![AnnouncementFile::image(5, "a.png", "image/png", png_ok())],
-            "announcements.images.too_many",
+            "announcements.images.bad_slot",
+        ),
+        (
+            vec![AnnouncementFile::image(0, "a.png", "image/png", png_ok())],
+            "announcements.images.bad_slot",
+        ),
+        (
+            vec![AnnouncementFile::pdf(
+                0,
+                "a.pdf",
+                "application/pdf",
+                pdf(""),
+            )],
+            "announcements.pdfs.bad_slot",
+        ),
+        (
+            vec![AnnouncementFile::pdf(
+                1,
+                "a.pdf",
+                "application/pdf",
+                pdf("(never closed /JS"),
+            )],
+            "announcements.pdfs.unreadable",
+        ),
+        (
+            vec![AnnouncementFile::pdf(1, "big.pdf", "application/pdf", {
+                let mut b = pdf("");
+                b.resize(10 * 1024 * 1024 + 1, b' ');
+                b
+            })],
+            "announcements.pdfs.too_big",
         ),
         (
             vec![
@@ -226,7 +256,7 @@ async fn the_forms_checks_refuse_and_nothing_is_written() {
                 "application/pdf",
                 pdf(""),
             )],
-            "announcements.pdfs.too_many",
+            "announcements.pdfs.bad_slot",
         ),
     ];
     for (files, key) in cases {
@@ -246,6 +276,47 @@ async fn the_forms_checks_refuse_and_nothing_is_written() {
         m.contains("announcements.form.th_required") && m.contains("images.bad_type"),
         "{m}"
     );
+    // A wrong type, a slot out of range and a refused PDF: all named.
+    let mixed = with(vec![
+        AnnouncementFile::image(1, "a.png", "image/jpeg", png_ok()),
+        AnnouncementFile::image(9, "b.png", "image/png", png_ok()),
+        AnnouncementFile::pdf(1, "a.pdf", "application/pdf", b"%PDF-1.4 no end".to_vec()),
+    ]);
+    let m = keys(announcements::create_draft(d, &mixed, &officer, &ctx).await);
+    for key in ["images.bad_type", "images.bad_slot", "pdfs.bad_type"] {
+        assert!(m.contains(key), "{key}: {m}");
+    }
     assert_eq!(app.count("SELECT count(*) FROM announcement").await, 0);
     assert_eq!(app.count("SELECT count(*) FROM announcement_file").await, 0);
+}
+
+#[tokio::test]
+async fn a_draft_made_in_code_with_files_is_sent_with_them() {
+    let (_h, app, officer, _) = boot().await;
+    let d = app.deployment();
+    let ctx = RequestCtx::cli();
+    let new = with(vec![
+        AnnouncementFile::image(1, "map.png", "image/png", png(640, 360)),
+        AnnouncementFile::pdf(1, "กำหนดการ.pdf", "application/pdf", pdf("")),
+    ]);
+    let id = announcements::create_draft_owned(d, new, &officer, &ctx)
+        .await
+        .unwrap();
+    let scheduled = announcements::confirm(d, &id, 0, &officer, &ctx)
+        .await
+        .unwrap();
+    assert!(!scheduled, "sent at once");
+    let rows = app.query("SELECT status FROM announcement").await;
+    let status = rows
+        .get(0, "status")
+        .and_then(|v| v.as_text())
+        .unwrap()
+        .to_string();
+    assert_ne!(status, "draft", "confirmed");
+    assert_eq!(
+        app.count("SELECT count(*) FROM announcement_file WHERE superseded_at IS NULL")
+            .await,
+        2,
+        "the files stay with the sent announcement"
+    );
 }

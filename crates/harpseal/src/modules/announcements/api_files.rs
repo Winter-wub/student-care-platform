@@ -15,7 +15,8 @@
 //!   shown after it with the alt `"<label> N"`, the label the page
 //!   passes (`รูปภาพ` on the Kernel's Thai pages). There is no alt field.
 
-use super::files::FileEdits;
+use super::files::{FileEdits, MAX_IMAGES, MAX_PDFS};
+use super::files_sniff::sniff;
 use super::form_images::{FilePart, Posted};
 
 /// What a file attached from code is.
@@ -93,40 +94,60 @@ impl AnnouncementFile {
 
 type Errors = Vec<(&'static str, &'static str)>;
 
-/// The file edits of `files`, through the form's own checks, or every
-/// problem as (field, catalog key).
-pub(super) fn edits(files: &[AnnouncementFile]) -> Result<FileEdits, Errors> {
+/// The file edits of `files` (their bytes moved, never copied), through
+/// the form's own checks, or every problem as (field, catalog key): a slot
+/// out of range, a `content_type` that disagrees with the bytes, and the
+/// form's refusals, all reported together.
+pub(super) fn edits(files: Vec<AnnouncementFile>) -> Result<FileEdits, Errors> {
+    let mut errors = Vec::new();
+    let mut parts = Vec::with_capacity(files.len());
+    for f in files {
+        let (max, slot_key, type_key) = match f.kind {
+            FileKind::Image => (
+                MAX_IMAGES,
+                "announcements.images.bad_slot",
+                "announcements.images.bad_type",
+            ),
+            FileKind::Pdf => (
+                MAX_PDFS,
+                "announcements.pdfs.bad_slot",
+                "announcements.pdfs.bad_type",
+            ),
+        };
+        if f.n == 0 || f.n > max {
+            errors.push(("files", slot_key));
+            continue;
+        }
+        if !type_agrees(&f) {
+            errors.push(("files", type_key));
+        }
+        parts.push(FilePart {
+            field: f.field(),
+            file_name: f.name,
+            bytes: f.bytes,
+        });
+    }
     let mut posted = Posted {
         pairs: Vec::new(),
-        files: files
-            .iter()
-            .map(|f| FilePart {
-                field: f.field(),
-                file_name: f.name.clone(),
-                bytes: f.bytes.clone(),
-            })
-            .collect(),
+        files: parts,
     };
-    let edits = posted.file_edits_up_to(usize::from(super::files::MAX_PDFS))?;
-    let mut errors = Vec::new();
-    for put in &edits.put {
-        let given = files
-            .iter()
-            .find(|f| f.n == put.n && (f.kind == FileKind::Pdf) == (put.kind == super::files::PDF));
-        let agrees =
-            given.is_some_and(|f| f.content_type.trim().eq_ignore_ascii_case(put.content_type));
-        if !agrees {
-            let key = if put.kind == super::files::PDF {
-                "announcements.pdfs.bad_type"
-            } else {
-                "announcements.images.bad_type"
-            };
-            errors.push(("files", key));
+    match posted.file_edits_up_to(usize::from(MAX_PDFS)) {
+        Ok(edits) if errors.is_empty() => Ok(edits),
+        Ok(_) => Err(super::form::unique(errors)),
+        Err(form) => {
+            errors.extend(form);
+            Err(super::form::unique(errors))
         }
     }
-    if errors.is_empty() {
-        Ok(edits)
-    } else {
-        Err(super::form::unique(errors))
+}
+
+/// Whether `f.content_type` names what the bytes are. Bytes that are no
+/// image or PDF at all are left to the form's checks (one refusal each).
+fn type_agrees(f: &AnnouncementFile) -> bool {
+    let given = f.content_type.trim();
+    match f.kind {
+        FileKind::Image => sniff(&f.bytes, &f.name)
+            .is_none_or(|(kind, _)| given.eq_ignore_ascii_case(kind.content_type())),
+        FileKind::Pdf => given.eq_ignore_ascii_case(super::files_pdf::CONTENT_TYPE),
     }
 }

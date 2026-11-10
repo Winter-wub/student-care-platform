@@ -139,6 +139,12 @@ pub(crate) const TEXTS: &[E] = &[
     ),
     E::new("announcements.pdfs.too_many", "th", "แนบ PDF ได้ไม่เกิน 3 ไฟล์"),
     E::new("announcements.pdfs.too_many", "en", "At most 3 PDF files."),
+    E::new(
+        "announcements.pdfs.bad_slot",
+        "th",
+        "ช่องไฟล์ PDF มีเฉพาะที่ 1 ถึง 3",
+    ),
+    E::new("announcements.pdfs.bad_slot", "en", "PDF slots are 1 to 3."),
 ];
 
 /// `pdf2` → 2.
