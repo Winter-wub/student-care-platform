@@ -104,6 +104,46 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
         .can("kernel.roster.import")
         .then_some((import_label.as_str(), "/admin/roster"));
     let bulk = list_bulk::allowed(v);
+    let table = html! {
+        // Columns grow with the roster's attributes: a wide table
+        // scrolls inside this region, never the page (#129).
+        div class="table-scroll" role="region" tabindex="0" aria-label=(v.t("kernel.students.title")) {
+        table class="rows students" {
+            thead { tr {
+                @if !bulk.is_empty() { th class="pick" { (v.t("kernel.students.bulk_col")) } }
+                th { (v.t("kernel.students.name")) }
+                th { (v.t("kernel.students.code")) }
+                @for (k, a) in &attrs { th { (v.label(k, a)) } }
+                th { (v.t("kernel.students.links")) }
+            } }
+            tbody {
+                @for r in rows {
+                    tr {
+                        @if !bulk.is_empty() { (list_bulk::pick(v, &r.id, &r.name)) }
+                        td data-label=(v.t("kernel.students.name")) {
+                            a class="name" href=(format!("/admin/students/{}", r.id)) { (r.name) }
+                            @if r.status == "left" { " " (v.status_chip(&r.status)) }
+                            (missing_badge(v, &r.missing))
+                        }
+                        td class="code id" data-label=(v.t("kernel.students.code")) { (r.code) }
+                        @for (k, a) in &attrs {
+                            td data-label=(v.label(k, a)) {
+                                (v.shown(a, r.attributes.get(*k)))
+                            }
+                        }
+                        td class="icons" data-label=(v.t("kernel.students.links")) {
+                            @for kind in &v.s.deployment.link_kinds(r.links.iter().map(|(c, _)| c.as_str())) {
+                                @let st = r.links.iter().find(|(c, _)| c == kind);
+                                (v.link_icon(kind, st.map(|(_, s)| s.as_str())))
+                                " "
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        }
+    };
     html! {
         div id="student-results" {
             p class="muted count" { (v.t("kernel.students.total")) " " (total) }
@@ -114,51 +154,15 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                 (crate::ui::no_match(&v.t("kernel.empty.students_no_match"), (&v.t("kernel.empty.clear_search"), "/admin/students")))
             } @else {
                 // The bulk form (#145) holds the bar and the row
-                // checkboxes; a Staff member with no bulk action gets the
-                // plain table.
-                form id="bulk" method="post" action=(super::page_bulk::PATH) class="bulk" {
-                @if !bulk.is_empty() {
-                    (list_bulk::hidden(v, query, missing, page))
-                    (list_bulk::bar(v, &bulk, rows.len(), total))
-                }
-                // Columns grow with the roster's attributes: a wide table
-                // scrolls inside this region, never the page (#129).
-                div class="table-scroll" role="region" tabindex="0" aria-label=(v.t("kernel.students.title")) {
-                table class="rows students" {
-                    thead { tr {
-                        @if !bulk.is_empty() { th class="pick" { (v.t("kernel.students.bulk_col")) } }
-                        th { (v.t("kernel.students.name")) }
-                        th { (v.t("kernel.students.code")) }
-                        @for (k, a) in &attrs { th { (v.label(k, a)) } }
-                        th { (v.t("kernel.students.links")) }
-                    } }
-                    tbody {
-                        @for r in rows {
-                            tr {
-                                @if !bulk.is_empty() { (list_bulk::pick(v, &r.id, &r.name)) }
-                                td data-label=(v.t("kernel.students.name")) {
-                                    a class="name" href=(format!("/admin/students/{}", r.id)) { (r.name) }
-                                    @if r.status == "left" { " " (v.status_chip(&r.status)) }
-                                    (missing_badge(v, &r.missing))
-                                }
-                                td class="code id" data-label=(v.t("kernel.students.code")) { (r.code) }
-                                @for (k, a) in &attrs {
-                                    td data-label=(v.label(k, a)) {
-                                        (v.shown(a, r.attributes.get(*k)))
-                                    }
-                                }
-                                td class="icons" data-label=(v.t("kernel.students.links")) {
-                                    @for kind in &v.s.deployment.link_kinds(r.links.iter().map(|(c, _)| c.as_str())) {
-                                        @let st = r.links.iter().find(|(c, _)| c == kind);
-                                        (v.link_icon(kind, st.map(|(_, s)| s.as_str())))
-                                        " "
-                                    }
-                                }
-                            }
-                        }
+                // checkboxes, only for a Staff member with a bulk action.
+                @if bulk.is_empty() {
+                    (table)
+                } @else {
+                    form id="bulk" method="post" action=(super::page_bulk::PATH) class="bulk" {
+                        (list_bulk::hidden(v, query, missing, page))
+                        (list_bulk::bar(v, &bulk, rows.len(), total))
+                        (table)
                     }
-                }
-                }
                 }
             }
             @if pages > 1 {

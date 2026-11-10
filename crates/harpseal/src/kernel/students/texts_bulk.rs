@@ -50,6 +50,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Nobody selected yet: tick rows, or choose a whole page"
     ),
     (
+        "kernel.students.bulk_count_hint",
+        "ติ๊กช่องหน้าชื่อ หรือเลือกทั้งหน้า แล้วกดปุ่มด้านล่าง ระบบจะให้ตรวจจำนวนก่อนยืนยัน",
+        "Tick rows or choose a whole page, then press a button below; you check the number before you confirm"
+    ),
+    (
         "kernel.students.bulk_tag",
         "ชื่อป้าย (ใช้กับปุ่มเพิ่มป้ายและเอาป้ายออก)",
         "Tag name (for Add Tag and Remove Tag)"
@@ -166,8 +171,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_unlink_too_many",
-        "เลือกไว้ {n} คน ยกเลิกการเชื่อมได้ครั้งละไม่เกิน 100 คน ค้นหาให้แคบลง หรือติ๊กเฉพาะบางคน แล้วลองใหม่",
-        "{n} Students are selected; unlinking takes at most 100 at a time. Narrow the search or tick fewer rows, then try again."
+        "นักศึกษาที่เลือก {n} คนเชื่อมบัญชีอยู่ ยกเลิกการเชื่อมได้ครั้งละไม่เกิน 100 คน ค้นหาให้แคบลง หรือติ๊กเฉพาะบางคน แล้วลองใหม่",
+        "{n} of the Students selected have a linked account; unlinking takes at most 100 at a time. Narrow the search or tick fewer rows, then try again."
     ),
     (
         "kernel.students.bulk_announce_too_many",
@@ -178,6 +183,26 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.students.bulk_none",
         "ยังไม่ได้เลือกนักศึกษา ติ๊กช่องหน้าชื่อ หรือเลือก “ทุกคนในหน้านี้” แล้วลองใหม่",
         "No Student is selected. Tick rows or choose “Everyone on this page”, then try again."
+    ),
+    (
+        "kernel.students.bulk_none_active",
+        "นักศึกษาที่เลือกไม่มีใครยังศึกษาอยู่ จึงประกาศถึงไม่ได้ เลือกนักศึกษาที่ยังศึกษาอยู่แล้วลองใหม่",
+        "None of the Students selected is active, so there is nobody to announce to. Select active Students and try again."
+    ),
+    (
+        "kernel.students.bulk_unknown",
+        "ไม่รู้จักคำสั่งนี้ กลับไปที่รายชื่อแล้วกดปุ่มที่ต้องการอีกครั้ง",
+        "That action is not known. Go back to the list and press the button you want again."
+    ),
+    (
+        "kernel.students.bulk_fix",
+        "ยังยืนยันไม่ได้ ตรวจตัวเลขที่พิมพ์ด้านล่าง",
+        "Not confirmed yet: check the number typed below"
+    ),
+    (
+        "kernel.students.bulk_fix_title",
+        "ตัวเลขไม่ตรง: ตรวจก่อนยืนยัน",
+        "Number does not match: check before you confirm"
     ),
     (
         "kernel.students.bulk_back",
@@ -204,6 +229,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.students.bulk_unlinked_unnotified",
         "ยกเลิกการเชื่อมแล้ว แต่ส่งข้อความแจ้งนักศึกษาบางคนไม่สำเร็จ",
         "Unlinked, but some Students could not be told"
+    ),
+    (
+        "kernel.students.bulk_unlinked_partial",
+        "ยกเลิกไปแล้วบางส่วน ตรวจสอบรายชื่ออีกครั้ง",
+        "Only some were unlinked. Check the list again."
     ),
     (
         "kernel.students.bulk_nothing",

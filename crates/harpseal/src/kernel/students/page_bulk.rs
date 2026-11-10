@@ -1,13 +1,17 @@
 //! `POST /admin/students/bulk` (#145): a bulk action on the list's
 //! selection ([`super::bulk`]). `action` names it: `tag_add`, `tag_remove`
-//! and `unlink` show a review step naming the count (and, for an unlink of
-//! more than one Student, ask for that number typed, #120/#135), then act
-//! on `confirm=yes`; `announce` opens the announcement editor with the
-//! selection as a hand-picked Audience. Each action checks its own
-//! Permission here, on top of the route's `kernel.student.view`.
+//! and `unlink` show a review step naming the Students who will change
+//! (and, for an unlink of more than one Student, ask for that number
+//! typed, #120/#135), then act on `confirm=yes` only if the same Students
+//! would change (the review's `set` token); `announce` opens the
+//! announcement editor with the selection's active Students as a
+//! hand-picked Audience. Each action checks its own Permission here, on
+//! top of the route's `kernel.student.view`.
 //!
 //! `POST /admin/students/bulk/count` is the HTMX count of the selection:
 //! the text of `#bulk-count`.
+
+use std::collections::HashSet;
 
 use axum::Form;
 use axum::extract::State;
@@ -16,7 +20,8 @@ use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 
 use super::bulk::{self, Chosen, MAX_BULK, MAX_UNLINK, Selection, Which};
-use super::bulk_write::{self as write, Unlinked};
+use super::bulk_write as write;
+use super::page_bulk_review::{Review, refused, review};
 use super::view::View;
 use crate::kernel::LINK_REVOKE;
 use crate::{Actor, AppState, CurrentStaff, RequestCtx};
@@ -26,9 +31,7 @@ pub(super) const PATH: &str = "/admin/students/bulk";
 /// The route of its HTMX count.
 pub(super) const COUNT_PATH: &str = "/admin/students/bulk/count";
 /// The typed confirmation field.
-const TYPED: &str = "typed";
-/// Student codes the review lists before "and n more".
-const SHOWN_CODES: usize = 20;
+pub(super) const TYPED: &str = "typed";
 
 type Pairs = Form<Vec<(String, String)>>;
 
@@ -93,32 +96,34 @@ pub(super) async fn submit(
     let sel = Selection::from_pairs(&pairs);
     let back = sel.list_href();
     let Some(action) = Action::parse(get(&pairs, "action")) else {
-        return v.redirect(&back, false, "kernel.students.bulk_none");
+        return v.redirect(&back, false, "kernel.students.bulk_unknown");
     };
     if !action.allowed(&v) {
         return crate::auth::forbidden(&s, &staff, action.permission());
     }
-    let cap = if action == Action::Unlink {
-        MAX_UNLINK
-    } else {
-        MAX_BULK
-    };
-    let chosen = match bulk::resolve(&s.services, &s.config.roster, &sel, cap).await {
+    let announcing = action == Action::Announce;
+    let roster = &s.config.roster;
+    let chosen = match bulk::resolve(&s.services, roster, &sel, MAX_BULK, announcing).await {
         Ok(c) => c,
         Err(e) => return v.error(&e),
     };
     if chosen.total == 0 {
-        return v.redirect(&back, false, "kernel.students.bulk_none");
+        let key = if announcing {
+            "kernel.students.bulk_none_active"
+        } else {
+            "kernel.students.bulk_none"
+        };
+        return v.redirect(&back, false, key);
     }
-    if chosen.over(cap) {
-        let key = match action {
-            Action::Unlink => "kernel.students.bulk_unlink_too_many",
-            Action::Announce => "kernel.students.bulk_announce_too_many",
-            _ => "kernel.students.bulk_too_many",
+    if chosen.over(MAX_BULK) {
+        let key = if announcing {
+            "kernel.students.bulk_announce_too_many"
+        } else {
+            "kernel.students.bulk_too_many"
         };
         return refused(&v, key, chosen.total, &back);
     }
-    if action == Action::Announce {
+    if announcing {
         return announce(&sel, &chosen);
     }
     let tag = match action {
@@ -128,64 +133,108 @@ pub(super) async fn submit(
             None => return v.redirect(&back, false, "kernel.students.tag_invalid"),
         },
     };
-    let s_ = &s.services;
-    let reach = match action {
-        Action::TagAdd => write::holding(s_, &chosen.ids, &tag)
-            .await
-            .map(|h| chosen.ids.len().saturating_sub(h)),
-        Action::TagRemove => write::holding(s_, &chosen.ids, &tag).await,
-        _ => write::linked(s_, &chosen.ids).await,
-    };
-    let reach = match reach {
-        Ok(n) => n,
+    // The Students the action would change now, in list order.
+    let changing = match changing(&s, action, &chosen, &tag).await {
+        Ok(c) => c,
         Err(e) => return v.error(&e),
     };
+    if action == Action::Unlink && changing.len() > MAX_UNLINK {
+        let key = "kernel.students.bulk_unlink_too_many";
+        return refused(&v, key, changing.len(), &back);
+    }
+    let (ids, codes): (Vec<String>, Vec<String>) = changing.into_iter().unzip();
+    let token = bulk::set_token(&ids);
     let confirm = get(&pairs, "confirm") == "yes";
-    let seen = get(&pairs, "n").parse::<usize>().ok();
+    let same =
+        get(&pairs, "n").parse::<usize>().ok() == Some(ids.len()) && get(&pairs, "set") == token;
     let typed = pairs
         .iter()
         .find(|(k, _)| k == TYPED)
         .map(|(_, t)| t.as_str());
-    let typed_ok =
-        action != Action::Unlink || reach <= 1 || crate::ui::typed_count_ok(typed, reach as u64);
+    let typed_ok = action != Action::Unlink
+        || ids.len() <= 1
+        || crate::ui::typed_count_ok(typed, ids.len() as u64);
     let step = Review {
         sel: &sel,
         action,
         tag: &tag,
-        chosen: &chosen,
-        reach,
-        changed: confirm && seen != Some(reach),
-        wrong: confirm && seen == Some(reach) && !typed_ok,
+        selected: &chosen.ids,
+        codes: &codes,
+        token: &token,
+        changed: confirm && !same,
+        wrong: confirm && same && !typed_ok,
     };
-    if !confirm || step.changed || step.wrong || reach == 0 {
+    if !confirm || step.changed || step.wrong || ids.is_empty() {
         return review(&v, &step);
     }
-    let actor = Actor::staff(&staff);
-    let d = &s.deployment;
+    act(&v, action, &ids, &tag, &staff, &ctx, &back).await
+}
+
+/// The (id, code) of each chosen Student `action` would change.
+async fn changing(
+    s: &AppState,
+    action: Action,
+    chosen: &Chosen,
+    tag: &str,
+) -> crate::Result<Vec<(String, String)>> {
+    let sv = &s.services;
+    let hit: HashSet<String> = match action {
+        Action::TagAdd | Action::TagRemove => write::holding(sv, &chosen.ids, tag).await?,
+        _ => write::linked(sv, &chosen.ids).await?,
+    }
+    .into_iter()
+    .collect();
+    // Adding changes those without the Tag; the others, those with it.
+    let keep = |id: &String| hit.contains(id) != (action == Action::TagAdd);
+    Ok(chosen
+        .ids
+        .iter()
+        .zip(&chosen.codes)
+        .filter(|(id, _)| keep(id))
+        .map(|(id, code)| (id.clone(), code.clone()))
+        .collect())
+}
+
+/// Runs a confirmed action on `ids` and goes back to the list.
+async fn act(
+    v: &View<'_>,
+    action: Action,
+    ids: &[String],
+    tag: &str,
+    staff: &CurrentStaff,
+    ctx: &RequestCtx,
+    back: &str,
+) -> Response {
+    let actor = Actor::staff(staff);
+    let d = &v.s.deployment;
     let done = match action {
-        Action::TagAdd => write::add_tag(d, &chosen.ids, &tag, &actor, &ctx)
+        Action::TagAdd => write::add_tag(d, ids, tag, &actor, ctx)
             .await
             .map(|n| (n, "kernel.students.bulk_tag_added")),
-        Action::TagRemove => write::remove_tag(d, &chosen.ids, &tag, &actor, &ctx)
+        Action::TagRemove => write::remove_tag(d, ids, tag, &actor, ctx)
             .await
             .map(|n| (n, "kernel.students.bulk_tag_removed")),
-        _ => write::unlink(d, &chosen.ids, &actor, &ctx)
-            .await
-            .map(|u: Unlinked| {
-                let key = if u.unnotified > 0 {
-                    "kernel.students.bulk_unlinked_unnotified"
-                } else {
-                    "kernel.students.bulk_unlinked"
-                };
-                (u.students, key)
-            }),
+        _ => write::unlink(d, ids, &actor, ctx).await.map(|u| {
+            let key = if u.partial {
+                PARTIAL
+            } else if u.unnotified > 0 {
+                "kernel.students.bulk_unlinked_unnotified"
+            } else {
+                "kernel.students.bulk_unlinked"
+            };
+            (u.students, key)
+        }),
     };
     match done {
-        Ok((0, _)) => v.redirect(&back, true, "kernel.students.bulk_nothing"),
-        Ok((_, key)) => v.redirect(&back, true, key),
+        Ok((_, PARTIAL)) => v.redirect(back, false, PARTIAL),
+        Ok((0, _)) => v.redirect(back, true, "kernel.students.bulk_nothing"),
+        Ok((_, key)) => v.redirect(back, true, key),
         Err(e) => v.error(&e),
     }
 }
+
+/// The flash of an unlink that stopped after some Students.
+const PARTIAL: &str = "kernel.students.bulk_unlinked_partial";
 
 /// "ประกาศถึงที่เลือก": the editor prefilled with the codes when a link
 /// can carry them ([`crate::ui::announce_href`]); a whole filter too long
@@ -208,117 +257,8 @@ fn announce(sel: &Selection, chosen: &Chosen) -> Response {
     resp
 }
 
-/// A refusal page: the problem with the count, what to do, and the way
-/// back.
-fn refused(v: &View<'_>, key: &str, n: usize, back: &str) -> Response {
-    let title = v.t("kernel.students.bulk_refused");
-    let text = v.t(key).replace("{n}", &crate::ui::number(n));
-    let body = html! {
-        div class="card narrow" {
-            h1 { (title) }
-            p class="blocked-reason" role="status" { (text) }
-            div class="actions" {
-                a class="btn secondary" href=(back) { (v.t("kernel.students.bulk_back")) }
-            }
-        }
-    };
-    v.page(StatusCode::UNPROCESSABLE_ENTITY, &title, body)
-}
-
-/// One review step.
-struct Review<'a> {
-    sel: &'a Selection,
-    action: Action,
-    tag: &'a str,
-    chosen: &'a Chosen,
-    /// Students the action changes.
-    reach: usize,
-    /// The count differs from the one confirmed.
-    changed: bool,
-    /// The typed number did not match.
-    wrong: bool,
-}
-
-fn review(v: &View<'_>, r: &Review<'_>) -> Response {
-    let title = v.t("kernel.students.bulk_review");
-    let a = r.action.as_str();
-    let n = crate::ui::number(r.reach);
-    let fill = |key: &str, n: &str| v.t(key).replace("{n}", n).replace("{tag}", r.tag);
-    let skipped = r.chosen.ids.len().saturating_sub(r.reach);
-    let typed = r.action == Action::Unlink && r.reach > 1;
-    let codes = &r.chosen.codes;
-    let more = codes.len().saturating_sub(SHOWN_CODES);
-    let status = if r.wrong {
-        StatusCode::UNPROCESSABLE_ENTITY
-    } else {
-        StatusCode::OK
-    };
-    let body = html! {
-        div class="card narrow bulk-review" {
-            h1 { (title) }
-            @if r.changed {
-                p class="blocked-reason" role="status" { (v.t("kernel.students.bulk_changed")) }
-            }
-            p class="reach" id="bulk-reach" { strong { (fill(&format!("kernel.students.bulk_review_{a}"), &n)) } }
-            @if skipped > 0 {
-                p class="muted" { (fill(&format!("kernel.students.bulk_skip_{a}"), &crate::ui::number(skipped))) }
-            }
-            h2 class="codes-title" { (v.t("kernel.students.bulk_codes")) }
-            p class="codes" {
-                (codes.iter().take(SHOWN_CODES).cloned().collect::<Vec<_>>().join(", "))
-                @if more > 0 { " " (v.t("kernel.students.bulk_more").replace("{n}", &crate::ui::number(more))) }
-            }
-            form id="bulk-confirm" method="post" action=(PATH) {
-                (v.staff.csrf_field())
-                (r.sel.hidden())
-                input type="hidden" name="action" value=(a);
-                input type="hidden" name="tag" value=(r.tag);
-                input type="hidden" name="n" value=(r.reach);
-                input type="hidden" name="confirm" value="yes";
-                @if typed && !r.changed { (typed_field(v, &n, r.wrong)) }
-                div class="actions" {
-                    @if r.reach == 0 {
-                        (crate::ui::blocked_button(
-                            &fill(&format!("kernel.students.bulk_confirm_{a}"), "0"),
-                            &v.t(&format!("kernel.students.bulk_nothing_{a}")),
-                            "bulk-blocked",
-                        ))
-                    } @else if r.action == Action::Unlink {
-                        (crate::ui::danger_button(&fill("kernel.students.bulk_confirm_unlink", &n)))
-                    } @else {
-                        button type="submit" { (fill(&format!("kernel.students.bulk_confirm_{a}"), &n)) }
-                    }
-                    a class="btn secondary" href=(r.sel.list_href()) { (v.t("kernel.students.cancel")) }
-                }
-            }
-        }
-    };
-    v.page(status, &title, body)
-}
-
-/// The typed number an unlink of more than one Student needs (#135).
-fn typed_field(v: &View<'_>, n: &str, wrong: bool) -> Markup {
-    let described = if wrong {
-        "bulk-reach bulk-typed-error"
-    } else {
-        "bulk-reach"
-    };
-    html! {
-        div class="field confirm-reach" {
-            label for="bulk-typed" { (v.t("kernel.students.bulk_typed").replace("{n}", n)) }
-            input id="bulk-typed" type="text" name=(TYPED) required inputmode="numeric"
-                autocomplete="off" spellcheck="false" enterkeyhint="done"
-                aria-invalid=[wrong.then_some("true")] aria-describedby=(described);
-            @if wrong {
-                p id="bulk-typed-error" class="field-error" {
-                    (v.t("kernel.students.bulk_typed_wrong").replace("{n}", n))
-                }
-            }
-        }
-    }
-}
-
-/// The HTMX count of the selection: `#bulk-count`, a polite live region.
+/// The HTMX count of the selection: the text of `#bulk-count`, counted
+/// with `count(*)` only.
 pub(super) async fn count(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -326,26 +266,25 @@ pub(super) async fn count(
 ) -> Response {
     let v = View::new(&s, &staff);
     let sel = Selection::from_pairs(&pairs);
-    let n = match sel.which {
-        Which::Picked => Ok(sel.picked.len()),
-        _ => bulk::resolve(&s.services, &s.config.roster, &sel, MAX_BULK)
-            .await
-            .map(|c| c.total),
-    };
-    match n {
+    match bulk::count(&s.services, &s.config.roster, &sel).await {
         Ok(n) => (StatusCode::OK, Html(count_text(&v, n).into_string())).into_response(),
         Err(e) => v.error(&e),
     }
 }
 
-/// `#bulk-count` for `n` Students selected: a polite live region whose
-/// text the HTMX count replaces ([`count_text`]), so the region itself
-/// stays and is announced.
-pub(super) fn count_line(v: &View<'_>, n: usize) -> Markup {
-    html! { p id="bulk-count" class="bulk-count" aria-live="polite" { (count_text(v, n)) } }
+/// `#bulk-count`: a polite live region whose text the HTMX count replaces
+/// ([`count_text`]), so the region itself stays and is announced. It
+/// starts with a neutral hint: without JS it never changes, so it must
+/// not say that nobody is selected.
+pub(super) fn count_line(v: &View<'_>) -> Markup {
+    html! {
+        p id="bulk-count" class="bulk-count" aria-live="polite" {
+            (v.t("kernel.students.bulk_count_hint"))
+        }
+    }
 }
 
-/// The text of `#bulk-count`.
+/// The text of `#bulk-count` for `n` Students selected.
 fn count_text(v: &View<'_>, n: usize) -> Markup {
     html! {
         @if n == 0 {

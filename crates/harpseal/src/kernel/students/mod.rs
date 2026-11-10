@@ -34,6 +34,7 @@ mod list;
 mod list_bulk;
 mod missing;
 mod page_bulk;
+mod page_bulk_review;
 mod pick;
 mod pick_view;
 mod read;

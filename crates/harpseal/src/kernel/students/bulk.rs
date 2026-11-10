@@ -82,14 +82,20 @@ impl Selection {
     }
 
     /// The hidden fields that post this selection again (a review step).
-    pub(super) fn hidden(&self) -> Markup {
+    /// A page posts the rows it showed (`ids`) as ticked rows, so a page
+    /// that shifts meanwhile (a roster import) cannot swap them.
+    pub(super) fn hidden(&self, ids: &[String]) -> Markup {
+        let (which, rows) = match self.which {
+            Which::Page => (Which::Picked, ids),
+            w => (w, self.picked.as_slice()),
+        };
         html! {
             input type="hidden" name="q" value=(self.q);
             @if self.missing { input type="hidden" name="missing" value="1"; }
             input type="hidden" name="page" value=(self.page);
-            input type="hidden" name="which" value=(self.which.as_str());
-            @if self.which == Which::Picked {
-                @for id in &self.picked { input type="hidden" name="student" value=(id); }
+            input type="hidden" name="which" value=(which.as_str());
+            @if which == Which::Picked {
+                @for id in rows { input type="hidden" name="student" value=(id); }
             }
         }
     }
@@ -120,22 +126,37 @@ impl Chosen {
     }
 }
 
+/// Only active Students (an announcement), or everyone selected.
+const ACTIVE: &str = "status = 'active'";
+
 /// The Students `sel` names now, read on the server: ids and codes when
 /// there are at most `cap` of them, only the total otherwise.
+/// `active_only` leaves out Students who left (an announcement).
 pub(super) async fn resolve(
     s: &Services,
     roster: &RosterConfig,
     sel: &Selection,
     cap: usize,
+    active_only: bool,
 ) -> Result<Chosen> {
     match sel.which {
         Which::Page => {
             let found = read::search_with(s, &sel.q, sel.page, Some(roster), sel.missing).await?;
-            let (ids, codes) = found.rows.into_iter().map(|r| (r.id, r.code)).unzip();
+            let (ids, codes) = found
+                .rows
+                .into_iter()
+                .filter(|r| !active_only || r.status == "active")
+                .map(|r| (r.id, r.code))
+                .unzip();
             Ok(capped(ids, codes, cap))
         }
         Which::Filter => {
             let (filter, binds) = read::list_filter(s, &sel.q, Some(roster), sel.missing).await?;
+            let filter = if active_only {
+                format!("{filter} AND {ACTIVE}")
+            } else {
+                filter
+            };
             let with = |sql: String| {
                 let mut st = Statement::new(sql);
                 st.params.extend(binds.iter().cloned());
@@ -165,16 +186,40 @@ pub(super) async fn resolve(
                 });
             }
             let list = serde_json::to_string(&sel.picked).unwrap_or_else(|_| "[]".into());
-            let pick = Statement::new(
+            let active = if active_only {
+                format!(" AND {ACTIVE}")
+            } else {
+                String::new()
+            };
+            let pick = Statement::new(format!(
                 "SELECT id, student_code FROM student \
-                 WHERE id IN (SELECT value FROM json_each(?)) ORDER BY student_code, id",
-            )
+                 WHERE id IN (SELECT value FROM json_each(?)){active} ORDER BY student_code, id"
+            ))
             .bind(list);
             let rows = s.db.query(pick).await?;
             let (ids, codes) = id_codes(&rows);
             Ok(capped(ids, codes, cap))
         }
     }
+}
+
+/// How many Students `sel` names, counted only: the HTMX count.
+pub(super) async fn count(s: &Services, roster: &RosterConfig, sel: &Selection) -> Result<usize> {
+    if sel.which == Which::Picked {
+        return Ok(sel.picked.len());
+    }
+    let (filter, binds) = read::list_filter(s, &sel.q, Some(roster), sel.missing).await?;
+    let mut n = Statement::new(format!("SELECT count(*) AS n FROM student {filter}"));
+    n.params.extend(binds);
+    let total = read::int(&s.db.query(n).await?, 0, "n").unwrap_or(0).max(0);
+    if sel.which == Which::Filter {
+        return Ok(total as usize);
+    }
+    // The rows of page `page` (clamped as the list clamps it).
+    let size = read::PAGE_SIZE;
+    let pages = ((total + size - 1) / size).max(1);
+    let page = sel.page.clamp(1, pages);
+    Ok((total - (page - 1) * size).clamp(0, size) as usize)
 }
 
 fn id_codes(rows: &crate::port_types::Rows) -> (Vec<String>, Vec<String>) {
@@ -198,8 +243,8 @@ fn capped(ids: Vec<String>, codes: Vec<String>, cap: usize) -> Chosen {
 }
 
 /// The student codes of every Student matching the list's filter `q` and
-/// `missing` (#145, the "ประกาศถึงที่เลือก" of a whole filter): `None`
-/// when none match or more than [`MAX_BULK`] do. The announcement editor
+/// `missing` who are active (#145, the "ประกาศถึงที่เลือก" of a whole
+/// filter): `None` when none match or more than [`MAX_BULK`] do. The announcement editor
 /// reads them on the server, so the link carries the filter, not the
 /// list.
 pub(crate) async fn codes_matching(
@@ -215,8 +260,16 @@ pub(crate) async fn codes_matching(
         which: Which::Filter,
         picked: Vec::new(),
     };
-    let chosen = resolve(s, roster, &sel, MAX_BULK).await?;
+    let chosen = resolve(s, roster, &sel, MAX_BULK, true).await?;
     Ok((!chosen.codes.is_empty()).then_some(chosen.codes))
+}
+
+/// A token of the set `ids` (in any order): the review posts it, and a
+/// confirm whose set differs is reviewed again (#145).
+pub(super) fn set_token(ids: &[String]) -> String {
+    let mut sorted: Vec<&str> = ids.iter().map(String::as_str).collect();
+    sorted.sort_unstable();
+    crate::auth::sha256_hex(sorted.join("\n").as_bytes())
 }
 
 /// JSON array of `ids`, for `json_each(?)`.
@@ -265,6 +318,13 @@ mod tests {
         let odd = Selection::from_pairs(&pairs(&[("which", "everyone")]));
         assert_eq!(odd.which, Which::Picked);
         assert_eq!(odd.page, 1);
+    }
+
+    #[test]
+    fn the_set_token_ignores_order_but_not_members() {
+        let a = set_token(&["s2".into(), "s1".into()]);
+        assert_eq!(a, set_token(&["s1".into(), "s2".into()]));
+        assert_ne!(a, set_token(&["s1".into(), "s3".into()]));
     }
 
     #[test]

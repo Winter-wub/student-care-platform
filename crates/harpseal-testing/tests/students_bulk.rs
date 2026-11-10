@@ -1,49 +1,16 @@
 //! Bulk actions on the Students list (#145): a checkbox per row and the
-//! choice of rows, then add or remove a manual Tag, unlink (a review step
-//! naming the count, the number typed for more than one Student) and
-//! "ประกาศถึงที่เลือก". Each action shows and works only with its own
-//! Permission and writes one audit row per Student.
+//! choice of rows, then add or remove a manual Tag behind a review step
+//! that freezes which Students change. Each action shows and works only
+//! with its own Permission and writes one audit row per Student. Unlink
+//! and announce are in `students_bulk_more.rs`.
 
+mod bulk_support;
 mod students_support;
 mod support;
 
-use harpseal::DeploymentConfig;
-use harpseal::modules::announcements::Announcements;
-use harpseal_testing::{Harness, TestApp, a11y};
+use bulk_support::{BULK, boot, confirm_of, hidden, many, review_then_confirm};
+use harpseal_testing::a11y;
 use students_support::{flash, run, signed_in};
-use support::{Chat, ROSTER};
-
-const CONFIG: &str = r#"
-name = "Seal Bay University (bulk)"
-default_locale = "th"
-utc_offset = "+07:00"
-
-[roles]
-Everything = ["kernel.student.view", "kernel.student.edit", "kernel.link.revoke", "announcements.send"]
-Tagger = ["kernel.student.view", "kernel.student.edit"]
-Viewer = ["kernel.student.view"]
-Sender = ["kernel.student.view", "announcements.send"]
-"#;
-
-async fn boot() -> (Harness, TestApp) {
-    let h = Harness::new();
-    let config = DeploymentConfig::from_toml(CONFIG).unwrap();
-    let app = h
-        .boot(
-            h.builder()
-                .config(config)
-                .module(Announcements)
-                .build()
-                .unwrap(),
-        )
-        .await;
-    for sql in ROSTER {
-        run(&h, sql).await;
-    }
-    (h, app)
-}
-
-const BULK: &str = "/admin/students/bulk";
 
 #[tokio::test]
 async fn the_list_shows_only_the_actions_a_permission_allows() {
@@ -55,7 +22,9 @@ async fn the_list_shows_only_the_actions_a_permission_allows() {
     }
     assert!(page.contains("name=\"student\" value=\"s1\""));
     assert!(page.contains("value=\"filter\""));
-    assert!(page.contains("id=\"bulk-count\""));
+    // Without JS the count never changes: a neutral hint, not "nobody".
+    assert!(page.contains("id=\"bulk-count\"") && page.contains("ติ๊กช่องหน้าชื่อ"));
+    assert!(!page.contains("ยังไม่ได้เลือกใคร"));
     let problems = a11y::problems(&page);
     assert!(problems.is_empty(), "{problems:?}");
 
@@ -67,32 +36,48 @@ async fn the_list_shows_only_the_actions_a_permission_allows() {
     let (v, _) = signed_in(&h, &app, "Viewer").await;
     let page = v.get("/admin/students").await.body;
     assert!(!page.contains("name=\"student\""), "no checkboxes");
-    assert!(!page.contains("bulk-bar"));
-    // A crafted post is refused too.
+    assert!(
+        !page.contains("id=\"bulk\"") && !page.contains("bulk-bar"),
+        "no form"
+    );
+    // Crafted posts are refused, a confirm included.
     let r = v
         .post(BULK, "which=picked&student=s1&action=tag_add&tag=x")
         .await;
     assert_eq!(r.status, 403);
     let r = t.post(BULK, "which=picked&student=s1&action=unlink").await;
     assert_eq!(r.status, 403);
+    let r = t
+        .post(
+            BULK,
+            "which=picked&student=s1&action=unlink&confirm=yes&n=1&set=x",
+        )
+        .await;
+    assert_eq!(r.status, 403);
     assert_eq!(app.count("SELECT count(*) FROM student_tag").await, 0);
+    // An unknown action has its own message.
+    assert_eq!(t.post(BULK, "which=page&action=delete").await.status, 303);
+    assert_eq!(flash(&t), "err:kernel.students.bulk_unknown");
 }
 
 #[tokio::test]
 async fn adding_a_tag_reviews_then_audits_each_student() {
     let (h, app) = boot().await;
     let (b, staff) = signed_in(&h, &app, "Tagger").await;
-    // s1 already has it: only s3 changes.
-    let pick = "which=picked&student=s1&student=s3&action=tag_add&tag=%E0%B8%97%E0%B8%B8%E0%B8%99";
+    // s1 already has it: only s3 changes. s2 has left and is tagged all
+    // the same.
+    let tag = "%E0%B8%97%E0%B8%B8%E0%B8%99";
+    let pick = format!("which=picked&student=s1&student=s3&action=tag_add&tag={tag}");
     assert_eq!(
         b.post("/admin/students/s1/tags", "name=ทุน").await.status,
         303
     );
-    let review = b.post(BULK, pick).await;
+    let review = b.post(BULK, &pick).await;
     assert_eq!(review.status, 200, "{}", review.body);
     assert!(review.body.contains("ให้นักศึกษา 1 คน"), "{}", review.body);
     assert!(review.body.contains("อีก 1 คนมีป้ายนี้อยู่แล้ว"));
-    assert!(review.body.contains("68010003"));
+    // The review lists who changes, not who stays.
+    assert!(review.body.contains("68010003") && !review.body.contains(">68010001"));
     assert!(a11y::problems(&review.body).is_empty());
     assert_eq!(
         app.count("SELECT count(*) FROM student_tag").await,
@@ -100,14 +85,11 @@ async fn adding_a_tag_reviews_then_audits_each_student() {
         "not yet"
     );
 
-    let r = b.post(BULK, &format!("{pick}&confirm=yes&n=1")).await;
+    let r = b
+        .post(BULK, &format!("{pick}&{}", confirm_of(&review)))
+        .await;
     assert_eq!(r.status, 303, "{}", r.body);
     assert_eq!(flash(&b), "ok:kernel.students.bulk_tag_added");
-    assert_eq!(
-        app.count("SELECT count(*) FROM student_tag WHERE student_id = 's3' AND source = 'manual'")
-            .await,
-        1
-    );
     let rows = app
         .query(
             "SELECT target_id, actor_id FROM audit_log WHERE action = 'student.tag_add' \
@@ -121,23 +103,24 @@ async fn adding_a_tag_reviews_then_audits_each_student() {
         Some(staff.as_str())
     );
 
-    // Remove from the whole filter: both now hold it.
-    let all = "which=filter&q=&action=tag_remove&tag=%E0%B8%97%E0%B8%B8%E0%B8%99";
-    let review = b.post(BULK, all).await;
-    assert!(review.body.contains("ออกจากนักศึกษา 2 คน"), "{}", review.body);
-    let r = b.post(BULK, &format!("{all}&confirm=yes&n=2")).await;
-    assert_eq!(r.status, 303);
+    // Remove from the whole filter, a left Student included.
+    let left = format!("which=picked&student=s2&action=tag_add&tag={tag}");
+    assert_eq!(review_then_confirm(&b, &left, "").await.status, 303);
+    let all = format!("which=filter&q=&action=tag_remove&tag={tag}");
+    let review = b.post(BULK, &all).await;
+    assert!(review.body.contains("ออกจากนักศึกษา 3 คน"), "{}", review.body);
+    assert_eq!(review_then_confirm(&b, &all, "").await.status, 303);
     assert_eq!(flash(&b), "ok:kernel.students.bulk_tag_removed");
     assert_eq!(app.count("SELECT count(*) FROM student_tag").await, 0);
     assert_eq!(
         app.count("SELECT count(*) FROM audit_log WHERE action = 'student.tag_remove'")
             .await,
-        2
+        3
     );
 }
 
 #[tokio::test]
-async fn a_changed_count_asks_again() {
+async fn a_changed_set_asks_again() {
     let (h, app) = boot().await;
     let (b, _) = signed_in(&h, &app, "Tagger").await;
     let all = "which=filter&q=&action=tag_add&tag=x";
@@ -161,129 +144,67 @@ async fn a_changed_count_asks_again() {
 }
 
 #[tokio::test]
-async fn unlinking_many_needs_the_number_typed() {
+async fn a_page_that_shifts_never_swaps_the_students_reviewed() {
     let (h, app) = boot().await;
-    Chat::new(&h, &app, "u1").link("68010001").await;
-    Chat::new(&h, &app, "u4").link("68010004").await;
-    let (b, _) = signed_in(&h, &app, "Everything").await;
-    let pick = "which=picked&student=s1&student=s3&student=s4&action=unlink";
-    let review = b.post(BULK, pick).await;
-    assert_eq!(review.status, 200);
-    assert!(review.body.contains("ของนักศึกษา 2 คน"), "{}", review.body);
-    assert!(review.body.contains("อีก 1 คนยังไม่ได้เชื่อมบัญชี"));
-    assert!(review.body.contains("class=\"danger\""));
-    assert!(review.body.contains("id=\"bulk-typed\""));
-    assert!(a11y::problems(&review.body).is_empty());
-
-    for typed in ["", "ยืนยัน", "3"] {
-        let r = b
-            .post(BULK, &format!("{pick}&confirm=yes&n=2&typed={typed}"))
-            .await;
-        assert_eq!(r.status, 422, "{typed}");
-        assert!(r.body.contains("bulk-typed-error"));
-    }
-    assert_eq!(
-        app.count("SELECT count(*) FROM link WHERE status <> 'revoked'")
-            .await,
-        2
-    );
-    h.fake_channel().take_sent();
-    let r = b
-        .post(BULK, &format!("{pick}&confirm=yes&n=2&typed=%E0%B9%92"))
-        .await;
-    assert_eq!(r.status, 303, "{}", r.body);
-    assert_eq!(flash(&b), "ok:kernel.students.bulk_unlinked");
-    assert_eq!(
-        app.count("SELECT count(*) FROM link WHERE status <> 'revoked'")
-            .await,
-        0
-    );
-    assert_eq!(
-        app.count("SELECT count(*) FROM audit_log WHERE action = 'student.unlink'")
-            .await,
-        2
-    );
-    assert_eq!(
-        app.count("SELECT count(*) FROM audit_log WHERE action = 'link.revoke'")
-            .await,
-        2
-    );
-    assert_eq!(h.fake_channel().take_sent().len(), 2, "each Student told");
-
-    // Nothing left to unlink: the confirm is blocked with the reason.
-    let r = b.post(BULK, pick).await;
-    assert!(r.body.contains("blocked-reason") && r.body.contains("disabled"));
-}
-
-#[tokio::test]
-async fn announcing_prefills_the_editor_with_the_selection() {
-    let (h, app) = boot().await;
-    let (b, _) = signed_in(&h, &app, "Sender").await;
-    let page = b.get("/admin/students").await.body;
-    assert!(page.contains("value=\"announce\"") && !page.contains("value=\"tag_add\""));
-    let r = b
-        .post(BULK, "which=picked&student=s3&student=s1&action=announce")
-        .await;
-    assert_eq!(r.status, 303);
-    let to = r.header("location").unwrap().to_string();
-    assert_eq!(
-        to,
-        "/admin/announcements/new?scope=students&students=68010001+68010003"
-    );
-    let editor = b.get(&to).await.body;
-    assert!(editor.contains("68010001\n68010003"), "{editor}");
-
-    // A whole filter travels as the filter and is read on the server.
-    let editor = b
-        .get("/admin/announcements/new?scope=students&from=students&q=Nok")
-        .await
-        .body;
-    assert!(editor.contains(">68010001</textarea>"), "{editor}");
-    let r = b.post(BULK, "which=filter&q=&action=announce").await;
-    assert_eq!(r.status, 303);
-    assert!(
-        r.header("location")
-            .unwrap()
-            .contains("students=68010001+68010002")
-    );
-}
-
-#[tokio::test]
-async fn more_than_2000_students_are_refused_with_the_count() {
-    let (h, app) = boot().await;
-    let mut values = Vec::new();
-    for i in 0..2000 {
-        values.push(format!(
-            "('x{i}', '6902{i:04}', 'Krathing {i}', NULL, 'th', 'active', 1, 1)"
-        ));
-    }
+    many(&h, 60).await;
+    let (b, _) = signed_in(&h, &app, "Tagger").await;
+    let page = "which=page&page=1&q=&action=tag_add&tag=x";
+    let review = b.post(BULK, page).await;
+    assert!(review.body.contains("ให้นักศึกษา 50 คน"), "{}", review.body);
+    // The page posts back its own rows as ticked rows.
+    assert_eq!(hidden(&review.body, "which"), "picked");
+    assert!(review.body.contains("name=\"student\" value=\"x45\""));
+    assert!(!review.body.contains("name=\"student\" value=\"x46\""));
+    // A roster import adds a code that sorts first: page 1 still has 50
+    // rows, but x45 drops off and the new one comes in.
     run(
         &h,
-        &format!(
-            "INSERT INTO student (id, student_code, display_name, email, locale, status, \
-             created_at, updated_at) VALUES {}",
-            values.join(", ")
-        ),
+        "INSERT INTO student (id, student_code, display_name, email, locale, status, \
+         created_at, updated_at) VALUES ('n1', '67000001', 'Nam Mai', NULL, 'th', 'active', 1, 1)",
     )
     .await;
-    let (b, _) = signed_in(&h, &app, "Everything").await;
-    let r = b.post(BULK, "which=filter&q=&action=announce").await;
-    assert_eq!(r.status, 422);
-    assert!(r.body.contains("เลือกไว้ 2,004 คน"), "{}", r.body);
-    assert!(r.body.contains("ไม่เกิน 2,000 คน"));
-    assert!(a11y::problems(&r.body).is_empty());
-    let r = b.post(BULK, "which=filter&q=&action=unlink").await;
-    assert_eq!(r.status, 422);
-    assert!(r.body.contains("ไม่เกิน 100 คน"));
-    // The editor ignores a filter over the limit: a bare form.
-    let editor = b
-        .get("/admin/announcements/new?scope=students&from=students&q=")
+    let r = b
+        .post(BULK, &format!("{page}&{}", confirm_of(&review)))
+        .await;
+    assert_eq!(r.status, 200, "same count, other Students: review again");
+    assert!(r.body.contains("รายชื่อเปลี่ยนไประหว่างนี้"));
+    assert_eq!(app.count("SELECT count(*) FROM student_tag").await, 0);
+    // The review's own form (the rows it showed) still confirms them.
+    let rows: String = (0..46)
+        .map(|i| format!("&student=x{i}"))
+        .chain(["s1", "s2", "s3", "s4"].map(|s| format!("&student={s}")))
+        .collect();
+    let shown = format!("which=picked&page=1&q=&action=tag_add&tag=x{rows}");
+    let r = b
+        .post(BULK, &format!("{shown}&{}", confirm_of(&review)))
+        .await;
+    assert_eq!(r.status, 303, "{}", r.body);
+    assert_eq!(
+        app.count("SELECT count(*) FROM student_tag WHERE student_id = 'n1'")
+            .await,
+        0,
+        "the Student nobody saw is untouched"
+    );
+    assert_eq!(app.count("SELECT count(*) FROM student_tag").await, 50);
+}
+
+#[tokio::test]
+async fn missing_data_filters_the_selection() {
+    let (h, app) = boot().await;
+    let (b, _) = signed_in(&h, &app, "Tagger").await;
+    let list = b.get("/admin/students?missing=1").await.body;
+    let shown = list.matches("class=\"name\" href=").count();
+    let all = "which=filter&q=&missing=1&action=tag_add&tag=x";
+    let review = b.post(BULK, all).await;
+    assert_eq!(hidden(&review.body, "n"), shown.to_string());
+    assert!(review.body.contains("68010003"), "s3 has no email");
+    assert!(review.body.contains("name=\"missing\" value=\"1\""));
+    let counted = b
+        .post("/admin/students/bulk/count", "which=filter&q=&missing=1")
         .await
         .body;
-    assert!(!editor.contains("69020000"));
-    // The HTMX count names the whole filter.
-    let r = b
-        .post("/admin/students/bulk/count", "which=filter&q=")
-        .await;
-    assert!(r.body.contains("เลือกแล้ว 2,004 คน"), "{}", r.body);
+    assert!(
+        counted.contains(&format!("เลือกแล้ว {shown} คน")),
+        "{counted}"
+    );
 }

@@ -69,7 +69,7 @@ pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) 
             }
             div hx-post=(COUNT_PATH) hx-trigger="change from:closest form"
                 hx-include="closest form" hx-target="#bulk-count" hx-swap="innerHTML" {
-                (count_line(v, 0))
+                (count_line(v))
             }
             @if tags {
                 div class="field bulk-tag" {

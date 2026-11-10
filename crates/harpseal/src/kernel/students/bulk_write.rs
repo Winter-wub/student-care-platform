@@ -39,30 +39,33 @@ async fn manual_names(s: &Services, ids: &[String]) -> Result<HashMap<String, Ve
     Ok(out)
 }
 
-/// How many of `ids` hold the manual Tag `name` now.
-pub(super) async fn holding(s: &Services, ids: &[String], name: &str) -> Result<usize> {
+/// The Students of `ids` holding the manual Tag `name` now.
+pub(super) async fn holding(s: &Services, ids: &[String], name: &str) -> Result<Vec<String>> {
     let stmt = Statement::new(
-        "SELECT count(DISTINCT st.student_id) AS n FROM student_tag st \
+        "SELECT DISTINCT st.student_id AS id FROM student_tag st \
          JOIN tag t ON t.id = st.tag_id WHERE st.source = 'manual' AND t.name = ? \
          AND st.student_id IN (SELECT value FROM json_each(?))",
     )
     .bind(name)
     .bind(json_ids(ids));
-    Ok(read::int(&s.db.query(stmt).await?, 0, "n")
-        .unwrap_or(0)
-        .max(0) as usize)
+    ids_of(s, stmt).await
 }
 
-/// How many of `ids` have a live (active or unreachable) Link.
-pub(super) async fn linked(s: &Services, ids: &[String]) -> Result<usize> {
+/// The Students of `ids` with a live (active or unreachable) Link.
+pub(super) async fn linked(s: &Services, ids: &[String]) -> Result<Vec<String>> {
     let stmt = Statement::new(
-        "SELECT count(DISTINCT student_id) AS n FROM link WHERE status <> 'revoked' \
+        "SELECT DISTINCT student_id AS id FROM link WHERE status <> 'revoked' \
          AND student_id IN (SELECT value FROM json_each(?))",
     )
     .bind(json_ids(ids));
-    Ok(read::int(&s.db.query(stmt).await?, 0, "n")
-        .unwrap_or(0)
-        .max(0) as usize)
+    ids_of(s, stmt).await
+}
+
+async fn ids_of(s: &Services, stmt: Statement) -> Result<Vec<String>> {
+    let rows = s.db.query(stmt).await?;
+    Ok((0..rows.len())
+        .filter_map(|i| read::text(&rows, i, "id"))
+        .collect())
 }
 
 /// Adds the manual Tag `name` (already checked with
@@ -205,23 +208,49 @@ pub(super) struct Unlinked {
     pub(super) links: usize,
     /// Revoked Links whose Student could not be told in the chat.
     pub(super) unnotified: usize,
+    /// A later batch failed after an earlier one committed: only some of
+    /// the Students were unlinked.
+    pub(super) partial: bool,
 }
 
 /// Revokes every live Link of every Student of `ids` (Staff unlink). Per
 /// Student, an audit row `student.unlink` (the live Link ids before, none
 /// after) gates the revoke of each Link, which writes its own `link.revoke`
 /// row as a single revoke does; after the commit each Student is told on
-/// each Channel, as [`crate::links::revoke_by_staff`] does.
+/// each Channel, as [`crate::links::revoke_by_staff`] does. A batch that
+/// fails after an earlier one committed is not an error: the result says
+/// `partial`, so Staff learn that some Students were unlinked.
 pub(super) async fn unlink(
     d: &Deployment,
     ids: &[String],
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<Unlinked> {
-    let s = d.services();
     let mut out = Unlinked::default();
-    let default = &d.config().default_locale;
     for group in ids.chunks(CHUNK) {
+        match unlink_batch(d, group, actor, ctx, &mut out).await {
+            Ok(()) => {}
+            Err(_) if out.students > 0 => {
+                out.partial = true;
+                return Ok(out);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(out)
+}
+
+/// One batch of [`unlink`], counted into `out`.
+async fn unlink_batch(
+    d: &Deployment,
+    group: &[String],
+    actor: &Actor,
+    ctx: &RequestCtx,
+    out: &mut Unlinked,
+) -> Result<()> {
+    let s = d.services();
+    let default = &d.config().default_locale;
+    {
         let mut live = links::live_links_of_students(s, group, default).await?;
         let mut stmts = Vec::new();
         let mut gates = Vec::new();
@@ -255,7 +284,7 @@ pub(super) async fn unlink(
             }
         }
         if gates.is_empty() {
-            continue;
+            return Ok(());
         }
         let results = s.db.batch(stmts).await?;
         out.students += count(&results, &gates);
@@ -269,7 +298,7 @@ pub(super) async fn unlink(
             }
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// How many of the statements at `at` changed a row.
