@@ -8,6 +8,7 @@
 //! | Usage page, `GET /admin/usage` | `kernel.usage.view`, nav order 85 |
 //! | Quota banner in the `#usage-banner` slot of every back-office page | any Staff; links to the page only for holders of `kernel.usage.view` |
 //! | `POST /admin/usage/package`, the LINE package (#115, [`package`]) | `kernel.setting.edit` |
+//! | The LINE package from code (#164, [`api`], `harpseal::usage`) | `kernel.setting.edit`, or the system |
 //! | Quota emails to every active Administrator | Job `kernel.usage.watch`, every 10 minutes when a Quota is in force |
 //!
 //! Levels ([`quota::Level`]): `Warn` at 80 % of the cap, `Over` at 100 %.
@@ -19,6 +20,7 @@
 //!
 //! Usage is not personal data: reading the page writes no audit row.
 
+pub mod api;
 mod banner;
 mod chart;
 mod package;

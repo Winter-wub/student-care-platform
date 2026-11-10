@@ -297,8 +297,53 @@ add no logic of their own:
 | `harpseal::modules::announcements::confirm(d, id, version, actor, ctx)` | `announcements.send` | `announcement.send` / `.schedule` |
 | `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.setting.edit` | `setting.update` |
 | `harpseal::branding::set_menu_images(d, locked, unlocked, actor, ctx)` / `reset_menu_images(d, actor, ctx)` → `MenuImagesSaved` | `kernel.setting.edit` | `branding.menu_images` / `.reset` |
+| `harpseal::branding::set_name(d, name, actor, ctx)` / `set_primary_color(d, color, actor, ctx)` → changed? | `kernel.setting.edit` | `branding.update` (`.reset` once nothing is saved) |
+| `harpseal::branding::set_name_as_system(d, name, ctx)` / `set_primary_color_as_system(d, color, ctx)` | none: seed and CLI code | `branding.update` (actor `system`) |
+| `harpseal::usage::set_line_package(d, LinePackage, actor, ctx)` → changed? | `kernel.setting.edit` | `setting.update` / `setting.reset` |
+| `harpseal::usage::set_line_package_as_system(d, LinePackage, ctx)` | none: seed and CLI code | `setting.update` / `setting.reset` (actor `system`) |
 | `d.settings().save(key, value, actor, ctx)` ([settings](settings.md#saving-from-code)) | the Setting's own | `setting.update` |
 | `d.save_setting_as_system(key, value, ctx)` | none: seed and CLI code that holds the `Deployment` | `setting.update` (actor `system`) |
+
+**Announcement files** (#164). `NewAnnouncement::files` takes images and
+PDFs: `AnnouncementFile::image(n, name, content_type, bytes)` (slots 1 to
+4: PNG or JPEG told by the bytes and named as what it is, at most 1 MB and
+4096 pixels a side) and `AnnouncementFile::pdf(n, name, content_type,
+bytes)` (slots 1 to 3: named `.pdf`, at most 10 MB, no active content).
+These are the create form's checks; `content_type` must also agree with
+the bytes. Unlike the form (one new PDF per save, for a Worker's memory),
+one call may fill all three PDF slots. A refusal is `Error::Invalid`
+naming every catalog key (the text checks' and the files' together), and
+nothing is written. There is no alt-text field, as on the form: the body
+places image `N` with its alt (`![alt](image:N)`), and an image it does
+not place is shown after it with the alt `<label> N`. The audit row lists
+slots, never names or bytes.
+
+**Branding and the LINE package** (#164) take the page's checks: a name of
+1 to 80 characters with no control characters, a `#rrggbb` colour that
+white text reaches a 4.5 contrast on (`Error::Invalid` naming
+`kernel.branding.err_contrast` and the ratio otherwise), a Custom package
+of 1 to 100,000,000 and a Deployment with LINE. Each setter keeps the other
+values (the logo too); a value equal to `deployment.toml`'s is no setting
+and follows the file; the same value again writes nothing (`Ok(false)`); a
+save in between is `Error::Conflict`. The Staff variants accept only an
+active Staff member holding `kernel.setting.edit` (a Student, a Job or
+`Actor::System` is `Forbidden`); the `*_as_system` ones are for a seed or
+the CLI, never for a Staff action. Read what is saved with
+`branding::saved(d)` (`None` while `deployment.toml` applies) and
+`usage::line_package(d)` (`LinePackage::FollowConfig` while nothing is
+saved), so a seed can leave an Administrator's choice alone.
+
+**Roster attribute values** (#164). `harpseal::roster::attribute_values(d,
+key, &ValuesScope)` lists the distinct values of `[roster.attributes.<key>]`
+with how many Students hold each, for a Module's filter or report, so it
+never reads `student.attributes` itself. `ValuesScope::active()` counts
+`active` Students; set `include_left` to count `left` ones too, and
+`.with(key, &[values])` to keep Students whose other attribute is one of
+those values (as an Audience's attribute filter, at most 50 values).
+Values are the stored JSON value as text (`2`, `MSC`), numeric attributes
+in numeric order; a Student without the attribute is not counted; an
+undeclared key is `Error::Invalid`. It needs no Permission and writes no
+audit row: counts name nobody.
 
 `RequestCtx::cli().seeded()` adds `"seed": true` to the `after` of every
 audit row written with it, so demo data stays distinguishable

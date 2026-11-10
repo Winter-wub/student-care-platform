@@ -6,14 +6,18 @@
 //! so every audit row carries `"seed": true`.
 //!
 //! It imports the 50-Student roster ([`ROSTER_CSV`], upsert mode, applied
-//! at once by running the import Jobs), creates 3 draft announcements and
-//! 1 scheduled a week ahead, overrides 2 texts and saves the fees bank
-//! account ([`BANK_ACCOUNT`], a fictional number, as the system through
-//! [`Deployment::save_setting_as_system`]: no Staff holds
-//! `fees.bank_account.edit` but Finance). Re-running adds
+//! at once by running the import Jobs), creates 3 draft announcements (the
+//! orientation one with an image and a PDF, [`HALL_MAP_PNG`] and
+//! [`ORIENTATION_PDF`]) and 1 scheduled a week ahead, overrides 2 texts,
+//! saves the display name, primary colour and LINE package
+//! ([`BRAND_NAME`], [`BRAND_COLOR`], [`LINE_PACKAGE`], see [`look`]) and
+//! the fees bank account ([`BANK_ACCOUNT`], a fictional number, as the
+//! system through [`Deployment::save_setting_as_system`]: no Staff holds
+//! `fees.bank_account.edit` but Finance). It reports the Students per year
+//! from [`roster::attribute_values`]. Re-running adds
 //! nothing twice: the import is an upsert, announcements are matched by
-//! their Thai title, and a text that already has any override (the seed's
-//! or one an Administrator customised) is left alone. It is refused on a
+//! their Thai title, and a text or Kernel setting that already has a value
+//! (the seed's or one an Administrator chose) is left alone. It is refused on a
 //! database that already has Students unless `force`, and it never creates
 //! Staff or writes a password: create the Administrator first with
 //! `harpseal staff create --admin`.
@@ -26,16 +30,25 @@
 //! `seed-example --force` against a production database.
 
 use harpseal::audience::Audience;
-use harpseal::modules::announcements::{self, NewAnnouncement};
+use harpseal::modules::announcements::{self, AnnouncementFile, NewAnnouncement};
 use harpseal::roster::{self, Confirmed, Uploaded};
 use harpseal::{Actor, Deployment, RequestCtx, Statement};
 
 use crate::fees;
 
+pub mod look;
+
+pub use look::{BRAND_COLOR, BRAND_NAME, LINE_PACKAGE};
+
 /// The example roster: 50 fictional Students (`data/roster.csv`).
 pub const ROSTER_CSV: &[u8] = include_bytes!("../../data/roster.csv");
 /// The same 50 Students as an XLSX workbook (`data/roster.xlsx`).
 pub const ROSTER_XLSX: &[u8] = include_bytes!("../../data/roster.xlsx");
+
+/// The orientation announcement's image (`assets/seed/hall-map.png`).
+pub const HALL_MAP_PNG: &[u8] = include_bytes!("../../assets/seed/hall-map.png");
+/// The orientation announcement's PDF (`assets/seed/orientation.pdf`).
+pub const ORIENTATION_PDF: &[u8] = include_bytes!("../../assets/seed/orientation.pdf");
 
 /// Thai titles of the seeded announcements; the last one is scheduled.
 pub const ANNOUNCEMENT_TITLES: [&str; 4] = [
@@ -84,6 +97,11 @@ pub struct SeedReport {
     /// Module settings saved now (0 on a re-run, and for every setting
     /// that already has a valid value).
     pub settings_written: usize,
+    /// Kernel settings saved now: the display name, primary colour and
+    /// LINE package, each only while unset (0 on a re-run).
+    pub kernel_settings_written: usize,
+    /// Active Students per `year` value, in order.
+    pub years: Vec<(String, u64)>,
 }
 
 impl std::fmt::Display for SeedReport {
@@ -91,14 +109,21 @@ impl std::fmt::Display for SeedReport {
         write!(
             f,
             "seeded as {}: roster import {} ({} Students), {} announcements created, \
-             {} texts and {} settings written",
+             {} texts, {} settings and {} Kernel settings written",
             self.acting_as,
             self.import_id,
             self.students,
             self.announcements_created,
             self.texts_written,
-            self.settings_written
-        )
+            self.settings_written,
+            self.kernel_settings_written
+        )?;
+        let years: Vec<String> = self
+            .years
+            .iter()
+            .map(|(y, n)| format!("{y}: {n}"))
+            .collect();
+        write!(f, "; Students per year {}", years.join(", "))
     }
 }
 
@@ -192,7 +217,13 @@ pub async fn seed(
             texts_written += 1;
         }
     }
+    let kernel_settings_written = look::look(d, &actor, &ctx).await?;
     let settings_written = bank_account(d, &ctx).await?;
+    let years = roster::attribute_values(d, "year", &roster::ValuesScope::active())
+        .await?
+        .into_iter()
+        .map(|v| (v.value, v.students))
+        .collect();
     Ok(SeedReport {
         acting_as,
         import_id,
@@ -200,6 +231,8 @@ pub async fn seed(
         announcements_created,
         texts_written,
         settings_written,
+        kernel_settings_written,
+        years,
     })
 }
 
@@ -282,9 +315,19 @@ fn announcements(now: i64) -> Vec<(NewAnnouncement, bool)> {
     let mut a = NewAnnouncement::new(
         orientation,
         "ขอเชิญนักศึกษาชั้นปีที่ 1 เข้าร่วมปฐมนิเทศ ณ หอประชุมอ่าวแมวน้ำ วันจันทร์ เวลา 09:00 น. \
-         กรุณากดรับทราบเมื่ออ่านแล้ว (ข้อความสาธิต)",
+         ![แผนผังหอประชุมอ่าวแมวน้ำ](image:1) \
+         กำหนดการอยู่ในไฟล์แนบ กรุณากดรับทราบเมื่ออ่านแล้ว (ข้อความสาธิต)",
     );
     a.audience = audience("year", "1");
+    a.files = vec![
+        AnnouncementFile::image(1, "hall-map.png", "image/png", HALL_MAP_PNG.to_vec()),
+        AnnouncementFile::pdf(
+            1,
+            "กำหนดการปฐมนิเทศ.pdf",
+            "application/pdf",
+            ORIENTATION_PDF.to_vec(),
+        ),
+    ];
     a.require_ack = true;
     let mut b = NewAnnouncement::new(
         maintenance,

@@ -68,6 +68,14 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
         (50, 4, 2)
     );
     assert_eq!(first.settings_written, 1, "the fees bank account");
+    assert_eq!(
+        first.kernel_settings_written, 3,
+        "name, colour, LINE package"
+    );
+    let per_year: u64 = first.years.iter().map(|(_, n)| n).sum();
+    assert_eq!(per_year, 50, "{:?}", first.years);
+    assert_eq!(first.years.first().map(|(y, _)| y.as_str()), Some("1"));
+    seeded_look(&h, d).await;
     let once = counts(&h).await;
     assert_eq!(once[..5], [50, 50, 4, 1, 2]);
     assert!(
@@ -81,6 +89,10 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
     let again = seed(d, None, true).await.unwrap();
     assert_eq!((again.announcements_created, again.texts_written), (0, 0));
     assert_eq!(again.settings_written, 0, "a saved account is left alone");
+    assert_eq!(
+        again.kernel_settings_written, 0,
+        "saved values are left alone"
+    );
     assert_eq!(counts(&h).await, once, "a forced re-run adds nothing");
 
     // Every audit row of the seed but the bank account's (the system's,
@@ -93,8 +105,9 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
         "SELECT count(*) FROM audit_log WHERE actor_id = '{admin}' \
          AND json_extract(after, '$.seed') IS NOT 1"
     );
-    // Two uploads and confirms, four creates, one schedule, two texts.
-    assert_eq!(int(&h, &marked).await, 4 + 4 + 1 + 2);
+    // Two uploads and confirms, four creates, one schedule, two texts,
+    // the name, the colour and the LINE package.
+    assert_eq!(int(&h, &marked).await, 4 + 4 + 1 + 2 + 3);
     assert_eq!(int(&h, &unmarked).await, 0);
 
     // The bank account: saved through `save_setting_as_system`, one
@@ -110,6 +123,57 @@ async fn seeding_twice_gives_the_same_data_and_needs_force() {
                  AND json_extract(before, '$.value') IS NULL \
                  AND json_extract(after, '$.seed') = 1";
     assert_eq!(int(&h, audit).await, 1);
+}
+
+/// The orientation draft's image and PDF, the brand and the package.
+async fn seeded_look(h: &Harness, d: &harpseal::Deployment) {
+    let files = "SELECT count(*) FROM announcement_file f JOIN announcement_text t \
+                 ON t.announcement_id = f.announcement_id AND t.locale = 'th' \
+                 WHERE t.title LIKE 'ปฐมนิเทศ%' AND f.kind IN ('image', 'pdf')";
+    assert_eq!(int(h, files).await, 2, "one image and one PDF");
+    let brand = harpseal::branding::saved(d).await.unwrap();
+    assert_eq!(
+        brand.name.as_deref(),
+        Some(example_deployment::seed::BRAND_NAME)
+    );
+    assert_eq!(
+        brand.primary_color.as_deref(),
+        Some(example_deployment::seed::BRAND_COLOR)
+    );
+    assert_eq!(
+        harpseal::usage::line_package(d).await.unwrap(),
+        example_deployment::seed::LINE_PACKAGE
+    );
+}
+
+#[tokio::test]
+async fn a_chosen_brand_and_package_survive_the_seed() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let admin = h
+        .create_staff(
+            "admin@sealbay.example",
+            "kelp forest at dawn",
+            &["Administrator"],
+        )
+        .await;
+    let d = app.deployment();
+    let actor = harpseal::Actor::Staff(admin);
+    let ctx = harpseal::RequestCtx::cli();
+    harpseal::branding::set_primary_color(d, "#5a2d82", &actor, &ctx)
+        .await
+        .unwrap();
+    harpseal::usage::set_line_package(d, harpseal::usage::LinePackage::Pro, &actor, &ctx)
+        .await
+        .unwrap();
+    let report = seed(d, None, false).await.unwrap();
+    assert_eq!(report.kernel_settings_written, 1, "only the name was free");
+    let brand = harpseal::branding::saved(d).await.unwrap();
+    assert_eq!(brand.primary_color.as_deref(), Some("#5a2d82"));
+    assert_eq!(
+        harpseal::usage::line_package(d).await.unwrap(),
+        harpseal::usage::LinePackage::Pro
+    );
 }
 
 #[tokio::test]
@@ -188,5 +252,5 @@ async fn seeding_as_a_named_administrator() {
         "SELECT count(*) FROM audit_log WHERE actor_id = '{second}' \
          AND json_extract(after, '$.seed') = 1"
     );
-    assert_eq!(int(&h, &by_second).await, 2 + 4 + 1 + 2);
+    assert_eq!(int(&h, &by_second).await, 2 + 4 + 1 + 2 + 3);
 }
