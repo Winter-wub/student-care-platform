@@ -149,10 +149,7 @@ impl UploadRejection {
     /// A short Thai text for Staff: what is wrong, then what to do (#140).
     pub fn text(self) -> &'static str {
         match self {
-            Self::TooLarge => {
-                "ไฟล์ใหญ่เกิน 4 MB วิธีแก้: ลบชีตหรือคอลัมน์ที่ไม่ใช้ \
-                 หรือบันทึกเป็น CSV UTF-8 ซึ่งเล็กกว่า แล้วอัปโหลดใหม่"
-            }
+            Self::TooLarge => "ไฟล์ใหญ่เกิน 4 MB วิธีแก้: ลบชีตหรือคอลัมน์ที่ไม่ใช้ แล้วอัปโหลดใหม่",
             Self::NoFile => "ไม่พบไฟล์ที่อัปโหลด วิธีแก้: เลือกไฟล์ CSV หรือ XLSX แล้วกดอัปโหลดอีกครั้ง",
             Self::Unsupported => {
                 "รับเฉพาะไฟล์ CSV หรือ XLSX วิธีแก้: บันทึกไฟล์เป็น .xlsx \

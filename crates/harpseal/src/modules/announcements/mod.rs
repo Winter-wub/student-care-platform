@@ -81,6 +81,7 @@ mod maint_chunk;
 mod notice;
 mod outcome;
 mod page_actions;
+mod page_audience;
 mod page_count;
 mod page_detail;
 mod page_editor;

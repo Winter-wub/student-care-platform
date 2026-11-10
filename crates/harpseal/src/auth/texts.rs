@@ -46,6 +46,17 @@ pub(crate) const TEXTS: &[E] = &[
         "en",
         "What you sent is larger than this page accepts.",
     ),
+    // #140: what to do, under the line above on the 413 page.
+    E::new(
+        "kernel.auth.too_large_fix",
+        "th",
+        "วิธีแก้: กลับไปหน้าก่อน ย่อรูปหรือไฟล์ให้เล็กลง หรือแนบทีละน้อยไฟล์ แล้วส่งอีกครั้ง",
+    ),
+    E::new(
+        "kernel.auth.too_large_fix",
+        "en",
+        "To fix: go back, make the images or files smaller or attach fewer at once, and send again.",
+    ),
     E::new("kernel.auth.forbidden_title", "th", "ไม่มีสิทธิ์เข้าหน้านี้"),
     E::new("kernel.auth.forbidden_title", "en", "No access"),
     E::new(

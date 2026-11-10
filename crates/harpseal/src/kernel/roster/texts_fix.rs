@@ -56,8 +56,15 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.fix_too_large",
-        "ลบชีตหรือคอลัมน์ที่ไม่ใช้ หรือบันทึกเป็น CSV UTF-8 ซึ่งเล็กกว่า แล้วอัปโหลดใหม่",
-        "Delete unused sheets or columns, or save as CSV UTF-8 (smaller), and upload again"
+        "ลบชีตหรือคอลัมน์ที่ไม่ใช้ แล้วอัปโหลดใหม่",
+        "Delete unused sheets or columns, and upload again"
+    ),
+    // The flash of a file the guard stops before reading it (#140): the
+    // problem and the fix in one line, as there is no problems table.
+    (
+        "kernel.roster.too_large_upload",
+        "ไฟล์ใหญ่เกิน 4 MB วิธีแก้: ลบชีตหรือคอลัมน์ที่ไม่ใช้ แล้วอัปโหลดใหม่",
+        "The file is larger than 4 MB. To fix: delete unused sheets or columns, and upload again"
     ),
     (
         "kernel.roster.fix_empty_full",
@@ -178,8 +185,62 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Correct the email in the next file, or on this Student's page"
     ),
     (
+        "kernel.roster.fix_empty_attribute",
+        "ใส่ค่าในช่องนี้แล้วอัปโหลดใหม่ หรือเพิ่มที่หน้าของนักศึกษาคนนี้หลังนำเข้า",
+        "Fill in this cell and upload again, or add it on this Student's page after the import"
+    ),
+    (
         "kernel.roster.fix_duplicate_email",
         "ตรวจว่าอีเมลนี้เป็นของใคร แล้วให้แต่ละคนมีอีเมลของตัวเอง",
         "Check whose email this is, and give each Student their own"
     ),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::super::{texts, texts_diff, texts_reach, texts_sheets, texts_warnings};
+    use super::DEFAULTS;
+
+    /// Reasons whose own text already says what to do.
+    const SAYS_ITS_FIX: [&str; 3] = ["hidden_roster_sheet", "only_hidden", "example_row"];
+
+    #[test]
+    fn every_reason_has_a_fix_or_says_its_own() {
+        let all = [
+            texts::DEFAULTS,
+            texts_sheets::DEFAULTS,
+            texts_warnings::DEFAULTS,
+            texts_diff::DEFAULTS,
+            texts_reach::DEFAULTS,
+        ];
+        let fixes: Vec<&str> = DEFAULTS.iter().map(|e| e.key).collect();
+        let mut reasons = 0;
+        for e in all.iter().flat_map(|t| t.iter()) {
+            let Some(reason) = e.key.strip_prefix("kernel.roster.reason_") else {
+                continue;
+            };
+            reasons += 1;
+            let fix = format!("kernel.roster.fix_{reason}");
+            assert!(
+                fixes.contains(&fix.as_str()) || SAYS_ITS_FIX.contains(&reason),
+                "{reason} has no {fix}"
+            );
+        }
+        assert!(reasons > 30, "{reasons} reasons");
+        // Each fix is for a reason that exists, in both Locales.
+        for e in DEFAULTS {
+            if let Some(reason) = e.key.strip_prefix("kernel.roster.fix_") {
+                let key = format!("kernel.roster.reason_{reason}");
+                assert!(
+                    reason == "label" || all.iter().flat_map(|t| t.iter()).any(|r| r.key == key),
+                    "{} fixes no reason",
+                    e.key
+                );
+            }
+        }
+        for locale in ["th", "en"] {
+            let n = DEFAULTS.iter().filter(|e| e.locale == locale).count();
+            assert_eq!(n * 2, DEFAULTS.len(), "{locale}");
+        }
+    }
+}

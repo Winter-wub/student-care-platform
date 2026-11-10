@@ -19,6 +19,12 @@ use crate::manifest::CatalogEntry as E;
 /// The slot fields, `pdf1` to `pdf3` (also the error fields).
 const SLOTS: [&str; MAX_PDFS as usize] = ["pdf1", "pdf2", "pdf3"];
 
+/// Whether `field` is one the PDFs part shows an error under: the whole
+/// set (`pdfs`) or a slot (#140).
+pub(super) fn erred_in(field: &str) -> bool {
+    field == "pdfs" || SLOTS.contains(&field)
+}
+
 type Errors = Vec<(&'static str, &'static str)>;
 
 /// PDF texts, Thai and English.
@@ -219,15 +225,17 @@ fn pdf_edits(pairs: &[(String, String)], parts: Vec<FilePart>) -> Result<FileEdi
 /// The PDF fieldset: the hint and the one-at-a-time line, each saved file
 /// with its name, size and a "remove" box, and one file input for the
 /// first empty slot (none once all are full). `files` holds every kind.
+/// `reselect`: a PDF was chosen but the form came back without it (#140).
 pub(super) fn field(
     v: &View<'_>,
     files: &[Stored],
     sent: bool,
+    reselect: bool,
     err: &dyn Fn(&str) -> Markup,
 ) -> Markup {
     let next = (1..=MAX_PDFS).find(|n| pdf_slot(files, *n).is_none());
     html! {
-        fieldset class="announcement-pdfs" {
+        fieldset class="announcement-pdfs" aria-describedby=[reselect.then_some("err-reselect-pdfs")] {
             legend { (v.t("announcements.pdfs.legend")) }
             p class="hint" { (v.t("announcements.pdfs.hint")) }
             p class="muted" { (v.t("announcements.pdfs.once")) }
@@ -235,6 +243,10 @@ pub(super) fn field(
                 p class="muted" { (v.t("announcements.pdfs.no_public_url")) }
             }
             (err("pdfs"))
+            @if reselect {
+                // Not a live region (#129): the form's summary announces.
+                p class="field-error" id="err-reselect-pdfs" { (v.t("announcements.images.reselect")) }
+            }
             @for (i, name) in SLOTS.iter().enumerate() {
                 @let n = (i + 1) as u8;
                 @let saved = pdf_slot(files, n);

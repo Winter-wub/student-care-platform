@@ -96,7 +96,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     let upload = UploadSpec {
         path: "/roster/upload",
         max_body: UPLOAD_LIMIT,
-        too_large: Some((view::BASE, "kernel.roster.reason_too_large")),
+        too_large: Some((view::BASE, "kernel.roster.too_large_upload")),
         columns: None,
     };
     r.messages(texts::DEFAULTS)

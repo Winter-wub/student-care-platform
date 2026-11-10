@@ -10,13 +10,13 @@ use maud::{Markup, html};
 use super::draft::changed_locales;
 use super::files::{self, Stored};
 use super::form::{Fields, MAX_BODY, MAX_TITLE};
-use super::form_images::{self, Posted};
+use super::form_images::{self, Chosen, Posted};
 use super::form_pdfs;
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
 use super::{
-    page_count, page_detail, page_editor, page_more, page_notice, page_pick, page_review, service,
+    page_audience, page_detail, page_editor, page_more, page_notice, page_review, service,
 };
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
@@ -65,12 +65,12 @@ pub(super) async fn new_post(
     let f = Fields::from_pairs(&posted.pairs);
     let d = s.deployment.as_ref();
     let draft = f.draft(&d.config().roster, v.offset(), d.services().now_ms());
-    let had_files = posted.had_files();
+    let lost = posted.chosen();
     let draft = match with_images(draft, &mut posted) {
         Ok(draft) => draft,
         Err(errors) => {
             let form = Form {
-                reselect: had_files,
+                reselect: lost,
                 ..Form::new(None, &f)
             };
             return form_page(&v, StatusCode::UNPROCESSABLE_ENTITY, &form, &errors, None);
@@ -146,7 +146,7 @@ pub(super) async fn edit_post(
         f.when = "now".into();
     }
     let now = d.services().now_ms();
-    let had_files = posted.had_files();
+    let lost = posted.chosen();
     let mut draft = with_images(f.draft(&d.config().roster, v.offset(), now), &mut posted);
     // #77: a notice needs an announcement open now and after this save
     // (Students could not open it otherwise) and a changed text (else it
@@ -175,7 +175,7 @@ pub(super) async fn edit_post(
             let images = files::list(d.services(), &id).await.unwrap_or_default();
             let form = Form {
                 images: &images,
-                reselect: had_files,
+                reselect: lost,
                 ..Form::new(Some(&row), &f)
             };
             return form_page(
@@ -220,7 +220,7 @@ struct Form<'a> {
     row: Option<&'a Row>,
     f: &'a Fields,
     images: &'a [Stored],
-    reselect: bool,
+    reselect: Chosen,
 }
 
 impl<'a> Form<'a> {
@@ -229,7 +229,7 @@ impl<'a> Form<'a> {
             row,
             f,
             images: &[],
-            reselect: false,
+            reselect: Chosen::default(),
         }
     }
 }
@@ -261,7 +261,7 @@ fn form_page(
         @if sent { p class="muted" { (v.t("announcements.form.sent_note")) } }
         form method="post" action=(action) enctype="multipart/form-data" class="card announcement-form" {
             (v.staff.csrf_field())
-            @if !errors.is_empty() || form.reselect { p class="flash err" role="alert" { (v.t("announcements.form.fix_errors")) } }
+            @if !errors.is_empty() || form.reselect.any() { p class="flash err" role="alert" { (v.t("announcements.form.fix_errors")) } }
             @if let Some(version) = f.version { input type="hidden" name="version" value=(version); }
             @if let Some(r) = row { input type="hidden" name="announcement_id" value=(r.id); }
             fieldset aria-describedby=[d("th")] {
@@ -287,7 +287,7 @@ fn form_page(
             }
             // #140: who and when stay in view, under the Thai text.
             @if !sent {
-                (audience(v, f, errors))
+                (page_audience::fieldset(v, f, errors))
                 fieldset aria-describedby=[d("send_at")] {
                     legend { (v.t("announcements.form.when")) }
                     (err("send_at"))
@@ -324,9 +324,9 @@ fn form_page(
                 }
             }))
             (page_more::part("more-images", &v.t("announcements.editor.images_summary"), open.images,
-                form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect, &err)))
+                form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect.images, &err)))
             (page_more::part("more-pdfs", &v.t("announcements.editor.pdfs_summary"), open.pdfs,
-                form_pdfs::field(v, form.images, sent, &err)))
+                form_pdfs::field(v, form.images, sent, form.reselect.pdfs, &err)))
             (page_more::part("more-options", &v.t("announcements.editor.more_summary"), open.more, html! {
                 div class="field" {
                     label for="expires" { (v.t("announcements.form.expires")) }
@@ -363,30 +363,4 @@ fn form_page(
         (page_editor::script())
     };
     v.page(status, &title, body)
-}
-
-/// The Audience fieldset (`#audience`): the choice, the attribute filters,
-/// Tags, the hand-picked list, the unreachable box and the live count. Its
-/// fields are [`Fields`]' Audience fields, so a caller that prefills them
-/// (a saved Audience, a bulk announce) gets them drawn here.
-fn audience(v: &View<'_>, f: &Fields, errors: &[(&'static str, &'static str)]) -> Markup {
-    html! {
-        fieldset id="audience" aria-describedby=[super::form_scope::described(errors, "audience")] {
-            legend { (v.t("announcements.form.audience")) }
-            (super::form_scope::field_errors(v, errors, "audience"))
-            (super::form_scope::field(v, f))
-            p class="muted" { (v.t("announcements.form.audience_help")) }
-            (super::form_scope::attributes(v, f))
-            div class="field" {
-                label for="tags" { (v.t("announcements.form.tags")) }
-                input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));
-            }
-            (page_pick::field(v, f))
-            label class="check" {
-                input type="checkbox" name="unreachable" value="1" checked[f.unreachable];
-                " " (v.t("announcements.form.include_unreachable"))
-            }
-            (page_count::placeholder(v))
-        }
-    }
 }
