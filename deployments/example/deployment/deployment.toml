@@ -29,14 +29,18 @@ id_pattern = '########'
 # account is `kernel.link.revoke`; `kernel.link.manage` is Manual Link only.
 # A Role that lists only the old `kernel.link.manage` is granted both (it
 # covered both before); to give Student Affairs unlink without Manual Link,
-# list `kernel.link.revoke` alone.
+# list `kernel.link.revoke` alone. The Texts page is `kernel.texts.edit`
+# (#165), so Student Affairs edit wording without every setting
+# (`kernel.setting.edit`: the privacy notice version, branding, the LINE
+# package). A Role listing only `kernel.setting.edit` is granted both.
 [roles]
 Administrator = [
     "kernel.student.view", "kernel.student.edit",
     "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.edit", "kernel.roster.import",
     "kernel.usage.view", "kernel.security.view", "kernel.audit.view",
-    "kernel.staff.manage", "kernel.setting.edit", "kernel.backup.manage",
+    "kernel.staff.manage", "kernel.setting.edit", "kernel.texts.edit",
+    "kernel.backup.manage",
     "kernel.backup.download",
     "announcements.view", "announcements.send", "announcements.retract",
     "fees.import",
@@ -46,6 +50,7 @@ Officer = [
     "kernel.student.view", "kernel.student.edit",
     "kernel.link.manage", "kernel.link.revoke",
     "kernel.roster.view", "kernel.roster.import", "kernel.usage.view",
+    "kernel.texts.edit",
     "announcements.view", "announcements.send", "announcements.retract",
     "reminders.send",
 ]

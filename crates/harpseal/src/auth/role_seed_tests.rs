@@ -1,4 +1,4 @@
-//! Unit tests of [`super`]: the legacy link rule and the seed's decision.
+//! Unit tests of [`super`]: the legacy split rules and the seed's decision.
 
 use super::*;
 
@@ -20,20 +20,41 @@ fn holding(p: &[&str]) -> Held {
     }
 }
 
+fn legacy(p: &[&str]) -> Vec<String> {
+    with_legacy_grants(&ids(p)).0
+}
+
 #[test]
 fn a_role_listing_only_the_old_link_permission_gets_both() {
-    let got = with_legacy_link_grant(&ids(&["kernel.student.view", LINK_MANAGE]));
+    let got = legacy(&["kernel.student.view", LINK_MANAGE]);
     assert_eq!(got, ids(&["kernel.student.view", LINK_MANAGE, LINK_REVOKE]));
 }
 
 #[test]
+fn a_role_listing_only_the_setting_permission_also_edits_texts() {
+    let (got, widened) = with_legacy_grants(&ids(&[SETTING_EDIT]));
+    assert_eq!(got, ids(&[SETTING_EDIT, TEXTS_EDIT]));
+    assert_eq!(widened, [(SETTING_EDIT, TEXTS_EDIT)]);
+    let (got, widened) = with_legacy_grants(&ids(&[LINK_MANAGE, SETTING_EDIT]));
+    assert_eq!(
+        got,
+        ids(&[LINK_MANAGE, SETTING_EDIT, LINK_REVOKE, TEXTS_EDIT])
+    );
+    assert_eq!(widened.len(), 2);
+}
+
+#[test]
 fn a_role_listing_the_new_permission_is_taken_as_written() {
-    let only_revoke = ids(&[LINK_REVOKE]);
-    assert_eq!(with_legacy_link_grant(&only_revoke), only_revoke);
-    let both = ids(&[LINK_MANAGE, LINK_REVOKE]);
-    assert_eq!(with_legacy_link_grant(&both), both);
-    let neither = ids(&["kernel.student.view"]);
-    assert_eq!(with_legacy_link_grant(&neither), neither);
+    for written in [
+        &[LINK_REVOKE][..],
+        &[LINK_MANAGE, LINK_REVOKE],
+        &["kernel.student.view"],
+        &[TEXTS_EDIT],
+        &[SETTING_EDIT, TEXTS_EDIT],
+    ] {
+        assert_eq!(legacy(written), ids(written), "{written:?}");
+        assert!(with_legacy_grants(&ids(written)).1.is_empty());
+    }
 }
 
 #[test]

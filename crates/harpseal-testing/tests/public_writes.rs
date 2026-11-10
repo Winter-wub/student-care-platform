@@ -128,14 +128,14 @@ async fn announcements_need_announcements_send() {
 }
 
 #[tokio::test]
-async fn text_overrides_need_kernel_setting_edit() {
+async fn text_overrides_need_kernel_texts_edit() {
     let (_h, app, officer, viewer) = boot().await;
     let d = app.deployment();
     let ctx = RequestCtx::cli().seeded();
     let (key, value) = ("kernel.flow.welcome", "สวัสดี (ทดสอบ)");
     refused(
         harpseal::texts::set_override(d, key, "th", value, &viewer, &ctx).await,
-        "kernel.setting.edit",
+        "kernel.texts.edit",
     );
     assert_eq!(
         app.count("SELECT count(*) FROM setting WHERE locale <> ''")
@@ -197,7 +197,7 @@ async fn a_disabled_staff_member_is_refused_by_every_write() {
     );
     refused(
         harpseal::texts::set_override(d, "kernel.flow.welcome", "th", "สวัสดี", &officer, &ctx).await,
-        "kernel.setting.edit",
+        "kernel.texts.edit",
     );
     assert_eq!(
         app.count("SELECT count(*) FROM audit_log WHERE actor_kind = 'staff'")

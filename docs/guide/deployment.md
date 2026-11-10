@@ -295,7 +295,7 @@ add no logic of their own:
 | `harpseal::roster::confirm(d, id, actor, ctx)` → `Confirmed` | `kernel.roster.import` | `roster.import` |
 | `harpseal::modules::announcements::create_draft(d, &NewAnnouncement, actor, ctx)` | `announcements.send` | `announcement.create` |
 | `harpseal::modules::announcements::confirm(d, id, version, actor, ctx)` | `announcements.send` | `announcement.send` / `.schedule` |
-| `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.setting.edit` | `setting.update` |
+| `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.texts.edit` (`harpseal::texts::TEXTS_PERMISSION`; `kernel.setting.edit` before #165) | `setting.update` |
 | `harpseal::branding::set_menu_images(d, locked, unlocked, actor, ctx)` / `reset_menu_images(d, actor, ctx)` → `MenuImagesSaved` | `kernel.setting.edit` | `branding.menu_images` / `.reset` |
 | `d.settings().save(key, value, actor, ctx)` ([settings](settings.md#saving-from-code)) | the Setting's own | `setting.update` |
 | `d.save_setting_as_system(key, value, ctx)` | none: seed and CLI code that holds the `Deployment` | `setting.update` (actor `system`) |

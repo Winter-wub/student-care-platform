@@ -226,7 +226,7 @@ fn with_auditor(c: &str) -> String {
 #[tokio::test]
 async fn a_forced_restore_of_a_backup_from_before_role_seed_takes_the_upgrade_path() {
     // A Deployment still at Kernel migration 0016, on the first TOML
-    // (so without 0018's indexes either).
+    // (so without 0018's indexes or 0019's texts grant either).
     let old = Harness::new();
     let d_old = with_roles(&old, str::to_string);
     d_old.migrate().await.unwrap();
@@ -235,7 +235,7 @@ async fn a_forced_restore_of_a_backup_from_before_role_seed_takes_the_upgrade_pa
         "DROP INDEX inbound_event_sender",
         "DROP INDEX channel_account_first_seen",
         "DELETE FROM migration WHERE module = 'kernel' AND name IN \
-         ('0017_role_seed', '0018_link_picker_idx')",
+         ('0017_role_seed', '0018_link_picker_idx', '0019_texts_edit_permission')",
     ] {
         old.db().execute(Statement::new(sql)).await.unwrap();
     }

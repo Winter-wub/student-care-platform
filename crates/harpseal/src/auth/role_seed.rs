@@ -14,24 +14,32 @@ use serde_json::json;
 
 use super::staff_admin::gated;
 use crate::audit::{self, Actor, RequestCtx, Target};
-use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE, SETTING_EDIT, TEXTS_EDIT};
 use crate::port_types::{Statement, Value};
 use crate::{Result, Services};
 
 /// `role_seed.permission_id` of the row that records the Role itself.
 const ROLE_ROW: &str = "";
 
-/// What a TOML Role is granted for the Permissions it lists: a Role that
-/// lists `kernel.link.manage` and not `kernel.link.revoke` was written when
-/// the former covered both, so it gets both. A Role that lists the new one
-/// (alone or with the old) is taken as written.
-fn with_legacy_link_grant(perms: &[String]) -> Vec<String> {
+/// Permissions split off an older one, as (old, new): a TOML Role that
+/// lists the old id and not the new one was written when the old covered
+/// both, so it gets both. A Role that lists the new one (alone or with the
+/// old) is taken as written. `kernel.link.manage` lost Staff unlink (#80);
+/// `kernel.setting.edit` lost the Texts page (#165).
+const SPLITS: &[(&str, &str)] = &[(LINK_MANAGE, LINK_REVOKE), (SETTING_EDIT, TEXTS_EDIT)];
+
+/// What a TOML Role listing `perms` is granted ([`SPLITS`] applied), and
+/// the splits that widened it.
+fn with_legacy_grants(perms: &[String]) -> (Vec<String>, Vec<(&'static str, &'static str)>) {
     let mut all = perms.to_vec();
     let has = |id: &str| perms.iter().any(|p| p == id);
-    if has(LINK_MANAGE) && !has(LINK_REVOKE) {
-        all.push(LINK_REVOKE.to_string());
-    }
-    all
+    let widened: Vec<_> = SPLITS
+        .iter()
+        .filter(|(old, new)| has(old) && !has(new))
+        .copied()
+        .collect();
+    all.extend(widened.iter().map(|(_, new)| new.to_string()));
+    (all, widened)
 }
 
 /// A Role of the database, as the seed sees it.
@@ -290,9 +298,9 @@ fn audit_row(
 /// grant is audited, including the first seed after every Role was
 /// deleted (`role_seed` remembers them).
 ///
-/// Returns one notice per Role the legacy rule widened, for the migrate
-/// report: the Core has no logger, and the Deployment's author should list
-/// what the Role means.
+/// Returns one notice per split ([`SPLITS`]) that widened a Role, for the
+/// migrate report: the Core has no logger, and the Deployment's author
+/// should list what the Role means.
 pub(crate) async fn seed(
     services: &Services,
     roles: &BTreeMap<String, Vec<String>>,
@@ -307,11 +315,11 @@ pub(crate) async fn seed(
     let mut stmts = Vec::new();
     let mut notices = Vec::new();
     for (name, perms) in roles {
-        let wanted = with_legacy_link_grant(perms);
-        if wanted.len() != perms.len() {
+        let (wanted, widened) = with_legacy_grants(perms);
+        for (old, new) in widened {
             notices.push(format!(
-                "[roles] {name} lists {LINK_MANAGE} without {LINK_REVOKE}, so it is also \
-                 granted {LINK_REVOKE}; list both, or {LINK_REVOKE} alone, to say what it means"
+                "[roles] {name} lists {old} without {new}, so it is also \
+                 granted {new}; list both, or {new} alone, to say what it means"
             ));
         }
         let held = held(services, name).await?;

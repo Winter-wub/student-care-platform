@@ -101,6 +101,7 @@ async fn migrations_apply_twice_without_error_and_are_tracked() {
             ("kernel".into(), "0016_student_email_key_idx".into()),
             ("kernel".into(), "0017_role_seed".into()),
             ("kernel".into(), "0018_link_picker_idx".into()),
+            ("kernel".into(), "0019_texts_edit_permission".into()),
         ]
     );
     assert_eq!(rows.rows[0][2], Value::Integer(harpseal_testing::START_MS));
@@ -134,10 +135,10 @@ async fn a_module_migration_runs_after_the_kernel_and_once() {
         [
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
             "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel", "kernel",
-            "kernel", "kernel", "notes"
+            "kernel", "kernel", "kernel", "notes"
         ]
     );
-    assert_eq!(d.migrate().await.unwrap().applied.len(), 19);
+    assert_eq!(d.migrate().await.unwrap().applied.len(), 20);
     assert!(d.migrate().await.unwrap().applied.is_empty());
 }
 

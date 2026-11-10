@@ -161,14 +161,15 @@ async fn a_viewer_is_refused_every_manage_and_edit_route() {
         body.contains("ไม่มีสิทธิ์เข้าหน้านี้") && body.contains(&format!("<code>{permission}</code>"))
     };
     let (staff, setting) = ("kernel.staff.manage", "kernel.setting.edit");
+    let texts = "kernel.texts.edit";
     let gets = [
         ("/admin/staff".to_string(), staff),
         ("/admin/staff/new".into(), staff),
         (format!("/admin/staff/{id}"), staff),
         ("/admin/roles".into(), staff),
         (format!("/admin/roles/{role}"), staff),
-        ("/admin/texts".into(), setting),
-        ("/admin/texts/kernel.flow.welcome".into(), setting),
+        ("/admin/texts".into(), texts),
+        ("/admin/texts/kernel.flow.welcome".into(), texts),
     ];
     for (path, p) in &gets {
         let r = b.get(path).await;
@@ -185,7 +186,7 @@ async fn a_viewer_is_refused_every_manage_and_edit_route() {
         (format!("/admin/roles/{role}"), staff),
         (format!("/admin/roles/{role}/delete"), staff),
         ("/admin/texts/consent".into(), setting),
-        ("/admin/texts/kernel.flow.welcome".into(), setting),
+        ("/admin/texts/kernel.flow.welcome".into(), texts),
     ];
     for (path, p) in &posts {
         let r = b.post(path, "").await;
