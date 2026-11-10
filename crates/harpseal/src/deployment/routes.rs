@@ -21,6 +21,10 @@ pub(super) const WEBHOOK_PATH: &str = "/webhook/{kind}";
 /// The Module settings page (#75), any signed-in Staff member.
 pub(super) const SETTINGS_PATH: &str = "/admin/settings";
 
+/// The Texts page (#165), any signed-in Staff member: the page checks
+/// `kernel.texts.edit` or `kernel.setting.edit` itself.
+pub(super) const TEXTS_PATH: &str = "/admin/texts";
+
 /// Prefix of every back-office path.
 pub(crate) const ADMIN: &str = "/admin";
 
@@ -54,6 +58,7 @@ impl Routes {
             crate::auth::LOGOUT_PATH,
             crate::auth::PASSWORD_PATH,
             SETTINGS_PATH,
+            TEXTS_PATH,
         ];
         Self(
             own.iter()

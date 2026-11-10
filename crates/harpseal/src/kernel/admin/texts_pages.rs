@@ -3,7 +3,8 @@
 //! default), titled by its text and the page it shows on (#125); `POST
 //! /admin/texts/consent` sets the Consent notice version, through its
 //! review step (`consent_review.rs`, #135). The version is a setting, not
-//! a text: its card and route need `kernel.setting.edit`.
+//! a text: its card and route need `kernel.setting.edit`, and Staff holding
+//! only that see the list page with the card alone.
 
 use axum::Form;
 use axum::extract::{Path, State};

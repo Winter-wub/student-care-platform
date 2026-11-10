@@ -10,13 +10,14 @@ use crate::{Deployment, Error, Result};
 
 /// The Permission [`set_override`] and the Texts page require (#165): a
 /// Role can edit texts without every setting.
-pub const TEXTS_PERMISSION: &str = "kernel.texts.edit";
+pub const TEXTS_PERMISSION: &str = crate::kernel::TEXTS_EDIT;
 
 /// `kernel.setting.edit`: the privacy notice version, branding and the LINE
 /// package. [`set_override`] required it before #165 and needs
 /// [`TEXTS_PERMISSION`] now; a Role that held it was granted that too
 /// (migration 0019, and `[roles]` on `migrate`).
-pub const SETTING_PERMISSION: &str = "kernel.setting.edit";
+#[deprecated(note = "set_override needs TEXTS_PERMISSION since #165")]
+pub const SETTING_PERMISSION: &str = crate::kernel::SETTING_EDIT;
 
 /// What [`write`] did.
 #[derive(Debug)]

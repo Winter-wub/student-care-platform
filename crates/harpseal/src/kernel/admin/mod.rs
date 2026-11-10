@@ -7,7 +7,8 @@
 //! | `GET /admin/audit`, `GET /admin/audit/{id}` | `kernel.audit.view` |
 //! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{roles,status,password,unlock}` | `kernel.staff.manage` |
 //! | `GET/POST /admin/roles`, `GET/POST /admin/roles/{id}`, `POST …/delete` | `kernel.staff.manage` |
-//! | `GET /admin/texts` (with its search), `GET/POST /admin/texts/{key}` | `kernel.texts.edit` (#165) |
+//! | `GET /admin/texts` (with its search; mounted by `Deployment::router`) | `kernel.texts.edit`; `kernel.setting.edit` alone sees only the privacy notice version (#165) |
+//! | `GET/POST /admin/texts/{key}` | `kernel.texts.edit` (#165) |
 //! | `POST /admin/texts/consent` (privacy notice version: review step, then save: #135) | `kernel.setting.edit` |
 //! | `GET/POST /admin/settings` (Module settings, #75; see [`module_settings`]) | each setting's own Permission |
 //! | `GET /admin/backups`, `POST …/now`, `GET …/{id}/download`, `GET …/export.xlsx` | `kernel.backup.manage` ([`backups`]) |
@@ -56,6 +57,27 @@ pub(crate) fn settings_route() -> axum::routing::MethodRouter<crate::AppState> {
     get(module_settings::page).post(module_settings::submit)
 }
 
+/// `GET /admin/texts`, mounted by `Deployment::router` for any signed-in
+/// Staff member (#165): the page shows the texts to `kernel.texts.edit`
+/// and the privacy notice version to `kernel.setting.edit`.
+pub(crate) fn texts_route() -> axum::routing::MethodRouter<crate::AppState> {
+    get(texts_list::list)
+}
+
+/// The navigation entry of `/admin/texts`, once per Permission that opens
+/// it (the guard lists a path once).
+fn texts_nav(r: &mut ModuleRegistrar) {
+    for permission in [crate::kernel::TEXTS_EDIT, crate::kernel::SETTING_EDIT] {
+        r.nav.push(crate::module::NavSpec {
+            permission,
+            path: "/texts",
+            title_key: "kernel.admin.texts.title",
+            order: 80,
+            group: crate::NavGroup::Admin,
+        });
+    }
+}
+
 /// Registers the pages on the Kernel, after Students (10) and the roster.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     const SECURITY: &str = "kernel.security.view";
@@ -64,6 +86,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
     const SETTING: &str = crate::kernel::SETTING_EDIT;
     const TEXTS: &str = crate::kernel::TEXTS_EDIT;
     backups::register(r);
+    texts_nav(r);
     r.messages(texts::DEFAULTS)
         .messages(texts::STAFF)
         .messages(texts_audit::AUDIT)
@@ -122,14 +145,6 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(roles_pages::edit).post(roles_pages::update),
         )
         .back_office(STAFF, "/roles/{id}/delete", post(roles_pages::delete))
-        .back_office_page_in(
-            crate::NavGroup::Admin,
-            TEXTS,
-            "/texts",
-            "kernel.admin.texts.title",
-            80,
-            get(texts_list::list),
-        )
         .back_office(SETTING, "/texts/consent", post(texts_pages::consent))
         .back_office(
             TEXTS,

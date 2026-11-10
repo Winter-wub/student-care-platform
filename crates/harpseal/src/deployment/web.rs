@@ -97,6 +97,14 @@ impl Deployment {
                 guarded(crate::kernel::admin::settings_route(), gate),
             );
         }
+        let kernel_gate = Gate {
+            module: Some(crate::kernel::NAME),
+            ..signed_in
+        };
+        root = root.route(
+            super::routes::TEXTS_PATH,
+            guarded(crate::kernel::admin::texts_route(), kernel_gate),
+        );
         for (_module, path, route) in &self.registry.public {
             root = root.route(path, route.clone());
         }

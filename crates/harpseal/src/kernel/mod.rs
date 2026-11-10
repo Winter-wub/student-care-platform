@@ -70,7 +70,7 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
     )
     .thai("แก้ไขเวอร์ชันประกาศความเป็นส่วนตัว แบรนด์และรูปเมนู และแพ็กเกจ LINE"),
     Permission::new(TEXTS_EDIT, "Edit texts on the Texts page")
-        .thai("แก้ไขข้อความที่ระบบใช้ในแชทและหน้าต่าง ๆ"),
+        .thai("แก้ไขข้อความที่นักศึกษาและเจ้าหน้าที่เห็นในแชทและในหน้าเว็บ"),
     Permission::new("kernel.backup.manage", "See the backups and back up now")
         .thai("ดูชุดสำรองข้อมูลและสั่งสำรองทันที"),
     Permission::new(

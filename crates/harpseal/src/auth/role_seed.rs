@@ -21,25 +21,58 @@ use crate::{Result, Services};
 /// `role_seed.permission_id` of the row that records the Role itself.
 const ROLE_ROW: &str = "";
 
-/// Permissions split off an older one, as (old, new): a TOML Role that
-/// lists the old id and not the new one was written when the old covered
-/// both, so it gets both. A Role that lists the new one (alone or with the
-/// old) is taken as written. `kernel.link.manage` lost Staff unlink (#80);
-/// `kernel.setting.edit` lost the Texts page (#165).
-const SPLITS: &[(&str, &str)] = &[(LINK_MANAGE, LINK_REVOKE), (SETTING_EDIT, TEXTS_EDIT)];
+/// A Permission split off an older one: a TOML Role that lists `old` and
+/// not `new` was written when `old` covered both, so it gets both. A Role
+/// that lists `new` (alone or with `old`) is taken as written.
+struct Split {
+    old: &'static str,
+    new: &'static str,
+    /// The end of the migrate notice: what the author should write.
+    hint: &'static str,
+}
+
+/// `kernel.link.manage` lost Staff unlink (#80); `kernel.setting.edit`
+/// lost the Texts page (#165).
+const SPLITS: &[Split] = &[
+    Split {
+        old: LINK_MANAGE,
+        new: LINK_REVOKE,
+        hint: "list both, or kernel.link.revoke alone, to say what it means",
+    },
+    Split {
+        old: SETTING_EDIT,
+        new: TEXTS_EDIT,
+        hint: "list both to say what it means (kernel.texts.edit alone is a Role that \
+               edits texts and no other setting)",
+    },
+];
 
 /// What a TOML Role listing `perms` is granted ([`SPLITS`] applied), and
 /// the splits that widened it.
-fn with_legacy_grants(perms: &[String]) -> (Vec<String>, Vec<(&'static str, &'static str)>) {
+fn with_legacy_grants(perms: &[String]) -> (Vec<String>, Vec<&'static Split>) {
     let mut all = perms.to_vec();
     let has = |id: &str| perms.iter().any(|p| p == id);
     let widened: Vec<_> = SPLITS
         .iter()
-        .filter(|(old, new)| has(old) && !has(new))
-        .copied()
+        .filter(|s| has(s.old) && !has(s.new))
         .collect();
-    all.extend(widened.iter().map(|(_, new)| new.to_string()));
+    all.extend(widened.iter().map(|s| s.new.to_string()));
     (all, widened)
+}
+
+/// Keeps a split's new Permission out of `step.grant` when the existing
+/// Role neither holds the old one now nor is granted it in this step: an
+/// Administrator took the old one away, so the new one, which only stands
+/// for it, is recorded as seeded and never granted. (A Role that holds
+/// the old one got the new one from its migration already.)
+fn drop_orphan_splits(step: &mut Step, widened: &[&Split], held: Option<&Held>) {
+    let Some(held) = held else { return };
+    for s in widened {
+        let has_old = held.permissions.contains(s.old) || step.grant.iter().any(|p| p == s.old);
+        if !has_old {
+            step.grant.retain(|p| p != s.new);
+        }
+    }
 }
 
 /// A Role of the database, as the seed sees it.
@@ -316,14 +349,14 @@ pub(crate) async fn seed(
     let mut notices = Vec::new();
     for (name, perms) in roles {
         let (wanted, widened) = with_legacy_grants(perms);
-        for (old, new) in widened {
+        for Split { old, new, hint } in &widened {
             notices.push(format!(
-                "[roles] {name} lists {old} without {new}, so it is also \
-                 granted {new}; list both, or {new} alone, to say what it means"
+                "[roles] {name} lists {old} without {new}, so it is also granted {new}; {hint}"
             ));
         }
         let held = held(services, name).await?;
-        let step = plan(name, &wanted, &seeded, held.as_ref());
+        let mut step = plan(name, &wanted, &seeded, held.as_ref());
+        drop_orphan_splits(&mut step, &widened, held.as_ref());
         stmts.extend(statements(
             services,
             name,

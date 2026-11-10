@@ -34,7 +34,8 @@ fn a_role_listing_only_the_old_link_permission_gets_both() {
 fn a_role_listing_only_the_setting_permission_also_edits_texts() {
     let (got, widened) = with_legacy_grants(&ids(&[SETTING_EDIT]));
     assert_eq!(got, ids(&[SETTING_EDIT, TEXTS_EDIT]));
-    assert_eq!(widened, [(SETTING_EDIT, TEXTS_EDIT)]);
+    let pairs: Vec<_> = widened.iter().map(|s| (s.old, s.new)).collect();
+    assert_eq!(pairs, [(SETTING_EDIT, TEXTS_EDIT)]);
     let (got, widened) = with_legacy_grants(&ids(&[LINK_MANAGE, SETTING_EDIT]));
     assert_eq!(
         got,
@@ -55,6 +56,40 @@ fn a_role_listing_the_new_permission_is_taken_as_written() {
         assert_eq!(legacy(written), ids(written), "{written:?}");
         assert!(with_legacy_grants(&ids(written)).1.is_empty());
     }
+}
+
+/// The plan for an existing TOML Role listing only `kernel.setting.edit`,
+/// seeded before #165 (the Role and the old pair recorded), holding `held`.
+fn texts_split(held: &[&str]) -> Step {
+    let s = seen(&[("Editor", ""), ("Editor", SETTING_EDIT)]);
+    let (wanted, widened) = with_legacy_grants(&ids(&[SETTING_EDIT]));
+    let held = holding(held);
+    let mut step = plan("Editor", &wanted, &s, Some(&held));
+    drop_orphan_splits(&mut step, &widened, Some(&held));
+    step
+}
+
+#[test]
+fn a_split_never_grants_the_new_permission_once_the_old_was_taken_away() {
+    let step = texts_split(&["kernel.audit.view"]);
+    assert_eq!(step.record, ids(&[TEXTS_EDIT]), "recorded as seeded");
+    assert!(step.grant.is_empty(), "not granted: {step:?}");
+    let step = texts_split(&[SETTING_EDIT]);
+    assert_eq!(step.grant, ids(&[TEXTS_EDIT]), "the old one is held");
+    let step = texts_split(&[SETTING_EDIT, TEXTS_EDIT]);
+    assert!(step.grant.is_empty() && step.record == ids(&[TEXTS_EDIT]));
+}
+
+#[test]
+fn a_split_grants_the_new_permission_with_the_old_one_in_the_same_step() {
+    let (wanted, widened) = with_legacy_grants(&ids(&[SETTING_EDIT]));
+    let held = holding(&["kernel.audit.view"]);
+    let mut step = plan("Editor", &wanted, &seen(&[("Editor", "")]), Some(&held));
+    drop_orphan_splits(&mut step, &widened, Some(&held));
+    assert_eq!(step.grant, ids(&[SETTING_EDIT, TEXTS_EDIT]));
+    let mut created = plan("Editor", &wanted, &seen(&[]), None);
+    drop_orphan_splits(&mut created, &widened, None);
+    assert_eq!(created.grant, ids(&[SETTING_EDIT, TEXTS_EDIT]));
 }
 
 #[test]

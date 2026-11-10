@@ -105,13 +105,27 @@ async fn a_role_with_only_the_texts_permission_edits_texts_and_no_other_setting(
 }
 
 #[tokio::test]
-async fn the_setting_permission_without_texts_no_longer_opens_the_texts_page() {
+async fn the_setting_permission_without_texts_sees_only_the_version_on_the_texts_page() {
     let (h, app) = boot().await;
     // Only an Administrator taking texts away on /admin/roles makes this.
     db_role(&h, "Settings", &["kernel.setting.edit"]).await;
     let (b, id) = signed_in(&h, &app, "Settings").await;
-    assert_eq!(b.get("/admin/texts").await.status, 403);
+    let page = b.get("/admin/texts").await;
+    assert_eq!(page.status, 200);
+    assert!(page.body.contains(CONSENT_FORM), "the version card");
+    assert!(page.body.contains("href=\"/admin/texts\""), "in the nav");
+    assert!(!page.body.contains("id=\"texts-q\""), "no search");
+    assert!(!page.body.contains(WELCOME), "no texts");
+    assert_eq!(b.get(WELCOME).await.status, 403);
     assert_eq!(b.post(WELCOME, &save("x")).await.status, 403);
+    // The version is still theirs: its review step answers.
+    let review = b.post("/admin/texts/consent", "version=2&expected=-").await;
+    assert_eq!(review.status, 200, "{}", review.body);
+    // Staff holding neither get the guard's 403.
+    let (viewer, _) = signed_in(&h, &app, "Viewer").await;
+    let r = viewer.get("/admin/texts?q=welcome").await;
+    assert_eq!(r.status, 403);
+    assert!(r.body.contains("<code>kernel.texts.edit</code>"));
     assert_eq!(b.get("/admin/branding").await.status, 200);
     let (ctx, actor) = (RequestCtx::cli(), Actor::Staff(id));
     let d = app.deployment();
@@ -136,6 +150,41 @@ async fn a_toml_role_listing_only_the_setting_permission_keeps_texts() {
         .iter()
         .find(|n| n.contains("[roles] Administrator") && n.contains("kernel.texts.edit"));
     assert!(notice.is_some(), "{:?}", report.notices);
+}
+
+#[tokio::test]
+async fn a_seeded_role_whose_setting_permission_was_taken_away_gets_no_texts() {
+    let (h, app) = boot().await;
+    // Before #165: the Administrator from `[roles]` was seeded with
+    // kernel.setting.edit, which an Administrator then took away on
+    // /admin/roles. Neither 0019 nor the texts pair existed yet.
+    for sql in [
+        "DELETE FROM role_seed WHERE role_name = 'Administrator' \
+         AND permission_id = 'kernel.texts.edit'",
+        "DELETE FROM role_permission WHERE role_id = \
+         (SELECT id FROM role WHERE name = 'Administrator') \
+         AND permission_id IN ('kernel.texts.edit', 'kernel.setting.edit')",
+        "DELETE FROM migration WHERE name = '0019_texts_edit_permission'",
+    ] {
+        run(&h, sql).await;
+    }
+    app.deployment().migrate().await.unwrap();
+    let perms = perms_of(&app, "Administrator").await;
+    assert!(
+        !perms
+            .iter()
+            .any(|p| p.starts_with("kernel.setting") || p == "kernel.texts.edit"),
+        "{perms:?}"
+    );
+    let recorded = app
+        .count(
+            "SELECT count(*) FROM role_seed WHERE role_name = 'Administrator' \
+             AND permission_id = 'kernel.texts.edit'",
+        )
+        .await;
+    assert_eq!(recorded, 1, "seeded, so never granted later");
+    app.deployment().migrate().await.unwrap();
+    assert_eq!(perms_of(&app, "Administrator").await, perms);
 }
 
 #[tokio::test]

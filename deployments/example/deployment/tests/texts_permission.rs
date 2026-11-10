@@ -77,7 +77,10 @@ async fn the_roles_page_reads_the_texts_permission_in_thai() {
     let (h, app) = boot().await;
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
     let page = admin.get("/admin/roles").await.body;
-    assert!(page.contains("แก้ไขข้อความที่ระบบใช้ในแชทและหน้าต่าง ๆ"), "{page}");
+    assert!(
+        page.contains("แก้ไขข้อความที่นักศึกษาและเจ้าหน้าที่เห็นในแชทและในหน้าเว็บ"),
+        "{page}"
+    );
     assert!(page.contains("value=\"kernel.texts.edit\""));
     let (viewer, _) = signed_in(&h, &app, "Viewer").await;
     assert_eq!(viewer.get("/admin/texts").await.status, 403);
