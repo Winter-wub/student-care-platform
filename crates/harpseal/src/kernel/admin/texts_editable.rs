@@ -32,11 +32,13 @@ pub(super) fn editable(catalog: &Catalog, key: &str) -> bool {
 const DEPRECATED: [&str; 1] = ["announcements.page.none"];
 
 /// Labels the back office reads from the catalog (#125): Role and Locale
-/// names, and a Module's audit actions (`<module>.audit.<action>`).
+/// names, Tag display names (`tag.<name>`, #157), and a Module's audit
+/// actions (`<module>.audit.<action>`).
 /// Change them in `[texts]`.
 fn label_only(key: &str) -> bool {
     key.starts_with("kernel.role.")
         || key.starts_with("kernel.locale.")
+        || key.starts_with("tag.")
         || key.split('.').nth(1) == Some("audit")
 }
 

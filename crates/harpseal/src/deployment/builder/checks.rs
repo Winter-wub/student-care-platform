@@ -54,7 +54,9 @@ fn claim(module: &str, what: &'static str, key: &str) -> BuildError {
 /// `[texts]` may only override keys some Module declares: a typo would
 /// otherwise be ignored silently. It may also label a Role of `[roles]`
 /// (or the CLI's Administrator) with `kernel.role.<name>`, and name one of
-/// its own Locales with `kernel.locale.<tag>` (#125).
+/// its own Locales with `kernel.locale.<tag>` (#125), and give the Tag
+/// stored as `<name>` (a roster code such as `fee_due`) the name Staff read
+/// with `tag.<name>` (#157).
 pub(super) fn toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result<(), BuildError> {
     use crate::auth::roles::{ADMINISTRATOR, LABEL_PREFIX};
     let role_label = |k: &str| {
@@ -66,10 +68,12 @@ pub(super) fn toml_texts(config: &DeploymentConfig, catalog: &Catalog) -> Result
         k.strip_prefix("kernel.locale.")
             .is_some_and(|tag| config.texts.contains_key(tag) || config.default_locale.0 == tag)
     };
+    // A Tag's display name: `tag.<name>`, any non-empty name (#157).
+    let tag_name = |k: &str| k.strip_prefix("tag.").is_some_and(|n| !n.trim().is_empty());
     for (locale, entries) in &config.texts {
         if let Some(key) = entries
             .keys()
-            .find(|k| !catalog.knows(k) && !role_label(k) && !locale_name(k))
+            .find(|k| !catalog.knows(k) && !role_label(k) && !locale_name(k) && !tag_name(k))
         {
             return Err(BuildError::UnknownText {
                 source: format!("deployment.toml [texts.{locale}]"),

@@ -65,12 +65,6 @@ impl<'v, 'a> Areas<'v, 'a> {
                 id: id.into(),
                 name: self.v.t(name_key),
             }
-        } else if module == crate::manifest::TAG_TEXTS {
-            // Tag display names (#157), whichever Module gives them.
-            Area {
-                id: module.into(),
-                name: self.v.t("kernel.admin.texts.area_tags"),
-            }
         } else {
             Area {
                 id: module.into(),

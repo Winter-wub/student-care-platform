@@ -627,6 +627,26 @@ Label the Module's audit actions the same way, with a
 `<module>.audit.<action>` text: an action `grades.import` reads the text
 `grades.audit.import` ("นำเข้าผลการเรียน") in the audit log.
 
+## Tag names Staff read (#157)
+
+A Tag is stored by the name the roster or Staff gave it, often a code
+such as `fee_due`. Name it for Staff with the text `tag.<name>`: in
+`[texts]`, no Rust needed, or in a Module's defaults when the Module
+chooses the Tag itself (the example's reminders register
+`tag.fee_due` = "ค้างชำระค่าธรรมเนียม").
+
+```toml
+[texts.th]
+"tag.scholar" = "ทุนการศึกษา"
+```
+
+Pages that show a Tag read `Catalog::tag_name(locale, name)`: the text
+in the Staff member's Locale or the default Locale, else the stored name.
+The stored name never changes, so a roster file keeps using the code.
+Like Role and Locale labels, these texts are not on the Texts page (a
+saved edit would not show there): change them in `[texts]`. A key with
+no name after `tag.` is refused at build (`UnknownText`).
+
 ## A Module's back-office pages: navigation group and home card
 
 Every back-office page shares the Core shell (#123): a skip link to the
@@ -682,7 +702,7 @@ async fn fees_card(s: AppState, staff: CurrentStaff) -> harpseal::Result<StatusC
 - **One fact, one action.** Write the fact as a short Thai sentence with
   the number that matters; link the action to a page the Staff member may
   open (check `staff.can(..)` when the best action needs another
-  Permission, as the example's card does for "ส่งเตือนตอนนี้").
+  Permission, as the example's card does for "เลือกนักศึกษาที่จะเตือน").
 - **Cheap.** The source runs only on the home, only for Staff holding the
   card's Permission, once per view. Keep it to one or two queries (D1
   bills per query and per row read): count with SQL, do not load rows.

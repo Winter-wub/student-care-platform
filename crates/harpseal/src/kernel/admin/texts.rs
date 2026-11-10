@@ -181,8 +181,6 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "Usage and Quotas"
     ),
     ("kernel.admin.texts.area_other", "ทั่วไป", "General"),
-    // #157: the names Staff read for a Module's own Tags (`tag.<name>`).
-    ("kernel.admin.texts.area_tags", "ชื่อป้าย", "Tag names"),
     ("kernel.admin.texts.area_module", "ส่วนเสริม", "Add-on"),
     ("kernel.admin.texts.key", "คีย์", "Key"),
     ("kernel.admin.texts.back", "กลับไปที่ข้อความ", "Back to texts"),

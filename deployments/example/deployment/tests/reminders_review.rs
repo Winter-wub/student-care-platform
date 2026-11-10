@@ -1,4 +1,4 @@
-//! The review step of "ส่งเตือนตอนนี้" and the weekly schedule card (#135):
+//! The review step of "ตรวจก่อนส่งเตือน" (#157) and the weekly schedule card (#135):
 //! who gets it and how, names only for Staff who may view Students, a send
 //! to nobody disabled with the reason, long lists edited on the page.
 

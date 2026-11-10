@@ -110,6 +110,7 @@ mod student;
 mod sweep;
 mod texts;
 mod texts_audience;
+mod texts_form;
 mod texts_review;
 mod texts_saved;
 mod view;
@@ -200,7 +201,7 @@ impl Module for Announcements {
         )
         .messages(texts::CHAT)
         .messages(texts::PAGES)
-        .messages(texts::FORM)
+        .messages(texts_form::FORM)
         .messages(texts_review::REVIEW)
         .messages(texts_saved::SAVED)
         .messages(texts_audience::AUDIENCE)

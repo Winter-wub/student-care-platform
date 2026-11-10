@@ -66,7 +66,7 @@ async fn staff_send_it_now_to_pasted_ids_and_a_second_click_repeats_nothing() {
     let at = form.find("name=\"key\" value=\"").unwrap() + "name=\"key\" value=\"".len();
     let key = &form[at..at + form[at..].find('"').unwrap()];
     let ids = "ids=68010003%0A68010002%0A68019999";
-    // "ส่งเตือนตอนนี้" opens the review step (#135): nothing is sent yet.
+    // "ตรวจก่อนส่งเตือน" (#157) opens the review step (#135): nothing is sent yet.
     let review = b
         .post("/admin/reminders", &format!("key={key}&{ids}"))
         .await;

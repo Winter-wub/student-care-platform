@@ -202,8 +202,9 @@ impl Catalog {
         crate::kernel::text::fill(&self.t(locale, key), args)
     }
 
-    /// Every `(locale, key, text)`, unordered (the Texts page sorts them).
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+    /// Every `(locale, key, text)`, unordered (the Texts page sorts them;
+    /// a Deployment's tests can check its wording, #157).
+    pub fn entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
         self.texts
             .iter()
             .map(|((l, k), t)| (l.as_str(), k.as_str(), t.as_str()))
@@ -228,12 +229,14 @@ impl Catalog {
     }
 
     /// The name Staff read for the Tag stored as `name` (#157): the text
-    /// `tag.<name>` when a Module or the Deployment gives one (a Module's
-    /// own Tag such as `fee_due` reads "ค้างชำระค่าธรรมเนียม"), else the
-    /// stored name, which is already what Staff typed or the roster held.
+    /// `tag.<name>` in `locale` or else in the default Locale, when a
+    /// Module's defaults or the Deployment's `[texts]` give one (the
+    /// example names its roster code `fee_due` "ค้างชำระค่าธรรมเนียม");
+    /// else the stored name, which is what Staff typed or the roster held.
+    /// Not editable on the Texts page: change it in `[texts]`.
     pub fn tag_name(&self, locale: &Locale, name: &str) -> String {
         let key = format!("{TAG_TEXTS}.{name}");
-        if self.knows(&key) {
+        if self.has(locale, &key) || self.has(&self.default_locale(), &key) {
             self.t(locale, &key)
         } else {
             name.to_string()
@@ -297,6 +300,12 @@ mod tests {
         c.insert("th", "tag.fee_due", "ค้างชำระค่าธรรมเนียม");
         assert_eq!(c.tag_name(&Locale::en(), "fee_due"), "ค้างชำระค่าธรรมเนียม");
         assert_eq!(c.tag_name(&Locale::th(), "ชมรมดนตรี"), "ชมรมดนตรี");
+        c.insert("ja", "tag.club", "クラブ");
+        assert_eq!(
+            c.tag_name(&Locale::th(), "club"),
+            "club",
+            "only in another Locale"
+        );
     }
 
     #[test]
