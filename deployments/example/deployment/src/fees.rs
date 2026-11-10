@@ -41,13 +41,15 @@ pub mod status;
 pub mod student;
 mod texts;
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::{Path, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use harpseal::audit::{self, Actor, RequestCtx, Target};
 use harpseal::ui;
-use harpseal::web::axum;
 use harpseal::{
     AppState, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module, ModuleRegistrar,
     Permission, Result, SettingKind, SheetUpload, Statement, UploadRejection, Uploads,
@@ -295,14 +297,15 @@ pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str, kept: boo
 async fn cancel(
     State(s): State<AppState>,
     staff: CurrentStaff,
+    headers: HeaderMap,
     uploads: Uploads,
     ctx: RequestCtx,
     Path(id): Path<String>,
 ) -> Response {
     match uploads.discard(&id, &ctx).await {
-        Ok(true) => ui::redirect_with_flash(&s, BASE, true, "fees.cancelled"),
+        Ok(true) => ui::redirect_with_flash(&s, &headers, BASE, true, "fees.cancelled"),
         // Confirmed (its Job imports it) or expired since the page showed.
-        Ok(false) => ui::redirect_with_flash(&s, BASE, false, "fees.not_cancelled"),
+        Ok(false) => ui::redirect_with_flash(&s, &headers, BASE, false, "fees.not_cancelled"),
         Err(e) => ui::service_error(&s, &staff, &e),
     }
 }

@@ -370,9 +370,14 @@ whole page.
 A Module's pages take axum from the Core: `use harpseal::web::axum;`, then
 `use axum::extract::State;` and so on as usual. The Deployment then has no
 `axum` dependency of its own, so its `MethodRouter`, extractors and
-responses are always the Core's types (the re-exported axum has the
-`form`, `query` and `multipart` extractors; `axum::http` is the `http`
-crate). `maud` is the one web crate a Deployment still names: `html!`
+responses are always the Core's types. Only the features the Core turns
+on are guaranteed, native and on Workers: `form`, `query` and `multipart`
+(`Form`, `Query`, `Multipart`); `axum::http` is the `http` crate. A page
+that needs another (`Json`, `MatchedPath`, …) adds
+`axum = { version = "0.8", default-features = false, features = ["json"] }`
+to the Deployment; Cargo merges it into the Core's axum, so the types
+stay the same. axum 0.8 and maud 0.27 are part of the Core's public API:
+a Core release that moves either to another minor version is breaking. `maud` is the one web crate a Deployment still names: `html!`
 expands to `extern crate maud`, which only a direct dependency satisfies.
 Keep it at the Core's requirement, `maud = "0.27"`, so Cargo resolves one
 `maud` for both and `Markup` is the type `ui::back_office` takes
@@ -380,24 +385,29 @@ Keep it at the Core's requirement, `maud = "0.27"`, so Cargo resolves one
 `deployments/example/deployment/Cargo.toml` depends on `harpseal` and
 `maud` only.
 
-After a POST, answer `ui::redirect_with_flash(&s, to, ok, key)` instead of
-redirecting with `?done=<code>`: a `303` to `to` with the Core's one-shot
-flash cookie. The next back-office page draws the text of catalog key
+After a POST, answer `ui::redirect_with_flash(&s, &headers, to, ok, key)`
+instead of redirecting with `?done=<code>`: a `303` to `to` (an HTMX
+request gets `200` with `HX-Redirect`) with the Core's one-shot flash
+cookie. `to` must be a path under `/admin`; anything else goes to
+`/admin`. The next back-office page draws the text of catalog key
 `key` at the top of the main column, in the Staff member's Locale (green
 when `ok`, red otherwise), and a reload no longer shows it. `key` is one
-of the Module's own catalog keys (letters, digits, `.` and `_`).
+of the Module's own catalog keys (letters, digits, `.` and `_`; any
+other key sets no flash, and a key the catalog lacks shows as itself).
 
 ```rust
 async fn cancel(
     State(s): State<AppState>,
     staff: CurrentStaff,
+    headers: HeaderMap,
     uploads: Uploads,
     ctx: RequestCtx,
     Path(id): Path<String>,
 ) -> Response {
+    let to = "/admin/fees";
     match uploads.discard(&id, &ctx).await {
-        Ok(true) => ui::redirect_with_flash(&s, "/admin/fees", true, "fees.cancelled"),
-        Ok(false) => ui::redirect_with_flash(&s, "/admin/fees", false, "fees.not_cancelled"),
+        Ok(true) => ui::redirect_with_flash(&s, &headers, to, true, "fees.cancelled"),
+        Ok(false) => ui::redirect_with_flash(&s, &headers, to, false, "fees.not_cancelled"),
         Err(e) => ui::service_error(&s, &staff, &e),
     }
 }

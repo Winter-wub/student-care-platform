@@ -3,9 +3,11 @@
 //! upload ([`harpseal::KeptUpload::finish`]) and `Uploads::open` no longer
 //! finds it. Only here is "แจ้งนักศึกษา" offered: the balances are written.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::http::StatusCode;
 use axum::response::Response;
-use harpseal::web::axum;
 use harpseal::{AppState, CurrentStaff, Statement};
 use maud::html;
 

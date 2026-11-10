@@ -4,10 +4,12 @@
 //! queued (or failed); once the Job wrote the balances it is the result,
 //! with the next step ([`super::result`]).
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::Response;
-use harpseal::web::axum;
 use harpseal::{AppState, CurrentStaff, Statement, UploadColumn, Uploads};
 use maud::html;
 

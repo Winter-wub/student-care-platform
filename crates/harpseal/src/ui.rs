@@ -273,7 +273,9 @@ pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response
     if status != StatusCode::INTERNAL_SERVER_ERROR {
         return resp;
     }
-    let area = staff.module.unwrap_or("admin");
+    // Every Module route (a picker's too) names its Module and route; the
+    // Kernel's own fixed routes say `kernel`.
+    let area = staff.module.unwrap_or(crate::kernel::NAME);
     crate::ErrorReport::attach_at(resp, area, staff.route, e)
 }
 

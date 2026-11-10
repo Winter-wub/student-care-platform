@@ -9,10 +9,12 @@
 //! Like "My info", the handler takes [`AppStudent`] and nothing else from
 //! the request: no URL or form value can show another Student's balance.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use harpseal::web::axum;
 use harpseal::{AppState, AppStudent, CatalogEntry, Error, ErrorReport, Statement};
 use maud::html;
 

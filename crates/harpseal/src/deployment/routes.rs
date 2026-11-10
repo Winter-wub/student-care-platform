@@ -22,7 +22,7 @@ pub(super) const WEBHOOK_PATH: &str = "/webhook/{kind}";
 pub(super) const SETTINGS_PATH: &str = "/admin/settings";
 
 /// Prefix of every back-office path.
-pub(super) const ADMIN: &str = "/admin";
+pub(crate) const ADMIN: &str = "/admin";
 
 /// One segment, parameter names dropped.
 #[derive(Debug, Clone, PartialEq, Eq)]

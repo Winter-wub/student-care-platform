@@ -35,8 +35,16 @@
 //! type as the macro's. A different minor version (`0.28`) would be a
 //! second crate whose `Markup` the [`crate::ui`] helpers do not take.
 //!
-//! The axum re-exported here has the `form`, `query` and `multipart`
-//! extractors; `axum::http` is the `http` crate.
+//! Only the axum features the Core turns on are guaranteed, on native and
+//! Workers alike: `form`, `query` and `multipart` (so `Form`, `Query` and
+//! `Multipart`); `axum::http` is the `http` crate. Anything else (`Json`,
+//! `MatchedPath`, …) needs a direct `axum = { version = "0.8",
+//! default-features = false, features = [...] }` in the Deployment, which
+//! Cargo merges into the same axum, so the types stay the Core's.
+//!
+//! axum 0.8 and maud 0.27 are part of this crate's public API: a Core
+//! release that moves to another minor version of either is a breaking
+//! release for Deployments.
 
 pub use axum;
 pub use maud;

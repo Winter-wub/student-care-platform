@@ -10,10 +10,12 @@
 //! can show another Student's. Without a session the extractor answers
 //! the Kernel's entry page, which signs in and comes back here.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::State;
 use axum::response::Response;
 use axum::routing::get;
-use harpseal::web::axum;
 use harpseal::{AppState, AppStudent, AttributeSpec, CatalogEntry, Module, ModuleRegistrar};
 use maud::html;
 

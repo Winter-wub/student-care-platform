@@ -17,6 +17,9 @@
 //! subrequest budget. The notice key names the week: a retried run, or the
 //! Job enqueued twice, sends nobody the reminder twice.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::Form;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
@@ -24,7 +27,6 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
-use harpseal::web::axum;
 use harpseal::{
     Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY, Message,
     Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx,

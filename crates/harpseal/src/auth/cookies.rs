@@ -40,21 +40,32 @@ pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// A flash to show on the next page: `ok` and a catalog key.
+/// A flash to show on the next page: `ok` and a catalog key. A key the
+/// read side would refuse ([`flash_key_ok`]) sets no flash: the header
+/// clears any pending one instead.
 pub(crate) fn flash(ok: bool, key: &str, secure: bool) -> HeaderValue {
+    if !flash_key_ok(key) {
+        return clear(FLASH_COOKIE, secure);
+    }
     let v = format!("{}:{key}", if ok { "ok" } else { "err" });
     set(FLASH_COOKIE, &v, 60, secure)
 }
 
-/// The pending flash: (`ok`, catalog key). Only keys made of ASCII
-/// letters, digits, `.` and `_` are accepted.
+/// Whether `key` may travel in the flash cookie: non-empty, ASCII
+/// letters, digits, `.` and `_` only (no `;`, no space, nothing to escape).
+fn flash_key_ok(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+}
+
+/// The pending flash: (`ok`, catalog key), only for a key
+/// [`flash_key_ok`] accepts.
 pub(crate) fn read_flash(headers: &HeaderMap) -> Option<(bool, String)> {
     let raw = get(headers, FLASH_COOKIE)?;
     let (kind, key) = raw.split_once(':')?;
-    let safe = key
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_');
-    if !safe || key.is_empty() {
+    if !flash_key_ok(key) {
         return None;
     }
     Some((kind == "ok", key.to_string()))
@@ -146,6 +157,16 @@ mod tests {
         assert_eq!(read_flash(&h), Some((true, "kernel.auth.x".into())));
         h.insert(header::COOKIE, "hs_flash=err:<script>".parse().unwrap());
         assert_eq!(read_flash(&h), None);
+        for bad in ["", "a;b", "a b", "ค่า", "x=1"] {
+            let v = flash(true, bad, true);
+            assert!(v.to_str().unwrap().starts_with("hs_flash=;"), "{bad}");
+        }
+        let v = flash(true, "fees.cancelled", false);
+        assert!(
+            v.to_str()
+                .unwrap()
+                .starts_with("hs_flash=ok:fees.cancelled;")
+        );
     }
 
     #[test]

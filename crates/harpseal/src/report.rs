@@ -89,7 +89,7 @@ impl core::fmt::Display for ErrorReport {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", self.area, self.kind)?;
         if let Some(route) = self.route {
-            write!(f, " at /admin{route}")?;
+            write!(f, " at {}{route}", crate::deployment::ADMIN)?;
         }
         Ok(())
     }
