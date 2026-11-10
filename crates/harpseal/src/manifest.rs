@@ -158,6 +158,11 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
+/// The prefix of a Tag's display name in the catalog (#157): the text
+/// `tag.<name>` is what Staff read for the Tag stored as `name`; see
+/// [`Catalog::tag_name`].
+pub(crate) const TAG_TEXTS: &str = "tag";
+
 /// Merged text catalog: Module defaults, then TOML overrides.
 #[derive(Debug, Clone, Default)]
 pub struct Catalog {
@@ -222,6 +227,19 @@ impl Catalog {
         }
     }
 
+    /// The name Staff read for the Tag stored as `name` (#157): the text
+    /// `tag.<name>` when a Module or the Deployment gives one (a Module's
+    /// own Tag such as `fee_due` reads "ค้างชำระค่าธรรมเนียม"), else the
+    /// stored name, which is already what Staff typed or the roster held.
+    pub fn tag_name(&self, locale: &Locale, name: &str) -> String {
+        let key = format!("{TAG_TEXTS}.{name}");
+        if self.knows(&key) {
+            self.t(locale, &key)
+        } else {
+            name.to_string()
+        }
+    }
+
     /// The Deployment's default Locale.
     pub fn default_locale(&self) -> Locale {
         self.default_locale.clone().unwrap_or_else(Locale::th)
@@ -268,6 +286,17 @@ mod tests {
         c.insert("en", "a", "a");
         assert_eq!(c.effective(&Locale::en()), Locale::en());
         assert_eq!(c.locales(), [Locale::en(), Locale::th()]);
+    }
+
+    #[test]
+    fn a_tag_reads_its_display_name_else_its_stored_name() {
+        let mut c = Catalog {
+            default_locale: Some(Locale::th()),
+            ..Catalog::default()
+        };
+        c.insert("th", "tag.fee_due", "ค้างชำระค่าธรรมเนียม");
+        assert_eq!(c.tag_name(&Locale::en(), "fee_due"), "ค้างชำระค่าธรรมเนียม");
+        assert_eq!(c.tag_name(&Locale::th(), "ชมรมดนตรี"), "ชมรมดนตรี");
     }
 
     #[test]

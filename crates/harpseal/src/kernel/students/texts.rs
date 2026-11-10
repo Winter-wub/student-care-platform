@@ -24,7 +24,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.students.missing_badge", "ข้อมูลไม่ครบ", "Missing data"),
     (
         "kernel.students.missing_no_email",
-        "ไม่มีอีเมล (เริ่มเชื่อมบัญชีแชทไม่ได้)",
+        "ไม่มีอีเมล (เริ่มผูกบัญชีแชทไม่ได้)",
         "No email (cannot start linking a chat account)"
     ),
     (
@@ -54,13 +54,13 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.students.status_left", "พ้นสภาพ", "Left"),
     ("kernel.students.no_value", "ไม่มีข้อมูล", "Not set"),
     // Link statuses and methods
-    ("kernel.students.link_active", "เชื่อมอยู่", "Linked"),
+    ("kernel.students.link_active", "ผูกอยู่", "Linked"),
     (
         "kernel.students.link_unreachable",
         "ติดต่อไม่ได้",
         "Unreachable"
     ),
-    ("kernel.students.link_none", "ยังไม่เชื่อม", "Not linked"),
+    ("kernel.students.link_none", "ยังไม่ผูก", "Not linked"),
     ("kernel.students.link_revoked", "ยกเลิกแล้ว", "Revoked"),
     (
         "kernel.students.method_email_otp",
@@ -72,11 +72,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "เจ้าหน้าที่ผูกให้",
         "Manual Link"
     ),
-    ("kernel.students.linked_at", "เชื่อมเมื่อ", "Linked at"),
+    ("kernel.students.linked_at", "ผูกเมื่อ", "Linked at"),
     ("kernel.students.revoked_at", "ยกเลิกเมื่อ", "Revoked at"),
     ("kernel.students.verified_by", "ผูกโดย", "Linked by"),
     ("kernel.students.account", "รหัสบัญชี", "Account id"),
-    ("kernel.students.history", "ประวัติการเชื่อม", "Link history"),
+    ("kernel.students.history", "ประวัติการผูกบัญชี", "Link history"),
     // Sections
     ("kernel.students.profile", "ข้อมูลนักศึกษา", "Student details"),
     ("kernel.students.tags", "ป้าย", "Tags"),
@@ -182,12 +182,12 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.confirm_left",
-        "เปลี่ยนสถานะเป็นพ้นสภาพ? บัญชีแชททุกช่องทางของนักศึกษาคนนี้จะถูกยกเลิกการเชื่อมและได้รับแจ้ง",
+        "เปลี่ยนสถานะเป็นพ้นสภาพ? บัญชีแชททุกช่องทางของนักศึกษาคนนี้จะถูกยกเลิกการผูกและได้รับแจ้ง",
         "Mark this Student as left? Every chat account they linked is unlinked and notified."
     ),
     (
         "kernel.students.confirm_active",
-        "เปลี่ยนสถานะเป็นศึกษาอยู่? นักศึกษาต้องเชื่อมบัญชีใหม่เอง",
+        "เปลี่ยนสถานะเป็นศึกษาอยู่? นักศึกษาต้องผูกบัญชีใหม่เอง",
         "Mark this Student as active? They must link their accounts again themselves."
     ),
     ("kernel.students.confirm", "ยืนยัน", "Confirm"),
@@ -212,7 +212,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     // The Manual Link picker (#143)
     (
         "kernel.students.pick_title",
-        "บัญชีแชทที่ยังไม่ได้เชื่อม (ล่าสุดอยู่บน)",
+        "บัญชีแชทที่ยังไม่ได้ผูก (ล่าสุดอยู่บน)",
         "Chat accounts not linked yet (newest first)"
     ),
     (
@@ -242,7 +242,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.pick_none",
-        "ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน {hours} ชั่วโมงที่ผ่านมา ขอให้นักศึกษาทักบอทก่อน แล้วโหลดรายการใหม่",
+        "ใน {hours} ชั่วโมงที่ผ่านมา ไม่มีบัญชีที่ยังไม่ได้ผูกทักบอทเข้ามา ขอให้นักศึกษาทักบอทก่อน แล้วโหลดรายการใหม่",
         "No unlinked account wrote to the bot in the last {hours} hours. Ask the Student to write to it, then reload the list."
     ),
     (
@@ -269,7 +269,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.pick_stage_new",
-        "ยังไม่เริ่มเชื่อมบัญชี",
+        "ยังไม่เริ่มผูกบัญชี",
         "Has not started linking"
     ),
     (
@@ -289,7 +289,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.pick_stage_other",
-        "ไม่ได้อยู่ระหว่างเชื่อมบัญชี",
+        "ไม่ได้อยู่ระหว่างผูกบัญชี",
         "Not in the middle of linking"
     ),
     (
@@ -307,10 +307,10 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "ผูกไม่ได้: เลือกบัญชีจากรายการ หรือพิมพ์รหัสบัญชีเอง อย่างใดอย่างหนึ่ง",
         "Cannot link: pick an account from the list or type an id, not both"
     ),
-    ("kernel.students.revoke", "ยกเลิกการเชื่อม", "Revoke"),
+    ("kernel.students.revoke", "ยกเลิกการผูก", "Revoke"),
     (
         "kernel.students.confirm_revoke",
-        "ยกเลิกการเชื่อมบัญชีนี้? นักศึกษาจะได้รับแจ้งและเมนูจะถูกล็อก",
+        "ยกเลิกการผูกบัญชีนี้? นักศึกษาจะได้รับแจ้งและเมนูจะถูกล็อก",
         "Revoke this Link? The Student is notified and the Menu is locked."
     ),
     // Flashes
@@ -374,22 +374,22 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.link_conflict",
-        "ผูกไม่ได้: นักศึกษามีบัญชีที่เชื่อมอยู่ในช่องทางนี้แล้ว หรือบัญชีนี้เชื่อมกับคนอื่นอยู่",
+        "ผูกไม่ได้: นักศึกษามีบัญชีที่ผูกอยู่ในช่องทางนี้แล้ว หรือบัญชีนี้ผูกกับคนอื่นอยู่",
         "Cannot link: the Student already has a live Link on this channel, or the account is linked to someone else"
     ),
     (
         "kernel.students.revoked",
-        "ยกเลิกการเชื่อมแล้ว และแจ้งนักศึกษาแล้ว",
+        "ยกเลิกการผูกแล้ว และแจ้งนักศึกษาแล้ว",
         "Revoked, and the Student was notified"
     ),
     (
         "kernel.students.revoked_unnotified",
-        "ยกเลิกการเชื่อมแล้ว แต่ส่งข้อความแจ้งนักศึกษาไม่สำเร็จ",
+        "ยกเลิกการผูกแล้ว แต่ส่งข้อความแจ้งนักศึกษาไม่สำเร็จ",
         "Revoked, but the notice could not be delivered"
     ),
     (
         "kernel.students.already_revoked",
-        "การเชื่อมนี้ถูกยกเลิกไปแล้ว",
+        "การผูกบัญชีนี้ถูกยกเลิกไปแล้ว",
         "This Link is already revoked"
     ),
 ];

@@ -138,12 +138,12 @@ pub(super) const TEXTS: &[E] = th_en![
     ),
     (
         "kernel.branding.menu_locked",
-        "เมนูก่อนเชื่อมบัญชี",
+        "เมนูก่อนผูกบัญชี",
         "Menu before linking"
     ),
     (
         "kernel.branding.menu_unlocked",
-        "เมนูหลังเชื่อมบัญชี",
+        "เมนูหลังผูกบัญชี",
         "Menu after linking"
     ),
     (

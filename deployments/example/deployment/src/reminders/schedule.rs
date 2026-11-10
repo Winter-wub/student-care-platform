@@ -28,7 +28,7 @@ pub(super) async fn card(s: &AppState, staff: &CurrentStaff) -> maud::Markup {
         .map(|o| next_run(s.services.now_ms(), i64::from(o) * 60_000));
     let rule = t("reminders.schedule")
         .replace("{hour}", &format!("{HOUR:02}"))
-        .replace("{tag}", TAG);
+        .replace("{tag}", &s.catalog.tag_name(&staff.locale, TAG));
     maud::html! {
         section class="card" id="schedule" {
             h2 { (t("reminders.schedule_title")) }

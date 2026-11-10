@@ -137,7 +137,11 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     // Roles
     ("kernel.role.Administrator", "ผู้ดูแลระบบ", "Administrator"),
-    ("kernel.admin.roles.group_kernel", "ระบบหลัก", "Core"),
+    (
+        "kernel.admin.roles.group_kernel",
+        "นักศึกษา เจ้าหน้าที่ และการตั้งค่า",
+        "Students, Staff and settings"
+    ),
     (
         "kernel.admin.roles.stored",
         "ชื่อบทบาทที่บันทึกไว้ในระบบ",

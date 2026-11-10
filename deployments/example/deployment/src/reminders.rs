@@ -252,7 +252,7 @@ async fn page(
     Html(ui::back_office(&s, &staff, &t("reminders.title"), body).into_string()).into_response()
 }
 
-/// "ส่งเตือนตอนนี้": the review step (#135) until it is confirmed with the
+/// "ตรวจก่อนส่งเตือน": the review step (#135) until it is confirmed with the
 /// count it showed; then sends the reminder to the pasted student IDs and
 /// lists the outcome.
 async fn send_now(

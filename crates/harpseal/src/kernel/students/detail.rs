@@ -199,7 +199,7 @@ fn links_card(
                     p class="muted" { (v.t("kernel.students.manual_link_help")) }
                     (pick_view::area(v, &base, m.picker.as_ref()))
                     (pick_view::typed(v, &m.offered))
-                    button type="submit" { (v.t("kernel.students.link_button")) }
+                    button class="secondary" type="submit" { (v.t("kernel.students.link_button")) }
                 }
             }
         }
@@ -218,14 +218,14 @@ fn tags_card(
             h2 { (v.t("kernel.students.tags")) }
             h3 { (v.t("kernel.students.tags_roster")) }
             p class="chips" {
-                @for (_, name, _) in group("roster") { span class="chip" { (name) } " " }
+                @for (_, name, _) in group("roster") { span class="chip" { (v.s.catalog.tag_name(&v.staff.locale, name)) } " " }
                 @if group("roster").next().is_none() { span class="muted" { (v.t("kernel.students.no_tags")) } }
             }
             h3 { (v.t("kernel.students.tags_manual")) }
             ul class="list" {
                 @for (id, name, _) in group("manual") {
                     li {
-                        span class="chip" { (name) }
+                        span class="chip" { (v.s.catalog.tag_name(&v.staff.locale, name)) }
                         @if can_edit {
                             form method="post" action=(format!("{base}/tags/remove")) {
                                 (v.staff.csrf_field())
@@ -242,7 +242,7 @@ fn tags_card(
                     (v.staff.csrf_field())
                     label for="tag-name" { (v.t("kernel.students.tag_name")) }
                     input id="tag-name" name="name" type="text" maxlength="64" required;
-                    button type="submit" { (v.t("kernel.students.tag_add")) }
+                    button class="secondary" type="submit" { (v.t("kernel.students.tag_add")) }
                 }
             }
         }

@@ -377,7 +377,7 @@ pub(super) const AUDIT: &[E] = th_en![
     ),
     (
         "kernel.admin.audit.action.student_unlink",
-        "ยกเลิกการเชื่อมบัญชีของนักศึกษา",
+        "ยกเลิกการผูกบัญชีของนักศึกษา",
         "Unlinked a Student"
     ),
     (

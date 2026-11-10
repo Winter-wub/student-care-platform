@@ -121,3 +121,6 @@ pub use resend::{IDEMPOTENCY_HEADER, RESEND_ENDPOINT, ResendEmail};
 pub use verification::{
     Challenge, EmailOtp, StudentClaim, Verdict, VerificationMethod, VerifyContext,
 };
+
+#[cfg(test)]
+mod wording_tests;

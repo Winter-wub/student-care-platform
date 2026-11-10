@@ -74,7 +74,7 @@ async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
         page.body
     );
     // The warning says what it means for onboarding.
-    assert!(page.body.contains("เริ่มเชื่อมบัญชีแชทไม่ได้"), "{}", page.body);
+    assert!(page.body.contains("เริ่มผูกบัญชีแชทไม่ได้"), "{}", page.body);
 
     confirm(&b, &id).await;
     run_jobs(&h, &app).await;

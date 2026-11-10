@@ -40,7 +40,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.severity_warning", "เตือน", "Warning"),
     (
         "kernel.roster.reason_missing_email",
-        "ไม่มีอีเมล: นักศึกษาคนนี้เริ่มเชื่อมบัญชีแชทไม่ได้จนกว่าเจ้าหน้าที่จะเพิ่มอีเมล",
+        "ไม่มีอีเมล: นักศึกษาคนนี้เริ่มผูกบัญชีแชทไม่ได้จนกว่าเจ้าหน้าที่จะเพิ่มอีเมล",
         "No email: this Student cannot start linking a chat account until Staff add an email"
     ),
     (

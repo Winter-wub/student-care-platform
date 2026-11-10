@@ -21,7 +21,7 @@ async fn unlinking_many_needs_the_number_typed() {
     let review = b.post(BULK, pick).await;
     assert_eq!(review.status, 200);
     assert!(review.body.contains("ของนักศึกษา 2 คน"), "{}", review.body);
-    assert!(review.body.contains("อีก 1 คนยังไม่ได้เชื่อมบัญชี"));
+    assert!(review.body.contains("อีก 1 คนยังไม่ได้ผูกบัญชี"));
     assert!(review.body.contains("class=\"danger\""));
     assert!(review.body.contains("id=\"bulk-typed\""));
     assert!(a11y::problems(&review.body).is_empty());
@@ -186,5 +186,5 @@ async fn more_than_the_limits_are_refused_with_the_count() {
     }
     let r = b.post(BULK, narrow).await;
     assert_eq!(r.status, 422);
-    assert!(r.body.contains("101 คนเชื่อมบัญชีอยู่") && r.body.contains("ไม่เกิน 100 คน"));
+    assert!(r.body.contains("101 คนผูกบัญชีอยู่") && r.body.contains("ไม่เกิน 100 คน"));
 }

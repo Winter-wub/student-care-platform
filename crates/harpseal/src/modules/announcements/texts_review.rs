@@ -14,7 +14,7 @@ pub(crate) const REVIEW: &[E] = th_en![
     ("announcements.form.scope_legend", "ส่งถึง", "Send to"),
     (
         "announcements.form.scope_everyone",
-        "ทุกคน: นักศึกษาทุกคนที่เชื่อมบัญชี",
+        "ทุกคน: นักศึกษาทุกคนที่ผูกบัญชี",
         "Everyone: every linked Student"
     ),
     (
@@ -61,7 +61,7 @@ pub(crate) const REVIEW: &[E] = th_en![
     ("announcements.review.who", "ผู้รับ", "Audience"),
     (
         "announcements.review.everyone",
-        "ทุกคนที่เชื่อมบัญชี",
+        "ทุกคนที่ผูกบัญชี",
         "Everyone linked"
     ),
     (
@@ -79,7 +79,7 @@ pub(crate) const REVIEW: &[E] = th_en![
     ("announcements.review.channels", "ช่องทาง", "Channels"),
     (
         "announcements.review.no_links",
-        "ยังไม่มีบัญชีแชทที่เชื่อม จึงไม่มีใครได้รับ",
+        "ยังไม่มีบัญชีแชทที่ผูก จึงไม่มีใครได้รับ",
         "No linked chat accounts: nobody receives it"
     ),
     (

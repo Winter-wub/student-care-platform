@@ -68,7 +68,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.students.bulk_tag_remove", "เอาป้ายออก", "Remove Tag"),
     (
         "kernel.students.bulk_unlink",
-        "ยกเลิกการเชื่อมบัญชี",
+        "ยกเลิกการผูกบัญชี",
         "Unlink chat accounts"
     ),
     (
@@ -94,7 +94,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_review_unlink",
-        "ยกเลิกการเชื่อมบัญชีแชททุกช่องทางของนักศึกษา {n} คน แต่ละคนจะได้รับแจ้งในแชทและเมนูจะถูกล็อก",
+        "ยกเลิกการผูกบัญชีแชททุกช่องทางของนักศึกษา {n} คน แต่ละคนจะได้รับแจ้งในแชทและเมนูจะถูกล็อก",
         "Unlink every chat account of {n} Students. Each is told in the chat and their Menu is locked."
     ),
     (
@@ -109,7 +109,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_skip_unlink",
-        "อีก {n} คนยังไม่ได้เชื่อมบัญชี จะไม่เปลี่ยน",
+        "อีก {n} คนยังไม่ได้ผูกบัญชี จะไม่เปลี่ยน",
         "{n} more have no linked account and stay as they are"
     ),
     (
@@ -130,12 +130,12 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_confirm_unlink",
-        "ยืนยัน: ยกเลิกการเชื่อม {n} คน",
+        "ยืนยัน: ยกเลิกการผูก {n} คน",
         "Confirm: unlink {n} Students"
     ),
     (
         "kernel.students.bulk_typed",
-        "พิมพ์ตัวเลข {n} เพื่อยืนยันว่านักศึกษา {n} คนนี้จะถูกยกเลิกการเชื่อมบัญชีแชท",
+        "พิมพ์ตัวเลข {n} เพื่อยืนยันว่านักศึกษา {n} คนนี้จะถูกยกเลิกการผูกบัญชีแชท",
         "Type the number {n} to confirm that these {n} Students lose their chat Links"
     ),
     (
@@ -160,7 +160,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_nothing_unlink",
-        "นักศึกษาที่เลือกยังไม่ได้เชื่อมบัญชีแชท จึงไม่มีอะไรต้องยกเลิก",
+        "นักศึกษาที่เลือกยังไม่ได้ผูกบัญชีแชท จึงไม่มีอะไรต้องยกเลิก",
         "No Student selected has a linked chat account, so there is nothing to unlink"
     ),
     // Refusals: the problem, then what to do.
@@ -176,7 +176,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_unlink_too_many",
-        "นักศึกษาที่เลือก {n} คนเชื่อมบัญชีอยู่ ยกเลิกการเชื่อมได้ครั้งละไม่เกิน 100 คน ค้นหาให้แคบลง หรือติ๊กเฉพาะบางคน แล้วลองใหม่",
+        "นักศึกษาที่เลือก {n} คนผูกบัญชีอยู่ ยกเลิกการผูกได้ครั้งละไม่เกิน 100 คน ค้นหาให้แคบลง หรือติ๊กเฉพาะบางคน แล้วลองใหม่",
         "{n} of the Students selected have a linked account; unlinking takes at most 100 at a time. Narrow the search or tick fewer rows, then try again."
     ),
     (
@@ -227,12 +227,12 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_unlinked",
-        "ยกเลิกการเชื่อมแล้ว และแจ้งนักศึกษาทุกคนแล้ว",
+        "ยกเลิกการผูกแล้ว และแจ้งนักศึกษาทุกคนแล้ว",
         "Unlinked, and every Student was told"
     ),
     (
         "kernel.students.bulk_unlinked_unnotified",
-        "ยกเลิกการเชื่อมแล้ว แต่ส่งข้อความแจ้งนักศึกษาบางคนไม่สำเร็จ",
+        "ยกเลิกการผูกแล้ว แต่ส่งข้อความแจ้งนักศึกษาบางคนไม่สำเร็จ",
         "Unlinked, but some Students could not be told"
     ),
     (

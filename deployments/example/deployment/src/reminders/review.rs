@@ -1,4 +1,4 @@
-//! The review step of "ส่งเตือนตอนนี้" (#135), on the pattern of the
+//! The review step of "ตรวจก่อนส่งเตือน" (#135), on the pattern of the
 //! Core's announcement review: who gets the reminder (the count and the
 //! first names), by which channel and how many chat messages that uses,
 //! who is skipped and why, and the message; then "ยืนยันส่งเตือน N คน"

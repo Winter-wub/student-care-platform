@@ -17,7 +17,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.typed_label",
-        "พิมพ์ตัวเลข {n} เพื่อยืนยันว่านักศึกษา {n} คนนี้จะพ้นสภาพและถูกยกเลิกการเชื่อมบัญชีแชท",
+        "พิมพ์ตัวเลข {n} เพื่อยืนยันว่านักศึกษา {n} คนนี้จะพ้นสภาพและถูกยกเลิกการผูกบัญชีแชท",
         "Type the number {n} to confirm that these {n} Students become left and lose their chat Links"
     ),
     (

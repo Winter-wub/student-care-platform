@@ -22,7 +22,7 @@ async fn setting_left_asks_first_then_revokes_every_link_and_keeps_history() {
     assert_eq!(ask.status, 200);
     assert!(
         ask.body
-            .contains("บัญชีแชททุกช่องทางของนักศึกษาคนนี้จะถูกยกเลิกการเชื่อม")
+            .contains("บัญชีแชททุกช่องทางของนักศึกษาคนนี้จะถูกยกเลิกการผูก")
     );
     assert!(ask.body.contains("name=\"confirm\" value=\"yes\""));
     assert_eq!(
@@ -152,7 +152,7 @@ async fn revoke_asks_for_confirmation_then_notifies() {
     assert!(detail.contains(&format!("action=\"{path}\"")));
     let ask = b.post(&path, "").await;
     assert_eq!(ask.status, 200);
-    assert!(ask.body.contains("ยกเลิกการเชื่อมบัญชีนี้?"));
+    assert!(ask.body.contains("ยกเลิกการผูกบัญชีนี้?"));
     assert_eq!(
         app.count("SELECT count(*) FROM link WHERE status = 'active'")
             .await,

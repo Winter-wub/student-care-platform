@@ -119,9 +119,10 @@ async fn the_page_shows_the_weekly_schedule() {
     let page = b.get("/admin/reminders").await.body;
     assert!(page.contains("ส่งอัตโนมัติทุกสัปดาห์"), "{page}");
     assert!(
-        page.contains("ทุกวันจันทร์ เวลา 09:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย fee_due"),
+        page.contains("ทุกวันจันทร์ เวลา 09:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย “ค้างชำระค่าธรรมเนียม”"),
         "{page}"
     );
+    assert!(!page.contains("fee_due"), "no raw Tag name (#157): {page}");
     assert!(page.contains("ตอนนี้มี 2 คน"), "Karn and Mali: {page}");
     assert!(page.contains("ครั้งถัดไป"), "{page}");
 }

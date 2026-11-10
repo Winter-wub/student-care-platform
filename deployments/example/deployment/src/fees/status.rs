@@ -31,8 +31,8 @@ pub(super) const TEXTS: &[E] = &[
         "en",
         "{n} Students owe fees · next reminder Monday {date} {time}",
     ),
-    E::new("fees.home.remind", "th", "ส่งเตือนตอนนี้"),
-    E::new("fees.home.remind", "en", "Send a reminder now"),
+    E::new("fees.home.remind", "th", "เลือกนักศึกษาที่จะเตือน"),
+    E::new("fees.home.remind", "en", "Choose Students to remind"),
     E::new("fees.home.open", "th", "ดูยอดค้างชำระ"),
     E::new("fees.home.open", "en", "Open fees"),
 ];

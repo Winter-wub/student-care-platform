@@ -73,7 +73,7 @@ async fn the_list_loads_on_request_and_picking_links_one() {
 
     let page = picker(&b, "s3").await;
     assert_eq!(picked_ids(&page), ["fake:u9", "fake:u8"]);
-    assert!(page.contains("บัญชีแชทที่ยังไม่ได้เชื่อม"));
+    assert!(page.contains("บัญชีแชทที่ยังไม่ได้ผูก"));
     assert!(page.contains("ถามนักศึกษาว่าส่งข้อความเมื่อไร"));
     assert!(page.contains("ทักล่าสุด") && page.contains("ทักครั้งแรก"));
     assert!(page.contains("5 นาทีที่แล้ว"), "u8, relative");
@@ -307,7 +307,7 @@ async fn an_old_account_is_listed_only_for_a_message_in_the_last_two_days() {
     run(&h, "DELETE FROM inbound_event").await;
     let empty = picker(&b, "s3").await;
     assert!(
-        empty.contains("ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน 48 ชั่วโมงที่ผ่านมา"),
+        empty.contains("ใน 48 ชั่วโมงที่ผ่านมา ไม่มีบัญชีที่ยังไม่ได้ผูกทักบอทเข้ามา"),
         "{empty}"
     );
 }
@@ -318,12 +318,12 @@ async fn each_flow_state_reads_as_a_stage() {
     Chat::new(&h, &app, "u8").follow().await;
     let (b, _) = signed_in(&h, &app, "Officer").await;
     for (state, stage) in [
-        ("new", "ยังไม่เริ่มเชื่อมบัญชี"),
+        ("new", "ยังไม่เริ่มผูกบัญชี"),
         ("awaiting_consent", "ยังไม่ยอมรับประกาศความเป็นส่วนตัว"),
         ("awaiting_reconsent", "ยังไม่ยอมรับประกาศความเป็นส่วนตัว"),
         ("awaiting_student_id", "รอรหัสนักศึกษา"),
         ("awaiting_otp", "รอรหัสยืนยันจากอีเมล"),
-        ("linked", "ไม่ได้อยู่ระหว่างเชื่อมบัญชี"),
+        ("linked", "ไม่ได้อยู่ระหว่างผูกบัญชี"),
     ] {
         run(
             &h,

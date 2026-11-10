@@ -166,7 +166,7 @@ async fn with_both_modes_and_an_upsert_default_a_full_preview_keeps_the_leave_wa
     // flash; opened again later, it is the page's one alert (#129).
     // In numbers (#134): who leaves, of how many, and the Links cut.
     assert!(
-        page.contains(r#"<div class="warn" id="roster-alarm">1 จาก 1 คน (100%) จะพ้นสภาพ และถูกตัดการเชื่อมบัญชีแชท 1 บัญชี"#),
+        page.contains(r#"<div class="warn" id="roster-alarm">1 จาก 1 คน (100%) จะพ้นสภาพ และถูกตัดการผูกบัญชีแชท 1 บัญชี"#),
         "the warning stays: {page}"
     );
     assert_eq!(

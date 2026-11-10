@@ -1,6 +1,6 @@
-//! The list form of "ส่งเตือนตอนนี้" (#146): the Core's Student picker
+//! The list form of "ตรวจก่อนส่งเตือน" (#146): the Core's Student picker
 //! ([`ui::StudentPicker`], a textarea of codes without JS) under the
-//! field `ids`, "ส่งเตือนตอนนี้" and "ร่างประกาศ…"; and "เริ่มจากรายการ
+//! field `ids`, "ตรวจก่อนส่งเตือน" and "ร่างประกาศ…"; and "เริ่มจากรายการ
 //! ค้างชำระ" (`?from=fees`), which fills the list with the active Students
 //! who owe a fee (`fees_balance`), the first [`MAX_NOTIFY`] by code.
 

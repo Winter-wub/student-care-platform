@@ -130,7 +130,11 @@ pub(crate) const PAGES: &[E] = th_en![
         "Withdraw this announcement? It disappears from the Menu and the Mini App and is deleted where the Channel allows, without notice."
     ),
     ("announcements.action.edit", "แก้ไข", "Edit"),
-    ("announcements.action.confirm", "ยืนยันส่ง", "Confirm and send"),
+    (
+        "announcements.action.confirm",
+        "ตรวจก่อนส่ง",
+        "Review before sending"
+    ),
     (
         "announcements.action.cancel",
         "ยกเลิกการตั้งเวลา",
@@ -269,7 +273,7 @@ pub(crate) const FORM: &[E] = th_en![
     ),
     (
         "announcements.form.everyone",
-        "นักศึกษาทุกคนที่เชื่อมบัญชี",
+        "นักศึกษาทุกคนที่ผูกบัญชี",
         "Every linked Student"
     ),
     (
@@ -306,7 +310,11 @@ pub(crate) const FORM: &[E] = th_en![
         "What Students see"
     ),
     ("announcements.form.save_draft", "บันทึกฉบับร่าง", "Save draft"),
-    ("announcements.form.confirm", "ยืนยันส่ง", "Confirm"),
+    (
+        "announcements.form.confirm",
+        "ตรวจก่อนส่ง",
+        "Review before sending"
+    ),
     ("announcements.form.save", "บันทึก", "Save"),
     (
         "announcements.form.sent_note",
@@ -386,7 +394,7 @@ pub(crate) const FORM: &[E] = th_en![
     ),
     (
         "announcements.form.hp_unlinked",
-        "ยังไม่ได้เชื่อมบัญชี จะไม่ส่ง",
+        "ยังไม่ได้ผูกบัญชี จะไม่ส่ง",
         "No live Link, will not be sent"
     ),
     (

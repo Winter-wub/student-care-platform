@@ -1,5 +1,5 @@
 //! The reminders page's texts, in Thai and English: the form, the
-//! weekly schedule and the review step before "ส่งเตือนตอนนี้" (#135).
+//! weekly schedule and the review step before "ตรวจก่อนส่งเตือน" (#135).
 
 use harpseal::CatalogEntry;
 
@@ -8,8 +8,8 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("reminders.title", "en", "Fee reminder"),
     CatalogEntry::new("reminders.ids", "th", "รหัสนักศึกษา (สูงสุด 40 คน)"),
     CatalogEntry::new("reminders.ids", "en", "Student IDs (up to 40)"),
-    CatalogEntry::new("reminders.send", "th", "ส่งเตือนตอนนี้"),
-    CatalogEntry::new("reminders.send", "en", "Send now"),
+    CatalogEntry::new("reminders.send", "th", "ตรวจก่อนส่งเตือน"),
+    CatalogEntry::new("reminders.send", "en", "Review before sending"),
     CatalogEntry::new("reminders.announce", "th", "ร่างประกาศถึงนักศึกษาเหล่านี้"),
     CatalogEntry::new("reminders.announce", "en", "Draft an announcement to them"),
     CatalogEntry::new("reminders.no_ids", "th", "กรุณาใส่รหัสนักศึกษาอย่างน้อยหนึ่งคน"),
@@ -24,7 +24,7 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
         "en",
         "Draft for at most 2,000 Students at a time.",
     ),
-    // The result of "ส่งเตือนตอนนี้" (#131: it was English).
+    // The result of "ตรวจก่อนส่งเตือน" (#131: it was English).
     CatalogEntry::new(
         "reminders.result",
         "th",
@@ -79,13 +79,17 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new(
         "reminders.schedule",
         "th",
-        "ทุกวันจันทร์ เวลา {hour}:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย {tag}",
+        "ทุกวันจันทร์ เวลา {hour}:00 น. ถึงนักศึกษาที่ยังศึกษาอยู่และมีป้าย “{tag}”",
     ),
     CatalogEntry::new(
         "reminders.schedule",
         "en",
-        "Every Monday at {hour}:00, to the active Students tagged {tag}",
+        "Every Monday at {hour}:00, to the active Students tagged “{tag}”",
     ),
+    // The name Staff read for the Tag [`super::TAG`] (#157), wherever the
+    // Core shows a Tag name.
+    CatalogEntry::new("tag.fee_due", "th", "ค้างชำระค่าธรรมเนียม"),
+    CatalogEntry::new("tag.fee_due", "en", "Fee due"),
     CatalogEntry::new("reminders.schedule_count", "th", "ตอนนี้มี {n} คน"),
     CatalogEntry::new("reminders.schedule_count", "en", "{n} Students now"),
     CatalogEntry::new("reminders.schedule_next", "th", "ครั้งถัดไป {time}"),
@@ -95,12 +99,12 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new(
         "reminders.now_help",
         "th",
-        "เลือกนักศึกษาจากการค้นหา วางรหัสหลายคน หรือเริ่มจากรายการค้างชำระ แล้วกด ส่งเตือนตอนนี้ ระบบจะให้ตรวจผู้รับและข้อความก่อนส่งทุกครั้ง",
+        "เลือกนักศึกษาจากการค้นหา วางรหัสหลายคน หรือเริ่มจากรายการค้างชำระ แล้วกด “ตรวจก่อนส่งเตือน” เพื่อดูผู้รับและข้อความ การเตือนจะส่งออกเมื่อกดยืนยันในหน้าตรวจเท่านั้น",
     ),
     CatalogEntry::new(
         "reminders.now_help",
         "en",
-        "Pick Students by search, paste many IDs, or start from the fee list, then press Send now. You review the recipients and the message before anything is sent.",
+        "Pick Students by search, paste many IDs, or start from the fee list, then press Review before sending. Nothing is sent until you confirm on the review page.",
     ),
     // "เริ่มจากรายการค้างชำระ" (#146). {n}: picked, {total}: owing in all.
     CatalogEntry::new("reminders.from_fees", "th", "เริ่มจากรายการค้างชำระ"),
