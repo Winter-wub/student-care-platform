@@ -24,6 +24,11 @@ impl<'a> View<'a> {
         self.s.catalog.t(&self.staff.locale, key)
     }
 
+    /// `key` in the Staff member's Locale, with `{name}` placeholders filled.
+    pub(super) fn tf(&self, key: &str, args: &[(&str, &str)]) -> String {
+        self.s.catalog.tf(&self.staff.locale, key, args)
+    }
+
     /// `ms` as a Thai date and time in the Deployment's time zone.
     pub(super) fn time(&self, ms: i64) -> String {
         crate::ui::local_datetime(self.s, ms)

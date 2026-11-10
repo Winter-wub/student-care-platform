@@ -141,6 +141,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0017_role_seed",
         include_str!("../../migrations/0017_role_seed.sql"),
     ),
+    (
+        "0018_link_picker_idx",
+        include_str!("../../migrations/0018_link_picker_idx.sql"),
+    ),
 ];
 
 /// The Kernel's own registrations.

@@ -364,10 +364,16 @@ form.inline { display: inline-flex; margin: 0; }
 .menu-preview rect { fill: rgba(255,255,255,.18); stroke: #ff1744; stroke-width: 8; }
 .menu-preview text { fill: #fff; stroke: #000; stroke-width: 6; paint-order: stroke; font-size: 72px; font-weight: 700; }
 
-/* Manual Link picker (#143): the recent unlinked chat accounts as radio
-   rows (the whole row is the 48 px label), then the typed id behind a
-   disclosure. */
+/* Manual Link picker (#143): a control that loads the recent unlinked
+   chat accounts as radio rows (the whole row is the 48 px label), then
+   the typed id behind a disclosure. The loaded list takes the focus
+   without a ring unless the keyboard put it there. */
 .manual-link .pick { margin-bottom: var(--space-sm); }
+.manual-link .pick-area { margin-bottom: var(--space-md); }
+.manual-link .pick-load { margin-top: var(--space-xs); }
+.manual-link .pick .field-warning { margin: 0; }
+.manual-link .pick:focus { outline: none; }
+.manual-link .pick:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .manual-link .pick .list > li { padding: 0; }
 .manual-link .pick label.choice { flex: 1 1 auto; margin: 0; padding: var(--space-sm) 0; }
 .manual-link .pick .name { font-weight: 600; }

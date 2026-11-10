@@ -4,22 +4,24 @@
 //! read `student.view`; the page is refused when that log cannot be
 //! written.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use maud::{Markup, html};
 
+use super::pick::{self, Picker};
 use super::read::{self, LinkRow, StudentRow};
 use super::view::{View, channel_label};
-use super::{attribute_field, pick, service};
+use super::{attribute_field, pick_view, service};
 use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
-use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result};
+use crate::{Actor, AppState, ChannelKind, CurrentStaff, RequestCtx, Result};
 
 pub(super) async fn page(
     State(s): State<AppState>,
     staff: CurrentStaff,
     ctx: RequestCtx,
     Path(id): Path<String>,
+    Query(q): Query<PageQuery>,
 ) -> Response {
     let v = View::new(&s, &staff);
     let row = match read::student(&s.services, &id).await {
@@ -31,21 +33,39 @@ pub(super) async fn page(
     if let Err(e) = service::record_view(&s.deployment, &id, &actor, &ctx).await {
         return v.error(&e);
     }
-    match body(&v, &row).await {
+    match body(&v, &row, q.pick.as_deref() == Some("1")).await {
         Ok(body) => v.page(StatusCode::OK, &row.fields.display_name, body),
         Err(e) => v.error(&e),
     }
 }
 
-async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
+/// `?pick=1` opens the Manual Link picker's list (#143) without script.
+#[derive(serde::Deserialize)]
+pub(super) struct PageQuery {
+    pick: Option<String>,
+}
+
+/// The Manual Link form's data (#143), only for Staff who may Manual Link
+/// an active Student: the Channels offered, and the picker's list when it
+/// was asked for.
+struct ManualLink {
+    offered: Vec<ChannelKind>,
+    picker: Option<Picker>,
+}
+
+async fn body(v: &View<'_>, row: &StudentRow, open_picker: bool) -> Result<Markup> {
     let s = &v.s.services;
     let links = read::links(s, &row.id).await?;
     let tags = read::tags(s, &row.id).await?;
     let consents = read::consents(s, &row.id).await?;
     let events = read::security_events(s, &row.id).await?;
-    let picker: Pick = if v.staff.can(LINK_MANAGE) && row.status == "active" {
+    let manual = if v.staff.can(LINK_MANAGE) && row.status == "active" {
         let offered = v.s.deployment.staff_channel_kinds();
-        Some(pick::recent_unlinked(s, &offered).await?)
+        let picker = match open_picker {
+            true => Some(pick::load(s, &offered).await?),
+            false => None,
+        };
+        Some(ManualLink { offered, picker })
     } else {
         None
     };
@@ -87,7 +107,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
                         a class="btn" href=(format!("{base}/edit")) { (v.t("kernel.students.edit")) }
                     }
                 }
-                (links_card(v, row, &links, &picker))
+                (links_card(v, row, &links, manual.as_ref()))
             }
             div {
                 (tags_card(v, &base, &tags, can_edit))
@@ -118,16 +138,16 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
     })
 }
 
-/// The Manual Link picker's accounts (#143), read only for Staff who may
-/// Manual Link an active Student.
-type Pick = Option<(Vec<pick::Recent>, bool)>;
-
-fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow], picker: &Pick) -> Markup {
+fn links_card(
+    v: &View<'_>,
+    row: &StudentRow,
+    links: &[LinkRow],
+    manual: Option<&ManualLink>,
+) -> Markup {
     // Staff unlink and Manual Link are separate Permissions (#80).
     let can_revoke = v.staff.can(LINK_REVOKE);
     // A dev-only or unregistered Channel (#131, #133) gets a row only when
     // it holds a Link: existing Links always show, with their revoke button.
-    let offered = v.s.deployment.staff_channel_kinds();
     let live = links.iter().filter(|l| l.status != "revoked");
     let kinds = v.s.deployment.link_kinds(live.map(|l| l.channel.as_str()));
     let base = format!("/admin/students/{}", row.id);
@@ -172,12 +192,13 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow], picker: &Pick) 
                     }
                 }
             }
-            @if let Some((recent, more)) = picker {
+            @if let Some(m) = manual {
                 form method="post" action=(format!("{base}/links")) class="manual-link" {
                     (v.staff.csrf_field())
                     h3 { (v.t("kernel.students.manual_link")) }
                     p class="muted" { (v.t("kernel.students.manual_link_help")) }
-                    (pick::fields(v, recent, *more, &offered))
+                    (pick_view::area(v, &base, m.picker.as_ref()))
+                    (pick_view::typed(v, &m.offered))
                     button type="submit" { (v.t("kernel.students.link_button")) }
                 }
             }
