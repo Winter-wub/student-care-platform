@@ -41,11 +41,15 @@ pub mod status;
 pub mod student;
 mod texts;
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::{Path, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use harpseal::audit::{self, Actor, RequestCtx, Target};
+use harpseal::ui;
 use harpseal::{
     AppState, CurrentStaff, Job, JobContext, JobSpec, KeptUpload, Module, ModuleRegistrar,
     Permission, Result, SettingKind, SheetUpload, Statement, UploadRejection, Uploads,
@@ -185,7 +189,7 @@ async fn upload(
     }
     match uploads.keep(up, &ctx).await {
         Ok(id) => see_other(&format!("{BASE}/{id}")),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => ui::service_error(&s, &staff, &e),
     }
 }
 
@@ -236,7 +240,7 @@ async fn confirm(
             let text = t(&s, &staff, "fees.gone");
             return notice(&s, &staff, StatusCode::CONFLICT, &text);
         }
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => return ui::service_error(&s, &staff, &e),
     }
     // The uploader rides along, so a failed Job's page follows the
     // uploader rule once the upload itself is gone (#127).
@@ -245,7 +249,7 @@ async fn confirm(
     match s.jobs.enqueue_unique(&key, JOB, payload, None).await {
         Ok(Some(_)) => {}
         Ok(None) => return see_other(BASE),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => return ui::service_error(&s, &staff, &e),
     }
     let after = serde_json::json!({ "file_name": kept.file_name, "sha256": kept.sha256,
                                     "rows": p.fees.len() });
@@ -260,8 +264,8 @@ async fn confirm(
         Some(after),
         &ctx,
     );
-    if audited.await.is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    if let Err(e) = audited.await {
+        return ui::service_error(&s, &staff, &e);
     }
     // The result page, with the next step (#127).
     see_other(&format!("{BASE}/{}", kept.id))
@@ -287,10 +291,22 @@ pub(crate) async fn job_failed(s: &AppState, id: &str, staff_id: &str, kept: boo
     s.services.db.query(q).await.is_ok_and(|r| !r.is_empty())
 }
 
-async fn cancel(uploads: Uploads, ctx: RequestCtx, Path(id): Path<String>) -> Response {
+/// Deletes the kept upload, back to the Fees page with a flash shown once
+/// ([`ui::redirect_with_flash`], #162); a failure is the Core's logged 500
+/// ([`ui::service_error`]).
+async fn cancel(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    headers: HeaderMap,
+    uploads: Uploads,
+    ctx: RequestCtx,
+    Path(id): Path<String>,
+) -> Response {
     match uploads.discard(&id, &ctx).await {
-        Ok(_) => see_other(BASE),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Ok(true) => ui::redirect_with_flash(&s, &headers, BASE, true, "fees.cancelled"),
+        // Confirmed (its Job imports it) or expired since the page showed.
+        Ok(false) => ui::redirect_with_flash(&s, &headers, BASE, false, "fees.not_cancelled"),
+        Err(e) => ui::service_error(&s, &staff, &e),
     }
 }
 

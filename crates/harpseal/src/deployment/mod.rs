@@ -5,6 +5,7 @@ mod builder;
 pub(crate) mod day;
 pub(crate) mod inbound;
 mod routes;
+pub(crate) use routes::ADMIN;
 mod send;
 pub(crate) use day::civil_day;
 mod send_many;

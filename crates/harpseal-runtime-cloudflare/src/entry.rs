@@ -92,13 +92,8 @@ pub async fn fetch(
     req.extensions_mut()
         .insert(Background::new(WaitUntil(SendWrapper(ctx))));
     let resp = router.call(req).await.unwrap_or_else(|e| match e {});
-    if let Some(report) = harpseal::ErrorReport::of(&resp) {
-        let id = resp
-            .headers()
-            .get(harpseal::audit::REQUEST_ID_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("-");
-        worker::console_error!("error: {report} (request {id})");
+    if let Some(line) = harpseal::ErrorReport::log_line(&resp) {
+        worker::console_error!("{line}");
     }
     Ok(resp)
 }

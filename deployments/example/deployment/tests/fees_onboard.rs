@@ -3,6 +3,9 @@
 //! after a confirm the result page offers "แจ้งนักศึกษา", a draft to
 //! exactly the Students in the file.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::body::Body;
 use axum::http::{Request, header};
 use example_deployment::{Secrets, builder, fees};

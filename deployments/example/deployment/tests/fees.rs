@@ -1,6 +1,9 @@
 //! The example's "Fees" Module (#74): a back-office spreadsheet upload
 //! with a preview built by the shared reader, imported on confirm by a Job.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::body::Body;
 use axum::http::{Request, header};
 use example_deployment::{Secrets, builder, fees};

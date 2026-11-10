@@ -32,6 +32,7 @@ use crate::{CurrentStaff, Error, PageState};
 pub(crate) mod brand;
 mod busy;
 mod confirm;
+mod flash;
 mod onboard;
 mod onboard_texts;
 mod picker;
@@ -41,6 +42,7 @@ mod shell;
 mod thai;
 
 pub use confirm::{blocked_button, confirm_step, typed_count_ok};
+pub use flash::redirect_with_flash;
 pub(crate) use onboard::{HelpColumn, upload_panel};
 pub use onboard::{
     MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
@@ -254,6 +256,10 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
 /// to reload; anything else a 500 page that never shows the error text (it
 /// may name a column). Check the form yourself first: an
 /// [`Error::Invalid`] here is a 500 too.
+///
+/// The 500 carries an [`crate::ErrorReport`] the runtime logs (#162): the
+/// Module that registered the route, the error's kind and the route
+/// pattern, never the error text.
 pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response {
     let (status, key) = match e.root() {
         Error::Forbidden { permission } => return crate::auth::forbidden(s, staff, permission),
@@ -263,7 +269,14 @@ pub fn service_error(s: &PageState, staff: &CurrentStaff, e: &Error) -> Response
     let text = s.catalog.t(&staff.locale, key);
     let body = html! { div class="card" { p role="alert" { (text) } } };
     let page = back_office(s, staff, &text, body);
-    (status, Html(page.into_string())).into_response()
+    let resp = (status, Html(page.into_string())).into_response();
+    if status != StatusCode::INTERNAL_SERVER_ERROR {
+        return resp;
+    }
+    // Every Module route (a picker's too) names its Module and route; the
+    // Kernel's own fixed routes say `kernel`.
+    let area = staff.module.unwrap_or(crate::kernel::NAME);
+    crate::ErrorReport::attach_at(resp, area, staff.route, e)
 }
 
 /// A page with the brand bar and no navigation (sign-in, errors).

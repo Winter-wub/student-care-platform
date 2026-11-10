@@ -59,6 +59,9 @@ pub(crate) struct Gate {
     pub(crate) too_large: Option<(&'static str, &'static str)>,
     /// The Module that registered the route, for [`crate::Uploads`] (#74).
     pub(crate) module: Option<&'static str>,
+    /// The route as the Module registered it (under `/admin`), for the
+    /// [`crate::ErrorReport`] of a failure on it (#162).
+    pub(crate) route: Option<&'static str>,
 }
 
 /// The signed-in Staff member, for back-office handlers:
@@ -81,6 +84,9 @@ pub struct CurrentStaff {
     /// The request's path, for the navigation's `aria-current` (#123).
     pub(crate) path: String,
     pub(crate) flash: Option<(bool, String)>,
+    /// The Module and route of the request, from its [`Gate`] (#162).
+    pub(crate) module: Option<&'static str>,
+    pub(crate) route: Option<&'static str>,
     pub(crate) must_change_password: bool,
     /// The Quota banner for the `#usage-banner` slot (#26), if any.
     pub(crate) usage_banner: Option<Markup>,
@@ -246,6 +252,8 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
         nav,
         path: req.uri().path().to_string(),
         flash,
+        module: gate.module,
+        route: gate.route,
         usage_banner,
         usage_month,
     };

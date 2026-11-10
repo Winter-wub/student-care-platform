@@ -17,6 +17,9 @@
 //! subrequest budget. The notice key names the week: a retried run, or the
 //! Job enqueued twice, sends nobody the reminder twice.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::Form;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;

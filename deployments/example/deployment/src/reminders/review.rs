@@ -9,6 +9,9 @@
 //! the count seen in `reach`, and [`super::send_now`] plans again and
 //! sends only when the count still matches and is not 0.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use std::collections::BTreeMap;
 
 use axum::response::{Html, IntoResponse, Response};

@@ -5,6 +5,9 @@
 //! message announced per update (`harpseal_testing::a11y`); also the
 //! review steps of #135.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::body::Body;
 use example_deployment::{Secrets, builder, seed::seed};
 use harpseal_testing::{Browser, Harness, TestApp, a11y};

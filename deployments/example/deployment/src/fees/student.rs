@@ -9,10 +9,13 @@
 //! Like "My info", the handler takes [`AppStudent`] and nothing else from
 //! the request: no URL or form value can show another Student's balance.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use harpseal::{AppState, AppStudent, CatalogEntry, Error, Statement};
+use harpseal::{AppState, AppStudent, CatalogEntry, Error, ErrorReport, Statement};
 use maud::html;
 
 use super::read::baht;
@@ -64,12 +67,20 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("fees.back", "en", "Back to my page"),
 ];
 
+/// The 500 of the page, with the [`ErrorReport`] the runtime logs (#162):
+/// a Mini App page has no back-office shell, so it attaches the report
+/// itself.
+fn failed(e: &Error) -> Response {
+    let page = StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    ErrorReport::attach(page, "fees.student", e)
+}
+
 pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
     let q = Statement::new("SELECT amount_satang FROM fees_balance WHERE student_code = ?")
         .bind(me.student_code.as_str());
     let owed = match s.services.db.query(q).await {
         Ok(rows) => rows.get(0, "amount_satang").and_then(|v| v.as_i64()),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => return failed(&e),
     };
     // A saved value failing its check reads as "not set"; any other
     // error (the database) is a failure, never "not set".
@@ -79,7 +90,7 @@ pub(super) async fn page(State(s): State<AppState>, me: AppStudent) -> Response 
         not_set_is_none(settings.text(super::BANK_ACCOUNT).await),
     ) {
         (Ok(bank), Ok(account)) => (bank, account),
-        _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        (Err(e), _) | (_, Err(e)) => return failed(&e),
     };
     let title = me.t("fees.mine");
     let body = html! {

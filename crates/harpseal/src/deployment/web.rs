@@ -63,6 +63,7 @@ impl Deployment {
             body_limit: auth::MULTIPART_LIMIT,
             too_large: None,
             module: None,
+            route: None,
         };
         let any_time = Gate {
             permission: None,
@@ -70,6 +71,7 @@ impl Deployment {
             body_limit: auth::MULTIPART_LIMIT,
             too_large: None,
             module: None,
+            route: None,
         };
         let mut root = axum::Router::new()
             .route(
@@ -106,6 +108,7 @@ impl Deployment {
                 body_limit: upload.map_or(auth::MULTIPART_LIMIT, |u| u.max_body),
                 too_large: upload.and_then(|u| u.too_large),
                 module: Some(*module),
+                route: Some(*path),
             };
             root = root.route(
                 &format!("{}{path}", super::routes::ADMIN),
@@ -117,6 +120,7 @@ impl Deployment {
                 let gate = Gate {
                     body_limit: auth::MULTIPART_LIMIT,
                     too_large: None,
+                    route: None,
                     ..gate
                 };
                 let at = crate::module::template_path(path);

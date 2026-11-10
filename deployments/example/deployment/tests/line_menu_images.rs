@@ -4,6 +4,9 @@
 //! process: the Deployment runs on the harness's recording HttpClient, and
 //! LINE's webhooks are signed and posted to its Router.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;

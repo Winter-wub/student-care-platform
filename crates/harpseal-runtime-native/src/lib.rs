@@ -139,13 +139,8 @@ pub async fn serve_until(
 }
 
 async fn log_report(r: axum::response::Response) -> axum::response::Response {
-    if let Some(report) = harpseal::ErrorReport::of(&r) {
-        let id = r
-            .headers()
-            .get(harpseal::audit::REQUEST_ID_HEADER)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("-");
-        eprintln!("error: {report} (request {id})");
+    if let Some(line) = harpseal::ErrorReport::log_line(&r) {
+        eprintln!("{line}");
     }
     r
 }

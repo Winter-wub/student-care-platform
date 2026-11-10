@@ -3,6 +3,9 @@
 //! `modules::announcements::create_draft` as the signed-in Staff member,
 //! with the Core page's Permission check and audit row.
 
+// axum at the Core's version (#162): this crate has no axum dependency.
+use harpseal::web::axum;
+
 use axum::body::Body;
 use axum::http::{Request, header};
 use example_deployment::{Secrets, builder, reminders};
