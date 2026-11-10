@@ -1,0 +1,58 @@
+{
+  "none-1280": {
+    "tabStops": 11,
+    "pageTabStops": 75,
+    "height": 1251,
+    "sideways": false,
+    "count": "ยังไม่ได้เลือกผู้รับ เลือก \"ทุกคน\" \"เลือกกลุ่ม\" หรือ \"เลือกรายคน\""
+  },
+  "none-360": {
+    "tabStops": 11,
+    "pageTabStops": 76,
+    "height": 1432,
+    "sideways": false,
+    "count": "ยังไม่ได้เลือกผู้รับ เลือก \"ทุกคน\" \"เลือกกลุ่ม\" หรือ \"เลือกรายคน\""
+  },
+  "everyone-1280": {
+    "tabStops": 11,
+    "pageTabStops": 75,
+    "height": 1280,
+    "sideways": false,
+    "count": "นักศึกษา 0จะใช้ข้อความที่คิดค่าบริการประมาณ 0 ข้อความ"
+  },
+  "everyone-360": {
+    "tabStops": 11,
+    "pageTabStops": 76,
+    "height": 1464,
+    "sideways": false,
+    "count": "นักศึกษา 0จะใช้ข้อความที่คิดค่าบริการประมาณ 0 ข้อความ"
+  },
+  "groups-1280": {
+    "tabStops": 11,
+    "pageTabStops": 75,
+    "height": 1251,
+    "sideways": false,
+    "count": "เลือกกลุ่มไว้แต่ยังไม่ได้ระบุกลุ่ม เลือกค่าอย่างน้อยหนึ่งช่อง หรือเปลี่ยนเป็น ทุ"
+  },
+  "groups-360": {
+    "tabStops": 11,
+    "pageTabStops": 76,
+    "height": 1432,
+    "sideways": false,
+    "count": "เลือกกลุ่มไว้แต่ยังไม่ได้ระบุกลุ่ม เลือกค่าอย่างน้อยหนึ่งช่อง หรือเปลี่ยนเป็น ทุ"
+  },
+  "students-1280": {
+    "tabStops": 11,
+    "pageTabStops": 75,
+    "height": 1251,
+    "sideways": false,
+    "count": "เลือกรายคนไว้แต่ยังไม่มีรหัสนักศึกษา เพิ่มอย่างน้อยหนึ่งคน"
+  },
+  "students-360": {
+    "tabStops": 11,
+    "pageTabStops": 76,
+    "height": 1432,
+    "sideways": false,
+    "count": "เลือกรายคนไว้แต่ยังไม่มีรหัสนักศึกษา เพิ่มอย่างน้อยหนึ่งคน"
+  }
+}
