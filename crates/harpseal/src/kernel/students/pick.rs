@@ -30,8 +30,16 @@ use crate::{AppState, ChannelKind, CurrentStaff, Result, Services};
 /// Accounts the picker lists at most.
 pub(super) const RECENT_CAP: usize = 20;
 
-/// How far back the picker looks: webhook events are kept this long.
-const WINDOW_MS: i64 = INBOUND_EVENT_DAYS * 86_400_000;
+/// How far back the picker looks for webhook events. Shorter than their
+/// retention, so opening the list does not read a week of events,
+/// mostly from linked Students.
+pub(super) const EVENT_WINDOW_HOURS: i64 = 48;
+
+/// How far back the picker looks for new accounts (first contact): as long
+/// as webhook events are kept. Outbound sends also insert `channel_account`
+/// with `first_seen_at` = now, but only for accounts that already exist
+/// today, so a send never adds a row here.
+const NEW_WINDOW_MS: i64 = INBOUND_EVENT_DAYS * 86_400_000;
 
 /// The posted field of a picked account: `{channel}:{external_id}`.
 pub(super) const PICK: &str = "pick";
@@ -88,10 +96,9 @@ pub(super) async fn load(s: &Services, channels: &[ChannelKind]) -> Result<Picke
             now,
         });
     }
-    let since = now - WINDOW_MS;
     let mut stmt = Statement::new(recent_sql(channels.len()))
-        .bind(since)
-        .bind(since);
+        .bind(now - EVENT_WINDOW_HOURS * 3_600_000)
+        .bind(now - NEW_WINDOW_MS);
     for c in channels {
         stmt = stmt.bind(c.as_str());
     }

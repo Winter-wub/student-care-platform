@@ -237,13 +237,13 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.pick_busy",
-        "มีมากกว่าหนึ่งบัญชีที่ทักบอทในช่วง 2 นาทีที่ผ่านมา ตรวจเวลาและขั้นตอนกับนักศึกษาให้แน่ใจก่อนเลือก",
-        "More than one account wrote in the last 2 minutes. Check the time and step with the Student before you pick."
+        "มีมากกว่าหนึ่งบัญชีที่ทักบอทในช่วง {minutes} นาทีที่ผ่านมา ตรวจเวลาและขั้นตอนกับนักศึกษาให้แน่ใจก่อนเลือก",
+        "More than one account wrote in the last {minutes} minutes. Check the time and step with the Student before you pick."
     ),
     (
         "kernel.students.pick_none",
-        "ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน 7 วันที่ผ่านมา ขอให้นักศึกษาทักบอทก่อน แล้วโหลดรายการใหม่",
-        "No unlinked account wrote to the bot in the last 7 days. Ask the Student to write to it, then reload the list."
+        "ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน {hours} ชั่วโมงที่ผ่านมา ขอให้นักศึกษาทักบอทก่อน แล้วโหลดรายการใหม่",
+        "No unlinked account wrote to the bot in the last {hours} hours. Ask the Student to write to it, then reload the list."
     ),
     (
         "kernel.students.pick_capped",
@@ -286,6 +286,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.students.pick_stage_otp",
         "รอรหัสยืนยันจากอีเมล",
         "Waiting for the emailed code"
+    ),
+    (
+        "kernel.students.pick_stage_other",
+        "ไม่ได้อยู่ระหว่างเชื่อมบัญชี",
+        "Not in the middle of linking"
     ),
     (
         "kernel.students.pick_blocked",

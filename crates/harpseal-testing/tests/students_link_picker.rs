@@ -290,6 +290,51 @@ async fn accounts_silent_for_a_week_drop_off() {
 }
 
 #[tokio::test]
+async fn an_old_account_is_listed_only_for_a_message_in_the_last_two_days() {
+    let (h, app) = boot().await;
+    Chat::new(&h, &app, "u8").follow().await;
+    Chat::new(&h, &app, "u9").follow().await;
+    h.clock().advance_minutes(8 * 24 * 60);
+    wrote(&h, &app, "u8", "สวัสดีครับ", "ev-u8-1").await;
+    wrote(&h, &app, "u9", "สวัสดีครับ", "ev-u9-1").await;
+    h.clock().advance_minutes(49 * 60);
+    wrote(&h, &app, "u9", "ยังอยู่ไหม", "ev-u9-2").await;
+    let (b, _) = signed_in(&h, &app, "Officer").await;
+    let page = picker(&b, "s3").await;
+    assert_eq!(picked_ids(&page), ["fake:u9"], "u8 wrote 49 hours ago");
+    // With no recent event and no new account, the empty text names the
+    // event window.
+    run(&h, "DELETE FROM inbound_event").await;
+    let empty = picker(&b, "s3").await;
+    assert!(
+        empty.contains("ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน 48 ชั่วโมงที่ผ่านมา"),
+        "{empty}"
+    );
+}
+
+#[tokio::test]
+async fn each_flow_state_reads_as_a_stage() {
+    let (h, app) = boot().await;
+    Chat::new(&h, &app, "u8").follow().await;
+    let (b, _) = signed_in(&h, &app, "Officer").await;
+    for (state, stage) in [
+        ("new", "ยังไม่เริ่มเชื่อมบัญชี"),
+        ("awaiting_consent", "ยังไม่ยอมรับประกาศความเป็นส่วนตัว"),
+        ("awaiting_reconsent", "ยังไม่ยอมรับประกาศความเป็นส่วนตัว"),
+        ("awaiting_student_id", "รอรหัสนักศึกษา"),
+        ("awaiting_otp", "รอรหัสยืนยันจากอีเมล"),
+        ("linked", "ไม่ได้อยู่ระหว่างเชื่อมบัญชี"),
+    ] {
+        run(
+            &h,
+            &format!("UPDATE channel_account SET flow_state = '{state}'"),
+        )
+        .await;
+        assert!(picker(&b, "s3").await.contains(stage), "{state}");
+    }
+}
+
+#[tokio::test]
 async fn the_list_is_capped_at_twenty() {
     let (h, app) = boot().await;
     for i in 0..21 {

@@ -3,22 +3,25 @@
 
 use maud::{Markup, PreEscaped, html};
 
-use super::pick::{PICK, Picker, RECENT_CAP, Recent, short_id};
+use super::pick::{EVENT_WINDOW_HOURS, PICK, Picker, RECENT_CAP, Recent, short_id};
 use super::view::{View, channel_label};
 use crate::ChannelKind;
 
 /// Two accounts that wrote within this long of the list being read may be
 /// confused: the list warns before Staff pick.
-const BUSY_MS: i64 = 2 * 60_000;
+const BUSY_MINUTES: i64 = 2;
+const BUSY_MS: i64 = BUSY_MINUTES * 60_000;
 
-/// The flow stage's catalog key; a stage without its own text reads as
-/// not started.
+/// The flow stage's catalog key. A state an unlinked account should not
+/// be in (`linked` after a revoke, an unknown one) gets a neutral text,
+/// never "not started".
 fn stage_key(state: &str) -> &'static str {
     match state {
-        "awaiting_consent" => "kernel.students.pick_stage_consent",
+        "new" => "kernel.students.pick_stage_new",
+        "awaiting_consent" | "awaiting_reconsent" => "kernel.students.pick_stage_consent",
         "awaiting_student_id" => "kernel.students.pick_stage_student_id",
         "awaiting_otp" => "kernel.students.pick_stage_otp",
-        _ => "kernel.students.pick_stage_new",
+        _ => "kernel.students.pick_stage_other",
     }
 }
 
@@ -71,17 +74,17 @@ fn load_link(v: &View<'_>, base: &str, key: &str) -> Markup {
 }
 
 /// The list of recent unlinked accounts as radios (none chosen), with a
-/// warning when more than one wrote in the last two minutes.
+/// warning when more than one wrote in the last [`BUSY_MINUTES`].
 pub(super) fn list(v: &View<'_>, base: &str, p: &Picker) -> Markup {
     html! {
         fieldset class="checks pick" tabindex="-1" aria-describedby="ml-pick-hint" {
             legend { (v.t("kernel.students.pick_title")) }
             p id="ml-pick-hint" class="muted" { (v.t("kernel.students.pick_check")) }
             @if busy(p) > 1 {
-                p class="note warn-note" { (v.t("kernel.students.pick_busy")) }
+                p class="note warn-note" { (v.tf("kernel.students.pick_busy", &[("minutes", &BUSY_MINUTES.to_string())])) }
             }
             @if p.recent.is_empty() {
-                p class="muted" { (v.t("kernel.students.pick_none")) }
+                p class="muted" { (v.tf("kernel.students.pick_none", &[("hours", &EVENT_WINDOW_HOURS.to_string())])) }
             } @else {
                 ul class="list" {
                     @for (i, r) in p.recent.iter().enumerate() { (row(v, p.now, i, r)) }
