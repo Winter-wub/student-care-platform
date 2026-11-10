@@ -116,3 +116,11 @@ form.inline :is(button, .btn) { white-space: nowrap; }
 .text-group-body { padding: 0 var(--gutter) var(--gutter); border-top: 1px solid var(--line); }
 .text-group-body table.rows { margin: var(--space-md) 0 0; }
 @media (prefers-reduced-motion: reduce) { .text-group > summary .fold { transition: none; } }
+
+/* Bulk actions on the Students list (#145): the bar above the table, the
+   checkbox column and the review's list of codes. */
+.bulk-bar > h2 { margin-top: 0; }
+.bulk-count { margin: 0 0 var(--gutter); font-variant-numeric: tabular-nums; }
+table.rows :is(th, td).pick { width: 3.5rem; }
+.bulk-review .codes { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.bulk-review .codes-title { font-size: var(--step-title); }

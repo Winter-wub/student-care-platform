@@ -2,7 +2,8 @@
 //! code, with a filter for Students with missing data (`?missing=1`, #71)
 //! and a badge on each of them. An HTMX request (the search box, `hx-get` on input) gets only the
 //! `#student-results` fragment. Cards below 900 px, a table from 900 px
-//! (`table.rows`).
+//! (`table.rows`). Staff with a bulk action get a checkbox per row and the
+//! bulk bar ([`super::list_bulk`], #145).
 
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -10,6 +11,7 @@ use axum::response::{Html, IntoResponse, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 
+use super::list_bulk;
 use super::missing::Missing;
 use super::read::{self, Found};
 use super::view::{View, is_htmx};
@@ -101,6 +103,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
         .staff
         .can("kernel.roster.import")
         .then_some((import_label.as_str(), "/admin/roster"));
+    let bulk = list_bulk::allowed(v);
     html! {
         div id="student-results" {
             p class="muted count" { (v.t("kernel.students.total")) " " (total) }
@@ -110,11 +113,20 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
             } @else if rows.is_empty() {
                 (crate::ui::no_match(&v.t("kernel.empty.students_no_match"), (&v.t("kernel.empty.clear_search"), "/admin/students")))
             } @else {
+                // The bulk form (#145) holds the bar and the row
+                // checkboxes; a Staff member with no bulk action gets the
+                // plain table.
+                form id="bulk" method="post" action=(super::page_bulk::PATH) class="bulk" {
+                @if !bulk.is_empty() {
+                    (list_bulk::hidden(v, query, missing, page))
+                    (list_bulk::bar(v, &bulk, rows.len(), total))
+                }
                 // Columns grow with the roster's attributes: a wide table
                 // scrolls inside this region, never the page (#129).
                 div class="table-scroll" role="region" tabindex="0" aria-label=(v.t("kernel.students.title")) {
                 table class="rows students" {
                     thead { tr {
+                        @if !bulk.is_empty() { th class="pick" { (v.t("kernel.students.bulk_col")) } }
                         th { (v.t("kernel.students.name")) }
                         th { (v.t("kernel.students.code")) }
                         @for (k, a) in &attrs { th { (v.label(k, a)) } }
@@ -123,6 +135,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                     tbody {
                         @for r in rows {
                             tr {
+                                @if !bulk.is_empty() { (list_bulk::pick(v, &r.id, &r.name)) }
                                 td data-label=(v.t("kernel.students.name")) {
                                     a class="name" href=(format!("/admin/students/{}", r.id)) { (r.name) }
                                     @if r.status == "left" { " " (v.status_chip(&r.status)) }
@@ -144,6 +157,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                             }
                         }
                     }
+                }
                 }
                 }
             }
