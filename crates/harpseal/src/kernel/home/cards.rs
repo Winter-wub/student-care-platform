@@ -7,6 +7,7 @@ use crate::kernel::students::view::channel_label;
 use crate::kernel::text::fill;
 use crate::kernel::usage::{self, Level};
 use crate::port_types::{Rows, Statement, Value};
+use crate::ui::number;
 use crate::{AppState, CardState, CurrentStaff, Result, StatusCard};
 
 /// Who sees each card.
@@ -118,8 +119,8 @@ pub(super) async fn quota(s: AppState, staff: CurrentStaff) -> Result<StatusCard
     let percent = (m.used().max(0) as u64 * 100 / cap).to_string();
     let args = [
         ("channel", channel_label(&m.kind)),
-        ("used", m.used().to_string()),
-        ("cap", cap.to_string()),
+        ("used", number(m.used())),
+        ("cap", number(cap)),
         ("percent", percent),
     ];
     let args: Vec<(&str, &str)> = args.iter().map(|(k, v)| (*k, v.as_str())).collect();

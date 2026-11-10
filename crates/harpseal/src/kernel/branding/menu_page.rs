@@ -3,8 +3,9 @@
 //! The section shows each Menu's image in use (saved, or the Channel's
 //! configured one) with its tap areas drawn over it. `POST
 //! /admin/branding/menu`: `op=preview` checks the uploaded images
-//! ([`super::apply::check`]) and draws their tap areas for every Locale's
-//! Menu, saving nothing (the images travel on as base64 fields);
+//! ([`super::apply::check`]) for every Locale's Menu and draws the tap
+//! areas of the Staff member's Locale (labels in their language), saving
+//! nothing (the images travel on as base64 fields);
 //! `op=apply` saves them through [`super::apply::save`] (stage on the
 //! platform, then one batch, then the re-link Jobs); `op=reset` returns to
 //! the configured images the same way. `GET /admin/branding/menu/{slot}`
@@ -79,8 +80,23 @@ pub(super) async fn section(v: &View<'_>, f: MenuForm) -> crate::Result<Markup> 
         });
     };
     let saved = Saved::load(&s.services).await?;
-    let (_, menus) = apply::menus(&s.deployment).await?;
-    let menus: Vec<_> = menus.into_iter().map(|(_, m)| m).collect();
+    // Every Locale's Menu has the same tap areas; draw the Staff member's
+    // own, so a Thai page labels them in Thai (#141). The check on preview
+    // and apply still covers every Locale.
+    let (_, all) = apply::menus(&s.deployment).await?;
+    let own = all.iter().any(|(l, _)| *l == v.staff.locale);
+    let default = s.catalog.default_locale();
+    let menus: Vec<_> = all
+        .into_iter()
+        .filter(|(l, _)| {
+            if own {
+                *l == v.staff.locale
+            } else {
+                *l == default
+            }
+        })
+        .map(|(_, m)| m)
+        .collect();
     let jobs = pending(s).await?;
     let mut figures = Vec::new();
     for (slot, name, label) in SLOTS {

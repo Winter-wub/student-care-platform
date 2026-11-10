@@ -283,3 +283,23 @@ async fn configured_files_are_what_gets_uploaded() {
     assert_eq!(created(&linked)["size"]["height"], 1686);
     assert_eq!(created(&linked)["areas"].as_array().unwrap().len(), 3);
 }
+
+#[tokio::test]
+async fn the_branding_preview_labels_the_tap_areas_in_the_staff_members_locale() {
+    let h = Harness::new();
+    let app = boot(&h, &LineApi::default(), secrets(&[])).await;
+    let password = "kelp forest at dawn";
+    h.create_staff("admin@sealbay.example", password, &["Administrator"])
+        .await;
+    let b = app.browser();
+    assert_eq!(b.login("admin@sealbay.example", password).await.status, 303);
+    let page = b.get("/admin/branding").await;
+    assert_eq!(page.status, 200);
+    // One drawing per Menu image, in Thai: the English Menu's are not drawn.
+    assert_eq!(
+        page.body.matches("<figure class=\"menu-preview\"").count(),
+        2
+    );
+    assert!(page.body.contains(">ข่าวล่าสุด</text>"), "{}", page.body);
+    assert!(!page.body.contains("Latest news"), "{}", page.body);
+}
