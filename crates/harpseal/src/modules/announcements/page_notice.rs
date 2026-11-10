@@ -52,7 +52,7 @@ fn cost_lines(v: &View<'_>, c: &Cost) -> Markup {
     html! {
         ul class="list" id="notify-cost" aria-live="polite" {
             @for (kind, n) in &c.per_channel {
-                @let count = n.to_string();
+                @let count = crate::ui::number(*n);
                 @let month = c.used.iter().find(|(k, _)| k == kind).map(|(_, m)| m);
                 li {
                     (channel_label(kind)) ": "
@@ -63,7 +63,7 @@ fn cost_lines(v: &View<'_>, c: &Cost) -> Markup {
                     @if let Some(left) = month.and_then(|m| over(m, *n)) {
                         // Inside the polite `#notify-cost`: no alert of its own (#129).
                         p class="field-error" {
-                            (fill(&v.t("announcements.form.notify_over"), &[("left", &left.to_string())]))
+                            (fill(&v.t("announcements.form.notify_over"), &[("left", &crate::ui::number(left))]))
                         }
                     }
                 }
