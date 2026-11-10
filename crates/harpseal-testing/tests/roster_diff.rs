@@ -93,7 +93,7 @@ async fn the_preview_leads_with_what_changes_and_lists_who() {
     );
     assert!(
         page.contains(
-            "<tr data-kind=\"new\"><td class=\"code\" data-label=\"รหัสนักศึกษา\">68000010</td>"
+            "<tr data-kind=\"new\"><td class=\"code id\" data-label=\"รหัสนักศึกษา\">68000010</td>"
         ),
         "{page}"
     );

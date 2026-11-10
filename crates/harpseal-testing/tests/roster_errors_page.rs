@@ -99,6 +99,29 @@ async fn a_file_without_any_header_row_says_which_headers_it_needs() {
 }
 
 #[tokio::test]
+async fn a_cell_problem_names_the_row_the_column_and_the_fix() {
+    // #140: a GPA in words, in row 2 (the header is row 1).
+    let file = "รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\r\n\
+                68000001,นกน้อย ทะเลใส,,,,MSC,1,สามจุดห้า\r\n";
+    let page = page_of("gpa.csv", file.as_bytes()).await;
+    let row = first_row(&page);
+    assert!(row.contains("data-label=\"แถว\">2</td>"), "{row}");
+    assert!(row.contains("data-label=\"คอลัมน์\">เกรดเฉลี่ย</td>"), "{row}");
+    // The problem, then what to do.
+    assert!(row.contains("ต้องเป็นตัวเลข"), "{row}");
+    assert!(
+        row.contains(
+            "<span class=\"fix\"><strong>วิธีแก้:</strong> ใส่ตัวเลข เช่น 3.25 ไม่มีตัวอักษรหรือหน่วย</span>"
+        ),
+        "{row}"
+    );
+    assert_eq!(
+        harpseal_testing::a11y::problems(&page),
+        Vec::<String>::new()
+    );
+}
+
+#[tokio::test]
 async fn the_page_groups_row_numbers_and_the_csv_keeps_digits() {
     let (h, app) = boot().await;
     let b = signed_in(&h, &app, "Officer").await;

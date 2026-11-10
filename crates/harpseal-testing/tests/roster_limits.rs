@@ -73,6 +73,12 @@ async fn only_the_upload_route_reads_a_large_multipart_body() {
         "{}",
         other.body
     );
+    // And what to do (#140).
+    assert!(
+        other.body.contains("<p class=\"fix\">วิธีแก้: กลับไปหน้าก่อน"),
+        "{}",
+        other.body
+    );
     // A 200 KiB file is fine on the upload route.
     let big = csv(0..3000);
     assert!(big.len() > 200 * 1024);
@@ -98,10 +104,16 @@ async fn an_upload_over_the_limit_goes_back_as_too_large() {
         let r = post(&b, "/admin/roster/upload", body, length).await;
         assert_eq!(r.status, 303, "{length:?}: {}", r.body);
         assert_eq!(r.header("location"), Some("/admin/roster"));
-        assert_eq!(flash(&b), "err:kernel.roster.reason_too_large");
+        // #140: the flash says the fix too.
+        assert_eq!(flash(&b), "err:kernel.roster.too_large_upload");
     }
     let page = b.get("/admin/roster").await;
-    assert!(page.body.contains("ไฟล์ใหญ่เกิน 4 MB"), "{}", page.body);
+    assert!(
+        page.body
+            .contains("ไฟล์ใหญ่เกิน 4 MB วิธีแก้: ลบชีตหรือคอลัมน์ที่ไม่ใช้ แล้วอัปโหลดใหม่"),
+        "{}",
+        page.body
+    );
     assert_eq!(int(&h, "SELECT count(*) FROM roster_import", &[]).await, 0);
     assert_eq!(h.files().keys(), Vec::<String>::new());
 }

@@ -159,11 +159,37 @@ pub(super) struct Posted {
     pub(super) files: Vec<FilePart>,
 }
 
+/// Which kinds of file were chosen in a post (#140): the form that comes
+/// back has lost them, and says so in the part each kind belongs to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Chosen {
+    pub(super) images: bool,
+    pub(super) pdfs: bool,
+}
+
+impl Chosen {
+    /// Whether any file was chosen.
+    pub(super) fn any(self) -> bool {
+        self.images || self.pdfs
+    }
+}
+
+/// Whether `field` is one the images part shows an error under: the
+/// whole set (`images`) or a slot.
+pub(super) fn erred_in(field: &str) -> bool {
+    field == "images" || SLOTS.contains(&field)
+}
+
 impl Posted {
-    /// Whether any file was chosen (lost when the form comes back); ask
+    /// The kinds of file chosen (lost when the form comes back): a `pdf…` part is a PDF, any other file
+    /// part counts as an image (that is where "too many" is said). Ask
     /// before [`Posted::file_edits`] moves them out.
-    pub(super) fn had_files(&self) -> bool {
-        !self.files.is_empty()
+    pub(super) fn chosen(&self) -> Chosen {
+        let pdf = |f: &FilePart| f.field.starts_with("pdf");
+        Chosen {
+            images: self.files.iter().any(|f| !pdf(f)),
+            pdfs: self.files.iter().any(pdf),
+        }
     }
 
     /// The image edits, the image files' bytes moved out (the PDF parts

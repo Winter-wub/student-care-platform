@@ -128,7 +128,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                                     @if r.status == "left" { " " (v.status_chip(&r.status)) }
                                     (missing_badge(v, &r.missing))
                                 }
-                                td class="code" data-label=(v.t("kernel.students.code")) { (r.code) }
+                                td class="code id" data-label=(v.t("kernel.students.code")) { (r.code) }
                                 @for (k, a) in &attrs {
                                     td data-label=(v.label(k, a)) {
                                         (v.shown(a, r.attributes.get(*k)))

@@ -295,8 +295,12 @@ fn too_large(state: &AppState, req: &Request, gate: Gate) -> Response {
             redirect(req.headers(), to, Some(cookie))
         }
         None => {
+            // The problem, then what to do (#140).
             let text = state.t("kernel.auth.too_large");
-            bare_page(state, StatusCode::PAYLOAD_TOO_LARGE, &text)
+            let fix = state.t("kernel.auth.too_large_fix");
+            let body = html! { div class="card" { p { (text) } p class="fix" { (fix) } } };
+            let page = crate::ui::bare(state, &text, body);
+            (StatusCode::PAYLOAD_TOO_LARGE, Html(page.into_string())).into_response()
         }
     }
 }

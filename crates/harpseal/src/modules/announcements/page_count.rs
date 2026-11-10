@@ -151,7 +151,10 @@ fn hand_picked(v: &View<'_>, a: &Audience, c: &Counts, p: &HandPicked) -> Markup
             @if !list.is_empty() {
                 p id=(id) class="field-error" {
                     (v.t(key)) " (" (list.len()) "): "
-                    (list.iter().take(LISTED).cloned().collect::<Vec<_>>().join(", "))
+                    // Each id whole (#140): the list wraps between ids.
+                    @for (i, id) in list.iter().take(LISTED).enumerate() {
+                        @if i > 0 { ", " } span class="id" { (id) }
+                    }
                     @if list.len() > LISTED {
                         " " (v.t("announcements.form.hp_more")) " " (list.len() - LISTED)
                     }

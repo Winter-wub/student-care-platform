@@ -139,7 +139,7 @@ pub(super) fn changes(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup
                 tbody {
                     @for c in &head.changes {
                         tr data-kind=(c.kind) {
-                            td class="code" data-label=(code) { (c.code) }
+                            td class="code id" data-label=(code) { (c.code) }
                             td data-label=(name) { (c.name) }
                             td data-label=(change) {
                                 span class=(if c.kind == "new" { "chip ok" } else { "chip" }) { (kind(v, &c.kind)) }
@@ -185,7 +185,7 @@ pub(super) fn leaving(v: &View<'_>, imp: &Import, head: Option<&Head>) -> Markup
                 tbody {
                     @for c in &head.leaving {
                         tr {
-                            td class="code" data-label=(code) { (c.code) }
+                            td class="code id" data-label=(code) { (c.code) }
                             td data-label=(name) { (c.name) }
                             td class="num" data-label=(links) { (number(c.links)) }
                         }

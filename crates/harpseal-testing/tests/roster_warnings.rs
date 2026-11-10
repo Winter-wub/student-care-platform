@@ -69,7 +69,7 @@ async fn a_file_with_only_warnings_previews_lists_them_and_imports() {
     // Each warning names its Student (#134).
     assert!(
         page.body
-            .contains("<span class=\"code\">68000002</span> ปลา"),
+            .contains("<span class=\"code id\">68000002</span> ปลา"),
         "{}",
         page.body
     );

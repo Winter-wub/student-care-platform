@@ -189,7 +189,11 @@ async fn the_list_is_stored_shown_and_audited_by_size() {
     // Visible to Staff on the detail page and in the edit form of a draft.
     let detail = b.get(&format!("/admin/announcements/{id}")).await;
     assert!(
-        detail.body.contains("code-s3, code-s4, nope-0000"),
+        // Each id whole (#140), in the order saved.
+        detail.body.contains(
+            "<span class=\"id\">code-s3</span>, <span class=\"id\">code-s4</span>, \
+             <span class=\"id\">nope-0000</span>"
+        ),
         "{}",
         detail.body
     );
