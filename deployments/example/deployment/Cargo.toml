@@ -8,7 +8,9 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-axum.workspace = true
+# `maud::html!` expands to `extern crate maud`, so the macro needs the crate
+# by name; keep the Core's version requirement (`harpseal::web` documents
+# it). axum comes from `harpseal::web::axum` (#162).
 maud.workspace = true
 serde_json.workspace = true
 harpseal.workspace = true

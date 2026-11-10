@@ -24,6 +24,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
+use harpseal::web::axum;
 use harpseal::{
     Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY, Message,
     Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx,

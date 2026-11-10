@@ -6,7 +6,8 @@
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
+use harpseal::web::axum;
 use harpseal::{AppState, CurrentStaff, Statement, UploadColumn, Uploads};
 use maud::html;
 
@@ -27,7 +28,7 @@ pub(super) async fn page(State(s): State<AppState>, staff: CurrentStaff) -> Resp
     let q = Statement::new("SELECT COUNT(*) AS n FROM fees_balance");
     let stored = match s.services.db.query(q).await {
         Ok(rows) => rows.get(0, "n").and_then(|v| v.as_i64()).unwrap_or(0),
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => return harpseal::ui::service_error(&s, &staff, &e),
     };
     let body = html! {
         h1 { (t(&s, &staff, "fees.title")) }

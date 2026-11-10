@@ -6,6 +6,7 @@
 use axum::body::Body;
 use axum::http::{Request, header};
 use example_deployment::{Secrets, builder, fees};
+use harpseal::web::axum;
 use harpseal::{Statement, Timestamp};
 use harpseal_testing::{Browser, Harness, TestApp, TestResponse};
 

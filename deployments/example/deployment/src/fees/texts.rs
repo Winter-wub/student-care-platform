@@ -79,6 +79,23 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new("fees.confirm", "en", "Confirm import"),
     CatalogEntry::new("fees.cancel", "th", "ยกเลิก"),
     CatalogEntry::new("fees.cancel", "en", "Cancel"),
+    // The flash after Cancel (#162).
+    CatalogEntry::new("fees.cancelled", "th", "ยกเลิกแล้ว ลบไฟล์ที่อัปโหลดออกแล้ว"),
+    CatalogEntry::new(
+        "fees.cancelled",
+        "en",
+        "Cancelled. The uploaded file is deleted.",
+    ),
+    CatalogEntry::new(
+        "fees.not_cancelled",
+        "th",
+        "ยกเลิกไม่ได้ ไฟล์นี้ยืนยันนำเข้าไปแล้ว หรือหมดเวลาแล้ว",
+    ),
+    CatalogEntry::new(
+        "fees.not_cancelled",
+        "en",
+        "Not cancelled: this file was already confirmed for import, or it expired.",
+    ),
     CatalogEntry::new("fees.problems", "th", "ปัญหาที่ต้องแก้ก่อนนำเข้า"),
     CatalogEntry::new("fees.problems", "en", "Fix these before importing"),
     CatalogEntry::new("fees.skipped", "th", "ข้ามไม่นำเข้า"),

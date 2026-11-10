@@ -320,6 +320,7 @@ page shows, a `Conflict` (the row changed meanwhile) with a 409 page asking
 to reload, and anything else with a 500 page that hides the error text.
 
 ```rust
+use harpseal::web::axum;
 use axum::Form;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -363,6 +364,64 @@ Staff passes `Actor::Staff` with the id its page saved in the payload, and
 that Staff member's Permission is checked again when the Job runs. The
 example's `deployments/example/deployment/src/reminders.rs` has the
 whole page.
+
+### axum and maud, the flash and logged errors (#162)
+
+A Module's pages take axum from the Core: `use harpseal::web::axum;`, then
+`use axum::extract::State;` and so on as usual. The Deployment then has no
+`axum` dependency of its own, so its `MethodRouter`, extractors and
+responses are always the Core's types (the re-exported axum has the
+`form`, `query` and `multipart` extractors; `axum::http` is the `http`
+crate). `maud` is the one web crate a Deployment still names: `html!`
+expands to `extern crate maud`, which only a direct dependency satisfies.
+Keep it at the Core's requirement, `maud = "0.27"`, so Cargo resolves one
+`maud` for both and `Markup` is the type `ui::back_office` takes
+(`harpseal::web::maud` is the same crate, for paths). The example's
+`deployments/example/deployment/Cargo.toml` depends on `harpseal` and
+`maud` only.
+
+After a POST, answer `ui::redirect_with_flash(&s, to, ok, key)` instead of
+redirecting with `?done=<code>`: a `303` to `to` with the Core's one-shot
+flash cookie. The next back-office page draws the text of catalog key
+`key` at the top of the main column, in the Staff member's Locale (green
+when `ok`, red otherwise), and a reload no longer shows it. `key` is one
+of the Module's own catalog keys (letters, digits, `.` and `_`).
+
+```rust
+async fn cancel(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    uploads: Uploads,
+    ctx: RequestCtx,
+    Path(id): Path<String>,
+) -> Response {
+    match uploads.discard(&id, &ctx).await {
+        Ok(true) => ui::redirect_with_flash(&s, "/admin/fees", true, "fees.cancelled"),
+        Ok(false) => ui::redirect_with_flash(&s, "/admin/fees", false, "fees.not_cancelled"),
+        Err(e) => ui::service_error(&s, &staff, &e),
+    }
+}
+```
+
+A 500 from `ui::service_error` carries an `ErrorReport`, so the runtime
+logs it as it logs the Core's errors: one line with the Module's name, the
+error's kind and the route as the Module registered it, then the request
+id (`error: fees: db at /admin/fees/{id}/cancel (request 9f2c…)`; stderr
+natively, `console.error` in `wrangler tail` on Workers). The error's
+message, which may hold a Student's data, is never logged or shown. Answer
+a failure with `service_error` rather than a bare
+`StatusCode::INTERNAL_SERVER_ERROR`, which nobody sees in the log. A page
+without the back-office shell (a Mini App page) attaches the report
+itself, with a fixed area name:
+
+```rust
+use harpseal::{Error, ErrorReport};
+
+fn failed(e: &Error) -> Response {
+    let page = StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    ErrorReport::attach(page, "fees.student", e)  // logs "error: fees.student: db (request …)"
+}
+```
 
 ## Reading spreadsheet uploads in a Module
 

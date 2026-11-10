@@ -15,7 +15,9 @@
 //! writer every Staff write goes through) group free functions;
 //! [`sheet`] reads CSV and XLSX uploads (the roster import's reader);
 //! [`backup`] dumps and restores a whole Deployment through its ports. Back-office
-//! handlers extract [`CurrentStaff`] and [`RequestCtx`].
+//! handlers extract [`CurrentStaff`] and [`RequestCtx`]; [`web`] re-exports
+//! the `axum` and `maud` a Module's pages are written with, so a Deployment
+//! needs no `axum` of its own (`maud` stays, for its `html!` macro).
 //! The Kernel's schema is not public API.
 //!
 //! Everything here compiles to `wasm32-unknown-unknown`; nothing names a
@@ -56,6 +58,7 @@ pub mod render;
 pub mod rich_text;
 pub mod sheet;
 pub mod ui;
+pub mod web;
 
 #[cfg(feature = "fixtures")]
 pub mod fixtures;

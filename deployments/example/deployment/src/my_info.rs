@@ -13,6 +13,7 @@
 use axum::extract::State;
 use axum::response::Response;
 use axum::routing::get;
+use harpseal::web::axum;
 use harpseal::{AppState, AppStudent, AttributeSpec, CatalogEntry, Module, ModuleRegistrar};
 use maud::html;
 

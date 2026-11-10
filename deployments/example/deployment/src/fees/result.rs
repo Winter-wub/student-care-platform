@@ -5,6 +5,7 @@
 
 use axum::http::StatusCode;
 use axum::response::Response;
+use harpseal::web::axum;
 use harpseal::{AppState, CurrentStaff, Statement};
 use maud::html;
 
