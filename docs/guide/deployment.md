@@ -552,6 +552,46 @@ link clears it. A posting form reads busy until the next page (#131); give
 a form whose submit answers a download or `204 No Content` the attribute
 `data-no-busy`, or it reads busy for 30 s.
 
+### A field of student codes: the Student picker (#146)
+
+A form that takes student codes uses `ui::StudentPicker` instead of a bare
+textarea. Staff search by the start of a code or part of a name, add hits
+as chips, paste many codes at once, and see unknown codes and left
+Students flagged, with the count against your limit. Mount its route
+under your own Permission, then render it inside your `<form>` with the
+same path:
+
+```rust
+const PICK: &str = "/reminders/pick";
+
+// In `register`:
+r.student_picker(PERMISSION.id, PICK);
+
+// In the page handler, inside the form:
+let field = ui::StudentPicker::new("ids", PICK, &t("reminders.ids"))
+    .max(harpseal::MAX_NOTIFY)
+    .codes(ids) // already picked, e.g. from `?ids=`
+    .render(&s, &staff)
+    .await?;
+```
+
+- **What your handler gets:** the same field as a textarea would post,
+  `ids` here, codes separated by newlines. Read it with
+  `audience::parse_student_ids` and check the limit and the codes
+  yourself: the picker shows problems, it does not refuse a post.
+- **Without JS** (or when HTMX does not load) the field is the textarea,
+  with the same `id`, `name` and content. A small inline script turns the
+  picker on and disables the textarea, so the field is posted once.
+- **Who sees what:** the route answers only Staff holding the Permission
+  you named (a POST also needs the CSRF token HTMX sends). Names are
+  searched and shown only to Staff who also hold `kernel.student.view`;
+  others search by code and see codes. Search lists at most 8 Students.
+- **Field names** are lowercase ASCII letters, digits and `_` (at most
+  32), since they become element ids; another name is `Error::Invalid`.
+- **Starting points:** prefill with `.codes(…)` from your own data. The
+  example's reminders page has "เริ่มจากรายการค้างชำระ" (`?from=fees`),
+  which preselects the active Students who owe a fee, the first 40 by code.
+
 ## Permissions in Thai
 
 A Permission is a short Thai sentence for Staff (#125): a verb and its

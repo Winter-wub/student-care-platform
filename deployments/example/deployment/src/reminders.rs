@@ -7,7 +7,10 @@
 //! #135); the page also shows the weekly schedule. The same form drafts an
 //! Announcement to the pasted Students ([`ANNOUNCE_PATH`], #106) through
 //! `harpseal::modules::announcements::create_draft`, as the signed-in
-//! Staff member, who must also hold `announcements.send`.
+//! Staff member, who must also hold `announcements.send`. The list is the
+//! Core's Student picker (#146, `reminders/form.rs`): search by code or
+//! name, paste many, unknown codes flagged, a textarea without JS; and
+//! "เริ่มจากรายการค้างชำระ" fills it with the Students who owe a fee.
 //!
 //! The weekly Job picks the Students and enqueues one `reminders.send` Job
 //! per [`MAX_NOTIFY`] of them, so each run stays within the Workers
@@ -42,12 +45,15 @@ pub const TAG: &str = "fee_due";
 pub const PATH: &str = "/reminders";
 /// The page action that drafts an Announcement to the pasted Students.
 pub const ANNOUNCE_PATH: &str = "/reminders/announce";
+/// The Student picker's search route (#146), under [`PERMISSION`].
+pub const PICK: &str = "/reminders/pick";
 /// Who may send the reminder from the page.
 pub const PERMISSION: Permission =
     Permission::new("reminders.send", "Send the fee reminder").thai("ส่งเตือนชำระค่าธรรมเนียม");
 
 const DAY_MS: i64 = 86_400_000;
 
+mod form;
 mod review;
 mod schedule;
 mod texts;
@@ -88,7 +94,8 @@ impl Module for Reminders {
                 60,
                 get(page).post(send_now),
             )
-            .back_office(PERMISSION.id, ANNOUNCE_PATH, post(announce));
+            .back_office(PERMISSION.id, ANNOUNCE_PATH, post(announce))
+            .student_picker(PERMISSION.id, PICK);
     }
 }
 
@@ -194,6 +201,7 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
 /// fills the list again ("กลับไปแก้ไข" on the review step), at most
 /// [`MAX_STUDENTS`] codes and only from a query within
 /// [`ui::MAX_PREFILL_QUERY`]; a longer one leaves the list empty.
+/// `?from=fees` fills it with the Students who owe a fee (#146).
 async fn page(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -211,6 +219,22 @@ async fn page(
             ids.join("\n")
         })
         .unwrap_or_default();
+    let from_fees = q.iter().any(|(k, v)| k == "from" && v == "fees");
+    let (ids, note) = if from_fees {
+        match form::owing(&s).await {
+            Ok((codes, total)) => {
+                let note = form::from_fees_note(&s, &staff, codes.len(), total);
+                (codes, Some(note))
+            }
+            Err(e) => return ui::service_error(&s, &staff, &e),
+        }
+    } else {
+        (parse_student_ids(&ids), None)
+    };
+    let list = match form::list_form(&s, &staff, &key, ids).await {
+        Ok(f) => f,
+        Err(e) => return ui::service_error(&s, &staff, &e),
+    };
     let t = |k: &str| s.catalog.t(&staff.locale, k);
     let schedule = schedule::card(&s, &staff).await;
     let body = html! {
@@ -220,34 +244,12 @@ async fn page(
         section class="card" {
             h2 { (t("reminders.now_title")) }
             p class="muted" { (t("reminders.now_help")) }
-            (list_form(&s, &staff, &key, &ids))
+            (form::from_fees_link(&s, &staff))
+            @if let Some(n) = note { (n) }
+            (list)
         }
     };
     Html(ui::back_office(&s, &staff, &t("reminders.title"), body).into_string()).into_response()
-}
-
-/// The list form: the pasted ids under `key`, "ส่งเตือนตอนนี้" and
-/// "ร่างประกาศ…". Also on the review step when the list is too long to
-/// go back by a link (#135).
-fn list_form(s: &AppState, staff: &CurrentStaff, key: &str, ids: &str) -> maud::Markup {
-    let t = |k: &str| s.catalog.t(&staff.locale, k);
-    html! {
-        form method="post" action={ "/admin" (PATH) } {
-            (staff.csrf_field())
-            input type="hidden" name="key" value=(key);
-            div class="field" {
-                label for="ids" { (t("reminders.ids")) }
-                textarea id="ids" name="ids" rows="6" { (ids) }
-            }
-            // An action row: the two buttons never touch (#131).
-            div class="actions" {
-                button type="submit" { (t("reminders.send")) }
-                button type="submit" class="secondary" formaction={ "/admin" (ANNOUNCE_PATH) } {
-                    (t("reminders.announce"))
-                }
-            }
-        }
-    }
 }
 
 /// "ส่งเตือนตอนนี้": the review step (#135) until it is confirmed with the
@@ -276,13 +278,8 @@ async fn send_now(
     let reviewed = field(review::REVIEWED) == "1";
     let seen = field(review::REACH).trim().parse::<usize>().ok();
     if !reviewed || seen != Some(plan.reach()) || plan.blocked().is_some() {
-        return review::page(
-            &s,
-            &staff,
-            key,
-            &plan,
-            reviewed && seen != Some(plan.reach()),
-        );
+        let changed = reviewed && seen != Some(plan.reach());
+        return review::page(&s, &staff, key, &plan, changed).await;
     }
     let to: Vec<NotifyTo> = plan.ids.iter().map(NotifyTo::code).collect();
     let title = s.catalog.t(&staff.locale, "reminders.title");

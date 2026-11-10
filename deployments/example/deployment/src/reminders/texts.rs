@@ -95,12 +95,41 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new(
         "reminders.now_help",
         "th",
-        "ใส่รหัสนักศึกษา บรรทัดละหนึ่งคน แล้วกด ส่งเตือนตอนนี้ ระบบจะให้ตรวจผู้รับและข้อความก่อนส่งทุกครั้ง",
+        "เลือกนักศึกษาจากการค้นหา วางรหัสหลายคน หรือเริ่มจากรายการค้างชำระ แล้วกด ส่งเตือนตอนนี้ ระบบจะให้ตรวจผู้รับและข้อความก่อนส่งทุกครั้ง",
     ),
     CatalogEntry::new(
         "reminders.now_help",
         "en",
-        "Enter student IDs, one per line, then press Send now. You review the recipients and the message before anything is sent.",
+        "Pick Students by search, paste many IDs, or start from the fee list, then press Send now. You review the recipients and the message before anything is sent.",
+    ),
+    // "เริ่มจากรายการค้างชำระ" (#146). {n}: picked, {total}: owing in all.
+    CatalogEntry::new("reminders.from_fees", "th", "เริ่มจากรายการค้างชำระ"),
+    CatalogEntry::new("reminders.from_fees", "en", "Start from the fee list"),
+    CatalogEntry::new(
+        "reminders.from_fees_done",
+        "th",
+        "เลือกนักศึกษาที่ค้างชำระ {n} คนไว้ให้แล้ว กรุณาตรวจรายชื่อก่อนส่ง",
+    ),
+    CatalogEntry::new(
+        "reminders.from_fees_done",
+        "en",
+        "Picked the {n} Students who owe a fee. Please check the list before sending.",
+    ),
+    CatalogEntry::new(
+        "reminders.from_fees_capped",
+        "th",
+        "มีนักศึกษาค้างชำระ {total} คน เลือกไว้ให้ {n} คนแรกตามรหัส เพราะส่งเตือนได้ครั้งละไม่เกิน {n} คน",
+    ),
+    CatalogEntry::new(
+        "reminders.from_fees_capped",
+        "en",
+        "{total} Students owe a fee. The first {n} by ID are picked: one send reaches at most {n}.",
+    ),
+    CatalogEntry::new("reminders.from_fees_none", "th", "ตอนนี้ไม่มีนักศึกษาที่ค้างชำระ"),
+    CatalogEntry::new(
+        "reminders.from_fees_none",
+        "en",
+        "No Student owes a fee now.",
     ),
     // The review step (#135).
     CatalogEntry::new("reminders.review_title", "th", "ตรวจก่อนส่งเตือน"),

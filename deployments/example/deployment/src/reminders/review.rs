@@ -192,7 +192,7 @@ fn channel_name(kind: &str) -> String {
 
 /// The review page of `plan`, posting `key` back; `changed`: the count
 /// moved since the last review.
-pub(super) fn page(
+pub(super) async fn page(
     s: &AppState,
     staff: &CurrentStaff,
     key: &str,
@@ -210,6 +210,14 @@ pub(super) fn page(
     // list form is on this page, filled in.
     let back_query = format!("ids={}", encode(&ids));
     let inline_edit = back_query.len() > ui::MAX_PREFILL_QUERY;
+    let edit_form = if inline_edit {
+        match super::form::list_form(s, staff, key, plan.ids.clone()).await {
+            Ok(f) => f,
+            Err(e) => return ui::service_error(s, staff, &e),
+        }
+    } else {
+        html! {}
+    };
     let label = match plan.blocked() {
         Some(_) => t("reminders.confirm_plain"),
         None => n("reminders.confirm", plan.reach()),
@@ -249,7 +257,7 @@ pub(super) fn page(
         @if inline_edit {
             section class="card" id="edit-list" {
                 h2 { (t("reminders.edit_title")) }
-                (super::list_form(s, staff, key, &ids))
+                (edit_form)
             }
         }
     };

@@ -19,6 +19,9 @@
 //! Dates and numbers Staff read go through [`local_datetime`] (`9 พ.ย. 2569
 //! 14:30`, Buddhist year, the Deployment's `utc_offset`) and [`number`]
 //! (`15,000`); ISO stays in the technical disclosure (#125).
+//!
+//! A form field of student codes takes a [`StudentPicker`] (#146): search,
+//! chips, paste many, unknown codes flagged; a textarea without JS.
 
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
@@ -31,6 +34,9 @@ mod busy;
 mod confirm;
 mod onboard;
 mod onboard_texts;
+mod picker;
+mod picker_route;
+mod picker_texts;
 mod shell;
 mod thai;
 
@@ -40,6 +46,8 @@ pub use onboard::{
     MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
 };
 pub(crate) use onboard_texts::TEXTS as ONBOARD_TEXTS;
+pub use picker::StudentPicker;
+pub(crate) use picker_texts::TEXTS as PICKER_TEXTS;
 
 pub use thai::{
     local_date, local_datetime, number, thai_date, thai_datetime, thai_day, thai_month,
@@ -52,7 +60,7 @@ pub use thai::{
 /// the states, rhythm and wrapping of `ui_states.css` (#131), and the
 /// roster preview's figures and lists of `ui_roster.css` (#134), and the
 /// editor's disclosures, unbroken ids and help width of `ui_distill.css`
-/// (#140).
+/// (#140), and the Student picker of `ui_picker.css` (#146).
 pub const CSS: &str = concat!(
     include_str!("ui.css"),
     include_str!("ui_shell.css"),
@@ -60,11 +68,12 @@ pub const CSS: &str = concat!(
     include_str!("ui_access.css"),
     include_str!("ui_states.css"),
     include_str!("ui_roster.css"),
-    include_str!("ui_distill.css")
+    include_str!("ui_distill.css"),
+    include_str!("ui_picker.css")
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=21";
+const CSS_HREF: &str = "/static/app.css?v=22";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

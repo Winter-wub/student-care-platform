@@ -27,6 +27,7 @@ use crate::{AppState, CardState, CurrentStaff, StatusCard};
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.messages(texts::DEFAULTS)
         .messages(crate::ui::ONBOARD_TEXTS)
+        .messages(crate::ui::PICKER_TEXTS)
         .status_card(cards::ROSTER, "kernel.home.roster.title", 10, cards::roster)
         .status_card(cards::QUOTA, "kernel.home.quota.title", 30, cards::quota)
         .status_card(cards::BACKUP, "kernel.home.backup.title", 40, cards::backup);
