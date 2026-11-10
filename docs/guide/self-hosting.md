@@ -88,7 +88,7 @@ acting as the oldest active Administrator (or `--as EMAIL`):
 
 ```sh
 cargo run -p harpseal-example-native --bin harpseal -- seed-example [--as EMAIL] [--force]
-# seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts and 1 settings written
+# seeded as admin@sealbay.example: roster import 01a1… (50 Students), 4 announcements created, 2 texts, 1 settings and 3 Kernel settings written; Students per year 1: 9, 2: 9, 3: 8, …
 ```
 
 **Demo databases only.** While it waits for the roster import it runs
@@ -100,9 +100,12 @@ production.
 
 It imports `deployments/example/data/roster.csv` (50 fictional Students,
 upsert mode, applied at once by running the import Jobs), creates three
-draft announcements and one scheduled a week ahead, and overrides
+draft announcements (the orientation one with an image and a PDF from
+`deployments/example/assets/seed`) and one scheduled a week ahead, overrides
 `kernel.flow.welcome` in Thai and English, unless that text already has an
-override (an Administrator's customisation is never overwritten). Every audit row it writes names
+override (an Administrator's customisation is never overwritten), and saves
+the display name, primary colour and LINE package (Basic) only while each
+is unset. It prints the Students per year (`roster::attribute_values`). Every audit row it writes names
 that Administrator and carries `"seed": true`; the one exception is the
 fees bank account, saved as the system with `Deployment::save_setting_as_system` (no Administrator
 holds `fees.bank_account.edit`). Running it again adds

@@ -107,6 +107,12 @@ pub(crate) const TEXTS: &[E] = &[
     ),
     E::new("announcements.images.too_many", "th", "แนบรูปได้ไม่เกิน 4 รูป"),
     E::new("announcements.images.too_many", "en", "At most 4 images."),
+    E::new("announcements.images.bad_slot", "th", "ช่องรูปมีเฉพาะที่ 1 ถึง 4"),
+    E::new(
+        "announcements.images.bad_slot",
+        "en",
+        "Image slots are 1 to 4.",
+    ),
     E::new(
         "announcements.images.reselect",
         "th",

@@ -98,6 +98,7 @@ pub use kernel::links;
 pub use kernel::links::LinkChange;
 pub use kernel::roster::api as roster;
 pub use kernel::students;
+pub use kernel::usage::api as usage;
 pub use manifest::{Catalog, CatalogEntry, Job, JobSpec, MenuEntrySpec, Migration, Permission};
 pub use message::{
     ActionId, Attachment, Button, Card, CardImage, CardList, Choices, Locale, Menu, MenuEntry,

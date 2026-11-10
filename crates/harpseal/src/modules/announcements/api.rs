@@ -6,6 +6,7 @@
 //! `announcements.send`, as on the pages; every write is audited as that
 //! Staff member.
 
+pub use super::api_files::{AnnouncementFile, FileKind};
 use super::form::Fields;
 use super::service;
 use crate::audience::Audience;
@@ -35,6 +36,12 @@ pub struct NewAnnouncement {
     pub expires_at: Option<i64>,
     /// Send at this instant (ms, to the minute) instead of at once.
     pub send_at: Option<i64>,
+    /// Images and PDFs (#164), checked as the form checks its uploads
+    /// (see [`AnnouncementFile`]). Empty by default. [`create_draft`]
+    /// copies their bytes; [`create_draft_owned`] moves them. **On
+    /// Workers attach at most one PDF per call** (as the form does): every
+    /// copy of a 10 MB PDF counts against the isolate's 128 MB.
+    pub files: Vec<AnnouncementFile>,
 }
 
 impl NewAnnouncement {
@@ -48,6 +55,7 @@ impl NewAnnouncement {
             require_ack: false,
             expires_at: None,
             send_at: None,
+            files: Vec::new(),
         }
     }
 
@@ -84,8 +92,11 @@ impl NewAnnouncement {
     }
 }
 
-/// Creates a draft with the create form's checks; returns its id (version
-/// 0). Audit `announcement.create`.
+/// Creates a draft with the create form's checks, its
+/// [`NewAnnouncement::files`] included; returns its id (version 0).
+/// Audit `announcement.create` (file slots only, never bytes nor names).
+/// A refusal is [`Error::Invalid`] naming the catalog keys of every
+/// problem, the files' among them.
 pub async fn create_draft(
     d: &Deployment,
     new: &NewAnnouncement,
@@ -93,16 +104,40 @@ pub async fn create_draft(
     ctx: &RequestCtx,
 ) -> Result<String> {
     crate::auth::roles::require(d.services(), actor, SEND_PERMISSION).await?;
+    create_draft_owned(d, new.clone(), actor, ctx).await
+}
+
+/// [`create_draft`] taking the announcement by value, so the files' bytes
+/// move to the FileStore instead of being copied first: the one to use
+/// with files on Workers (see [`NewAnnouncement::files`]).
+pub async fn create_draft_owned(
+    d: &Deployment,
+    mut new: NewAnnouncement,
+    actor: &Actor,
+    ctx: &RequestCtx,
+) -> Result<String> {
+    crate::auth::roles::require(d.services(), actor, SEND_PERMISSION).await?;
     let offset = d.config().utc_offset_minutes().unwrap_or(0);
     let now = d.services().now_ms();
-    let draft = new
-        .fields(offset)
-        .draft(&d.config().roster, offset, now)
-        .map_err(|errors| {
-            let keys: Vec<&str> = errors.iter().map(|(_, k)| *k).collect();
-            Error::Invalid(format!("announcement refused: {}", keys.join(", ")))
-        })?;
+    let draft = new.fields(offset).draft(&d.config().roster, offset, now);
+    let files = super::api_files::edits(std::mem::take(&mut new.files));
+    let draft = match (draft, files) {
+        (Ok(mut draft), Ok(files)) => {
+            draft.files = files;
+            draft
+        }
+        (Err(mut a), Err(b)) => {
+            a.extend(b);
+            return Err(refused(&super::form::unique(a)));
+        }
+        (Err(e), Ok(_)) | (Ok(_), Err(e)) => return Err(refused(&e)),
+    };
     service::create(d, draft, actor, ctx).await
+}
+
+fn refused(errors: &[(&str, &str)]) -> Error {
+    let keys: Vec<&str> = errors.iter().map(|(_, k)| *k).collect();
+    Error::Invalid(format!("announcement refused: {}", keys.join(", ")))
 }
 
 /// Confirms draft `id` seen at `version` (0 for a new draft): scheduled

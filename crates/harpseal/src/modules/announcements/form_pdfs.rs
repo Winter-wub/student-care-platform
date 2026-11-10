@@ -139,6 +139,12 @@ pub(crate) const TEXTS: &[E] = &[
     ),
     E::new("announcements.pdfs.too_many", "th", "แนบ PDF ได้ไม่เกิน 3 ไฟล์"),
     E::new("announcements.pdfs.too_many", "en", "At most 3 PDF files."),
+    E::new(
+        "announcements.pdfs.bad_slot",
+        "th",
+        "ช่องไฟล์ PDF มีเฉพาะที่ 1 ถึง 3",
+    ),
+    E::new("announcements.pdfs.bad_slot", "en", "PDF slots are 1 to 3."),
 ];
 
 /// `pdf2` → 2.
@@ -151,11 +157,17 @@ impl Posted {
     /// Every file edit of the form, the bytes moved out: the PDFs (#113)
     /// and the images (#109), or every problem of both, each once.
     pub(super) fn file_edits(&mut self) -> Result<FileEdits, Errors> {
+        self.file_edits_up_to(PDFS_PER_SAVE)
+    }
+
+    /// [`Posted::file_edits`] taking up to `pdfs` new PDFs: one for a
+    /// form post ([`PDFS_PER_SAVE`]), every slot from code (#164).
+    pub(super) fn file_edits_up_to(&mut self, pdfs: usize) -> Result<FileEdits, Errors> {
         let (pdf_parts, rest) = std::mem::take(&mut self.files)
             .into_iter()
             .partition(|f| f.field.starts_with("pdf"));
         self.files = rest;
-        let pdfs = pdf_edits(&self.pairs, pdf_parts);
+        let pdfs = pdf_edits(&self.pairs, pdf_parts, pdfs);
         match (self.image_edits(), pdfs) {
             (Ok(mut a), Ok(b)) => {
                 a.put.extend(b.put);
@@ -172,15 +184,24 @@ impl Posted {
 }
 
 /// The PDF edits of the posted `pairs` (the remove boxes) and `parts`.
-fn pdf_edits(pairs: &[(String, String)], parts: Vec<FilePart>) -> Result<FileEdits, Errors> {
+fn pdf_edits(
+    pairs: &[(String, String)],
+    parts: Vec<FilePart>,
+    max: usize,
+) -> Result<FileEdits, Errors> {
     let mut edits = FileEdits::default();
     let mut errors = Vec::new();
     let mut removed: Vec<u8> = pairs
         .iter()
         .filter_map(|(k, _)| k.strip_suffix("_remove").and_then(slot_of))
         .collect();
-    if parts.len() > PDFS_PER_SAVE {
-        errors.push(("pdfs", "announcements.pdfs.once"));
+    if parts.len() > max {
+        let key = if max == PDFS_PER_SAVE {
+            "announcements.pdfs.once"
+        } else {
+            "announcements.pdfs.too_many"
+        };
+        errors.push(("pdfs", key));
         return Err(errors);
     }
     let mut seen: Vec<u8> = Vec::new();
