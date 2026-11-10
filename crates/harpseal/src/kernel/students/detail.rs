@@ -60,7 +60,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
     Ok(html! {
         p { a class="back" href="/admin/students" { "← " (v.t("kernel.students.back")) } }
         h1 { (row.fields.display_name) " " (v.status_chip(&row.status)) (badge("status")) }
-        p class="code" { (row.code) }
+        p class="code id" { (row.code) }
         div class="cols" {
             div {
                 section class="card" {

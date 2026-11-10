@@ -170,6 +170,18 @@ fn reason(v: &View<'_>, p: &Problem) -> String {
     format!("{text} ({of})")
 }
 
+/// What to do about `p` (#140), on its own line under the problem: the row
+/// and the column are the cells beside it. Nothing for a reason whose text
+/// already says it.
+fn fix(v: &View<'_>, p: &Problem) -> Markup {
+    let key = format!("kernel.roster.fix_{}", p.reason);
+    html! {
+        @if v.s.catalog.knows(&key) {
+            span class="fix" { strong { (v.t("kernel.roster.fix_label")) } " " (v.t(&key)) }
+        }
+    }
+}
+
 /// How many problems each class has, as a list.
 pub(super) fn classes(v: &View<'_>, classes: &BTreeMap<String, u64>) -> Markup {
     html! {
@@ -208,12 +220,13 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                         td class="num" data-label=(v.t("kernel.roster.report_row")) { (row(v, p, true)) }
                         @if students {
                             td data-label=(v.t("kernel.roster.report_student")) {
-                                span class="code" { (p.student) } " " (p.name)
+                                span class="code id" { (p.student) } " " (p.name)
                             }
                         }
                         td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))
+                            (fix(v, p))
                         }
                         @if levels {
                             td data-label=(v.t("kernel.roster.report_severity")) {

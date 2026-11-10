@@ -220,7 +220,7 @@ fn render(
             p class="muted" { (v.t("kernel.students.override_help")) }
             div class="field" {
                 label { (v.t("kernel.students.code")) }
-                p class="code" { (row.code) " " span class="muted" { "(" (v.t("kernel.students.code_readonly")) ")" } }
+                p class="code" { span class="id" { (row.code) } " " span class="muted" { "(" (v.t("kernel.students.code_readonly")) ")" } }
             }
             @for f in &fields {
                 @let overridden = row.overrides.contains(&f.override_key);

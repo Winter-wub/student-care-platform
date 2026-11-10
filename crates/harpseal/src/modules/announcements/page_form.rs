@@ -15,7 +15,9 @@ use super::form_pdfs;
 use super::notice;
 use super::store::{self, Row};
 use super::view::View;
-use super::{page_count, page_detail, page_editor, page_notice, page_pick, page_review, service};
+use super::{
+    page_count, page_detail, page_editor, page_more, page_notice, page_pick, page_review, service,
+};
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
 /// Errors as (field, catalog key).
@@ -253,6 +255,7 @@ fn form_page(
     let scheduled = row.is_some_and(|r| r.status == "scheduled");
     let err = |field: &str| -> Markup { super::form_scope::field_errors(v, errors, field) };
     let d = |field: &str| super::form_scope::described(errors, field);
+    let open = page_more::Open::of(f, form.images, errors, form.reselect);
     let body = html! {
         h1 { (title) }
         @if sent { p class="muted" { (v.t("announcements.form.sent_note")) } }
@@ -275,30 +278,6 @@ fn form_page(
                     (page_editor::help(v))
                 }
             }
-            fieldset aria-describedby=[d("en")] {
-                legend { (v.t("announcements.form.english")) }
-                (err("en"))
-                div class="field" {
-                    label for="title_en" { (v.t("announcements.form.title")) }
-                    input id="title_en" name="title_en" maxlength=(MAX_TITLE) value=(f.title_en);
-                }
-                div class="field" {
-                    label for="body_en" { (v.t("announcements.form.body")) }
-                    (page_editor::toolbar(v, "body_en"))
-                    textarea id="body_en" name="body_en" maxlength=(MAX_BODY) rows="5" { (f.body_en) }
-                    (page_editor::help(v))
-                }
-            }
-            (form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect, &err))
-            (form_pdfs::field(v, form.images, sent, &err))
-            @if !sent {
-                label class="check" {
-                    input type="checkbox" name="require_ack" value="1" checked[f.require_ack];
-                    " " (v.t("announcements.form.require_ack"))
-                }
-            } @else if f.require_ack {
-                input type="hidden" name="require_ack" value="1";
-            }
             // #77: LINE cannot edit a sent Card; one Push per recipient.
             // Not offered once expired: Students could not open it.
             @if sent && row.is_some_and(|r| notice::open(r, v.s.services.now_ms())) {
@@ -306,12 +285,9 @@ fn form_page(
             } @else {
                 (err("notify"))
             }
-            div class="field" {
-                label for="expires" { (v.t("announcements.form.expires")) }
-                (err("expires"))
-                input id="expires" type="date" name="expires" value=(f.expires) aria-describedby=[d("expires")];
-            }
+            // #140: who and when stay in view, under the Thai text.
             @if !sent {
+                (audience(v, f, errors))
                 fieldset aria-describedby=[d("send_at")] {
                     legend { (v.t("announcements.form.when")) }
                     (err("send_at"))
@@ -328,23 +304,44 @@ fn form_page(
                     input type="datetime-local" name="send_at" value=(f.send_at)
                         aria-label=(v.t("announcements.form.later"));
                 }
-                fieldset aria-describedby=[d("audience")] {
-                    legend { (v.t("announcements.form.audience")) }
-                    (err("audience"))
-                    (super::form_scope::field(v, f))
-                    p class="muted" { (v.t("announcements.form.audience_help")) }
-                    (super::form_scope::attributes(v, f))
+            }
+            // #140: the optional parts, each open when it holds a value
+            // or an error ([`page_more::Open`]).
+            (page_more::part("more-english", &v.t("announcements.form.english"), open.english, html! {
+                fieldset aria-describedby=[d("en")] {
+                    legend { (v.t("announcements.form.english")) }
+                    (err("en"))
                     div class="field" {
-                        label for="tags" { (v.t("announcements.form.tags")) }
-                        input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));
+                        label for="title_en" { (v.t("announcements.form.title")) }
+                        input id="title_en" name="title_en" maxlength=(MAX_TITLE) value=(f.title_en);
                     }
-                    (page_pick::field(v, f))
-                    label class="check" {
-                        input type="checkbox" name="unreachable" value="1" checked[f.unreachable];
-                        " " (v.t("announcements.form.include_unreachable"))
+                    div class="field" {
+                        label for="body_en" { (v.t("announcements.form.body")) }
+                        (page_editor::toolbar(v, "body_en"))
+                        textarea id="body_en" name="body_en" maxlength=(MAX_BODY) rows="5" { (f.body_en) }
+                        (page_editor::help(v))
                     }
-                    (page_count::placeholder(v))
                 }
+            }))
+            (page_more::part("more-images", &v.t("announcements.editor.images_summary"), open.images,
+                form_images::field(v, form.images, &[&f.body_th, &f.body_en], sent, form.reselect, &err)))
+            (page_more::part("more-pdfs", &v.t("announcements.editor.pdfs_summary"), open.pdfs,
+                form_pdfs::field(v, form.images, sent, &err)))
+            (page_more::part("more-options", &v.t("announcements.editor.more_summary"), open.more, html! {
+                div class="field" {
+                    label for="expires" { (v.t("announcements.form.expires")) }
+                    (err("expires"))
+                    input id="expires" type="date" name="expires" value=(f.expires) aria-describedby=[d("expires")];
+                }
+                @if !sent {
+                    label class="check" {
+                        input type="checkbox" name="require_ack" value="1" checked[f.require_ack];
+                        " " (v.t("announcements.form.require_ack"))
+                    }
+                }
+            }))
+            @if sent && f.require_ack {
+                input type="hidden" name="require_ack" value="1";
             }
             (page_editor::preview(v, f, form.images))
             (page_detail::preview(v, &f.title_th, &f.body_th, f.require_ack))
@@ -366,4 +363,30 @@ fn form_page(
         (page_editor::script())
     };
     v.page(status, &title, body)
+}
+
+/// The Audience fieldset (`#audience`): the choice, the attribute filters,
+/// Tags, the hand-picked list, the unreachable box and the live count. Its
+/// fields are [`Fields`]' Audience fields, so a caller that prefills them
+/// (a saved Audience, a bulk announce) gets them drawn here.
+fn audience(v: &View<'_>, f: &Fields, errors: &[(&'static str, &'static str)]) -> Markup {
+    html! {
+        fieldset id="audience" aria-describedby=[super::form_scope::described(errors, "audience")] {
+            legend { (v.t("announcements.form.audience")) }
+            (super::form_scope::field_errors(v, errors, "audience"))
+            (super::form_scope::field(v, f))
+            p class="muted" { (v.t("announcements.form.audience_help")) }
+            (super::form_scope::attributes(v, f))
+            div class="field" {
+                label for="tags" { (v.t("announcements.form.tags")) }
+                input id="tags" name="tags" value=(f.tags) placeholder=(v.t("announcements.form.any_of"));
+            }
+            (page_pick::field(v, f))
+            label class="check" {
+                input type="checkbox" name="unreachable" value="1" checked[f.unreachable];
+                " " (v.t("announcements.form.include_unreachable"))
+            }
+            (page_count::placeholder(v))
+        }
+    }
 }

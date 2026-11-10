@@ -61,6 +61,7 @@ mod store;
 mod stuck;
 mod texts;
 mod texts_diff;
+mod texts_fix;
 mod texts_reach;
 mod texts_sheets;
 mod texts_warnings;
@@ -103,6 +104,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .messages(texts_warnings::DEFAULTS)
         .messages(texts_reach::DEFAULTS)
         .messages(texts_diff::DEFAULTS)
+        .messages(texts_fix::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",

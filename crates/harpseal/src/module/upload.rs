@@ -146,14 +146,23 @@ impl UploadRejection {
         }
     }
 
-    /// A short Thai text for Staff.
+    /// A short Thai text for Staff: what is wrong, then what to do (#140).
     pub fn text(self) -> &'static str {
         match self {
-            Self::TooLarge => "ไฟล์ใหญ่เกิน 4 MB",
-            Self::NoFile => "ไม่พบไฟล์ที่อัปโหลด",
-            Self::Unsupported => "รับเฉพาะไฟล์ CSV หรือ XLSX",
-            Self::NotUtf8 => "ไฟล์ CSV ต้องเป็น UTF-8 (บันทึกแบบ CSV UTF-8)",
-            Self::Malformed => "อ่านแบบฟอร์มที่ส่งมาไม่ได้",
+            Self::TooLarge => {
+                "ไฟล์ใหญ่เกิน 4 MB วิธีแก้: ลบชีตหรือคอลัมน์ที่ไม่ใช้ \
+                 หรือบันทึกเป็น CSV UTF-8 ซึ่งเล็กกว่า แล้วอัปโหลดใหม่"
+            }
+            Self::NoFile => "ไม่พบไฟล์ที่อัปโหลด วิธีแก้: เลือกไฟล์ CSV หรือ XLSX แล้วกดอัปโหลดอีกครั้ง",
+            Self::Unsupported => {
+                "รับเฉพาะไฟล์ CSV หรือ XLSX วิธีแก้: บันทึกไฟล์เป็น .xlsx \
+                 หรือ CSV UTF-8 แล้วอัปโหลดใหม่"
+            }
+            Self::NotUtf8 => {
+                "ไฟล์ CSV ต้องเป็น UTF-8 วิธีแก้: ใน Excel เลือก บันทึกเป็น \
+                 แล้วเลือกชนิด CSV UTF-8 แล้วอัปโหลดใหม่"
+            }
+            Self::Malformed => "อ่านแบบฟอร์มที่ส่งมาไม่ได้ วิธีแก้: โหลดหน้านี้ใหม่ เลือกไฟล์เดียว แล้วอัปโหลดอีกครั้ง",
         }
     }
 }

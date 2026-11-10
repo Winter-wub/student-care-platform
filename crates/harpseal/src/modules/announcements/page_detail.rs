@@ -155,7 +155,8 @@ fn hand_picked(v: &View<'_>, row: &Row) -> Markup {
         @if !ids.is_empty() {
             details class="card" id="hand-picked-ids" {
                 summary { (v.t("announcements.form.hand_picked")) " (" (ids.len()) ")" }
-                p class="pre" { (ids.join(", ")) }
+                // Each id whole (#140): the list wraps between ids.
+                p { @for (i, id) in ids.iter().enumerate() { @if i > 0 { ", " } span class="id" { (id) } } }
             }
         }
     }

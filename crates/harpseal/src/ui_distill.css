@@ -1,0 +1,48 @@
+/* ===== #140 Distill: shorter announcement editor, ids that do not wrap,
+   help lines at a readable width. Appended to ui.css (see `ui::CSS`). ===== */
+
+/* The editor's optional parts (English, images, PDFs, expiry and the
+   acknowledgement): one disclosure each, a Paper panel with a Rule Line like
+   the technical details, open when it holds a value or an error. A fieldset
+   inside loses its own border (nothing nests) and its legend is read, not
+   drawn: the summary already names it. */
+.announcement-form details.optional { margin: 0 0 var(--gutter); border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--card); }
+.announcement-form details.optional > summary { padding: 0 var(--gutter); font-weight: 600; }
+.announcement-form details.optional > summary:focus-visible { outline-offset: -3px; border-radius: var(--radius); }
+.announcement-form details.optional > summary:hover { background: var(--bg); border-radius: var(--radius); }
+.optional-body { padding: var(--space-md) var(--gutter) var(--gutter); border-top: 1px solid var(--line); }
+.optional-body > fieldset { border: 0; padding: 0; margin: 0; }
+.optional-body > fieldset > legend { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.optional-body > :last-child { margin-bottom: 0; }
+
+/* The syntax help under a body: a quiet link-like summary, folded. */
+.syntax-help > summary { color: var(--brand-text); font-weight: 600; font-size: .875rem; width: fit-content; }
+.syntax-help > p { margin-top: 0; }
+
+/* Both draw their own chevron: a flex summary has no marker. It turns when
+   open; nothing moves under reduced motion because nothing animates. */
+.announcement-form details.optional > summary::before, .syntax-help > summary::before {
+  content: ""; flex: none; width: .45em; height: .45em; margin: 0 12px 0 2px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+.announcement-form details.optional[open] > summary::before, .syntax-help[open] > summary::before {
+  transform: rotate(45deg); }
+.announcement-form details.optional > summary::-webkit-details-marker,
+.syntax-help > summary::-webkit-details-marker { display: none; }
+
+/* Ids and codes (student ids, Tags, import codes): never broken inside the
+   token. A list of them still wraps between ids. */
+.id { white-space: nowrap; overflow-wrap: normal; word-break: keep-all; }
+/* A chip breaks between words, and inside one only when the word alone is
+   wider than the line (was `anywhere`, which let a table squeeze a chip
+   into a broken id). */
+.chip { overflow-wrap: break-word; }
+
+/* Help and meta lines read at a comfortable measure on a wide page: 60ch,
+   as the empty state's sentence (#127). */
+p.muted, .muted p { max-width: 60ch; }
+
+/* An upload problem's fix, on its own line under the problem (#140). */
+.fix { display: block; margin-top: var(--space-xs); color: var(--muted); font-size: .875rem; }
+.fix strong { color: var(--ink); font-weight: 600; }

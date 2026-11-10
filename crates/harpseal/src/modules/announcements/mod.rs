@@ -86,6 +86,7 @@ mod page_detail;
 mod page_editor;
 mod page_form;
 mod page_list;
+mod page_more;
 mod page_notice;
 mod page_pick;
 mod page_review;

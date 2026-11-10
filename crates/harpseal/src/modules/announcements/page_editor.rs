@@ -113,6 +113,43 @@ pub(crate) const EDITOR: &[E] = &[
     ),
     E::new("announcements.editor.preview", "th", "ตัวอย่างในมินิแอป"),
     E::new("announcements.editor.preview", "en", "In the Mini App"),
+    // #140: the names of the form's disclosures.
+    E::new("announcements.editor.help_summary", "th", "วิธีจัดรูปแบบข้อความ"),
+    E::new(
+        "announcements.editor.help_summary",
+        "en",
+        "How to format the text",
+    ),
+    E::new(
+        "announcements.editor.images_summary",
+        "th",
+        "รูปภาพ (ไม่บังคับ)",
+    ),
+    E::new(
+        "announcements.editor.images_summary",
+        "en",
+        "Images (optional)",
+    ),
+    E::new(
+        "announcements.editor.pdfs_summary",
+        "th",
+        "ไฟล์ PDF แนบ (ไม่บังคับ)",
+    ),
+    E::new(
+        "announcements.editor.pdfs_summary",
+        "en",
+        "PDF attachments (optional)",
+    ),
+    E::new(
+        "announcements.editor.more_summary",
+        "th",
+        "วันหมดอายุและการขอให้กดรับทราบ (ไม่บังคับ)",
+    ),
+    E::new(
+        "announcements.editor.more_summary",
+        "en",
+        "Expiry and acknowledgement (optional)",
+    ),
 ];
 
 /// Inserts the syntax around the selection (lists: before each selected
@@ -219,9 +256,15 @@ pub(super) fn toolbar(v: &View<'_>, id: &str) -> Markup {
     }
 }
 
-/// The help line under a body.
+/// The syntax help under a body, folded (#140): the toolbar does the same
+/// without it, so it opens only when asked.
 pub(super) fn help(v: &View<'_>) -> Markup {
-    html! { p class="muted" { (v.t("announcements.editor.help")) } }
+    html! {
+        details class="syntax-help" {
+            summary { (v.t("announcements.editor.help_summary")) }
+            p class="muted" { (v.t("announcements.editor.help")) }
+        }
+    }
 }
 
 /// The toolbar script, once per page.
