@@ -208,3 +208,35 @@ async fn missing_data_filters_the_selection() {
         "{counted}"
     );
 }
+
+#[tokio::test]
+async fn the_count_and_buttons_sit_in_a_dock_after_the_last_row() {
+    let (h, app) = boot().await;
+    let (b, _) = signed_in(&h, &app, "Everything").await;
+    let page = b.get("/admin/students").await.body;
+    let at = |s: &str| page.find(s).unwrap_or_else(|| panic!("{s}"));
+    // Inside the form, after the table: it never covers the last row.
+    assert!(at("id=\"bulk\"") < at("</table>"));
+    assert!(at("</table>") < at("class=\"bulk-dock\""));
+    assert!(at("class=\"bulk-dock\"") < at("id=\"bulk-count\""));
+    assert!(at("id=\"bulk-count\"") < at("value=\"tag_add\""));
+    let form_end = at("id=\"bulk\"") + page[at("id=\"bulk\"")..].find("</form>").expect("end");
+    assert!(at("value=\"announce\"") < form_end);
+    // The checkbox's label fills its cell.
+    assert!(page.contains("td class=\"pick\""));
+    // No JS: the stylesheet sticks the dock once a box is ticked, and the
+    // search stops sticking on phones.
+    let css = harpseal::ui::CSS;
+    assert!(css.contains("form.bulk:has(input[name=\"student\"]:checked"));
+    assert!(css.contains(".search { position: static; }"));
+    // One live region, refreshed by one HTMX post.
+    assert_eq!(page.matches("id=\"bulk-count\"").count(), 1);
+    assert_eq!(
+        page.matches("hx-post=\"/admin/students/bulk/count\"")
+            .count(),
+        1
+    );
+    // The keyboard skips the rows to reach the buttons.
+    assert!(at("href=\"#bulk-dock\"") < at("</table>"));
+    assert!(page.contains("id=\"bulk-dock\""));
+}
