@@ -136,6 +136,24 @@ pub(crate) fn stale(a: &Audience, roster: &RosterConfig) -> Vec<(String, String)
     out
 }
 
+/// Ranges of `a` (#156) on an attribute `[roster]` no longer has as a
+/// number (gone, or no longer `integer` or `number`): shown and refused as
+/// [`stale`] values are, never dropped.
+pub(crate) fn stale_ranges<'a>(
+    a: &'a Audience,
+    roster: &RosterConfig,
+) -> Vec<(&'a String, &'a crate::audience::Range)> {
+    a.ranges
+        .iter()
+        .filter(|(k, _)| {
+            !roster
+                .attributes
+                .get(*k)
+                .is_some_and(|s| s.kind.is_numeric())
+        })
+        .collect()
+}
+
 fn after(name: &str, scope: &str, a: &Audience) -> serde_json::Value {
     json!({ "name": name, "scope": scope, "audience": a.audit_json() })
 }

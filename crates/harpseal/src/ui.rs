@@ -60,7 +60,8 @@ pub use thai::{
 /// the states, rhythm and wrapping of `ui_states.css` (#131), and the
 /// roster preview's figures and lists of `ui_roster.css` (#134), and the
 /// editor's disclosures, unbroken ids and help width of `ui_distill.css`
-/// (#140), and the Student picker of `ui_picker.css` (#146).
+/// (#140; the Audience fieldset's parts and typed filters, #156), and the
+/// Student picker of `ui_picker.css` (#146).
 pub const CSS: &str = concat!(
     include_str!("ui.css"),
     include_str!("ui_shell.css"),
@@ -73,7 +74,7 @@ pub const CSS: &str = concat!(
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=25";
+const CSS_HREF: &str = "/static/app.css?v=26";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).

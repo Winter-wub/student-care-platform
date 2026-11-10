@@ -59,3 +59,16 @@ p.muted, .muted p { max-width: 60ch; }
 .saved-edit { margin-top: var(--space-sm); }
 .saved-edit > summary { font-weight: 600; color: var(--brand-text); }
 .saved-edit form { margin-top: var(--space-md); }
+
+/* Audience fieldset (#156): a choice's part is hidden until it is chosen
+   (by script; without it every part shows); a small whole-number list
+   (a year) is one wrapping row of checkboxes; a range's "ตั้งแต่" and
+   "ถึง" boxes sit side by side even at 360 px, its help under them. */
+.scope-part[hidden] { display: none; }
+.check-row { display: flex; flex-wrap: wrap; column-gap: var(--space-lg); }
+.announcement-form fieldset.range { border: 0; padding: 0; margin: 0 0 var(--space-sm); }
+.announcement-form fieldset.range legend { padding: 0; margin-bottom: var(--space-xs); font-weight: 600; }
+.announcement-form fieldset.range .row2 { grid-template-columns: 1fr 1fr; max-width: 28rem; }
+.announcement-form fieldset.range .row2 .field { margin-bottom: 0; }
+.announcement-form fieldset.range .row2 label { font-weight: 400; }
+.announcement-form fieldset.range .muted { margin: var(--space-xs) 0 var(--gutter); }

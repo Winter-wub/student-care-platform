@@ -79,6 +79,7 @@ mod files_serve;
 mod files_sniff;
 mod files_stage;
 mod form;
+mod form_attrs;
 mod form_images;
 mod form_pdfs;
 mod form_scope;
@@ -108,6 +109,7 @@ mod store;
 mod student;
 mod sweep;
 mod texts;
+mod texts_audience;
 mod texts_review;
 mod texts_saved;
 mod view;
@@ -201,6 +203,7 @@ impl Module for Announcements {
         .messages(texts::FORM)
         .messages(texts_review::REVIEW)
         .messages(texts_saved::SAVED)
+        .messages(texts_audience::AUDIENCE)
         .messages(page_editor::EDITOR)
         .messages(form_images::TEXTS)
         .messages(form_pdfs::TEXTS)

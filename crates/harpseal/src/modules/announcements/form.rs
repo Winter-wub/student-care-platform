@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use super::service::Draft;
 use super::store::{Row, Texts};
 use super::view::{end_of_day, input_date, input_datetime, local_datetime};
-use crate::audience::{Audience, MAX_STUDENTS, parse_student_ids};
+use crate::audience::{Audience, MAX_STUDENTS, Range, RangeError, parse_student_ids};
 use crate::config::{AttributeType, RosterConfig};
 
 /// Longest title and body, in characters.
@@ -27,6 +27,9 @@ pub(crate) struct Fields {
     pub(crate) send_at: String,
     /// `attr.<key>` values (checkboxes, or one comma-separated text).
     pub(crate) attrs: BTreeMap<String, Vec<String>>,
+    /// `attr_min.<key>` and `attr_max.<key>` as typed (#156): a numeric
+    /// attribute's bounds.
+    pub(crate) ranges: BTreeMap<String, (String, String)>,
     pub(crate) tags: String,
     /// Hand-picked student ids as typed (newline, comma or space separated).
     pub(crate) students: String,
@@ -85,6 +88,10 @@ impl Fields {
                 other => {
                     if let Some(key) = other.strip_prefix("attr.") {
                         f.attrs.entry(key.to_string()).or_default().extend(split(v));
+                    } else if let Some(key) = other.strip_prefix("attr_min.") {
+                        f.ranges.entry(key.to_string()).or_default().0 = v.trim().to_string();
+                    } else if let Some(key) = other.strip_prefix("attr_max.") {
+                        f.ranges.entry(key.to_string()).or_default().1 = v.trim().to_string();
                     }
                 }
             }
@@ -100,7 +107,7 @@ impl Fields {
         let get = |l: &str| texts.0.get(l).cloned().unwrap_or_default();
         let (title_th, body_th) = get("th");
         let (title_en, body_en) = get("en");
-        Fields {
+        let mut f = Fields {
             title_th,
             body_th,
             title_en,
@@ -120,15 +127,31 @@ impl Fields {
                 .send_at
                 .map(|t| input_datetime(t, offset))
                 .unwrap_or_default(),
-            attrs: row.audience.attributes.clone(),
-            tags: row.audience.tags.join(", "),
-            students: row.audience.students.join("\n"),
-            unreachable: row.audience.include_unreachable,
-            scope: scope_of(&row.audience).into(),
             notify: false,
             version: Some(row.version),
             submit: String::new(),
-        }
+            ..Fields::default()
+        };
+        f.set_audience(&row.audience);
+        f
+    }
+
+    /// The Audience fields set to `a`'s rules, and the choice it reads as
+    /// ([`scope_of`]).
+    pub(crate) fn set_audience(&mut self, a: &Audience) {
+        self.attrs = a.attributes.clone();
+        self.ranges = a
+            .ranges
+            .iter()
+            .map(|(k, r)| {
+                let b = |x: &Option<String>| x.clone().unwrap_or_default();
+                (k.clone(), (b(&r.min), b(&r.max)))
+            })
+            .collect();
+        self.tags = a.tags.join(", ");
+        self.students = a.students.join("\n");
+        self.unreachable = a.include_unreachable;
+        self.scope = scope_of(a).into();
     }
 
     /// The Audience the form describes (unchecked). The choice keeps only
@@ -152,6 +175,12 @@ impl Fields {
                 .filter(|(_, v)| !v.is_empty())
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
+            a.ranges = self
+                .ranges
+                .iter()
+                .map(|(k, (lo, hi))| (k.clone(), Range::new(lo, hi)))
+                .filter(|(_, r)| !r.is_empty())
+                .collect();
             a.tags = split(&self.tags).collect();
         }
         if list {
@@ -163,7 +192,12 @@ impl Fields {
     /// Groups and a list together, with no choice made: an Audience saved
     /// before #120 (see [`scope_of`]).
     pub(crate) fn combined(&self) -> bool {
-        let groups = self.attrs.values().any(|v| !v.is_empty()) || !self.tags.trim().is_empty();
+        let ranged = self
+            .ranges
+            .values()
+            .any(|(lo, hi)| !lo.is_empty() || !hi.is_empty());
+        let groups =
+            self.attrs.values().any(|v| !v.is_empty()) || ranged || !self.tags.trim().is_empty();
         self.scope.is_empty() && groups && !self.students.trim().is_empty()
     }
 
@@ -173,7 +207,7 @@ impl Fields {
     /// filters (an older page) keeps its filters.
     pub(crate) fn scope_problem(&self) -> Option<&'static str> {
         let a = self.audience();
-        let groups = !a.attributes.is_empty() || !a.tags.is_empty();
+        let groups = a.has_groups();
         match self.scope.as_str() {
             "everyone" => None,
             "groups" if !groups => Some("announcements.form.groups_empty"),
@@ -279,9 +313,28 @@ impl Fields {
                 errors.push(("audience", "announcements.form.bad_audience"));
             }
         }
+        // #156: a range on a numeric attribute, with bounds that are
+        // numbers, the lower not above the upper.
+        let before = errors.len();
+        for (key, range) in &audience.ranges {
+            let numeric = roster
+                .attributes
+                .get(key)
+                .is_some_and(|s| s.kind.is_numeric());
+            if !numeric {
+                errors.push(("audience", "announcements.form.bad_audience"));
+            } else if let Err(e) = range.bounds() {
+                let why = match e {
+                    RangeError::Reversed => "announcements.form.range_reversed",
+                    _ => "announcements.form.range_not_number",
+                };
+                errors.push(("audience", why));
+            }
+        }
+        let ranged = errors.len() > before;
         if audience.students.len() > MAX_STUDENTS {
             errors.push(("audience", "announcements.form.students_too_many"));
-        } else if audience.check(roster).is_err() {
+        } else if !ranged && audience.check(roster).is_err() {
             errors.push(("audience", "announcements.form.bad_audience"));
         }
         unique(errors)
@@ -290,15 +343,14 @@ impl Fields {
 
 /// Whether `a` reaches every linked Student: no attribute, Tag or list.
 pub(crate) fn is_everyone(a: &Audience) -> bool {
-    a.attributes.is_empty() && a.tags.is_empty() && a.students.is_empty()
+    !a.has_groups() && a.students.is_empty()
 }
 
 /// The choice a stored Audience reads as on its edit form. An Audience
 /// saved before #120 with groups AND a list matches no single choice:
 /// none (`""`), which keeps both filters when saved again.
 pub(crate) fn scope_of(a: &Audience) -> &'static str {
-    let groups = !a.attributes.is_empty() || !a.tags.is_empty();
-    match (groups, a.students.is_empty()) {
+    match (a.has_groups(), a.students.is_empty()) {
         (false, true) => "everyone",
         (false, false) => "students",
         (true, true) => "groups",

@@ -82,7 +82,11 @@ async fn a_hand_picked_list_with_unreachable_round_trips() {
     }
     // The pick is said in the live region too, out of band.
     assert!(used.body.contains(r#"id="saved-status""#), "{}", used.body);
-    assert!(used.body.contains(r#"hx-swap-oob="true""#), "{}", used.body);
+    assert!(
+        used.body.contains(r#"hx-swap-oob="innerHTML""#),
+        "{}",
+        used.body
+    );
 }
 
 #[tokio::test]

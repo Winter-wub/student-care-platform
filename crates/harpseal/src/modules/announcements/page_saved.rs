@@ -58,7 +58,7 @@ if(f)f.focus();});})();"#;
 pub(super) fn status(text: &str, oob: bool) -> Markup {
     html! {
         div id="saved-status" class="visually-hidden" role="status" aria-live="polite"
-            hx-swap-oob=[oob.then_some("true")] { (text) }
+            hx-swap-oob=[oob.then_some("innerHTML")] { (text) }
     }
 }
 
@@ -115,11 +115,21 @@ pub(super) fn stale(v: &View<'_>, f: &Fields) -> Markup {
     if matches!(f.scope.as_str(), "everyone" | "students") {
         return html! {};
     }
-    let mut a = Audience::everyone();
-    a.attributes = f.attrs.clone();
+    let a = f.audience();
     let gone = saved::stale(&a, &v.s.config.roster);
+    let ranges = saved::stale_ranges(&a, &v.s.config.roster);
+    let bound = |side: &str, key: &str, value: &Option<String>, text: &str| {
+        html! {
+            @if let Some(x) = value {
+                label class="check" {
+                    input type="checkbox" name=(format!("attr_{side}.{key}")) value=(x) checked;
+                    " " (label_of(v, key)) ": " (v.t(text)) " " (x)
+                }
+            }
+        }
+    };
     html! {
-        @if !gone.is_empty() {
+        @if !gone.is_empty() || !ranges.is_empty() {
             div id="stale-values" class="note warn-note" role="note" {
                 p { (v.t("announcements.saved.stale")) }
                 @for (key, value) in &gone {
@@ -127,6 +137,10 @@ pub(super) fn stale(v: &View<'_>, f: &Fields) -> Markup {
                         input type="checkbox" name=(format!("attr.{key}")) value=(value) checked;
                         " " (label_of(v, key)) ": " (value)
                     }
+                }
+                @for (key, r) in &ranges {
+                    (bound("min", key, &r.min, "announcements.form.range_min"))
+                    (bound("max", key, &r.max, "announcements.form.range_max"))
                 }
             }
         }
@@ -174,11 +188,8 @@ pub(super) async fn picker(State(s): State<AppState>, staff: CurrentStaff) -> Re
 
 /// The form's Audience fields set to the saved rules.
 fn apply(f: &mut Fields, scope: &str, a: &Audience) {
+    f.set_audience(a);
     f.scope = scope.to_string();
-    f.attrs = a.attributes.clone();
-    f.tags = a.tags.join(", ");
-    f.students = a.students.join("\n");
-    f.unreachable = a.include_unreachable;
 }
 
 /// Fills `f` from the saved Audience `id` (`""`: none chosen) and returns
@@ -234,7 +245,7 @@ pub(super) async fn use_saved(
         Err(e) => return v.error(&e),
     };
     let shown = html! {
-        (super::page_audience::fieldset_noted(&v, &f, &[], note(&said.0, said.1)))
+        (super::page_audience::fieldset_noted(&v, &f, &[], note(&said.0, said.1), true))
         (status(&said.0, true))
     };
     Html(shown.into_string()).into_response()
@@ -265,7 +276,7 @@ pub(super) async fn save(
         return refuse("announcements.form.scope_required");
     }
     let a = f.audience();
-    if !saved::stale(&a, roster).is_empty() {
+    if !saved::stale(&a, roster).is_empty() || !saved::stale_ranges(&a, roster).is_empty() {
         return refuse("announcements.saved.stale");
     }
     if let Some((_, key)) = f.audience_errors(roster).first() {

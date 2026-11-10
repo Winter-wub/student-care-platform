@@ -253,11 +253,15 @@ fn summary(
                 @if is_everyone(a) {
                     (v.t("announcements.review.everyone"))
                 } @else {
-                    @if !a.attributes.is_empty() || !a.tags.is_empty() {
+                    @if a.has_groups() {
                         (v.t("announcements.review.groups"))
                         @if !a.students.is_empty() { " · " }
                     }
                     @if !a.students.is_empty() { (n("announcements.review.picked", a.students.len())) }
+                    // #156: which groups, ranges in words.
+                    @if a.has_groups() {
+                        div class="muted" data-rules { (super::page_list::audience_summary(v, a)) }
+                    }
                 }
             }
             dt { (v.t("announcements.review.count")) }

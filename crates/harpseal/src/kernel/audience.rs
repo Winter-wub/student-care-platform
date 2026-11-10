@@ -6,6 +6,8 @@
 //! - **attributes**: for each key (one of `[roster.attributes]`), any of
 //!   the listed values (OR), compared as text with the stored JSON value
 //!   (`2`, `3.5`, `MSC`);
+//! - **ranges** (#156): for each numeric key, a value within inclusive
+//!   bounds ([`Range`]); a missing or non-numeric value never matches;
 //! - **tags**: the Student holds any of the listed Tags (by name, roster
 //!   or manual);
 //! - **hand-picked Students**: [`Audience::students`], student codes (the
@@ -31,6 +33,10 @@ use crate::message::Locale;
 use crate::port_types::{Rows, Statement};
 use crate::{Deployment, Error, Result};
 
+mod range;
+
+pub use range::{Range, RangeError};
+
 /// Most Tags in one Audience.
 pub const MAX_TAGS: usize = 20;
 /// Most attribute values (over every key) in one Audience.
@@ -45,6 +51,10 @@ pub struct Audience {
     /// Attribute key → accepted values (any of). Empty: no attribute filter.
     #[serde(default)]
     pub attributes: BTreeMap<String, Vec<String>>,
+    /// Numeric attribute key → inclusive bounds (#156). Empty: no range.
+    /// Absent from rows stored before #156, which load unchanged.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ranges: BTreeMap<String, Range>,
     /// Tag names (any of). Empty: no Tag filter.
     #[serde(default)]
     pub tags: Vec<String>,
@@ -75,6 +85,7 @@ impl Audience {
                 return Err(Error::Invalid(format!("empty value for `{key}`")));
             }
         }
+        range::check(&self.ranges, roster)?;
         let values: usize = self.attributes.values().map(Vec::len).sum();
         if values > MAX_VALUES {
             return Err(Error::Invalid(format!("more than {MAX_VALUES} values")));
@@ -88,6 +99,12 @@ impl Audience {
             )));
         }
         Ok(())
+    }
+
+    /// Whether any group filter is set: an attribute, a range or a Tag
+    /// (not the hand-picked list).
+    pub fn has_groups(&self) -> bool {
+        !self.attributes.is_empty() || !self.ranges.is_empty() || !self.tags.is_empty()
     }
 
     /// The Audience as an audit row records it: the hand-picked list is
@@ -199,6 +216,9 @@ pub fn statement(a: &Audience, roster: &RosterConfig) -> Result<Statement> {
         ));
         params.push(format!("$.\"{key}\""));
         params.extend(values.iter().map(|v| v.trim().to_string()));
+    }
+    for (key, r) in &a.ranges {
+        range::push_sql(key, r, &mut sql, &mut params);
     }
     if !a.tags.is_empty() {
         sql.push_str(&format!(

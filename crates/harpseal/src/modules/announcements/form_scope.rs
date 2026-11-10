@@ -1,15 +1,33 @@
 //! The explicit Audience choice on the form (#120): ทุกคน / เลือกกลุ่ม /
-//! เลือกรายคน, none preselected on a new announcement. Without JS every
-//! filter stays visible; the server reads the choice
-//! ([`super::form::Fields::scope_problem`]).
+//! เลือกรายคน, none preselected on a new announcement. Each choice shows
+//! only its own fields (#156, [`SCRIPT`]); without JS every filter stays
+//! visible. The server reads the choice either way
+//! ([`super::form::Fields::scope_problem`]) and drops the filters of the
+//! other choices.
 
 use maud::{Markup, html};
 
 use super::form::Fields;
 use super::view::View;
-use crate::config::AttributeType;
 
-const CHOICES: [&str; 3] = ["everyone", "groups", "students"];
+pub(super) const CHOICES: [&str; 3] = ["everyone", "groups", "students"];
+
+/// Shows the parts (`[data-scope-for]`) of the checked choice and hides
+/// the others, on a change of choice and whenever HTMX swaps the fieldset
+/// in. No choice: neither part; a combined Audience (the note): both.
+pub(super) const SCRIPT: &str = r#"(function(){if(window.hsScope)return;window.hsScope=1;
+function apply(fs){if(!fs)return;var c=fs.querySelector('input[name=scope]:checked');var all=!c&&fs.querySelector('.scope [role=note]');
+fs.querySelectorAll('[data-scope-for]').forEach(function(p){p.hidden=all?false:!(c&&c.value===p.getAttribute('data-scope-for'));});}
+document.addEventListener('change',function(e){var t=e.target;if(t&&t.name==='scope')apply(t.closest('#audience'));});
+document.addEventListener('htmx:load',function(e){var r=e.detail.elt;if(!r||!r.querySelector)return;apply(r.id==='audience'?r:r.querySelector('#audience'));});
+var go=function(){apply(document.getElementById('audience'));};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',go);else go();})();"#;
+
+/// Whether the part for `part` starts hidden: only in an HTMX answer
+/// (`scripted`, so [`SCRIPT`] runs) with another choice made.
+pub(super) fn hidden(f: &Fields, part: &str, scripted: bool) -> bool {
+    scripted && CHOICES.contains(&f.scope.as_str()) && f.scope != part
+}
 
 /// A combined Audience (groups AND a list, saved before #120) has no
 /// choice made and no `required`: saved as it is, it keeps both filters;
@@ -100,37 +118,4 @@ pub(super) fn described(errors: &[(&str, &str)], field: &str) -> Option<String> 
         .iter()
         .any(|(f, _)| *f == field)
         .then(|| format!("err-{field}"))
-}
-
-/// The Audience's attribute filters (#129, moved from the form): every
-/// attribute labelled, a list of values as a fieldset with a legend.
-pub(super) fn attributes(v: &View<'_>, f: &Fields) -> Markup {
-    let roster = &v.s.config.roster;
-    html! {
-        // Each attribute is labelled (#129): a list of values is
-        // a fieldset with a legend, a typed one a label tied to
-        // its input.
-        @for (key, spec) in roster.attributes_in_order() {
-            @let chosen = f.attrs.get(key).cloned().unwrap_or_default();
-            @let label = spec.label_in(key, &v.staff.locale, &v.s.config.default_locale);
-            @if spec.kind == AttributeType::Enum {
-                fieldset class="checks" {
-                    legend { (label) }
-                    @for value in &spec.values {
-                        label class="check" {
-                            input type="checkbox" name=(format!("attr.{key}")) value=(value)
-                                checked[chosen.contains(value)];
-                            " " (spec.value_label(value, &v.staff.locale, &v.s.config.default_locale))
-                        }
-                    }
-                }
-            } @else {
-                div class="field" {
-                    label for=(format!("attr-{key}")) { (label) }
-                    input id=(format!("attr-{key}")) name=(format!("attr.{key}")) value=(chosen.join(", "))
-                        placeholder=(v.t("announcements.form.any_of"));
-                }
-            }
-        }
-    }
 }

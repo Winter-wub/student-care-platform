@@ -50,7 +50,7 @@ pub(super) async fn page(
 
 /// A short description of an Audience, in the words Staff read: each
 /// attribute by its label ("ชั้นปี: 1", not `year: 1`) and each value by
-/// its label (#125).
+/// its label (#125), a range in words (#156).
 pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
     let mut parts: Vec<String> = a
         .attributes
@@ -66,6 +66,11 @@ pub(crate) fn audience_summary(v: &View<'_>, a: &Audience) -> String {
             format!("{name}: {}", shown.join(" / "))
         })
         .collect();
+    // #156: "เกรดเฉลี่ย: ตั้งแต่ 3.00 ถึง 4.00".
+    parts.extend(a.ranges.iter().map(|(k, r)| {
+        let name = super::page_saved::label_of(v, k);
+        format!("{name}: {}", super::form_attrs::range_text(v, r))
+    }));
     if !a.tags.is_empty() {
         parts.push(format!(
             "{}: {}",

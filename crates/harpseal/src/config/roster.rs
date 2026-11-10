@@ -221,6 +221,13 @@ pub enum AttributeType {
     Enum,
 }
 
+impl AttributeType {
+    /// `integer` or `number`: the types an Audience range (#156) takes.
+    pub fn is_numeric(self) -> bool {
+        matches!(self, Self::Integer | Self::Number)
+    }
+}
+
 /// Why a value does not fit its [`AttributeSpec`]. [`AttrError::key`] is
 /// the catalog key of the message shown to Staff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
