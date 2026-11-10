@@ -1,7 +1,9 @@
 //! The bulk form of the Students list (#145): a checkbox per row, the
 //! choice of rows (ticked, this page, everything matching the search), the
 //! count, and one button per action the Staff member's Permissions allow.
-//! It works as a plain form; HTMX only refreshes the count.
+//! It works as a plain form; HTMX only refreshes the count. The count and
+//! the buttons sit in a dock under the table that stays in view once a
+//! row is ticked (#155).
 
 use maud::{Markup, html};
 
@@ -31,8 +33,9 @@ pub(super) fn hidden(v: &View<'_>, query: &str, missing: bool, page: i64) -> Mar
     }
 }
 
-/// The bar above the table: which rows, the count, the Tag name and the
-/// action buttons. `on_page`: rows on this page; `total`: rows matching.
+/// The bar above the table: which rows and the Tag name. The count and
+/// the buttons are in the [`dock`] below the table. `on_page`: rows on
+/// this page; `total`: rows matching.
 pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) -> Markup {
     let n = |k: &str, n: String| v.t(k).replace("{n}", &n);
     let tags = actions
@@ -67,15 +70,26 @@ pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) 
                     }
                 }
             }
-            div hx-post=(COUNT_PATH) hx-trigger="change from:closest form"
-                hx-include="closest form" hx-target="#bulk-count" hx-swap="innerHTML" {
-                (count_line(v))
-            }
             @if tags {
                 div class="field bulk-tag" {
                     label for="bulk-tag" { (v.t("kernel.students.bulk_tag")) }
                     input id="bulk-tag" name="tag" maxlength="64" autocomplete="off";
                 }
+            }
+        }
+    }
+}
+
+/// The dock below the table (#155): the count and one button per action.
+/// It sits after the last row, so it never covers it; once a row is
+/// ticked (or a whole page or search is chosen) the stylesheet keeps it
+/// at the bottom of the window (`position: sticky`, `:has()`), no JS.
+pub(super) fn dock(v: &View<'_>, actions: &[Action]) -> Markup {
+    html! {
+        div class="bulk-dock" role="group" aria-labelledby="bulk-title" {
+            div class="bulk-dock-count" hx-post=(COUNT_PATH) hx-trigger="change from:closest form"
+                hx-include="closest form" hx-target="#bulk-count" hx-swap="innerHTML" {
+                (count_line(v))
             }
             div class="actions bulk-actions" {
                 @for a in actions {
@@ -88,7 +102,8 @@ pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) 
     }
 }
 
-/// The checkbox cell of a row.
+/// The checkbox cell of a row. The label fills the cell, so the target is
+/// the whole 48 px cell, not the 20 px box (#155).
 pub(super) fn pick(v: &View<'_>, id: &str, name: &str) -> Markup {
     html! {
         td class="pick" data-label=(v.t("kernel.students.bulk_col")) {

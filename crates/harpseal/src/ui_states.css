@@ -124,3 +124,48 @@ form.inline :is(button, .btn) { white-space: nowrap; }
 table.rows :is(th, td).pick { width: 3.5rem; }
 .bulk-review .codes { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .bulk-review .codes-title { font-size: var(--step-title); }
+
+/* #155 Students list: the dock, the checkbox target, phone rows.
+   The dock (count and buttons) follows the last row, so it never covers
+   it; once a row is ticked, or a whole page or search is chosen, it sticks
+   to the bottom of the window. Flat: Paper with a brand top rule, no lift.
+   No JS: `:has()` reads the form's own boxes. */
+.bulk-dock { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--gutter);
+  margin-top: var(--space-md); padding: var(--space-md) var(--gutter);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+.bulk-dock-count { flex: 1 1 14rem; min-width: 0; }
+.bulk-dock .bulk-count { margin: 0; }
+.bulk-dock .actions { margin: 0; gap: var(--space-sm); }
+form.bulk:has(input[name="student"]:checked, input[name="which"]:not([value="picked"]):checked) .bulk-dock {
+  position: sticky; bottom: 0; z-index: 2; border-color: var(--field-edge); border-top: 2px solid var(--brand);
+  border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+  padding-bottom: max(var(--space-md), env(safe-area-inset-bottom)); }
+/* A field focused under the stuck dock scrolls clear of it. */
+:root:has(form.bulk :is(input[name="student"], input[name="which"]:not([value="picked"])):checked) {
+  scroll-padding-bottom: 11rem; }
+/* The whole cell is the checkbox's label: at least 48 x 48 px. */
+table.rows td.pick { padding: 0; }
+table.rows td.pick label.check { justify-content: center; min-width: var(--tap); min-height: var(--tap); width: 100%; cursor: pointer; }
+/* Stacked rows: the checkbox moves to the card's top corner instead of
+   taking a captioned line; the name keeps clear of it. */
+@container (max-width: 859.98px) {
+  table.rows tr:has(> td.pick) { position: relative; }
+  table.rows td.pick { position: absolute; top: 0; right: 0; padding: 0; width: auto; }
+  table.rows td.pick::before { content: none; }
+  table.rows td.pick + td { padding-right: var(--tap); }
+}
+/* Phones (#155): the search card scrolls with the page instead of
+   covering rows, and stacked rows are tighter: a 6.5rem caption column,
+   less padding per line, 8 px between cards. The bar's buttons share the
+   width two by two. */
+@container (max-width: 599.98px) {
+  .search { position: static; }
+  table.rows tr { padding: var(--space-xs) var(--space-md); margin-bottom: var(--space-sm); }
+  table.rows td { padding-top: 2px; padding-bottom: 2px; padding-left: calc(6.5rem + var(--space-sm)); }
+  table.rows td::before { width: 6.5rem; margin-left: calc(-6.5rem - var(--space-sm)); }
+  table.rows td.pick { padding: 0; }
+  table.rows td.pick + td { padding-right: var(--tap); }
+  .bulk-dock { padding: var(--space-sm) var(--space-md); }
+  .bulk-dock .actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .bulk-dock .actions button { padding: 0 var(--space-sm); }
+}

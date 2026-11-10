@@ -3,7 +3,8 @@
 //! and a badge on each of them. An HTMX request (the search box, `hx-get` on input) gets only the
 //! `#student-results` fragment. Cards below 900 px, a table from 900 px
 //! (`table.rows`). Staff with a bulk action get a checkbox per row and the
-//! bulk bar ([`super::list_bulk`], #145).
+//! bulk bar above the table and its dock below it ([`super::list_bulk`],
+//! #145, #155).
 
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -162,6 +163,7 @@ fn results(v: &View<'_>, query: &str, missing: bool, found: &Found) -> Markup {
                         (list_bulk::hidden(v, query, missing, page))
                         (list_bulk::bar(v, &bulk, rows.len(), total))
                         (table)
+                        (list_bulk::dock(v, &bulk))
                     }
                 }
             }
