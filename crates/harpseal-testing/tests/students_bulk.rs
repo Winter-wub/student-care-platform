@@ -228,5 +228,15 @@ async fn the_count_and_buttons_sit_in_a_dock_after_the_last_row() {
     // search stops sticking on phones.
     let css = harpseal::ui::CSS;
     assert!(css.contains("form.bulk:has(input[name=\"student\"]:checked"));
-    assert!(css.contains("@container (max-width: 599.98px) {\n  .search { position: static; }"));
+    assert!(css.contains(".search { position: static; }"));
+    // One live region, refreshed by one HTMX post.
+    assert_eq!(page.matches("id=\"bulk-count\"").count(), 1);
+    assert_eq!(
+        page.matches("hx-post=\"/admin/students/bulk/count\"")
+            .count(),
+        1
+    );
+    // The keyboard skips the rows to reach the buttons.
+    assert!(at("href=\"#bulk-dock\"") < at("</table>"));
+    assert!(page.contains("id=\"bulk-dock\""));
 }

@@ -149,7 +149,7 @@ table.rows td.pick label.check { justify-content: center; min-width: var(--tap);
 /* Stacked rows: the checkbox moves to the card's top corner instead of
    taking a captioned line; the name keeps clear of it. */
 @container (max-width: 859.98px) {
-  table.rows tr:has(> td.pick) { position: relative; }
+  table.rows tr { position: relative; }
   table.rows td.pick { position: absolute; top: 0; right: 0; padding: 0; width: auto; }
   table.rows td.pick::before { content: none; }
   table.rows td.pick + td { padding-right: var(--tap); }
@@ -163,9 +163,17 @@ table.rows td.pick label.check { justify-content: center; min-width: var(--tap);
   table.rows tr { padding: var(--space-xs) var(--space-md); margin-bottom: var(--space-sm); }
   table.rows td { padding-top: 2px; padding-bottom: 2px; padding-left: calc(6.5rem + var(--space-sm)); }
   table.rows td::before { width: 6.5rem; margin-left: calc(-6.5rem - var(--space-sm)); }
-  table.rows td.pick { padding: 0; }
-  table.rows td.pick + td { padding-right: var(--tap); }
   .bulk-dock { padding: var(--space-sm) var(--space-md); }
   .bulk-dock .actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .bulk-dock .actions button { padding: 0 var(--space-sm); }
+  /* The stuck dock is taller here (two rows of buttons, the hint). */
+  :root:has(form.bulk :is(input[name="student"], input[name="which"]:not([value="picked"])):checked) {
+    scroll-padding-bottom: calc(15rem + env(safe-area-inset-bottom)); }
 }
+/* A short window (a phone held sideways): the search scrolls too. */
+@media (max-height: 30rem) { .search { position: static; } }
+/* The bar's skip link to the dock: hidden until focused, so the buttons
+   are one Tab away instead of past every row. */
+.bulk-skip:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.bulk-skip:focus { display: inline-flex; align-items: center; min-height: var(--tap); margin-bottom: var(--space-sm); }

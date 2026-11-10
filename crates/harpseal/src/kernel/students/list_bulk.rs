@@ -61,6 +61,7 @@ pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) 
     html! {
         section class="card bulk-bar" aria-labelledby="bulk-title" {
             h2 id="bulk-title" { (v.t("kernel.students.bulk_title")) }
+            a class="bulk-skip" href="#bulk-dock" { (v.t("kernel.students.bulk_skip_dock")) }
             fieldset class="checks bulk-which" {
                 legend { (v.t("kernel.students.bulk_which")) }
                 @for (value, label) in &which {
@@ -86,7 +87,7 @@ pub(super) fn bar(v: &View<'_>, actions: &[Action], on_page: usize, total: i64) 
 /// at the bottom of the window (`position: sticky`, `:has()`), no JS.
 pub(super) fn dock(v: &View<'_>, actions: &[Action]) -> Markup {
     html! {
-        div class="bulk-dock" role="group" aria-labelledby="bulk-title" {
+        div id="bulk-dock" class="bulk-dock" role="group" aria-labelledby="bulk-title" {
             div class="bulk-dock-count" hx-post=(COUNT_PATH) hx-trigger="change from:closest form"
                 hx-include="closest form" hx-target="#bulk-count" hx-swap="innerHTML" {
                 (count_line(v))

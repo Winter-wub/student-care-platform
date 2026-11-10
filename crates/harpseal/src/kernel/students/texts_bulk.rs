@@ -18,6 +18,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Act on several Students"
     ),
     ("kernel.students.bulk_col", "เลือก", "Select"),
+    (
+        "kernel.students.bulk_skip_dock",
+        "ข้ามไปที่ปุ่มทำกับคนที่เลือก",
+        "Skip to the actions"
+    ),
     ("kernel.students.bulk_pick", "เลือก {name}", "Select {name}"),
     (
         "kernel.students.bulk_which",
@@ -51,8 +56,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.bulk_count_hint",
-        "ติ๊กช่องหน้าชื่อ หรือเลือกทั้งหน้า แล้วกดปุ่มด้านล่าง ระบบจะให้ตรวจจำนวนก่อนยืนยัน",
-        "Tick rows or choose a whole page, then press a button below; you check the number before you confirm"
+        "ติ๊กช่องหน้าชื่อ หรือเลือกทั้งหน้า แล้วกดปุ่มที่ต้องการ ระบบจะให้ตรวจจำนวนก่อนยืนยัน",
+        "Tick rows or choose a whole page, then press the action you want; you check the number before you confirm"
     ),
     (
         "kernel.students.bulk_tag",
