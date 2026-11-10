@@ -372,4 +372,7 @@ form.inline { display: inline-flex; margin: 0; }
 .manual-link .pick label.choice { flex: 1 1 auto; margin: 0; padding: var(--space-sm) 0; }
 .manual-link .pick .name { font-weight: 600; }
 .manual-link .pick-typed { margin: 0 0 var(--space-md); }
+.manual-link .pick-typed > summary { gap: var(--space-sm); font-weight: 600; color: var(--brand-text); }
+.manual-link .pick-typed > summary::before { content: ""; width: 8px; height: 8px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); }
+.manual-link .pick-typed[open] > summary::before { transform: rotate(45deg); }
 .manual-link .pick-typed .row2 { margin-top: var(--space-sm); }

@@ -244,7 +244,7 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.students.pick_stage_student_id",
-        "รอกรอกรหัสนักศึกษา",
+        "รอรหัสนักศึกษา",
         "Waiting for the student ID"
     ),
     (
