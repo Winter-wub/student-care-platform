@@ -32,8 +32,8 @@ use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
     Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, MAX_NOTIFY, Module,
-    ModuleRegistrar, NotifyDefer, NotifyOutcome, NotifyReport, NotifyTo, Permission, RequestCtx,
-    Result, SettingKind, Statement, Timestamp, Value, ui,
+    ModuleRegistrar, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx, Result,
+    SettingKind, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -296,7 +296,7 @@ async fn send_now(
         Ok(url) => url,
         Err(e) => return ui::service_error(&s, &staff, &e),
     };
-    let body = match remind(&s, url.as_deref(), &format!("page:{key}"), &to).await {
+    let body = match notice::remind(&s, url.as_deref(), &format!("page:{key}"), &to).await {
         Ok(r) => html! {
             h1 { (title) }
             section class="card" {
@@ -363,20 +363,6 @@ async fn announce(
         Ok(id) => Redirect::to(&format!("/admin/announcements/{id}")).into_response(),
         Err(e) => ui::service_error(&s, &staff, &e),
     }
-}
-
-/// The reminder to `to` from the page, both groups ([`notice`]).
-async fn remind(
-    s: &AppState,
-    url: Option<&str>,
-    key: &str,
-    to: &[NotifyTo],
-) -> Result<NotifyReport> {
-    let mut reports = Vec::new();
-    for (n, group) in notice::sends(&s.services, url, key, to).await? {
-        reports.push(s.notify(&n, &group).await?);
-    }
-    Ok(notice::merge(to, reports))
 }
 
 fn code(to: &NotifyTo) -> &str {

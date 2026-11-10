@@ -14,8 +14,8 @@
 //! key, so a retry still sends nobody the reminder twice.
 
 use harpseal::{
-    CatalogEntry, DEFAULT_BUDGET, Error, Locale, Message, Notice, NotifyReport, NotifyTo, Result,
-    Services, Settings, Statement, Value,
+    AppState, CatalogEntry, DEFAULT_BUDGET, Error, Locale, Message, Notice, NotifyReport, NotifyTo,
+    Result, Services, Settings, Statement, Value,
 };
 
 /// The switch: whether the reminder email links to the fees page.
@@ -198,4 +198,18 @@ pub(super) fn merge(to: &[NotifyTo], reports: Vec<NotifyReport>) -> NotifyReport
     let at = |n: &NotifyTo| to.iter().position(|t| t == n).unwrap_or(usize::MAX);
     all.students.sort_by_key(|n| at(&n.to));
     all
+}
+
+/// The reminder to `to` from the page, both groups ([`notice`]).
+pub(super) async fn remind(
+    s: &AppState,
+    url: Option<&str>,
+    key: &str,
+    to: &[NotifyTo],
+) -> Result<NotifyReport> {
+    let mut reports = Vec::new();
+    for (n, group) in sends(&s.services, url, key, to).await? {
+        reports.push(s.notify(&n, &group).await?);
+    }
+    Ok(merge(to, reports))
 }
