@@ -177,6 +177,44 @@ async fn read_only_staff_see_on_or_off_and_cannot_save() {
 }
 
 #[tokio::test]
+async fn a_stored_value_other_than_one_or_zero_reads_as_not_set() {
+    for (i, stored) in ["true", "2"].into_iter().enumerate() {
+        let (h, app) = boot().await;
+        h.db()
+            .execute(Statement::new(format!(
+                "INSERT INTO setting (key, locale, value, updated_at) \
+                 VALUES ('{OLD}', '', '{stored}', {i})"
+            )))
+            .await
+            .unwrap();
+        let read = app.deployment().settings().bool(OLD).await;
+        assert!(
+            matches!(&read, Err(harpseal::Error::SettingNotSet(k)) if k == OLD),
+            "{stored}: {read:?}"
+        );
+        let page = signed_in(&h, &app, "Clerk").await.get(PAGE).await.body;
+        assert!(
+            card(&page, OLD).contains("ไม่ผ่านการตรวจแล้ว"),
+            "{stored}: flagged"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_switch_is_named_by_its_setting() {
+    let (h, app) = boot().await;
+    let page = signed_in(&h, &app, "Clerk").await.get(PAGE).await.body;
+    let c = card(&page, LATE);
+    let card_id = "setting-dues-late_fee_on";
+    let names = format!("aria-labelledby=\"{card_id}-name {card_id}-switch\"");
+    assert!(c.contains(&names), "{c}");
+    assert!(
+        c.contains(&format!("<span id=\"{card_id}-name\">คิดค่าปรับชำระช้า</span>")),
+        "{c}"
+    );
+}
+
+#[tokio::test]
 async fn a_number_switch_stored_as_one_reads_on_without_a_migration() {
     let (h, app) = boot().await;
     // Saved while `dues.old_switch` was a 0/1 Number.

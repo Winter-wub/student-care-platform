@@ -126,7 +126,7 @@ fn card(
         .is_some_and(|(s, _, _)| spec.kind.check(s).as_deref() != Ok(s.as_str()));
     html! {
         section class="card" id=(id) {
-            h3 { (v.t(spec.label_key)) " "
+            h3 { span id=(format!("{id}-name")) { (v.t(spec.label_key)) } " "
                 @if stored.is_some() {
                     span class="chip override" { (v.t("kernel.admin.module_settings.saved_value")) }
                 } @else if current.is_none() {
@@ -150,7 +150,7 @@ fn card(
                     input type="hidden" name="version" value=(settings::version(stored.as_ref().map(|(v, _, _)| v.as_str())));
                     div class="field" {
                         @if spec.kind == SettingKind::Boolean {
-                            (switch(v, &format!("{id}-value"), shown, err.is_some() || broken))
+                            (switch(v, &id, shown, err.is_some() || broken))
                         } @else {
                             label for=(format!("{id}-value")) { (v.t("kernel.admin.module_settings.value")) }
                             (input(spec.kind, &format!("{id}-value"), shown, err.is_some() || broken))
@@ -190,14 +190,18 @@ fn permission_label(v: &View<'_>, id: &str) -> String {
 }
 
 /// A [`SettingKind::Boolean`] setting (#163): one checkbox shown as a
-/// switch. Unticked, the browser sends no `value`; [`submit`] reads that
-/// as off.
-fn switch(v: &View<'_>, id: &str, value: &str, invalid: bool) -> Markup {
+/// switch, named by the setting's label then "เปิดใช้" (`card` is the
+/// card's id; the label is its `-name`). Unticked, the browser sends no
+/// `value`; [`submit`] reads that as off.
+fn switch(v: &View<'_>, card: &str, value: &str, invalid: bool) -> Markup {
+    let id = format!("{card}-value");
+    let names = format!("{card}-name {card}-switch");
     html! {
         label class="check" for=(id) {
             input id=(id) name="value" type="checkbox" role="switch" value="1"
-                checked[value == "1"] aria-invalid=[invalid.then_some("true")];
-            (v.t("kernel.admin.module_settings.switch"))
+                aria-labelledby=(names) checked[value == "1"]
+                aria-invalid=[invalid.then_some("true")];
+            span id=(format!("{card}-switch")) { (v.t("kernel.admin.module_settings.switch")) }
         }
     }
 }

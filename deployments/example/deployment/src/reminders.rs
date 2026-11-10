@@ -1,8 +1,9 @@
 //! A customer Module that reminds chosen Students (#73): every Monday at
 //! 09:00 the Students tagged `fee_due` get a fee reminder, by chat when
 //! linked, by email otherwise ([`harpseal::JobContext::notify`]), the
-//! email linking to the fees page in LINE (#163, `reminders/notice.rs`)
-//! while the switch [`EMAIL_LINK`] is on; Staff
+//! email linking to the fees page in LINE for a Student with a LINE Link
+//! and saying how to link first for anyone else (#163,
+//! `reminders/notice.rs`); Staff
 //! can also send it now to a pasted list from `/admin/reminders`
 //! ([`harpseal::PageState::notify`]), through a review step that shows
 //! who gets it, by which channel, and the message (`reminders/review.rs`,
@@ -31,8 +32,8 @@ use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
     Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, MAX_NOTIFY, Module,
-    ModuleRegistrar, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx, Result,
-    SettingKind, Statement, Timestamp, Value, ui,
+    ModuleRegistrar, NotifyDefer, NotifyOutcome, NotifyReport, NotifyTo, Permission, RequestCtx,
+    Result, SettingKind, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -63,7 +64,7 @@ mod notice;
 mod review;
 mod schedule;
 mod texts;
-pub use notice::{EMAIL_LINK, fees_url, notice};
+pub use notice::{EMAIL_LINK, Extra, fees_url, notice};
 use notice::{FEES_PAGE, NOTICE_TH};
 use texts::TEXTS;
 
@@ -159,7 +160,11 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
         })
         .unwrap_or_default();
     let url = fees_url(&cx.settings(), cx.mini_app_url(FEES_PAGE.0, FEES_PAGE.1)).await?;
-    let r = cx.notify(&notice(key, url.as_deref()), &to).await?;
+    let mut reports = Vec::new();
+    for (n, group) in notice::sends(&cx.services, url.as_deref(), key, &to).await? {
+        reports.push(cx.notify(&n, &group).await?);
+    }
+    let r = notice::merge(&to, reports);
     let note = format!(
         "chat {}, email {}, skipped {}, deferred {}, failed {}",
         r.sent, r.emailed, r.skipped, r.deferred, r.failed
@@ -291,8 +296,7 @@ async fn send_now(
         Ok(url) => url,
         Err(e) => return ui::service_error(&s, &staff, &e),
     };
-    let reminder = notice(&format!("page:{key}"), url.as_deref());
-    let body = match s.notify(&reminder, &to).await {
+    let body = match remind(&s, url.as_deref(), &format!("page:{key}"), &to).await {
         Ok(r) => html! {
             h1 { (title) }
             section class="card" {
@@ -359,6 +363,20 @@ async fn announce(
         Ok(id) => Redirect::to(&format!("/admin/announcements/{id}")).into_response(),
         Err(e) => ui::service_error(&s, &staff, &e),
     }
+}
+
+/// The reminder to `to` from the page, both groups ([`notice`]).
+async fn remind(
+    s: &AppState,
+    url: Option<&str>,
+    key: &str,
+    to: &[NotifyTo],
+) -> Result<NotifyReport> {
+    let mut reports = Vec::new();
+    for (n, group) in notice::sends(&s.services, url, key, to).await? {
+        reports.push(s.notify(&n, &group).await?);
+    }
+    Ok(notice::merge(to, reports))
 }
 
 fn code(to: &NotifyTo) -> &str {

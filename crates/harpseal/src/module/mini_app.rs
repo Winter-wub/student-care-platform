@@ -56,8 +56,10 @@ impl Deployment {
     /// (#163): the very URL a [`crate::Button::mini_app`] to `path` opens
     /// there, built by the Channel's [`crate::MiniApp::launch_url`] (on
     /// LINE the LIFF or LINE MINI App URL, `https://liff.line.me/<id>/app/fees`;
-    /// on Telegram the Web App URL followed by `path`). `path` is passed as
-    /// a Mini App button's is, e.g. `/app/fees`.
+    /// on Telegram the Web App URL followed by `path`). `path` is a Mini
+    /// App page, `/app` or below (e.g. `/app/fees`): anything else is a
+    /// programming error (a `debug_assert!`), as only `/app` pages sign the
+    /// Student in.
     ///
     /// For a Job or a page that writes an email or a web page: a button in
     /// a chat message needs no URL. `None` when the Channel does not take
@@ -70,6 +72,7 @@ impl Deployment {
     /// browser it shows the Mini App's "open it from a button in the chat"
     /// page.
     pub fn mini_app_url(&self, kind: &str, path: &str) -> Option<String> {
+        debug_assert!(app_path(path), "not a Mini App page: {path}");
         let app = self.channel(kind)?.mini_app()?;
         Some(app.launch_url(path))
     }
@@ -78,10 +81,17 @@ impl Deployment {
     /// and has a Mini App, in registration order: for an email to a
     /// Student who may use either chat app.
     pub fn mini_app_urls(&self, path: &str) -> Vec<(ChannelKind, String)> {
+        debug_assert!(app_path(path), "not a Mini App page: {path}");
         self.channels()
             .filter_map(|c| Some((c.kind(), c.mini_app()?.launch_url(path))))
             .collect()
     }
+}
+
+/// `/app`, or a path below it (`/app/…`, `/app?…`).
+fn app_path(path: &str) -> bool {
+    path.strip_prefix("/app")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '?']))
 }
 
 impl JobContext {

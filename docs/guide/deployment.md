@@ -134,8 +134,18 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   (`https://liff.line.me/<LIFF id>/app/fees`) opens the page in LINE from
   anywhere, so it works in an email; a Telegram Web App URL works only
   inside Telegram (in a browser the page asks the Student to open it from
-  the chat), so an email should link to LINE. The example's fee reminder
-  email links to the fees page that way (`reminders.rs`).
+  the chat), so an email should link to LINE. `path` is a page under
+  `/app` (a debug build asserts it).
+- **Only to Students who linked LINE.** A notify email goes to Students
+  the chat does not reach: no live Link, or every live Link unreachable
+  (they blocked the account). The LIFF URL opens the page only for a
+  Student with a LINE Link; anyone else lands on "not linked" in a chat
+  they never joined. So put the URL only in the email of Students with a
+  live LINE Link, and tell the others how to add the Official Account and
+  link first. The example's fee reminder does both, as two Notices under
+  one key with the call's budget split between them
+  (`reminders/notice.rs`), and treats a broken stored switch
+  (`Error::SettingNotSet`) as "no link" rather than failing the send.
 
 #### Jobs
 

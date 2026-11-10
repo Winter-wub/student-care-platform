@@ -1,9 +1,22 @@
-//! The reminder itself, in Thai and English, and the link to the
-//! Student's fees page its email carries (#163): the Mini App URL of
-//! that page in LINE, built by the Core for a Job or a page, behind the
-//! switch [`EMAIL_LINK`] (a Boolean Module setting, on by default).
+//! The reminder itself, in Thai and English, and what its email adds
+//! (#163). The email goes only to Students the chat does not reach: no
+//! live Link, or every live Link unreachable (they blocked the account).
+//!
+//! - A Student with a live LINE Link gets the URL of the fees page in
+//!   LINE ([`harpseal::JobContext::mini_app_url`]): once they unblock the
+//!   account it opens their own page. Behind the switch [`EMAIL_LINK`] (a
+//!   Boolean Module setting, on by default).
+//! - Anyone else gets no URL, which would open "not linked" in a chat
+//!   they never joined, but how to add the Official Account and link
+//!   first.
+//!
+//! [`sends`] splits the Students into those two Notices under the one
+//! key, so a retry still sends nobody the reminder twice.
 
-use harpseal::{CatalogEntry, Locale, Message, Notice, Result, Settings};
+use harpseal::{
+    CatalogEntry, DEFAULT_BUDGET, Error, Locale, Message, Notice, NotifyReport, NotifyTo, Result,
+    Services, Settings, Statement, Value,
+};
 
 /// The switch: whether the reminder email links to the fees page.
 pub const EMAIL_LINK: &str = "reminders.email_link";
@@ -16,6 +29,15 @@ pub(super) const FEES_PAGE: (&str, &str) = ("line", crate::fees::student::PATH);
 pub(super) const NOTICE_TH: (&str, &str) = (
     "เตือนชำระค่าธรรมเนียม",
     "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้",
+);
+
+/// What the email says for a Student with no LINE Link.
+const LINK_FIRST: (&str, &str) = (
+    "ยังไม่ได้ผูกบัญชีนักศึกษากับแชทของมหาวิทยาลัย: เพิ่มเพื่อนบัญชี LINE ทางการของ\
+     มหาวิทยาลัยซีลเบย์ แล้วผูกบัญชีด้วยรหัสนักศึกษาในแชท จากนั้นดูยอดที่ต้องชำระได้ในแชท",
+    "Your student account is not linked to the university chat yet: add Seal Bay \
+     University's LINE Official Account, link your account in the chat with your \
+     student ID, then see what you owe there.",
 );
 
 /// The switch's label and help on `/admin/settings`.
@@ -33,27 +55,38 @@ pub(super) const TEXTS: &[CatalogEntry] = &[
     CatalogEntry::new(
         "reminders.email_link_help",
         "th",
-        "เปิดไว้ อีเมลเตือนจะมีลิงก์ให้นักศึกษาเปิดดูยอดที่ต้องชำระใน LINE",
+        "เปิดไว้ นักศึกษาที่ผูกบัญชี LINE ไว้แต่บล็อกแชทจะได้อีเมลพร้อมลิงก์เปิดดูยอดที่ต้องชำระใน LINE",
     ),
     CatalogEntry::new(
         "reminders.email_link_help",
         "en",
-        "When on, the reminder email links to the Student's fees page in LINE.",
+        "When on, Students with a LINE Link who blocked the chat get the link to their fees page in LINE by email.",
     ),
 ];
 
-/// The reminder, in Thai and English, under `key`. `fees_url` is the
-/// Mini App URL of the Student's fees page ([`fees_url`]): the email
-/// links to it; a chat message needs no URL.
-pub fn notice(key: &str, fees_url: Option<&str>) -> Notice {
+/// What the reminder email adds after the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Extra<'a> {
+    /// Nothing (the switch is off, or no LIFF app).
+    Nothing,
+    /// The fees page in LINE: for a Student with a live LINE Link.
+    FeesUrl(&'a str),
+    /// How to add the Official Account and link first: no LINE Link.
+    LinkFirst,
+}
+
+/// The reminder, in Thai and English, under `key`, its email ending with
+/// `extra`. A chat message needs no URL.
+pub fn notice(key: &str, extra: Extra<'_>) -> Notice {
     let (subject, th) = NOTICE_TH;
     let en = "Seal Bay University: please pay your tuition fee by this Friday.";
-    let mail = |text: &str, see: &str| match fees_url {
-        Some(url) => format!("{text}\n\n{see}: {url}"),
-        None => text.to_string(),
+    let mail = |text: &str, see: &str, first: &str| match extra {
+        Extra::Nothing => text.to_string(),
+        Extra::FeesUrl(url) => format!("{text}\n\n{see}: {url}"),
+        Extra::LinkFirst => format!("{text}\n\n{first}"),
     };
-    let th_mail = mail(th, "ดูยอดที่ต้องชำระใน LINE");
-    let en_mail = mail(en, "See what you owe in LINE");
+    let th_mail = mail(th, "ดูยอดที่ต้องชำระใน LINE", LINK_FIRST.0);
+    let en_mail = mail(en, "See what you owe in LINE", LINK_FIRST.1);
     Notice::new("reminders", key)
         .locale(Locale::th(), vec![Message::text(th)], subject, th_mail)
         .locale(
@@ -66,11 +99,103 @@ pub fn notice(key: &str, fees_url: Option<&str>) -> Notice {
 
 /// `url` (from [`harpseal::JobContext::mini_app_url`] or
 /// [`harpseal::PageState::mini_app_url`] for the fees page) while the
-/// switch [`EMAIL_LINK`] is on, else `None`.
+/// switch [`EMAIL_LINK`] is on, else `None`. A saved switch that no
+/// longer passes its check (`Error::SettingNotSet`; `/admin/settings`
+/// flags it) counts as off rather than stopping the reminder; any other
+/// error (the database) is returned.
 pub async fn fees_url(settings: &Settings, url: Option<String>) -> Result<Option<String>> {
-    Ok(if settings.bool(EMAIL_LINK).await? {
-        url
-    } else {
-        None
-    })
+    match settings.bool(EMAIL_LINK).await {
+        Ok(true) => Ok(url),
+        Ok(false) | Err(Error::SettingNotSet(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The reminder's sends under `key`: the Students of `to` with a live
+/// LINE Link (`url` in their email, when given) and the rest (how to
+/// link first), each with its share of [`DEFAULT_BUDGET`] so the two
+/// calls together stay within one call's budget. Empty groups are left
+/// out. Merge the reports with [`merge`].
+pub(super) async fn sends(
+    services: &Services,
+    url: Option<&str>,
+    key: &str,
+    to: &[NotifyTo],
+) -> Result<Vec<(Notice, Vec<NotifyTo>)>> {
+    let on_line = line_linked(services, to).await?;
+    let (line, rest): (Vec<NotifyTo>, Vec<NotifyTo>) = to
+        .iter()
+        .cloned()
+        .partition(|t| matches!(t, NotifyTo::Code(c) if on_line.contains(c)));
+    // The LINE group's share, rounded down; the rest gets what is left.
+    let first = (DEFAULT_BUDGET * line.len() / to.len().max(1)).max(1);
+    let budgets = [first, DEFAULT_BUDGET.saturating_sub(first).max(1)];
+    let extra = url.map_or(Extra::Nothing, Extra::FeesUrl);
+    let groups = [(extra, line), (Extra::LinkFirst, rest)];
+    Ok(groups
+        .into_iter()
+        .zip(budgets)
+        .filter(|((_, g), _)| !g.is_empty())
+        .map(|((x, g), b)| {
+            // Alone, a group has the whole budget.
+            let b = if g.len() == to.len() {
+                DEFAULT_BUDGET
+            } else {
+                b
+            };
+            (notice(key, x).budget(b), g)
+        })
+        .collect())
+}
+
+/// The student codes of `to` with a live (active or unreachable) LINE
+/// Link.
+async fn line_linked(services: &Services, to: &[NotifyTo]) -> Result<Vec<String>> {
+    let codes: Vec<&str> = to
+        .iter()
+        .filter_map(|t| match t {
+            NotifyTo::Code(c) => Some(c.as_str()),
+            _ => None,
+        })
+        .collect();
+    if codes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let marks = vec!["?"; codes.len()].join(", ");
+    let mut q = Statement::new(format!(
+        "SELECT DISTINCT s.student_code FROM student s JOIN link l ON l.student_id = s.id \
+         WHERE l.channel = 'line' AND l.status IN ('active', 'unreachable') \
+         AND s.student_code IN ({marks})"
+    ));
+    for c in &codes {
+        q = q.bind(*c);
+    }
+    let rows = services.db.query(q).await?;
+    Ok((0..rows.len())
+        .filter_map(|i| rows.get(i, "student_code").and_then(Value::as_text))
+        .map(str::to_string)
+        .collect())
+}
+
+/// One report from the reports of [`sends`], its Students back in the
+/// order of `to`.
+pub(super) fn merge(to: &[NotifyTo], reports: Vec<NotifyReport>) -> NotifyReport {
+    let mut all = NotifyReport::default();
+    for r in reports {
+        all.sent += r.sent;
+        all.emailed += r.emailed;
+        all.skipped += r.skipped;
+        all.deferred += r.deferred;
+        all.failed += r.failed;
+        all.overtaken += r.overtaken;
+        all.students.extend(r.students);
+        for c in r.exhausted {
+            if !all.exhausted.contains(&c) {
+                all.exhausted.push(c);
+            }
+        }
+    }
+    let at = |n: &NotifyTo| to.iter().position(|t| t == n).unwrap_or(usize::MAX);
+    all.students.sort_by_key(|n| at(&n.to));
+    all
 }
