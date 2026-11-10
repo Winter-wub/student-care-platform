@@ -1,15 +1,23 @@
 //! Writing one text: the single path the Texts page (`POST
 //! /admin/texts/{key}`, save) and the public [`set_override`] share, so the
 //! two cannot drift. The public function checks the acting Staff member's
-//! `kernel.setting.edit` (the page's guard does it for the page) and
-//! audits the write as `setting.update` by that Staff member.
+//! `kernel.texts.edit` ([`TEXTS_PERMISSION`]; the page's guard does it for
+//! the page) and audits the write as `setting.update` by that Staff member.
 
 use super::settings::{self, Refused};
 use crate::audit::{Actor, RequestCtx};
 use crate::{Deployment, Error, Result};
 
-/// The Permission [`set_override`] requires.
-pub const SETTING_PERMISSION: &str = "kernel.setting.edit";
+/// The Permission [`set_override`] and the Texts page require (#165): a
+/// Role can edit texts without every setting.
+pub const TEXTS_PERMISSION: &str = crate::kernel::TEXTS_EDIT;
+
+/// `kernel.setting.edit`: the privacy notice version, branding and the LINE
+/// package. [`set_override`] required it before #165 and needs
+/// [`TEXTS_PERMISSION`] now; a Role that held it was granted that too
+/// (migration 0019, and `[roles]` on `migrate`).
+#[deprecated(note = "set_override needs TEXTS_PERMISSION since #165")]
+pub const SETTING_PERMISSION: &str = crate::kernel::SETTING_EDIT;
 
 /// What [`write`] did.
 #[derive(Debug)]
@@ -98,7 +106,7 @@ pub async fn set_override(
     actor: &Actor,
     ctx: &RequestCtx,
 ) -> Result<bool> {
-    crate::auth::roles::require(d.services(), actor, SETTING_PERMISSION).await?;
+    crate::auth::roles::require(d.services(), actor, TEXTS_PERMISSION).await?;
     match write(d, key, locale, value, None, actor, ctx).await? {
         Written::Saved(done) => Ok(done),
         Written::Unchanged | Written::Stale => Ok(false),

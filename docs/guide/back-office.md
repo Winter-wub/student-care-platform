@@ -442,11 +442,28 @@ shown once, disable them (their sessions end), assign Roles, reset passwords,
 clear lockouts and edit Roles; at least one active Staff member always keeps
 `kernel.staff.manage`. A Role from `[roles]` can be edited or deleted there too,
 and the edit sticks: a later `migrate` grants only Permissions new to `[roles]`
-(see the link Permissions above). `/admin/texts` (`kernel.setting.edit`)
-edits any catalog text per Locale (it must keep the default's `{name}`
-placeholders) and bumps the privacy notice version, which asks every linked
-Student to accept again on their next message. Edits take effect on the next
-message: `setting` is read on every Inbound, with no cache.
+(see the link Permissions above). `/admin/texts` (`kernel.texts.edit`) finds
+and edits any catalog text per Locale (it must keep the default's `{name}`
+placeholders). On the same page, Staff holding `kernel.setting.edit` bump the
+privacy notice version, which asks every linked Student to accept again on
+their next message; with `kernel.setting.edit` alone the page shows only that
+version. Edits take effect on the next message: `setting` is read
+on every Inbound, with no cache.
+
+Texts have their own Permission (#165), so Student Affairs can edit the wording,
+including a Module's texts through `harpseal::texts::set_override`, without
+holding `kernel.setting.edit` (the privacy notice version, branding, the LINE
+package, and every Module setting read-only). Before the split
+`kernel.setting.edit` covered the Texts page, so it works like the link split:
+`migrate` grants `kernel.texts.edit` once to every Role in the database that
+holds `kernel.setting.edit` (migration 0019), and a `[roles]` entry that lists
+`kernel.setting.edit` without `kernel.texts.edit` is seeded with both, with a
+notice in the migrate report; list both to say what you mean. A Role that
+lists `kernel.texts.edit` alone edits texts and no other setting. A Role whose
+`kernel.setting.edit` an Administrator already took away is not given
+`kernel.texts.edit` by this rule. To take texts away from a settings Role,
+untick it on the Roles page. `harpseal::texts::SETTING_PERMISSION` is
+deprecated: check `harpseal::texts::TEXTS_PERMISSION` before `set_override`.
 `/admin/backups` (`kernel.backup.manage`) lists the nightly backups, downloads
 one as a `.tar`, starts one now, and downloads all data as an Excel workbook
 without secret columns; see [Backups](backups.md).

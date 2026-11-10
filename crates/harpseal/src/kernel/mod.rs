@@ -32,6 +32,12 @@ pub(crate) const NAME: &str = "kernel";
 pub(crate) const LINK_MANAGE: &str = "kernel.link.manage";
 /// Revoke a Student's Link (Staff unlink), split off from [`LINK_MANAGE`].
 pub(crate) const LINK_REVOKE: &str = "kernel.link.revoke";
+/// Edit settings: the privacy notice version, branding, the LINE package.
+/// Before #165 it also covered the Texts page.
+pub(crate) const SETTING_EDIT: &str = "kernel.setting.edit";
+/// Edit texts (the Texts page and `texts::set_override`), split off from
+/// [`SETTING_EDIT`] (#165).
+pub(crate) const TEXTS_EDIT: &str = "kernel.texts.edit";
 
 /// Permissions the Kernel declares (spec, "Back office").
 pub(crate) const PERMISSIONS: &[Permission] = &[
@@ -59,10 +65,12 @@ pub(crate) const PERMISSIONS: &[Permission] = &[
     Permission::new("kernel.staff.manage", "Manage Staff accounts and Roles")
         .thai("จัดการบัญชีเจ้าหน้าที่และบทบาท"),
     Permission::new(
-        "kernel.setting.edit",
-        "Edit texts, the privacy notice version and the LINE package",
+        SETTING_EDIT,
+        "Edit the privacy notice version, branding and the LINE package",
     )
-    .thai("แก้ไขข้อความ เวอร์ชันประกาศความเป็นส่วนตัว และแพ็กเกจ LINE"),
+    .thai("แก้ไขเวอร์ชันประกาศความเป็นส่วนตัว แบรนด์และรูปเมนู และแพ็กเกจ LINE"),
+    Permission::new(TEXTS_EDIT, "Edit texts on the Texts page")
+        .thai("แก้ไขข้อความที่นักศึกษาและเจ้าหน้าที่เห็นในแชทและในหน้าเว็บ"),
     Permission::new("kernel.backup.manage", "See the backups and back up now")
         .thai("ดูชุดสำรองข้อมูลและสั่งสำรองทันที"),
     Permission::new(
@@ -144,6 +152,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0018_link_picker_idx",
         include_str!("../../migrations/0018_link_picker_idx.sql"),
+    ),
+    (
+        "0019_texts_edit_permission",
+        include_str!("../../migrations/0019_texts_edit_permission.sql"),
     ),
 ];
 

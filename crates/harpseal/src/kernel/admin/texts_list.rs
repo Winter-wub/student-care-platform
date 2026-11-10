@@ -21,6 +21,7 @@ use super::settings::{self, TextRow};
 use super::texts_areas::{Area, Areas};
 use super::texts_pages::{consent_card, source_chip};
 use super::view::{View, cut, enc};
+use crate::kernel::{SETTING_EDIT, TEXTS_EDIT};
 use crate::{AppState, CurrentStaff};
 
 /// Longest preview of a text in the list, in characters.
@@ -70,6 +71,15 @@ pub(super) async fn list(
     Query(q): Query<Search>,
 ) -> Response {
     let v = View::new(&s, &staff);
+    // Mounted for any signed-in Staff member (#165): the texts need
+    // `kernel.texts.edit`; `kernel.setting.edit` alone shows the privacy
+    // notice version card, which lives on this page.
+    if !staff.can(TEXTS_EDIT) {
+        if staff.can(SETTING_EDIT) {
+            return version_only(&v).await;
+        }
+        return crate::auth::forbidden(v.s, v.staff, TEXTS_EDIT);
+    }
     let query = cut(&q.q, 100);
     let loaded = async {
         Ok::<_, crate::Error>((
@@ -157,6 +167,21 @@ pub(super) async fn list(
         };
         v.page(StatusCode::OK, &title, body)
     })
+}
+
+/// `/admin/texts` for Staff holding `kernel.setting.edit` without
+/// `kernel.texts.edit`: the privacy notice version card, no texts.
+async fn version_only(v: &View<'_>) -> Response {
+    let version = match settings::stored_version(&v.s.services).await {
+        Ok(r) => r,
+        Err(e) => return v.error(&e),
+    };
+    let title = v.t("kernel.admin.texts.title");
+    let body = html! {
+        h1 { (title) }
+        (consent_card(v, version.as_deref()))
+    };
+    v.page(StatusCode::OK, &title, body)
 }
 
 /// The texts grouped by page, each group a closed disclosure holding a

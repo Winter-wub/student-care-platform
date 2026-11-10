@@ -1,8 +1,10 @@
-//! `/admin/texts` (`kernel.setting.edit`): the list is `texts_list.rs`;
+//! `/admin/texts` (`kernel.texts.edit`, #165): the list is `texts_list.rs`;
 //! `/admin/texts/{key}` edits one key per Locale (save or reset to
 //! default), titled by its text and the page it shows on (#125); `POST
 //! /admin/texts/consent` sets the Consent notice version, through its
-//! review step (`consent_review.rs`, #135).
+//! review step (`consent_review.rs`, #135). The version is a setting, not
+//! a text: its card and route need `kernel.setting.edit`, and Staff holding
+//! only that see the list page with the card alone.
 
 use axum::Form;
 use axum::extract::{Path, State};
@@ -28,6 +30,9 @@ pub(super) fn source_chip(v: &View<'_>, r: &TextRow) -> Markup {
 }
 
 pub(super) fn consent_card(v: &View<'_>, stored: Option<&str>) -> Markup {
+    if !v.staff.can(crate::kernel::SETTING_EDIT) {
+        return html! {};
+    }
     let current = stored.unwrap_or(&v.s.config.consent.version);
     html! {
         section class="card" id="consent" {

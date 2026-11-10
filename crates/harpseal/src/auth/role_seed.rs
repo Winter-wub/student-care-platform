@@ -14,24 +14,65 @@ use serde_json::json;
 
 use super::staff_admin::gated;
 use crate::audit::{self, Actor, RequestCtx, Target};
-use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
+use crate::kernel::{LINK_MANAGE, LINK_REVOKE, SETTING_EDIT, TEXTS_EDIT};
 use crate::port_types::{Statement, Value};
 use crate::{Result, Services};
 
 /// `role_seed.permission_id` of the row that records the Role itself.
 const ROLE_ROW: &str = "";
 
-/// What a TOML Role is granted for the Permissions it lists: a Role that
-/// lists `kernel.link.manage` and not `kernel.link.revoke` was written when
-/// the former covered both, so it gets both. A Role that lists the new one
-/// (alone or with the old) is taken as written.
-fn with_legacy_link_grant(perms: &[String]) -> Vec<String> {
+/// A Permission split off an older one: a TOML Role that lists `old` and
+/// not `new` was written when `old` covered both, so it gets both. A Role
+/// that lists `new` (alone or with `old`) is taken as written.
+struct Split {
+    old: &'static str,
+    new: &'static str,
+    /// The end of the migrate notice: what the author should write.
+    hint: &'static str,
+}
+
+/// `kernel.link.manage` lost Staff unlink (#80); `kernel.setting.edit`
+/// lost the Texts page (#165).
+const SPLITS: &[Split] = &[
+    Split {
+        old: LINK_MANAGE,
+        new: LINK_REVOKE,
+        hint: "list both, or kernel.link.revoke alone, to say what it means",
+    },
+    Split {
+        old: SETTING_EDIT,
+        new: TEXTS_EDIT,
+        hint: "list both to say what it means (kernel.texts.edit alone is a Role that \
+               edits texts and no other setting)",
+    },
+];
+
+/// What a TOML Role listing `perms` is granted ([`SPLITS`] applied), and
+/// the splits that widened it.
+fn with_legacy_grants(perms: &[String]) -> (Vec<String>, Vec<&'static Split>) {
     let mut all = perms.to_vec();
     let has = |id: &str| perms.iter().any(|p| p == id);
-    if has(LINK_MANAGE) && !has(LINK_REVOKE) {
-        all.push(LINK_REVOKE.to_string());
+    let widened: Vec<_> = SPLITS
+        .iter()
+        .filter(|s| has(s.old) && !has(s.new))
+        .collect();
+    all.extend(widened.iter().map(|s| s.new.to_string()));
+    (all, widened)
+}
+
+/// Keeps a split's new Permission out of `step.grant` when the existing
+/// Role neither holds the old one now nor is granted it in this step: an
+/// Administrator took the old one away, so the new one, which only stands
+/// for it, is recorded as seeded and never granted. (A Role that holds
+/// the old one got the new one from its migration already.)
+fn drop_orphan_splits(step: &mut Step, widened: &[&Split], held: Option<&Held>) {
+    let Some(held) = held else { return };
+    for s in widened {
+        let has_old = held.permissions.contains(s.old) || step.grant.iter().any(|p| p == s.old);
+        if !has_old {
+            step.grant.retain(|p| p != s.new);
+        }
     }
-    all
 }
 
 /// A Role of the database, as the seed sees it.
@@ -290,9 +331,9 @@ fn audit_row(
 /// grant is audited, including the first seed after every Role was
 /// deleted (`role_seed` remembers them).
 ///
-/// Returns one notice per Role the legacy rule widened, for the migrate
-/// report: the Core has no logger, and the Deployment's author should list
-/// what the Role means.
+/// Returns one notice per split ([`SPLITS`]) that widened a Role, for the
+/// migrate report: the Core has no logger, and the Deployment's author
+/// should list what the Role means.
 pub(crate) async fn seed(
     services: &Services,
     roles: &BTreeMap<String, Vec<String>>,
@@ -307,15 +348,15 @@ pub(crate) async fn seed(
     let mut stmts = Vec::new();
     let mut notices = Vec::new();
     for (name, perms) in roles {
-        let wanted = with_legacy_link_grant(perms);
-        if wanted.len() != perms.len() {
+        let (wanted, widened) = with_legacy_grants(perms);
+        for Split { old, new, hint } in &widened {
             notices.push(format!(
-                "[roles] {name} lists {LINK_MANAGE} without {LINK_REVOKE}, so it is also \
-                 granted {LINK_REVOKE}; list both, or {LINK_REVOKE} alone, to say what it means"
+                "[roles] {name} lists {old} without {new}, so it is also granted {new}; {hint}"
             ));
         }
         let held = held(services, name).await?;
-        let step = plan(name, &wanted, &seeded, held.as_ref());
+        let mut step = plan(name, &wanted, &seeded, held.as_ref());
+        drop_orphan_splits(&mut step, &widened, held.as_ref());
         stmts.extend(statements(
             services,
             name,
