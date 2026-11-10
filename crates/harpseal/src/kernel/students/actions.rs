@@ -130,7 +130,7 @@ pub(super) async fn status(
     }
 }
 
-/// `channel` + `external_id` → [`links::manual_link`].
+/// `pick` (#143), or `channel` + `external_id` → [`links::manual_link`].
 pub(super) async fn manual_link(
     State(s): State<AppState>,
     staff: CurrentStaff,
@@ -145,19 +145,18 @@ pub(super) async fn manual_link(
     // (#131, #133): the back office does not offer it, and a crafted post
     // is refused here with its own message (`manual_link` would refuse it
     // too, as an unknown Channel).
-    if s.deployment.refuses_channel(get("channel")) {
+    // A picked account (#143) or the typed one; both, differing, is
+    // refused rather than guessed.
+    let Some((channel, external_id)) =
+        super::pick::chosen(get(super::pick::PICK), get("channel"), get("external_id"))
+    else {
+        return v.redirect(&back(&id), false, "kernel.students.pick_both");
+    };
+    if s.deployment.refuses_channel(channel) {
         return v.redirect(&back(&id), false, "kernel.students.link_dev_only");
     }
     let actor = Actor::staff(&staff);
-    let done = links::manual_link(
-        &s.deployment,
-        &id,
-        get("channel"),
-        get("external_id"),
-        &actor,
-        &ctx,
-    )
-    .await;
+    let done = links::manual_link(&s.deployment, &id, channel, external_id, &actor, &ctx).await;
     match done {
         Ok(c) if c.notified => v.redirect(&back(&id), true, "kernel.students.linked"),
         Ok(_) => v.redirect(&back(&id), true, "kernel.students.linked_unnotified"),

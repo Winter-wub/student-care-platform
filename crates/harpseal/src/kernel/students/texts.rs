@@ -209,6 +209,104 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Account id on the channel"
     ),
     ("kernel.students.link_button", "ผูกบัญชี", "Link"),
+    // The Manual Link picker (#143)
+    (
+        "kernel.students.pick_title",
+        "บัญชีแชทที่ยังไม่ได้เชื่อม (ล่าสุดอยู่บน)",
+        "Chat accounts not linked yet (newest first)"
+    ),
+    (
+        "kernel.students.pick_hint",
+        "ขอให้นักศึกษาส่งข้อความอะไรก็ได้มาที่บอทตอนนี้ แล้วกดแสดงบัญชีที่ทักบอทล่าสุด",
+        "Ask the Student to send any message to the bot now, then show the accounts that wrote recently."
+    ),
+    (
+        "kernel.students.pick_load",
+        "แสดงบัญชีที่ทักบอทล่าสุด",
+        "Show accounts that wrote recently"
+    ),
+    (
+        "kernel.students.pick_reload",
+        "โหลดรายการใหม่",
+        "Reload the list"
+    ),
+    (
+        "kernel.students.pick_check",
+        "ก่อนเลือก ถามนักศึกษาว่าส่งข้อความเมื่อไร และตอนนี้ค้างอยู่ขั้นตอนไหน ให้ตรงกับรายการ",
+        "Before you pick, ask the Student when they sent the message and which step they are on, and match them with the list."
+    ),
+    (
+        "kernel.students.pick_busy",
+        "มีมากกว่าหนึ่งบัญชีที่ทักบอทในช่วง {minutes} นาทีที่ผ่านมา ตรวจเวลาและขั้นตอนกับนักศึกษาให้แน่ใจก่อนเลือก",
+        "More than one account wrote in the last {minutes} minutes. Check the time and step with the Student before you pick."
+    ),
+    (
+        "kernel.students.pick_none",
+        "ไม่มีบัญชีที่ยังไม่ได้เชื่อมทักบอทใน {hours} ชั่วโมงที่ผ่านมา ขอให้นักศึกษาทักบอทก่อน แล้วโหลดรายการใหม่",
+        "No unlinked account wrote to the bot in the last {hours} hours. Ask the Student to write to it, then reload the list."
+    ),
+    (
+        "kernel.students.pick_capped",
+        "แสดงเฉพาะ {count} บัญชีล่าสุด ถ้าไม่พบ ให้พิมพ์รหัสบัญชีเองด้านล่าง",
+        "Only the {count} newest accounts are shown. If it is not here, type the account id below."
+    ),
+    ("kernel.students.pick_last", "ทักล่าสุด", "Last wrote"),
+    ("kernel.students.pick_first", "ทักครั้งแรก", "First wrote"),
+    (
+        "kernel.students.pick_ago_seconds",
+        "{n} วินาทีที่แล้ว",
+        "{n} seconds ago"
+    ),
+    (
+        "kernel.students.pick_ago_minutes",
+        "{n} นาทีที่แล้ว",
+        "{n} minutes ago"
+    ),
+    (
+        "kernel.students.pick_ago_hours",
+        "{n} ชั่วโมงที่แล้ว",
+        "{n} hours ago"
+    ),
+    (
+        "kernel.students.pick_stage_new",
+        "ยังไม่เริ่มเชื่อมบัญชี",
+        "Has not started linking"
+    ),
+    (
+        "kernel.students.pick_stage_consent",
+        "ยังไม่ยอมรับประกาศความเป็นส่วนตัว",
+        "Has not accepted the privacy notice"
+    ),
+    (
+        "kernel.students.pick_stage_student_id",
+        "รอรหัสนักศึกษา",
+        "Waiting for the student ID"
+    ),
+    (
+        "kernel.students.pick_stage_otp",
+        "รอรหัสยืนยันจากอีเมล",
+        "Waiting for the emailed code"
+    ),
+    (
+        "kernel.students.pick_stage_other",
+        "ไม่ได้อยู่ระหว่างเชื่อมบัญชี",
+        "Not in the middle of linking"
+    ),
+    (
+        "kernel.students.pick_blocked",
+        "บล็อกบอทอยู่: ผูกได้ แต่ส่งข้อความถึงไม่ได้จนกว่าจะเลิกบล็อก",
+        "Has blocked the bot: it can be linked, but messages do not reach it until it unblocks"
+    ),
+    (
+        "kernel.students.pick_typed",
+        "พิมพ์รหัสบัญชีเอง",
+        "Type the account id instead"
+    ),
+    (
+        "kernel.students.pick_both",
+        "ผูกไม่ได้: เลือกบัญชีจากรายการ หรือพิมพ์รหัสบัญชีเอง อย่างใดอย่างหนึ่ง",
+        "Cannot link: pick an account from the list or type an id, not both"
+    ),
     ("kernel.students.revoke", "ยกเลิกการเชื่อม", "Revoke"),
     (
         "kernel.students.confirm_revoke",

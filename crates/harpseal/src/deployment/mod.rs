@@ -3,7 +3,7 @@
 mod background;
 mod builder;
 pub(crate) mod day;
-mod inbound;
+pub(crate) mod inbound;
 mod routes;
 mod send;
 pub(crate) use day::civil_day;

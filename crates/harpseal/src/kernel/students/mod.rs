@@ -5,7 +5,9 @@
 //! (`kernel.student.view`, logged as the read `student.view`), the edit
 //! form, "ใช้ค่าจากทะเบียน", manual Tags and the status change
 //! (`kernel.student.edit`), Manual Link (`kernel.link.manage`) and revoke
-//! (`kernel.link.revoke`, Staff unlink), both through [`crate::links`].
+//! (`kernel.link.revoke`, Staff unlink), both through [`crate::links`],
+//! with the Manual Link picker's list of recent unlinked accounts loaded on
+//! request (`kernel.link.manage`, #143).
 //!
 //! **Manual edits win over the roster** (#8): a field Staff edit by hand is
 //! listed in `student.manual_overrides` (`display_name`, `email`,
@@ -25,6 +27,8 @@ pub(crate) mod email;
 mod form;
 mod list;
 mod missing;
+mod pick;
+mod pick_view;
 mod read;
 mod service;
 mod tags;
@@ -32,6 +36,10 @@ pub(crate) mod texts;
 pub(crate) mod view;
 
 pub(crate) use read::search;
+
+/// The Manual Link picker's query (#143), for the query-plan test only.
+#[doc(hidden)]
+pub use pick::recent_sql as manual_link_picker_sql;
 
 use axum::routing::{get, post};
 use serde_json::{Map, Value as Json};
@@ -200,6 +208,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         )
         .back_office(EDIT, "/students/{id}/status", post(actions::status))
         .back_office(LINK, "/students/{id}/links", post(actions::manual_link))
+        .back_office(LINK, "/students/{id}/links/recent", get(pick::recent))
         .back_office(
             REVOKE,
             "/students/{id}/links/{link_id}/revoke",
