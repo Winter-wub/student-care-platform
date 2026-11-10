@@ -12,10 +12,11 @@ use std::sync::Arc;
 use super::ModuleRegistrar;
 use super::setting_kind::number;
 pub use super::setting_kind::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind};
-use crate::error::BuildError;
-use crate::manifest::{Catalog, Permission};
+
+mod build;
 use crate::port_types::{Statement, Value};
 use crate::{Actor, Error, RequestCtx, Result, Services};
+pub(crate) use build::{absorb, check};
 
 /// One declared setting.
 #[derive(Debug, Clone)]
@@ -110,6 +111,8 @@ pub enum SettingValue {
     Date(String),
     /// [`SettingKind::Url`].
     Url(String),
+    /// [`SettingKind::Boolean`] (#163).
+    Bool(bool),
 }
 
 impl SettingValue {
@@ -118,17 +121,19 @@ impl SettingValue {
             SettingKind::Number => SettingValue::Number(number(&v).unwrap_or_default()),
             SettingKind::Date => SettingValue::Date(v),
             SettingKind::Url => SettingValue::Url(v),
+            SettingKind::Boolean => SettingValue::Bool(v == "1"),
             SettingKind::Text | SettingKind::MultilineText | SettingKind::AccountNumber => {
                 SettingValue::Text(v)
             }
         }
     }
 
-    /// The value as text (a number in decimal).
+    /// The value as text (a number in decimal, a switch as `1` or `0`).
     pub fn as_text(&self) -> String {
         match self {
             SettingValue::Text(t) | SettingValue::Date(t) | SettingValue::Url(t) => t.clone(),
             SettingValue::Number(n) => n.to_string(),
+            SettingValue::Bool(b) => if *b { "1" } else { "0" }.to_string(),
         }
     }
 }
@@ -306,89 +311,13 @@ impl Settings {
             _ => Err(Error::Invalid(format!("setting `{key}` is not a number"))),
         }
     }
-}
 
-/// Adds one Module's declarations, refusing a bad key or default.
-pub(crate) fn absorb(
-    all: &mut Vec<SettingSpec>,
-    new: Vec<SettingSpec>,
-) -> core::result::Result<(), BuildError> {
-    for s in new {
-        if let Some(reason) = invalid(&s, all) {
-            return Err(refuse(&s, reason));
+    /// The value of a [`SettingKind::Boolean`] setting (#163); another
+    /// kind is an [`Error::Invalid`].
+    pub async fn bool(&self, key: &str) -> Result<bool> {
+        match self.get(key).await? {
+            SettingValue::Bool(b) => Ok(b),
+            _ => Err(Error::Invalid(format!("setting `{key}` is not a switch"))),
         }
-        all.push(s);
-    }
-    Ok(())
-}
-
-fn refuse(s: &SettingSpec, reason: String) -> BuildError {
-    BuildError::InvalidSetting {
-        module: s.module,
-        key: s.key.into(),
-        reason,
-    }
-}
-
-/// Checks that need every Module first: a declared Permission, texts in
-/// the default Locale.
-pub(crate) fn check(
-    settings: &[SettingSpec],
-    permissions: &[Permission],
-    catalog: &Catalog,
-) -> core::result::Result<(), BuildError> {
-    let locale = catalog.default_locale();
-    for s in settings {
-        if !permissions.iter().any(|p| p.id == s.permission) {
-            return Err(refuse(s, format!("unknown permission `{}`", s.permission)));
-        }
-        // The Texts page edits catalog keys: a setting key that is also
-        // one would put two editors on related names.
-        if catalog.knows(s.key) {
-            return Err(refuse(
-                s,
-                "the key is also a text key; give the label its own key".into(),
-            ));
-        }
-        if let Some(k) = [s.label_key, s.help_key]
-            .into_iter()
-            .find(|k| !catalog.has(&locale, k))
-        {
-            return Err(refuse(
-                s,
-                format!("no text for `{k}` in the default Locale"),
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Why a declaration is refused, if it is.
-fn invalid(spec: &SettingSpec, others: &[SettingSpec]) -> Option<String> {
-    let prefix = format!("{}.", spec.module);
-    let k = spec.key;
-    if !k.starts_with(&prefix) || k.len() == prefix.len() || k.len() > 64 {
-        return Some(format!(
-            "the key must be `{prefix}<name>`, at most 64 bytes"
-        ));
-    }
-    let chars = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.';
-    if !k.bytes().all(chars) {
-        return Some("the key may hold only a-z, 0-9, `_` and `.`".into());
-    }
-    // No Module but the Kernel can start with `kernel.` (`build()` refuses
-    // the name first), so the prefix rule above keeps Modules off the
-    // Kernel's own rows (`kernel.backup.notified`, …).
-    if k == crate::kernel::text::CONSENT_VERSION_KEY {
-        return Some("the Consent version is not a Module setting".into());
-    }
-    if others.iter().any(|o| o.key == k) {
-        return Some("declared twice".into());
-    }
-    let default = spec.default?;
-    match spec.kind.check(default) {
-        Ok(v) if v == default => None,
-        Ok(_) => Some("the default must be stored as is (trimmed, LF line breaks)".into()),
-        Err(why) => Some(format!("the default is refused by its kind ({why})")),
     }
 }

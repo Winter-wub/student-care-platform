@@ -174,7 +174,8 @@ async fn an_administrator_sees_the_bank_account_but_cannot_change_it() {
         page.body.contains("fees.bank_account.edit"),
         "names the Permission"
     );
-    assert!(!page.body.contains("name=\"key\""), "no Save button");
+    // No Save button for the bank settings (the reminders switch has one).
+    assert!(!page.body.contains("value=\"fees."), "no Save button");
     let r = admin
         .post(
             "/admin/settings",

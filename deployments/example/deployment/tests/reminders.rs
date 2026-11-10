@@ -24,6 +24,15 @@ async fn the_monday_job_reminds_the_tagged_students_once() {
     let mali = h.email().to("mali@seal-bay.invalid");
     assert_eq!(mali.len(), 1, "Mali has no Link: email");
     assert_eq!(mali[0].subject, "เตือนชำระค่าธรรมเนียม");
+    // The email links to the fees page in LINE (#163), built by the Job.
+    let fees = "https://liff.line.me/1234567890-AbCdEfGh/app/fees";
+    assert!(
+        mali[0]
+            .text
+            .ends_with(&format!("ดูยอดที่ต้องชำระใน LINE: {fees}")),
+        "{}",
+        mali[0].text
+    );
     let rows = app
         .count("SELECT count(*) FROM outbound_message WHERE module = 'reminders'")
         .await;
@@ -43,6 +52,23 @@ async fn the_monday_job_reminds_the_tagged_students_once() {
         .count("SELECT count(*) FROM job WHERE kind = 'reminders.send' AND state = 'done'")
         .await;
     assert_eq!(note, 1, "the chunk's unique key holds");
+}
+
+#[tokio::test]
+async fn the_switch_off_leaves_the_link_out_of_the_email() {
+    let h = Harness::new();
+    let app = boot(&h).await;
+    let d = app.deployment();
+    let ctx = harpseal::RequestCtx::cli();
+    d.save_setting_as_system(reminders::EMAIL_LINK, "0", &ctx)
+        .await
+        .unwrap();
+    h.clock().set_ms(MONDAY_9AM);
+    d.tick(Timestamp(MONDAY_9AM)).await.unwrap();
+    d.tick(Timestamp(MONDAY_9AM + MIN)).await.unwrap();
+    let mali = h.email().to("mali@seal-bay.invalid");
+    assert_eq!(mali.len(), 1);
+    assert!(!mali[0].text.contains("https://"), "{}", mali[0].text);
 }
 
 #[tokio::test]

@@ -123,6 +123,19 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
 - Test it at the seam: `Browser::open_mini_app(&fake, external_id, path)`
   signs in on the Fake Channel. See `deployments/example` (`my_info.rs`)
   and `crates/harpseal-testing/tests/app_module*.rs` for LINE and Telegram.
+- **A link to the page from outside the chat** (an email, a web page):
+  `cx.mini_app_url(kind, path)` in a Job, `state.mini_app_url(kind, path)`
+  in a page handler or `deployment.mini_app_url(kind, path)` give the URL
+  a Mini App button to `path` opens on that Channel (the Channel's
+  `MiniApp::launch_url`), `None` when the Channel takes no traffic or has
+  no Mini App; `mini_app_urls(path)` gives `(ChannelKind, url)` for every
+  Channel that has one. A chat message needs no URL: send
+  `Button::mini_app(label, path)`. A LINE URL
+  (`https://liff.line.me/<LIFF id>/app/fees`) opens the page in LINE from
+  anywhere, so it works in an email; a Telegram Web App URL works only
+  inside Telegram (in a browser the page asks the Student to open it from
+  the chat), so an email should link to LINE. The example's fee reminder
+  email links to the fees page that way (`reminders.rs`).
 
 #### Jobs
 

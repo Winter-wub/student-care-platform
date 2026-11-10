@@ -79,6 +79,7 @@ Each kind is checked on the server on every save:
 | `Date` | a calendar day, `YYYY-MM-DD` | `SettingValue::Date` |
 | `Url` | `https://` and a host, up to 500 characters | `SettingValue::Url` |
 | `AccountNumber` | ASCII digits in groups joined by one `-` or one space (runs of spaces stored as one), a digit at both ends, up to 64 characters | `SettingValue::Text` |
+| `Boolean` | a switch: `1` or `0` (`true` and `false` are stored as `1` and `0`); the page shows a checkbox, and an unticked one saves `0` | `SettingValue::Bool` |
 
 Values are trimmed. No kind accepts control characters (a multi-line
 text keeps its line breaks), nor characters that change how text reads
@@ -89,6 +90,12 @@ and paragraph separators (U+2028, U+2029). Without that, a value such as
 `<U+202E>0-54321-0-000` would read as one account number on every page
 and in the audit log while Students copy another. Use `AccountNumber` for
 anything Students type into a banking app.
+
+A `Boolean` is stored as `1` or `0`, exactly as a switch kept in a 0/1
+`Number` is, so a Module can turn such a setting into a `Boolean` with
+no migration: the saved `1` reads as on. Its default must be `"1"` or
+`"0"`. Staff who may only view it read "เปิดอยู่" or "ปิดอยู่"; the audit
+row records `0` and `1`.
 
 ## The page
 
@@ -116,7 +123,8 @@ appears in the navigation for Staff who can see at least one:
 `deployment.settings()` elsewhere return `Settings`:
 
 - `settings.get(key)` gives the `SettingValue`, `text(key)` any kind as
-  text and `number(key)` an `i64`.
+  text (a `Boolean` as `1` or `0`), `number(key)` an `i64` and
+  `bool(key)` a `Boolean` as a `bool`.
 - Each read goes to the database, so a change shows on the next page view
   or Job run.
 - `Error::SettingNotSet(key)` for a Setting with no default that nobody
@@ -124,7 +132,7 @@ appears in the navigation for Staff who can see at least one:
   (a restored row, a kind or check changed since). Such a value is never
   replaced by the default, which could show Students an outdated bank
   account: show "not set" for this error only.
-- `Error::Invalid` for an undeclared key or `number` on another kind (a
+- `Error::Invalid` for an undeclared key, `number` or `bool` on another kind (a
   programming error), and any other error (the database) as is: answer
   both as a failure, never as "not set" (the example answers 500).
 
