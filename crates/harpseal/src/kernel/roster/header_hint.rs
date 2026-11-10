@@ -4,8 +4,11 @@
 //! `_ - . : *` are ignored; when it is the column's label (Thai or
 //! English, as the help names it, or an attribute's key); or when it is
 //! one or two letters off (a typo). Only headers the sheet still lacks
-//! are suggested. Pure: the names come in as arguments.
+//! are suggested. [`Hints`] carries what a page or report needs.
 
+use super::file::FoundHeaders;
+use super::validate::Problem;
+use super::view::View;
 use crate::config::RosterConfig;
 use crate::manifest::Catalog;
 use crate::message::Locale;
@@ -115,6 +118,31 @@ pub(super) fn near<'a>(found: &str, columns: &'a [Names], present: &[String]) ->
         })
         .min_by_key(|(d, _)| *d)
         .map(|(_, h)| h)
+}
+
+/// What the near-match hints of a page or report need (#154): the
+/// `[roster]` columns' names, built once, and the header rows found, so
+/// a header already in its sheet is never suggested.
+pub(super) struct Hints<'a> {
+    names: Vec<Names>,
+    headers: &'a [FoundHeaders],
+}
+
+impl<'a> Hints<'a> {
+    pub(super) fn new(v: &View<'_>, headers: &'a [FoundHeaders]) -> Self {
+        let names = names(&v.s.catalog, &v.s.config.roster);
+        Self { names, headers }
+    }
+
+    /// The expected header `p`'s unknown header is close to.
+    pub(super) fn near(&self, p: &Problem) -> Option<&str> {
+        let present = self
+            .headers
+            .iter()
+            .find(|s| s.sheet == p.sheet)
+            .map_or(&[][..], |s| s.found.as_slice());
+        near(&p.column, &self.names, present)
+    }
 }
 
 /// The edit distance of `a` and `b`, by characters.

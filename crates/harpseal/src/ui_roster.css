@@ -35,3 +35,5 @@ details.changes > summary { font-weight: 600; color: var(--brand-text); }
 .header-list .hint .code-head { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .bad-value { display: block; margin-top: var(--space-xs); color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .bad-value code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink); font-weight: 600; font-variant-numeric: slashed-zero; }
+/* #154: a full import's left-out columns, set in caution. */
+.card.absent-full { border-color: var(--caution-edge); }

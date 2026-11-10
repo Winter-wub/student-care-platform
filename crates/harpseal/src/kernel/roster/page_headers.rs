@@ -34,6 +34,18 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
     let reupload = v.staff.can(IMPORT) && super::has_mapping(&v.s.config.roster);
     let expected: Vec<&str> = help.iter().map(|c| c.header.as_str()).collect();
     let names = super::header_hint::names(&v.s.catalog, &v.s.config.roster);
+    // The expected headers an unknown one is close to: such a column is
+    // likely there under another name, never "fine to leave out".
+    let meant: BTreeSet<&str> = f
+        .headers
+        .iter()
+        .flat_map(|s| {
+            s.found
+                .iter()
+                .filter(|h| !expected.contains(&h.as_str()))
+                .filter_map(|h| near(h, &names, &s.found))
+        })
+        .collect();
     html! {
         // The problem, once (#129: the flash announces after the upload).
         div class="warn" role=[v.alert()] { (v.t("kernel.roster.headers_title")) }
@@ -58,8 +70,8 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
                                     @let gone = !present(&c.header);
                                     @let state = match (gone, required) {
                                         (false, _) => "ok",
-                                        (true, true) => "missing",
-                                        (true, false) => "absent",
+                                        (true, false) if !meant.contains(c.header.as_str()) => "absent",
+                                        (true, _) => "missing",
                                     };
                                     li data-header=(state) {
                                         span class="name code-head" { (c.header) }

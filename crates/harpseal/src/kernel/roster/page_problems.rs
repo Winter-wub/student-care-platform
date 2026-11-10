@@ -8,6 +8,8 @@ use axum::extract::{Path, State};
 use axum::response::Response;
 use maud::{Markup, html};
 
+use super::file::FoundHeaders;
+use super::header_hint::Hints;
 use super::store::{self, Import};
 use super::validate::Problem;
 use super::view::{BASE, View, csv_body, download};
@@ -139,7 +141,7 @@ fn listed(imp: &Import) -> (Vec<&Problem>, u64) {
 /// The reason in the Staff member's Locale; a problem standing for several
 /// cells says how many and which rows come first. A header problem names
 /// the headers expected, so the CSV report says it too (#125).
-fn reason(v: &View<'_>, p: &Problem) -> String {
+fn reason(v: &View<'_>, p: &Problem, hints: &Hints<'_>) -> String {
     let text = v.t(&format!("kernel.roster.reason_{}", p.reason));
     let text = if p.reason == "no_header_row" {
         let headers = super::file::expected_headers(&v.s.config.roster).join(", ");
@@ -156,8 +158,7 @@ fn reason(v: &View<'_>, p: &Problem) -> String {
     };
     // A header close to an expected one names it (#154).
     let text = if p.reason == "unexpected_header" {
-        let names = super::header_hint::names(&v.s.catalog, &v.s.config.roster);
-        match super::header_hint::near(&p.column, &names, &[]) {
+        match hints.near(p) {
             Some(n) => format!("{text} ({} {n})", v.t("kernel.roster.header_near")),
             None => text,
         }
@@ -213,7 +214,9 @@ pub(super) fn classes(v: &View<'_>, classes: &BTreeMap<String, u64>) -> Markup {
 
 /// The first problems as a table, with the sheet and the level when the
 /// problems have them.
-pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
+/// `headers`: the header rows of a refused file, for the hints (#154).
+pub(super) fn table(v: &View<'_>, problems: &[Problem], headers: &[FoundHeaders]) -> Markup {
+    let hints = Hints::new(v, headers);
     let (sheets, levels) = (has_sheets(problems), has_warnings(problems));
     let students = has_students(problems.iter().take(SHOWN));
     html! {
@@ -249,7 +252,7 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                             }
                         }
                         td data-label=(v.t("kernel.roster.report_reason")) {
-                            (reason(v, p))
+                            (reason(v, p, &hints))
                             (fix(v, p))
                         }
                         @if levels {
@@ -275,7 +278,7 @@ pub(super) fn warnings_card(v: &View<'_>, imp: &Import) -> Markup {
             h2 { (v.t("kernel.roster.warnings")) " " strong data-count="warnings" { (crate::ui::number(w.total)) } }
             p class="muted" { (v.t("kernel.roster.warnings_help")) }
             (classes(v, &w.classes))
-            (table(v, &w.problems))
+            (table(v, &w.problems, &[]))
             @let shown: u64 = w.problems.iter().take(SHOWN).map(Problem::weight).sum();
             @if shown < w.total {
                 p class="muted" {
@@ -306,6 +309,8 @@ pub(super) async fn report(
         Err(e) => return v.error(&e),
     };
     let (problems, total) = listed(&imp);
+    let found = imp.failure.as_ref().map(|f| f.headers.as_slice());
+    let hints = Hints::new(&v, found.unwrap_or_default());
     let skipped = &imp.counts.skipped;
     let sheets = has_sheets_in(&problems) || skipped.iter().any(|s| !s.sheet.is_empty());
     let levels = problems.iter().any(|p| !p.severity.is_blocking());
@@ -335,7 +340,7 @@ pub(super) async fn report(
     let mut lines = vec![super::csv::line(&head)];
     for p in &problems {
         let row = row(&v, p, false);
-        let reason = reason(&v, p);
+        let reason = reason(&v, p, &hints);
         let column = column(p);
         let level = v.t(p.severity.key());
         let who = student(p);

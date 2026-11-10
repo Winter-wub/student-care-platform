@@ -48,12 +48,19 @@ pub(crate) const VALUE_CHARS: usize = 40;
 
 /// `s` cut to `max` characters, with `…` when cut; control characters
 /// (a line break in a cell) read as spaces.
+/// Trimmed after that, so a value never starts with a space: the CSV
+/// report guards a cell by its first character (`=`, `+`, `-`, `@`), and
+/// ` =…` would slip past it.
 pub(crate) fn shorten(s: &str, max: usize) -> String {
-    let clean = |c: char| if c.is_control() { ' ' } else { c };
-    if s.chars().count() <= max {
-        return s.chars().map(clean).collect();
+    let clean: String = s
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let clean = clean.trim();
+    if clean.chars().count() <= max {
+        return clean.to_string();
     }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).map(clean).collect();
+    let mut out: String = clean.chars().take(max.saturating_sub(1)).collect();
     out.push('…');
     out
 }
@@ -126,6 +133,9 @@ mod tests {
         assert_eq!(cut.chars().count(), VALUE_CHARS);
         assert!(cut.ends_with('…'));
         assert_eq!(shorten("a\nb", 10), "a b");
+        // A line break before a formula is no space before it.
+        assert_eq!(shorten("\n=HYPERLINK(1)", 40), "=HYPERLINK(1)");
+        assert_eq!(shorten("\t\r+1", 40), "+1");
         assert_eq!(Problem::new(2, "x", "bad_code").showing(" 12 ").value, "12");
     }
 

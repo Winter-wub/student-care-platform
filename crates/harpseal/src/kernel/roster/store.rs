@@ -52,6 +52,10 @@ pub(crate) struct Preview {
     /// by hand: they stay active (0 in `upsert`).
     pub(crate) kept_by_status: u64,
     pub(crate) empty_email: u64,
+    /// Listed Students left without an email because the file leaves the
+    /// email column out (#154): new ones, and those with none stored. They
+    /// cannot Link through the chat flow. Also counted in `empty_email`.
+    pub(crate) no_email_absent: u64,
     /// Active Students before the import.
     pub(crate) active_before: u64,
     /// Left > 20% of the active roster, or a `full` file shorter than it.

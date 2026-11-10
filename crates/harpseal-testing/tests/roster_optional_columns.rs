@@ -6,7 +6,18 @@
 
 mod roster_support;
 
+use harpseal::{DeploymentConfig, FileStore};
+use harpseal_testing::{Harness, TestApp};
 use roster_support::*;
+
+/// The example roster with `[roster] blocking = classes`.
+async fn boot_blocking(classes: &str) -> (Harness, TestApp) {
+    let h = Harness::new();
+    let toml = CONFIG.replace("[roster]\n", &format!("[roster]\nblocking = {classes}\n"));
+    let config = DeploymentConfig::from_toml(&toml).unwrap();
+    let app = h.boot(h.builder().config(config).build().unwrap()).await;
+    (h, app)
+}
 
 /// The required columns only: no email, Locale, Tags or GPA.
 fn short_file(lines: &[&str]) -> Vec<u8> {
@@ -45,11 +56,25 @@ async fn a_full_import_without_the_optional_columns_keeps_the_stored_values() {
         );
     }
     assert!(card.contains("คงค่าเดิม"), "{card}");
+    // A full import: in caution, with how to clear a value instead.
+    assert!(
+        page.contains("class=\"card absent-full\" id=\"roster-absent\""),
+        "{card}"
+    );
+    assert!(card.contains("ใส่คอลัมน์ในไฟล์แล้วเว้นว่าง"), "{card}");
+    // The roster Tags stay, and so do the Audiences that select them.
+    assert!(card.contains("กลุ่มผู้รับที่เลือกตามป้ายเหล่านี้"), "{card}");
+    // The new Student has no email and cannot Link by themselves (M1).
+    assert!(
+        card.contains("data-count=\"no_email_absent\">1 คนจะไม่มีอีเมล"),
+        "{card}"
+    );
     // Only the year changes: nothing is cleared.
     let c = counts(&h, &id).await;
     assert_eq!(c["preview"]["updated"], 1, "{c}");
     assert_eq!(c["preview"]["new"], 1, "{c}");
-    assert_eq!(c["preview"]["empty_email"], 0, "{c}");
+    assert_eq!(c["preview"]["empty_email"], 1, "{c}");
+    assert_eq!(c["preview"]["no_email_absent"], 1, "{c}");
     assert!(!page.contains("data-field=\"email\""), "{page}");
     assert_eq!(
         harpseal_testing::a11y::problems(&page),
@@ -117,6 +142,17 @@ async fn a_header_close_to_an_expected_one_names_it() {
             "{li}"
         );
     }
+    // A column meant under another name is missing, not fine to leave out.
+    let card = &page[page.find("id=\"expected-headers\"").unwrap()..];
+    let expected = &card[card.find("<h3>").unwrap()..];
+    assert!(
+        expected.contains("data-header=\"missing\"><span class=\"name code-head\">อีเมล</span>"),
+        "{expected}"
+    );
+    assert!(
+        expected.contains("data-header=\"absent\"><span class=\"name code-head\">ภาษา</span>"),
+        "{expected}"
+    );
     // The report says it too.
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     assert!(report.contains("(ใกล้เคียงกับ อีเมล)"), "{report}");
@@ -156,4 +192,84 @@ async fn a_row_problem_echoes_the_value_escaped_and_shortened() {
         harpseal_testing::a11y::problems(&page),
         Vec::<String>::new()
     );
+}
+
+#[tokio::test]
+async fn an_upsert_card_is_not_in_caution_and_counts_no_one_with_an_email() {
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let first = csv_lines(&["68000001,นก,nok@student.sealbay.example,,,MSC,1,"]);
+    let id = previewed(&b, "a.csv", &first, "full", false).await;
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    let id = previewed(
+        &b,
+        "b.csv",
+        &short_file(&["68000001,นก,MSC,2"]),
+        "upsert",
+        false,
+    )
+    .await;
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    let at = page.find("id=\"roster-absent\"").expect("the absent card");
+    let card = &page[at..at + page[at..].find("</section>").unwrap()];
+    assert!(!page.contains("absent-full"), "{card}");
+    assert!(
+        !card.contains("no_email_absent"),
+        "the stored email stays: {card}"
+    );
+    assert_eq!(counts(&h, &id).await["preview"]["no_email_absent"], 0);
+}
+
+#[tokio::test]
+async fn a_blocking_class_makes_its_column_required() {
+    // M1: `missing_email` / `empty_attribute` blocking cannot be dodged by
+    // leaving the column out.
+    let (h, app) = boot_blocking("[\"missing_email\", \"empty_attribute\"]").await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let help = b.get("/admin/roster").await.body;
+    let at = help
+        .find("<span class=\"name code-head\">อีเมล</span>")
+        .unwrap();
+    let email = &help[at..at + help[at..].find("</li>").unwrap()];
+    assert!(email.contains("ต้องมีค่า"), "{email}");
+    let r = upload(&b, "a.csv", &short_file(&["68000001,นก,MSC,1"]), "full").await;
+    let id = import_id(&r);
+    assert_eq!(import_text(&h, &id, "state").await, "failed");
+    let page = b.get(&format!("/admin/roster/{id}")).await.body;
+    let card = &page[page.find("id=\"expected-headers\"").unwrap()..];
+    let mark = |state: &str, h: &str| {
+        format!("data-header=\"{state}\"><span class=\"name code-head\">{h}</span>")
+    };
+    assert!(card.contains(&mark("missing", "อีเมล")), "{card}");
+    assert!(card.contains(&mark("missing", "เกรดเฉลี่ย")), "{card}");
+    assert!(card.contains(&mark("absent", "ภาษา")), "{card}");
+}
+
+#[tokio::test]
+async fn rows_stored_before_the_versioned_key_still_import() {
+    // S3: rows under the old key (an upload before #154) are still read.
+    let (h, app) = boot().await;
+    let b = signed_in(&h, &app, "Officer").await;
+    let id = previewed(&b, "a.csv", &csv(0..3), "full", false).await;
+    let v2 = format!("roster-rows/v2/{id}.jsonl");
+    let bytes = h
+        .files()
+        .get(&v2)
+        .await
+        .unwrap()
+        .expect("the versioned rows");
+    h.files()
+        .put(
+            &format!("roster-rows/{id}.jsonl"),
+            bytes,
+            "application/jsonl",
+        )
+        .await
+        .unwrap();
+    h.files().delete(&v2).await.unwrap();
+    confirm(&b, &id).await;
+    run_jobs(&h, &app).await;
+    assert_eq!(import_text(&h, &id, "state").await, "done");
+    assert_eq!(int(&h, "SELECT count(*) FROM student", &[]).await, 3);
 }

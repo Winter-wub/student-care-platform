@@ -174,10 +174,14 @@ fn a_column_left_out_is_kept_not_checked() {
     assert!(v.warnings.is_empty(), "{:?}", v.warnings);
     assert_eq!(v.empty_email, 0);
     let keep = &v.records[0].keep;
-    assert_eq!(
-        keep,
-        &["email", "locale", "tags", "attributes.gpa"].map(String::from)
-    );
+    use crate::kernel::roster::keep::Kept;
+    let want = [
+        Kept::Email,
+        Kept::Locale,
+        Kept::Tags,
+        Kept::Attribute("gpa".into()),
+    ];
+    assert_eq!(keep, &want);
 }
 
 #[test]

@@ -8,13 +8,12 @@
 //! Student codes follow the chat flow's rule (`id_pattern`, or 4 to 20
 //! letters, digits or `-` when unset), so every imported Student can Link.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Map;
 
 use super::file::{Absent, FileError, HeaderMismatch, Row, absent_in};
-use super::store::Existing;
+use super::keep::Kept;
 use super::warnings::{self, Severity, Taken};
 use crate::config::{AttrError, DeploymentConfig};
 use crate::kernel::students::email::is_email;
@@ -43,37 +42,9 @@ pub(crate) struct Record {
     pub(crate) fields: StudentFields,
     /// Roster Tag names, deduplicated, in file order.
     pub(crate) tags: Vec<String>,
-    /// Fields whose column the row's sheet leaves out (#154): `email`,
-    /// `locale`, `tags` or `attributes.<key>`. A listed Student keeps
-    /// what is stored in them ([`resolve`]).
-    pub(crate) keep: Vec<String>,
-}
-
-/// `rec` with the fields its sheet leaves out (#154, [`Record::keep`])
-/// as `existing` stores them: a column left out changes nothing. A new
-/// Student keeps the record's empty (or default) values.
-pub(crate) fn resolve<'a>(existing: Option<&Existing>, rec: &'a Record) -> Cow<'a, Record> {
-    let Some(e) = existing.filter(|_| !rec.keep.is_empty()) else {
-        return Cow::Borrowed(rec);
-    };
-    let mut r = rec.clone();
-    for f in &rec.keep {
-        match f.as_str() {
-            "email" => r.fields.email = e.fields.email.clone(),
-            "locale" => r.fields.locale = e.fields.locale.clone(),
-            "tags" => r.tags = e.roster_tags.clone(),
-            other => {
-                let Some(key) = other.strip_prefix("attributes.") else {
-                    continue;
-                };
-                match e.fields.attributes.get(key) {
-                    Some(v) => r.fields.attributes.insert(key.to_string(), v.clone()),
-                    None => r.fields.attributes.remove(key),
-                };
-            }
-        }
-    }
-    Cow::Owned(r)
+    /// Fields whose column the row's sheet leaves out (#154). A listed
+    /// Student keeps what is stored in them ([`super::keep::resolve`]).
+    pub(crate) keep: Vec<Kept>,
 }
 
 /// A valid file.
@@ -188,7 +159,7 @@ pub(crate) fn validate_in(
         let email = row.get(&roster.email);
         match email {
             // No column: the stored email stays, and a new Student has none.
-            None if !has(&roster.email) => keep.push("email".to_string()),
+            None if !has(&roster.email) => keep.push(Kept::Email),
             None => {
                 empty_email += 1;
                 sink.class(row, &roster.email, "missing_email");
@@ -199,7 +170,7 @@ pub(crate) fn validate_in(
         let locale = match &roster.locale {
             Some(l) => match row.get(&l.column) {
                 None if !has(&l.column) => {
-                    keep.push("locale".to_string());
+                    keep.push(Kept::Locale);
                     default_locale.clone()
                 }
                 None => default_locale.clone(),
@@ -213,7 +184,7 @@ pub(crate) fn validate_in(
         };
         let mut tags: Vec<String> = Vec::new();
         if roster.tags.as_ref().is_some_and(|t| !has(&t.column)) {
-            keep.push("tags".to_string());
+            keep.push(Kept::Tags);
         } else if let Some(t) = &roster.tags {
             let cell = row.get(&t.column).unwrap_or_default();
             let foreign = TAG_SEPARATORS
@@ -238,7 +209,7 @@ pub(crate) fn validate_in(
         let mut attributes = Map::new();
         for (key, spec) in roster.attributes_in_order() {
             if !has(&spec.column) {
-                keep.push(format!("attributes.{key}"));
+                keep.push(Kept::Attribute(key.to_string()));
                 continue;
             }
             // An enum cell may name the value by its label (#81).

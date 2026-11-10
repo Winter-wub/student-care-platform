@@ -21,6 +21,21 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "The file leaves out the columns below, which may be empty. Students already on the roster keep what is stored in them; nothing is cleared. New Students start with them empty"
     ),
     (
+        "kernel.roster.absent_full",
+        "นำเข้าแบบทั้งทะเบียนก็ไม่ล้างค่าในคอลัมน์เหล่านี้ ถ้าต้องการล้างค่า ให้ใส่คอลัมน์ในไฟล์แล้วเว้นว่าง",
+        "A full import does not clear these columns either. To clear a value, put the column in the file and leave it empty"
+    ),
+    (
+        "kernel.roster.absent_tags",
+        "ป้ายจากไฟล์รายชื่อของนักศึกษาที่มีอยู่แล้วยังอยู่ครบ กลุ่มผู้รับที่เลือกตามป้ายเหล่านี้จึงยังเลือกนักศึกษากลุ่มเดิม",
+        "Students already on the roster keep their roster Tags, so Audiences that select those Tags still select them"
+    ),
+    (
+        "kernel.roster.absent_no_email",
+        "{n} คนจะไม่มีอีเมล จึงผูกบัญชีแชตเองไม่ได้ จนกว่าเจ้าหน้าที่จะเพิ่มอีเมลหรือผูกบัญชีให้",
+        "{n} Students will have no email, so they cannot link their chat account until Staff add one or link them by hand"
+    ),
+    (
         "kernel.roster.header_absent",
         "ไม่มีในไฟล์ ไม่เป็นไร",
         "Left out, which is fine"

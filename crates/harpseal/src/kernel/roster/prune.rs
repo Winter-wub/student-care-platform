@@ -100,6 +100,7 @@ async fn prune_one(
     let (diff_key, head_key) = (super::diff::key(id), super::diff::head_key(id));
     s.files.delete(key).await?;
     s.files.delete(&rows_key).await?;
+    s.files.delete(&super::rows::legacy_key(id)).await?;
     super::diff::delete(s, id).await?;
     let cond = Statement::new("EXISTS (SELECT 1 FROM roster_import WHERE id = ? AND file_key = ?)")
         .bind(id)

@@ -47,7 +47,7 @@ pub(super) async fn apply(cx: &JobContext, imp: &Import) -> Result<bool> {
     for rec in &records {
         let e = existing.get(&rec.code);
         // A column the file leaves out keeps what is stored (#154).
-        let rec = &*super::validate::resolve(e, rec);
+        let rec = &*super::keep::resolve(e, rec);
         let (t, merge) = store::classify(e, rec);
         tally.add(&t);
         match e {

@@ -211,15 +211,13 @@ fn the_stored_list_reads_back_and_skips_a_broken_line() {
 #[test]
 fn a_column_left_out_keeps_the_stored_value() {
     // #154: the file has no email, Tags or year: nothing changes.
-    use crate::kernel::roster::validate::resolve;
+    use crate::kernel::roster::keep::{Kept, resolve};
     let e = existing("s1", fields("นก ทะเล", 3, "active"), &[], &["ชมรม"]);
     let mut f = fields("นก ทะเล", 3, "active");
     f.email = None;
     f.attributes.clear();
     let mut r = record(2, "68000001", f, &[]);
-    r.keep = ["email", "tags", "attributes.year"]
-        .map(String::from)
-        .to_vec();
+    r.keep = vec![Kept::Email, Kept::Tags, Kept::Attribute("year".into())];
     let kept = resolve(Some(&e), &r);
     assert_eq!(change_of(Some(&e), &kept), None);
     // Without the keep list the same record clears them.

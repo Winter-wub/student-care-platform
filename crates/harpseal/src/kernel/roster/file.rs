@@ -137,14 +137,21 @@ pub(crate) fn absent_in<'a>(absent: &'a [Absent], sheet: &str) -> &'a [String] {
 }
 
 /// The headers a file must hold (#154): the student id, the name and the
-/// attributes that may not be empty; the others may be left out.
+/// attributes that may not be empty; the email when `[roster] blocking`
+/// refuses a missing one, and every attribute when it refuses an empty
+/// one (a column left out would otherwise slip past the rule). The others
+/// may be left out.
 pub(crate) fn required_headers(roster: &RosterConfig) -> Vec<String> {
     let mut v = vec![roster.student_code.clone(), roster.display_name.clone()];
+    if roster.blocks("missing_email") {
+        v.push(roster.email.clone());
+    }
+    let all = roster.blocks("empty_attribute");
     v.extend(
         roster
             .attributes_in_order()
             .into_iter()
-            .filter(|(_, a)| !a.optional)
+            .filter(|(_, a)| !a.optional || all)
             .map(|(_, a)| a.column.clone()),
     );
     v

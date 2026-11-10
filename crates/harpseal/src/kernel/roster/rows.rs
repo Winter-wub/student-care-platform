@@ -10,6 +10,13 @@
 //! from a backup, which carries only `file_key` objects, or an import
 //! uploaded before #46), the chunk falls back to the original file. It is
 //! deleted with the original after a year (`prune.rs`).
+//!
+//! Since #154 the rows are written under `roster-rows/v2/` ([`key`]): a
+//! record may list fields to keep, which a binary from before #154 would
+//! not know and would clear on confirm. After a rollback such a binary
+//! finds no `roster-rows/<id>.jsonl`, falls back to the original file and
+//! refuses it (its reader needs every column), so nothing is cleared.
+//! This binary still reads rows stored before #154 ([`legacy_key`]).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -21,8 +28,13 @@ use crate::module::JobContext;
 use crate::students::StudentFields;
 use crate::{Error, Result};
 
-/// The FileStore key of import `id`'s parsed rows.
+/// The FileStore key of import `id`'s parsed rows (#154: versioned).
 pub(crate) fn key(id: &str) -> String {
+    format!("roster-rows/v2/{id}.jsonl")
+}
+
+/// Where rows stored before #154 are (read, and deleted, still).
+pub(crate) fn legacy_key(id: &str) -> String {
     format!("roster-rows/{id}.jsonl")
 }
 
@@ -56,7 +68,7 @@ pub(crate) fn encode(records: &[Record]) -> Result<Vec<u8>> {
             locale: r.fields.locale.0.clone(),
             attributes: r.fields.attributes.clone(),
             tags: r.tags.clone(),
-            keep: r.keep.clone(),
+            keep: r.keep.iter().map(super::keep::Kept::name).collect(),
         };
         serde_json::to_writer(&mut out, &line).map_err(|_| Error::Invalid("roster rows".into()))?;
         out.push(b'\n');
@@ -87,7 +99,13 @@ pub(crate) fn slice(bytes: &[u8], from: usize, to: usize) -> Result<Vec<Record>>
                 code: line.code,
                 fields,
                 tags: line.tags,
-                keep: line.keep,
+                // A name this binary does not know refuses the rows, never
+                // drops the field (it would be cleared).
+                keep: line
+                    .keep
+                    .iter()
+                    .map(|k| super::keep::Kept::parse(k).ok_or_else(bad))
+                    .collect::<Result<_>>()?,
             })
         })
         .collect()
@@ -102,9 +120,15 @@ pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<
     let from = usize::try_from(imp.applied_rows).unwrap_or(usize::MAX);
     let total = usize::try_from(imp.total_rows).unwrap_or(0);
     let to = from.saturating_add(size).min(total);
-    if !imp.counts.rows_sha256.is_empty()
-        && let Some(bytes) = s.files.get(&key(&imp.id)).await?
-    {
+    let stored = if imp.counts.rows_sha256.is_empty() {
+        None
+    } else {
+        match s.files.get(&key(&imp.id)).await? {
+            Some(b) => Some(b),
+            None => s.files.get(&legacy_key(&imp.id)).await?,
+        }
+    };
+    if let Some(bytes) = stored {
         if crate::auth::sha256_hex(&bytes) != imp.counts.rows_sha256 {
             return Err(Error::Invalid("the stored roster rows changed".into()));
         }

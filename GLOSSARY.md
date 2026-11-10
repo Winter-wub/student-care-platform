@@ -28,7 +28,7 @@ A person on the roster, identified by student ID. The only kind of person who ta
 _Avoid_: user, member, end user
 
 **Roster warning** (คำเตือนทะเบียน):
-A problem found in a roster file that does not stop the import: a missing, malformed or shared email, or an empty optional attribute. The row imports and the preview and report list it. A problem that stops the import (a malformed or duplicate student ID, an unreadable value) is _blocking_; a Deployment may make any warning class blocking. A Student with no email, an invalid email or an empty attribute shows as having missing data on the Students list; a shared email is only a warning, and the chat flow refuses to onboard such a Student (Staff link them by hand).
+A problem found in a roster file that does not stop the import: a missing, malformed or shared email, or an empty optional attribute. The row imports and the preview and report list it. A problem that stops the import (a malformed or duplicate student ID, an unreadable value) is _blocking_; a Deployment may make any warning class blocking. A Student with no email, an invalid email or an empty attribute shows as having missing data on the Students list; a shared email is only a warning, and the chat flow refuses to onboard such a Student (Staff link them by hand). A file may leave the email column out (#154) unless a missing email is blocking: it raises no per-row warning, the Students keep their stored email, and the preview counts those left without one.
 _Avoid_: soft error
 
 **Staff** (เจ้าหน้าที่):
@@ -61,7 +61,7 @@ A set of Students selected by attribute (year, programme, Locale, link status), 
 _Avoid_: target group, segment, recipients
 
 **Tag** (ป้าย):
-A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import whose file has the Tags column) or is attached by Staff by hand (kept across imports).
+A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import, unless the file leaves the Tags column out) or is attached by Staff by hand (kept across imports).
 
 **Quota** (โควตา):
 The limit per period on one metered thing, such as LINE Push messages per month. Reaching it warns Staff; it never stops sending by itself. For LINE the limit follows the Official Account package that Staff holding `kernel.setting.edit` pick in the back office (Free, Basic, Pro or a Custom number), with `[quotas.line]` as the default until then.

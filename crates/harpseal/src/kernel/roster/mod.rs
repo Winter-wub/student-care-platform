@@ -46,6 +46,8 @@ mod finish;
 mod header_hint;
 mod intake;
 mod job;
+mod keep;
+mod page_absent;
 mod page_changes;
 mod page_headers;
 mod page_help;
