@@ -28,12 +28,21 @@ pub(crate) const TEXTS: &[E] = th_en![
         "Type the start of an ID or part of a name, then press Add."
     ),
     ("kernel.picker.add", "เพิ่ม", "Add"),
+    // A hit already in the list, in place of "เพิ่ม".
+    ("kernel.picker.picked", "เลือกแล้ว", "Picked"),
     // {code}
     ("kernel.picker.add_aria", "เพิ่ม {code}", "Add {code}"),
     (
         "kernel.picker.none",
         "ไม่พบนักศึกษาที่ตรงกัน ลองพิมพ์ให้สั้นลง หรือตรวจรหัสอีกครั้ง",
         "No Student matches. Try fewer characters, or check the ID."
+    ),
+    // The status line after a search. {n}: how many are listed.
+    ("kernel.picker.found", "พบ {n} คน", "{n} found."),
+    (
+        "kernel.picker.found_more",
+        "พบมากกว่า {n} คน แสดง {n} คนแรก",
+        "More than {n} found; the first {n} are shown."
     ),
     // {n}: how many are listed.
     (
@@ -63,11 +72,11 @@ pub(crate) const TEXTS: &[E] = th_en![
         "ยังไม่ได้เลือกนักศึกษา ค้นหาด้านล่าง หรือวางรหัสหลายคนพร้อมกัน",
         "No Student picked yet. Search below, or paste many IDs."
     ),
-    // {max}, {n}: how many to remove.
+    // {max}, {n}: how many to remove. Neutral: any Module's form uses it.
     (
         "kernel.picker.over",
-        "เลือกได้ไม่เกิน {max} คน กรุณาลบออก {n} คนก่อนส่ง",
-        "At most {max}. Please remove {n} before sending."
+        "เลือกได้ไม่เกิน {max} คน เกินมา {n} คน กรุณาลบออก",
+        "At most {max}: {n} too many. Please remove them."
     ),
     // {n}
     (
@@ -76,11 +85,7 @@ pub(crate) const TEXTS: &[E] = th_en![
         "{n} IDs not found. Please check them or remove them."
     ),
     // {n}
-    (
-        "kernel.picker.left_n",
-        "{n} คนพ้นสภาพแล้ว จะไม่ได้รับข้อความ",
-        "{n} have left and will get nothing."
-    ),
+    ("kernel.picker.left_n", "{n} คนพ้นสภาพแล้ว", "{n} have left."),
     ("kernel.picker.unknown", "ไม่พบรหัสนี้", "ID not found"),
     ("kernel.picker.left", "พ้นสภาพแล้ว", "Left"),
     ("kernel.picker.remove_short", "ลบ", "Remove"),
@@ -92,6 +97,24 @@ pub(crate) const TEXTS: &[E] = th_en![
         "kernel.picker.added",
         "เพิ่ม {code} แล้ว เลือกแล้ว {n} คน",
         "Added {code}. {n} picked."
+    ),
+    // {code}, {n}: picked now.
+    (
+        "kernel.picker.already",
+        "{code} อยู่ในรายชื่อแล้ว เลือกแล้ว {n} คน",
+        "{code} is already picked. {n} picked."
+    ),
+    // {code}, {max}: the most one list holds.
+    (
+        "kernel.picker.full",
+        "เพิ่ม {code} ไม่ได้ รายชื่อเต็ม {max} คนแล้ว",
+        "{code} was not added: the list holds at most {max}."
+    ),
+    // After "pasted" when some did not fit. {max}
+    (
+        "kernel.picker.full_n",
+        "รหัสที่เหลือไม่ได้เพิ่ม เพราะรายชื่อเต็ม {max} คนแล้ว",
+        "The rest were not added: the list holds at most {max}."
     ),
     (
         "kernel.picker.removed",

@@ -8,7 +8,7 @@
 //! a [`StudentPicker`] with the same path inside your `<form>`:
 //!
 //! ```ignore
-//! const PICK: &str = "/reminders/pick";
+//! const PICK: ui::PickerRoute = ui::PickerRoute::new("/reminders/pick");
 //! r.student_picker(PERMISSION.id, PICK);
 //! // In the page handler:
 //! let field = ui::StudentPicker::new("ids", PICK, &t("reminders.ids"))
@@ -45,6 +45,33 @@ pub(crate) const NAMES: &str = "kernel.student.view";
 /// Most characters of a field name ([`StudentPicker::new`]).
 const MAX_FIELD: usize = 32;
 
+/// Where a Student picker's route lives (#146): one constant that both
+/// [`crate::ModuleRegistrar::student_picker`] mounts and
+/// [`StudentPicker::new`] searches through, so the two cannot disagree.
+///
+/// ```ignore
+/// pub const PICK: ui::PickerRoute = ui::PickerRoute::new("/reminders/pick");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PickerRoute(&'static str);
+
+impl PickerRoute {
+    /// The route at `/admin{path}`. `path` starts with `/` (checked when
+    /// the constant is built).
+    pub const fn new(path: &'static str) -> Self {
+        assert!(
+            !path.is_empty() && path.as_bytes()[0] == b'/',
+            "a picker path starts with /"
+        );
+        Self(path)
+    }
+
+    /// The path without `/admin`, as given to [`Self::new`].
+    pub const fn path(self) -> &'static str {
+        self.0
+    }
+}
+
 /// A Student picker field (#146): search by a code's start or part of a
 /// name, chips, paste many codes, unknown and left codes flagged, the
 /// count against [`Self::max`]. Without JS it is a plain textarea of
@@ -52,7 +79,7 @@ const MAX_FIELD: usize = 32;
 /// under your Permission, then render it inside your `<form>`:
 ///
 /// ```ignore
-/// const PICK: &str = "/reminders/pick";
+/// const PICK: ui::PickerRoute = ui::PickerRoute::new("/reminders/pick");
 /// r.student_picker(PERMISSION.id, PICK);
 /// // In the page handler:
 /// let field = ui::StudentPicker::new("ids", PICK, &t("reminders.ids"))
@@ -69,7 +96,7 @@ const MAX_FIELD: usize = 32;
 #[derive(Debug, Clone)]
 pub struct StudentPicker<'a> {
     field: &'a str,
-    path: &'a str,
+    route: PickerRoute,
     label: &'a str,
     help: Option<&'a str>,
     max: usize,
@@ -79,14 +106,13 @@ pub struct StudentPicker<'a> {
 impl<'a> StudentPicker<'a> {
     /// A picker posting its codes under `field` (also the textarea's `id`;
     /// lowercase ASCII letters, digits and `_`, at most 32), searching
-    /// through the route mounted at `path` with
-    /// [`crate::ModuleRegistrar::student_picker`] (the same path, without
-    /// `/admin`), and labelled `label`. Limit
-    /// [`crate::audience::MAX_STUDENTS`] until [`Self::max`].
-    pub fn new(field: &'a str, path: &'a str, label: &'a str) -> Self {
+    /// through `route` (the one mounted with
+    /// [`crate::ModuleRegistrar::student_picker`]), and labelled `label`.
+    /// Limit [`crate::audience::MAX_STUDENTS`] until [`Self::max`].
+    pub fn new(field: &'a str, route: PickerRoute, label: &'a str) -> Self {
         Self {
             field,
-            path,
+            route,
             label,
             help: None,
             max: crate::audience::MAX_STUDENTS,
@@ -94,7 +120,7 @@ impl<'a> StudentPicker<'a> {
         }
     }
 
-    /// A line under the label, also read with the field.
+    /// A line under the label, also read with the field and the search.
     pub fn help(mut self, help: &'a str) -> Self {
         self.help = Some(help);
         self
@@ -124,13 +150,18 @@ impl<'a> StudentPicker<'a> {
             )));
         }
         let codes = dedup(&self.codes, crate::audience::MAX_STUDENTS);
-        let found = resolve(s, &codes).await?;
         let names = staff.can(NAMES);
+        let found = resolve(s, &codes, names).await?;
         let t = |k: &str| s.catalog.t(&staff.locale, k);
         let f = self.field;
-        let url = format!("/admin{}", self.path);
+        let url = format!("/admin{}", self.route.path());
         let vals = serde_json::json!({ "pf": f, "pmax": self.max.to_string() }).to_string();
         let help_id = format!("{f}-help");
+        let hint_id = format!("{f}-hint");
+        let search_help = match self.help {
+            Some(_) => format!("{help_id} {hint_id}"),
+            None => hint_id.clone(),
+        };
         let search_key = if names {
             "kernel.picker.search"
         } else {
@@ -144,28 +175,32 @@ impl<'a> StudentPicker<'a> {
                     aria-describedby=[self.help.map(|_| help_id.as_str())] { (codes.join("\n")) }
                 div class="picker-js" hidden {
                     div id={ (f) "-picked" } {
-                        (picked(s, staff, &url, f, self.max, &codes, &found, true))
+                        (picked(s, staff, f, self.max, &codes, &found, true))
                     }
                     p class="picker-status" id={ (f) "-status" } role="status" {}
                     label for={ (f) "-q" } { (t(search_key)) }
-                    p class="muted" id={ (f) "-hint" } { (t("kernel.picker.hint")) }
+                    p class="muted" id=(hint_id) { (t("kernel.picker.hint")) }
                     // `form` names no form: Enter here searches and never
-                    // submits the page's form.
+                    // submits the page's form. The picked list goes along,
+                    // so hits already picked say so; the count of hits is
+                    // read once, from the status line, not the list.
                     input id={ (f) "-q" } type="search" name="q" form={ (f) "-detached" }
-                        autocomplete="off" aria-describedby={ (f) "-hint" }
+                        autocomplete="off" aria-describedby=(search_help)
                         aria-controls={ (f) "-results" }
                         hx-get=(url) hx-trigger="input changed delay:250ms, search"
-                        hx-target={ "#" (f) "-results" } hx-params="q,pf,pmax";
-                    div class="picker-results" id={ (f) "-results" } aria-live="polite" {}
+                        hx-include={ "#" (f) "-value" }
+                        hx-target={ "#" (f) "-results" } hx-params={ "q,pf,pmax," (f) };
+                    div class="picker-results" id={ (f) "-results" } {}
                     details class="picker-paste" {
                         summary { (t("kernel.picker.paste")) }
                         label for={ (f) "-paste" } id={ (f) "-paste-label" } { (t("kernel.picker.paste_label")) }
                         textarea id={ (f) "-paste" } name="paste" form={ (f) "-detached" } rows="4" {}
                         div class="actions" {
                             @let add = t("kernel.picker.paste_add");
-                            (edit_button(&url, f, "paste", "", &add, &add, "secondary"))
+                            (edit_button("paste", "", &add, &add, "secondary"))
                         }
                     }
+                    (editor(&url, f))
                 }
                 script { (PreEscaped(enhance_js(f))) }
             }
@@ -189,27 +224,25 @@ pub(crate) fn dedup(codes: &[String], cap: usize) -> Vec<String> {
     out
 }
 
-/// A button that posts one change (`op`: `add`, `remove`, `paste`,
-/// `clear`) to the route and swaps the picked list.
-pub(crate) fn edit_button(
-    url: &str,
-    f: &str,
-    op: &str,
-    code: &str,
-    label: &str,
-    aria: &str,
-    class: &str,
-) -> Markup {
-    let vals = serde_json::json!({ "op": op, "code": code }).to_string();
-    let include = if op == "paste" {
-        format!("#{f}-value, #{f}-paste")
-    } else {
-        format!("#{f}-value")
-    };
+/// A button for one change (`op`: `add`, `remove`, `paste`, `clear`). The
+/// picker's script posts it through [`editor`], never the button itself.
+pub(super) fn edit_button(op: &str, code: &str, label: &str, aria: &str, class: &str) -> Markup {
     html! {
-        button type="button" class=(class) aria-label=[(aria != label).then_some(aria)] hx-post=(url) hx-vals=(vals)
-            hx-include=(include) hx-params={ "pf,pmax,op,code,paste," (f) }
-            hx-target={ "#" (f) "-picked" } hx-swap="innerHTML" { (label) }
+        button type="button" class=(class) aria-label=[(aria != label).then_some(aria)]
+            data-op=(op) data-code=(code) { (label) }
+    }
+}
+
+/// The one element every change is posted from (`htmx.ajax` with it as
+/// the source). It is never swapped, so its queue (`hx-sync`) holds every
+/// change: each is sent after the one before has swapped and carries the
+/// latest list (`hx-include` is read when the request goes), and fast
+/// clicks never drop a pick. A button inside the swapped list could not
+/// be the source: htmx drops a queued request whose element is gone.
+fn editor(url: &str, f: &str) -> Markup {
+    html! {
+        span id={ (f) "-edit" } hidden data-url=(url) hx-sync="this:queue all"
+            hx-include={ "#" (f) "-value" } hx-params={ "pf,pmax,op,code,paste," (f) } {}
     }
 }
 
@@ -217,11 +250,9 @@ pub(crate) fn edit_button(
 /// picker on), the count, the flags and one chip per code. `first`: the
 /// page's own render, whose hidden input the script enables; a swapped-in
 /// one is live at once.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn picked(
     s: &PageState,
     staff: &CurrentStaff,
-    url: &str,
     f: &str,
     max: usize,
     codes: &[String],
@@ -270,13 +301,13 @@ pub(crate) fn picked(
                             _ => {}
                         }
                         @let aria = tf("kernel.picker.remove", &[("code", c)]);
-                        (edit_button(url, f, "remove", c, &t("kernel.picker.remove_short"), &aria, "link"))
+                        (edit_button("remove", c, &t("kernel.picker.remove_short"), &aria, "link"))
                     }
                 }
             }
             div class="actions" {
                 @let clear = t("kernel.picker.clear");
-                (edit_button(url, f, "clear", "", &clear, &clear, "link"))
+                (edit_button("clear", "", &clear, &clear, "link"))
             }
         }
     }
@@ -284,16 +315,19 @@ pub(crate) fn picked(
 
 /// The script that turns the picker on once HTMX has loaded: it disables
 /// the plain textarea (no longer posted), enables the hidden value, shows
-/// the picker and points the label at the search box. After a chip is
+/// the picker and points the label at the search box. A click on a change
+/// button posts it from the [`editor`] (queued there). After a chip is
 /// removed (its button gone) focus goes back to the search box.
 fn enhance_js(f: &str) -> String {
     // `f` is checked by `field_ok`: only a-z, 0-9 and `_`.
     format!(
-        r#"(function(){{var f="{f}";function on(){{if(!window.htmx)return;var g=function(x){{return document.getElementById(f+x);}};
+        r##"(function(){{var f="{f}";function on(){{if(!window.htmx)return;var g=function(x){{return document.getElementById(f+x);}};
 var t=document.getElementById(f),w=g("-picker");if(!t||!w)return;t.disabled=true;t.hidden=true;
 var v=g("-value");if(v)v.disabled=false;w.querySelector(".picker-js").hidden=false;g("-label").htmlFor=f+"-q";
+w.addEventListener("click",function(e){{var b=e.target.closest("button[data-op]");if(!b||!w.contains(b))return;var ed=g("-edit"),o={{op:b.dataset.op,code:b.dataset.code||""}};
+if(o.op==="paste")o.paste=g("-paste").value;htmx.ajax("POST",ed.dataset.url,{{source:ed,target:"#"+f+"-picked",swap:"innerHTML",values:o}});}});
 document.body.addEventListener("htmx:afterSwap",function(e){{if(e.target===g("-picked")&&(!document.activeElement||document.activeElement===document.body))g("-q").focus();}});}}
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",on);else on();}})();"#
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",on);else on();}})();"##
     )
 }
 
@@ -320,6 +354,7 @@ mod tests {
         let js = enhance_js("ids");
         assert!(!js.contains("</"), "nothing closes the inline script early");
         assert!(js.contains("t.disabled=true") && js.contains("v.disabled=false"));
+        assert!(js.contains("htmx.ajax(\"POST\",ed.dataset.url"), "{js}");
     }
 
     #[test]

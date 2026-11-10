@@ -176,20 +176,6 @@ pub(super) fn paging(total: i64, requested: &str) -> (i64, i64) {
     (page, pages)
 }
 
-/// `q` as a `LIKE` pattern (`\` escapes); `anywhere` adds `%` on both
-/// sides, else only after (a prefix match).
-pub(super) fn like(q: &str, anywhere: bool) -> String {
-    let mut p = String::from(if anywhere { "%" } else { "" });
-    for c in q.chars() {
-        if matches!(c, '%' | '_' | '\\') {
-            p.push('\\');
-        }
-        p.push(c);
-    }
-    p.push('%');
-    p
-}
-
 /// Form value cut to `max` characters, trimmed.
 pub(super) fn cut(v: &str, max: usize) -> String {
     v.trim().chars().take(max).collect()
@@ -279,8 +265,6 @@ mod tests {
 
     #[test]
     fn helpers() {
-        assert_eq!(like("student.", false), "student.%");
-        assert_eq!(like("a_b", true), "%a\\_b%");
         assert_eq!(short_id("U1234567890abcdef1234"), "U12345…1234");
         assert_eq!(short_id("short"), "short");
         assert_eq!(paging(0, ""), (1, 1));

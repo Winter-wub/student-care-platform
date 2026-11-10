@@ -46,7 +46,7 @@ pub const PATH: &str = "/reminders";
 /// The page action that drafts an Announcement to the pasted Students.
 pub const ANNOUNCE_PATH: &str = "/reminders/announce";
 /// The Student picker's search route (#146), under [`PERMISSION`].
-pub const PICK: &str = "/reminders/pick";
+pub const PICK: ui::PickerRoute = ui::PickerRoute::new("/reminders/pick");
 /// Who may send the reminder from the page.
 pub const PERMISSION: Permission =
     Permission::new("reminders.send", "Send the fee reminder").thai("ส่งเตือนชำระค่าธรรมเนียม");

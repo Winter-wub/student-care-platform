@@ -46,7 +46,7 @@ pub use onboard::{
     MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
 };
 pub(crate) use onboard_texts::TEXTS as ONBOARD_TEXTS;
-pub use picker::StudentPicker;
+pub use picker::{PickerRoute, StudentPicker};
 pub(crate) use picker_texts::TEXTS as PICKER_TEXTS;
 
 pub use thai::{
