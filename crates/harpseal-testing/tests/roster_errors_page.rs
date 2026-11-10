@@ -89,7 +89,10 @@ async fn a_file_without_any_header_row_says_which_headers_it_needs() {
         !card.contains("<span class=\"name code-head\">a</span>"),
         "{card}"
     );
-    assert_eq!(card.matches("data-header=\"missing\"").count(), 8, "{card}");
+    // The four required columns are missing; the four that may be empty
+    // may also be left out (#154).
+    assert_eq!(card.matches("data-header=\"missing\"").count(), 4, "{card}");
+    assert_eq!(card.matches("data-header=\"absent\"").count(), 4, "{card}");
     for h in EXPECTED.split(", ") {
         assert!(
             card.contains(&format!("<span class=\"name code-head\">{h}</span>")),
@@ -106,7 +109,13 @@ async fn a_cell_problem_names_the_row_the_column_and_the_fix() {
     let page = page_of("gpa.csv", file.as_bytes()).await;
     let row = first_row(&page);
     assert!(row.contains("data-label=\"แถว\">2</td>"), "{row}");
-    assert!(row.contains("data-label=\"คอลัมน์\">เกรดเฉลี่ย</td>"), "{row}");
+    // The value at fault, as the file holds it (#154).
+    assert!(
+        row.contains(
+            "data-label=\"คอลัมน์\">เกรดเฉลี่ย<span class=\"bad-value\">ค่าในไฟล์: <code>สามจุดห้า</code></span></td>"
+        ),
+        "{row}"
+    );
     // The problem, then what to do.
     assert!(row.contains("ต้องเป็นตัวเลข"), "{row}");
     assert!(

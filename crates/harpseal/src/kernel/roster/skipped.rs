@@ -1,10 +1,11 @@
 //! Rows and sheets an import left out (#70): footer rows below the data
 //! and hidden sheets ([`Skipped`]), listed on the import page and in
-//! `report.csv` so nothing is dropped unseen.
+//! `report.csv` so nothing is dropped unseen; and the may-be-empty
+//! columns a file leaves out (#154, [`Absent`]), on the preview.
 
 use maud::{Markup, html};
 
-use super::file::Skipped;
+use super::file::{Absent, Skipped};
 use super::view::View;
 
 /// Skipped rows listed on the page; the report has all.
@@ -35,6 +36,44 @@ pub(super) fn card(v: &View<'_>, skipped: &[Skipped]) -> Markup {
                     li {
                         @if !s.sheet.is_empty() { (s.sheet) " · " }
                         (v.t("kernel.roster.report_row")) " " (s.row) ": " (s.text)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The "columns not in the file" card (#154): each may-be-empty column a
+/// sheet leaves out, in template order, with the sheets that leave it out
+/// (none named for a CSV, or when every sheet does), and what happens to
+/// it. Nothing when every column is there.
+pub(super) fn absent_card(v: &View<'_>, absent: &[Absent]) -> Markup {
+    if absent.is_empty() {
+        return html! {};
+    }
+    let order = super::file::expected_headers(&v.s.config.roster);
+    let all_sheets = absent.iter().all(|a| a.sheet.is_empty());
+    let mut columns: Vec<(&str, Vec<&str>)> = Vec::new();
+    for h in &order {
+        let sheets: Vec<&str> = absent
+            .iter()
+            .filter(|a| a.columns.contains(h))
+            .map(|a| a.sheet.as_str())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if absent.iter().any(|a| a.columns.contains(h)) {
+            columns.push((h, if all_sheets { Vec::new() } else { sheets }));
+        }
+    }
+    html! {
+        section class="card" id="roster-absent" data-absent=(columns.len()) aria-labelledby="roster-absent-title" {
+            h2 id="roster-absent-title" { (v.t("kernel.roster.absent_title")) }
+            p class="muted" { (v.t("kernel.roster.absent_help")) }
+            ul class="list header-list" {
+                @for (h, sheets) in &columns {
+                    li data-header="absent" {
+                        span class="name code-head" { (h) }
+                        @if !sheets.is_empty() { " (" (sheets.join(", ")) ")" }
                     }
                 }
             }

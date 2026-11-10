@@ -75,6 +75,7 @@ pub(crate) async fn upload(
     let counts = Counts {
         sha256,
         skipped: read.skipped,
+        absent: read.absent,
         keep_file_until: now + KEEP_FILE_MS,
         ..Counts::default()
     };
@@ -333,6 +334,8 @@ pub(super) fn preview(
     for rec in &valid.records {
         listed.insert(rec.code.as_str());
         let e = existing.get(&rec.code);
+        // A column the file leaves out keeps what is stored (#154).
+        let rec = &*super::validate::resolve(e, rec);
         let (t, m) = store::classify(e, rec);
         tally.add(&t);
         changes.extend(diff::change(e, rec, &t, &m));

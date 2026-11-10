@@ -54,6 +54,23 @@ pub(crate) const TEXTS: &[E] = &[
     E::new("kernel.upload.required", "en", "Required"),
     E::new("kernel.upload.optional", "th", "เว้นว่างได้"),
     E::new("kernel.upload.optional", "en", "May be empty"),
+    // The roster's reader also takes a file without such a column (#154).
+    E::new("kernel.upload.optional_omit", "th", "เว้นว่างหรือไม่ใส่คอลัมน์ก็ได้"),
+    E::new(
+        "kernel.upload.optional_omit",
+        "en",
+        "May be empty or left out",
+    ),
+    E::new(
+        "kernel.upload.rule_omit",
+        "th",
+        "คอลัมน์ที่เว้นว่างได้จะไม่ใส่ในไฟล์ก็ได้ นักศึกษาที่มีอยู่แล้วจะคงค่าเดิมของคอลัมน์นั้นไว้",
+    ),
+    E::new(
+        "kernel.upload.rule_omit",
+        "en",
+        "A column that may be empty may also be left out: Students already on the roster keep what is stored in it",
+    ),
     E::new("kernel.upload.example", "th", "ตัวอย่าง:"),
     E::new("kernel.upload.example", "en", "Example:"),
     E::new("kernel.upload.template", "th", "ดาวน์โหลดแม่แบบ CSV"),

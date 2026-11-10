@@ -39,6 +39,9 @@ struct Line {
     attributes: Map<String, Json>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
+    /// Fields whose column the sheet leaves out (#154).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    keep: Vec<String>,
 }
 
 /// The records as JSON Lines.
@@ -53,6 +56,7 @@ pub(crate) fn encode(records: &[Record]) -> Result<Vec<u8>> {
             locale: r.fields.locale.0.clone(),
             attributes: r.fields.attributes.clone(),
             tags: r.tags.clone(),
+            keep: r.keep.clone(),
         };
         serde_json::to_writer(&mut out, &line).map_err(|_| Error::Invalid("roster rows".into()))?;
         out.push(b'\n');
@@ -83,6 +87,7 @@ pub(crate) fn slice(bytes: &[u8], from: usize, to: usize) -> Result<Vec<Record>>
                 code: line.code,
                 fields,
                 tags: line.tags,
+                keep: line.keep,
             })
         })
         .collect()
@@ -113,9 +118,10 @@ pub(super) async fn chunk(cx: &JobContext, imp: &Import, size: usize) -> Result<
     if crate::auth::sha256_hex(&bytes) != imp.counts.sha256 {
         return Err(Error::Invalid("the stored roster file changed".into()));
     }
-    let rows = super::file::parse(&bytes, &imp.file_name, &cx.config.roster)
+    let read = super::file::read(&bytes, &imp.file_name, &cx.config.roster)
         .map_err(|_| Error::Invalid("the stored roster file no longer reads".into()))?;
-    let valid = super::validate::validate(&rows, &cx.config)
+    let taken = super::warnings::Taken::default();
+    let valid = super::validate::validate_in(&read.rows, &cx.config, &taken, &read.absent)
         .map_err(|_| Error::Invalid("the stored roster file no longer validates".into()))?;
     // The rows the preview counted, or the import would apply something
     // else (a `[roster]` mapping changed since the upload).

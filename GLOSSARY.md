@@ -61,7 +61,7 @@ A set of Students selected by attribute (year, programme, Locale, link status), 
 _Avoid_: target group, segment, recipients
 
 **Tag** (ป้าย):
-A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import) or is attached by Staff by hand (kept across imports).
+A label on a Student so an Audience can select on it. A Tag comes from the roster file (replaced on every import whose file has the Tags column) or is attached by Staff by hand (kept across imports).
 
 **Quota** (โควตา):
 The limit per period on one metered thing, such as LINE Push messages per month. Reaching it warns Staff; it never stops sending by itself. For LINE the limit follows the Official Account package that Staff holding `kernel.setting.edit` pick in the back office (Free, Basic, Pro or a Custom number), with `[quotas.line]` as the default until then.

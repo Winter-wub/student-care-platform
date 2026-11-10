@@ -1,7 +1,9 @@
 //! The header error of a refused file (#134): the problem stated once,
 //! the columns found in the file beside the ones expected (required and
 //! may-be-empty apart), each marked as matching, missing or unknown, and
-//! an upload form on the same page. A failure stored before #134 (no
+//! an upload form on the same page. An unknown header names the expected
+//! one it is close to (#154); a may-be-empty column the file leaves out is
+//! marked as fine to leave out. A failure stored before #134 (no
 //! header row kept) keeps the problem table and the expected headers.
 
 use std::collections::BTreeSet;
@@ -9,6 +11,7 @@ use std::collections::BTreeSet;
 use maud::{Markup, html};
 
 use super::file::FoundHeaders;
+use super::header_hint::{Names, near};
 use super::store::{Failure, Import};
 use super::view::{BASE, IMPORT, View};
 
@@ -30,6 +33,7 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
     let help = super::page_help::columns(v, &v.s.config.roster);
     let reupload = v.staff.can(IMPORT) && super::has_mapping(&v.s.config.roster);
     let expected: Vec<&str> = help.iter().map(|c| c.header.as_str()).collect();
+    let names = super::header_hint::names(&v.s.catalog, &v.s.config.roster);
     html! {
         // The problem, once (#129: the flash announces after the upload).
         div class="warn" role=[v.alert()] { (v.t("kernel.roster.headers_title")) }
@@ -42,7 +46,7 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
                         h3 { (v.t("kernel.roster.headers_found")) }
                         p { (v.t("kernel.roster.no_header_found")) }
                     }
-                    @for sheet in &f.headers { (found(v, sheet, &expected)) }
+                    @for sheet in &f.headers { (found(v, sheet, &expected, &names)) }
                 }
                 div {
                     @for (required, key) in [(true, "kernel.roster.headers_required"), (false, "kernel.roster.headers_optional")] {
@@ -52,9 +56,16 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
                             ul class="list header-list" {
                                 @for c in cols {
                                     @let gone = !present(&c.header);
-                                    li data-header=(if gone { "missing" } else { "ok" }) {
+                                    @let state = match (gone, required) {
+                                        (false, _) => "ok",
+                                        (true, true) => "missing",
+                                        (true, false) => "absent",
+                                    };
+                                    li data-header=(state) {
                                         span class="name code-head" { (c.header) }
-                                        @if gone {
+                                        @if state == "absent" {
+                                            span class="chip quiet" { (v.t("kernel.roster.header_absent")) }
+                                        } @else if gone {
                                             span class="chip err" { (v.t("kernel.roster.header_missing")) }
                                         } @else {
                                             span class="chip ok" { (v.t("kernel.roster.header_ok")) }
@@ -88,8 +99,9 @@ pub(super) fn page(v: &View<'_>, imp: &Import, f: &Failure) -> Markup {
 }
 
 /// One sheet's header row as found, each header marked as matching or
-/// unknown (a repeat counts as unknown, as the reader does).
-fn found(v: &View<'_>, sheet: &FoundHeaders, expected: &[&str]) -> Markup {
+/// unknown (a repeat counts as unknown, as the reader does), an unknown
+/// one with the expected header it is close to.
+fn found(v: &View<'_>, sheet: &FoundHeaders, expected: &[&str], names: &[Names]) -> Markup {
     let title = if sheet.sheet.is_empty() {
         v.t("kernel.roster.headers_found")
     } else {
@@ -108,6 +120,12 @@ fn found(v: &View<'_>, sheet: &FoundHeaders, expected: &[&str]) -> Markup {
                         span class="chip ok" { (v.t("kernel.roster.header_ok")) }
                     } @else {
                         span class="chip err" { (v.t("kernel.roster.header_unknown")) }
+                        @if let Some(n) = near(h, names, &sheet.found) {
+                            span class="hint" data-near=(n) {
+                                (v.t("kernel.roster.header_near")) " "
+                                span class="code-head" { (n) }
+                            }
+                        }
                     }
                 }
             }

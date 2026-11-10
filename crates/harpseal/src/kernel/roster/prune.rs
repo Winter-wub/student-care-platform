@@ -61,11 +61,13 @@ pub(crate) async fn prune_files(s: &Services, now: i64) -> Result<Pruned> {
 
 /// `counts` and `error` without the Students they name (#134): the names
 /// of those who left (`left_names`, stored before #134) and the Student
-/// a problem names. The counts, rows and reasons stay.
+/// a problem names, and the value it echoes (#154). The counts, rows and
+/// reasons stay.
 fn scrub(counts: &str, error: Option<&str>) -> (String, Option<String>) {
     let anonymous = |p: &mut Problem| {
         p.student.clear();
         p.name.clear();
+        p.value.clear();
     };
     // Counts that no longer read stay as they are, never reset.
     let counts = match serde_json::from_str::<Counts>(counts) {

@@ -102,25 +102,27 @@ async fn the_report_of_a_file_that_imports_lists_its_warnings() {
     let r = b.get(&format!("/admin/roster/{id}/report.csv")).await;
     assert_eq!(r.status, 200);
     assert!(
-        r.body.starts_with("\u{feff}แถว,คอลัมน์,ปัญหา,ระดับ,นักศึกษา\r\n"),
+        r.body
+            .starts_with("\u{feff}แถว,คอลัมน์,ปัญหา,ระดับ,นักศึกษา,ค่าในไฟล์\r\n"),
         "{}",
         r.body
     );
-    // The level, then the Student (#134), last.
-    let line = |row: usize, col: &str, text: &str, who: &str| {
+    // The level, then the Student (#134), then the value (#154), last.
+    let line = |row: usize, col: &str, text: &str, who: &str, value: &str| {
         let l = r
             .body
             .lines()
             .find(|l| l.starts_with(&format!("{row},{col},")));
         assert!(
-            l.is_some_and(|l| l.contains(text) && l.ends_with(&format!(",เตือน,{who}"))),
+            l.is_some_and(|l| l.contains(text) && l.ends_with(&format!(",เตือน,{who},{value}"))),
             "{row} {text}"
         );
     };
-    line(2, "อีเมล", "ไม่มีอีเมล", "68000002 ปลา");
-    line(3, "อีเมล", "รูปแบบอีเมลไม่ถูกต้อง", "68000003 กุ้ง");
-    line(5, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000005 ปู");
-    line(6, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000006 ม้า");
+    line(2, "อีเมล", "ไม่มีอีเมล", "68000002 ปลา", "");
+    line(3, "อีเมล", "รูปแบบอีเมลไม่ถูกต้อง", "68000003 กุ้ง", "nok@sealbay");
+    line(5, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000005 ปู", OK);
+    let upper = OK.to_uppercase();
+    line(6, "อีเมล", "อีเมลซ้ำกับนักศึกษาคนอื่น", "68000006 ม้า", &upper);
     assert_eq!(r.body.lines().count(), 5, "{}", r.body);
 }
 
@@ -187,7 +189,7 @@ async fn a_deployment_can_make_a_warning_class_blocking() {
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     let lines: Vec<&str> = report.lines().collect();
     assert!(
-        lines[1].starts_with("3,อีเมล,") && lines[1].ends_with(",ต้องแก้,68000003 กุ้ง"),
+        lines[1].starts_with("3,อีเมล,") && lines[1].ends_with(",ต้องแก้,68000003 กุ้ง,nok@sealbay"),
         "{report}"
     );
     assert!(lines[2..].iter().all(|l| l.contains(",เตือน,")), "{report}");
@@ -222,11 +224,11 @@ async fn blocking_problems_are_reported_with_the_warnings_and_refuse_the_file() 
     let report = b.get(&format!("/admin/roster/{id}/report.csv")).await.body;
     // A blocking problem names no Student; the warnings do (#134).
     assert!(
-        report.contains("3,รหัสนักศึกษา,รหัสนักศึกษาซ้ำกับแถวก่อนหน้า,ต้องแก้,\r\n"),
+        report.contains("3,รหัสนักศึกษา,รหัสนักศึกษาซ้ำกับแถวก่อนหน้า,ต้องแก้,,68000001\r\n"),
         "{report}"
     );
     assert!(
-        report.contains("4,รหัสนักศึกษา,รหัสนักศึกษาไม่ตรงรูปแบบ,ต้องแก้,\r\n"),
+        report.contains("4,รหัสนักศึกษา,รหัสนักศึกษาไม่ตรงรูปแบบ,ต้องแก้,,6800000X\r\n"),
         "{report}"
     );
     assert!(report.contains("2,อีเมล,ไม่มีอีเมล"), "{report}");

@@ -26,6 +26,9 @@ pub(crate) struct HelpColumn {
     pub(crate) required: bool,
     /// An example value; empty for none.
     pub(crate) example: String,
+    /// The column may also be left out of the file (#154: the roster's
+    /// reader keeps what is stored in it); a Module's reader may not.
+    pub(crate) may_omit: bool,
 }
 
 /// The help panel's body (no card): the file rules, the columns and the
@@ -52,6 +55,7 @@ pub(crate) fn upload_panel(
                 li { (s.catalog.tf(&staff.locale, "kernel.upload.rule_types", &[("mb", &mb)])) }
                 li { (t("kernel.upload.rule_utf8")) }
                 @if !columns.is_empty() { li { (t(header_rule)) } }
+                @if columns.iter().any(|c| c.may_omit) { li { (t("kernel.upload.rule_omit")) } }
             }
             @if !columns.is_empty() {
                 h3 { (t("kernel.upload.columns")) }
@@ -61,6 +65,8 @@ pub(crate) fn upload_panel(
                             span class="name code-head" { (c.header) }
                             @if c.required {
                                 span class="chip" { (t("kernel.upload.required")) }
+                            } @else if c.may_omit {
+                                span class="chip quiet" { (t("kernel.upload.optional_omit")) }
                             } @else {
                                 span class="chip quiet" { (t("kernel.upload.optional")) }
                             }
@@ -113,6 +119,7 @@ pub fn upload_help(s: &PageState, staff: &CurrentStaff, path: &str) -> Markup {
             holds: s.catalog.t(&staff.locale, c.label_key),
             required: c.required,
             example: c.example.to_string(),
+            may_omit: false,
         })
         .collect();
     // The template is served behind the upload's Permission: no link for

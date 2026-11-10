@@ -219,3 +219,30 @@ fn an_xlsx_is_told_by_its_name_only() {
     }
     assert!(is_xlsx("A.XLSX") && !is_xlsx("a.csv"));
 }
+
+#[test]
+fn a_file_may_leave_out_the_columns_that_may_be_empty() {
+    // #154: email, Locale, Tags and the optional GPA left out.
+    let c = test_config();
+    let text = "รหัสนักศึกษา,ชื่อ-สกุล,หลักสูตร,ชั้นปี\n68010001,นก,MSC,1\n";
+    let r = read(text.as_bytes(), "a.csv", &c.roster).unwrap();
+    assert_eq!(r.rows.len(), 1);
+    let gone = ["อีเมล", "ภาษา", "กลุ่ม", "เกรดเฉลี่ย"].map(String::from);
+    assert_eq!(
+        r.absent,
+        vec![Absent {
+            sheet: String::new(),
+            columns: gone.to_vec()
+        }]
+    );
+    assert_eq!(absent_in(&r.absent, ""), &gone[..]);
+    // A whole file has nothing absent.
+    let full = read(CSV, "roster.csv", &c.roster).unwrap();
+    assert!(full.absent.is_empty());
+    // A required attribute is still required.
+    let text = "รหัสนักศึกษา,ชื่อ-สกุล,หลักสูตร\n68010001,นก,MSC\n";
+    match read(text.as_bytes(), "a.csv", &c.roster) {
+        Err(FileError::Headers(m)) => assert_eq!(m[0].missing, vec!["ชั้นปี".to_string()]),
+        other => panic!("{other:?}"),
+    }
+}

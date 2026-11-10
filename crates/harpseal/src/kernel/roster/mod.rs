@@ -4,7 +4,8 @@
 //! whole roster, Students missing from it become `left`; `upsert`: add and
 //! update only). The request stores the file in the FileStore under
 //! `roster/<import id>/<file name>`, reads it ([`file`]: the headers must
-//! match `[roster]` exactly), validates every row ([`validate`]: one error
+//! match `[roster]` exactly; a may-be-empty column may be left out, #154,
+//! and keeps what is stored), validates every row ([`validate`]: one error
 //! refuses the whole file, with a downloadable report) and previews what
 //! will change ([`preview`], Student by Student in [`diff`]). Confirming queues the Job
 //! `kernel.roster.import` ([`job`]), which applies 500 rows per run in one
@@ -42,6 +43,7 @@ pub(crate) mod diff;
 pub(crate) use crate::sheet::csv;
 pub(crate) mod file;
 mod finish;
+mod header_hint;
 mod intake;
 mod job;
 mod page_changes;
@@ -52,6 +54,7 @@ mod page_list;
 mod page_preview;
 mod page_problems;
 pub(crate) mod preview;
+mod problem;
 mod prune;
 mod reach;
 mod rows;
@@ -60,6 +63,7 @@ mod skipped;
 mod store;
 mod stuck;
 mod texts;
+mod texts_absent;
 mod texts_diff;
 mod texts_fix;
 mod texts_reach;
@@ -105,6 +109,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
         .messages(texts_reach::DEFAULTS)
         .messages(texts_diff::DEFAULTS)
         .messages(texts_fix::DEFAULTS)
+        .messages(texts_absent::DEFAULTS)
         .back_office_page(
             VIEW,
             "/roster",

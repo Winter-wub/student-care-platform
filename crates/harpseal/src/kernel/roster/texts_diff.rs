@@ -91,8 +91,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.headers_help",
-        "ทุกคอลัมน์ด้านล่างต้องมีหัวคอลัมน์ในไฟล์ สะกดให้ตรง เรียงลำดับใดก็ได้ แก้ไฟล์แล้วอัปโหลดใหม่ได้ที่ด้านล่างของหน้านี้",
-        "Every column below needs its header in the file, spelt exactly, in any order. Fix the file and upload it again at the bottom of this page"
+        "คอลัมน์ที่ต้องมีค่าต้องมีหัวคอลัมน์ในไฟล์ สะกดให้ตรง เรียงลำดับใดก็ได้ ส่วนคอลัมน์ที่เว้นว่างได้จะไม่ใส่ก็ได้ แก้ไฟล์แล้วอัปโหลดใหม่ได้ที่ด้านล่างของหน้านี้",
+        "Each required column needs its header in the file, spelt exactly, in any order; a column that may be empty may be left out. Fix the file and upload it again at the bottom of this page"
     ),
     (
         "kernel.roster.headers_found",
@@ -111,8 +111,8 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ),
     (
         "kernel.roster.headers_optional",
-        "คอลัมน์ที่เว้นว่างได้ (แต่ต้องมีหัวคอลัมน์)",
-        "Columns that may be empty (the header is still needed)"
+        "คอลัมน์ที่เว้นว่างหรือไม่ใส่ก็ได้",
+        "Columns that may be empty or left out"
     ),
     (
         "kernel.roster.header_missing",

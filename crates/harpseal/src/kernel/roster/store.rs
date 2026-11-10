@@ -92,6 +92,10 @@ pub(crate) struct Counts {
     /// sheets, shown on the preview and in the report.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) skipped: Vec<super::file::Skipped>,
+    /// The may-be-empty columns the file leaves out (#154), per sheet:
+    /// the preview says listed Students keep what is stored in them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) absent: Vec<super::file::Absent>,
     /// The warnings of a file that imports (#71), shown on the preview and
     /// in the report.
     #[serde(skip_serializing_if = "Warned::is_empty")]

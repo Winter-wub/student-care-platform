@@ -66,12 +66,16 @@ async fn the_upload_form_has_the_columns_rules_and_template_beside_it() {
         "{code}"
     );
     let email = column(&help, "อีเมล");
-    assert!(email.contains("เว้นว่างได้"), "{email}");
+    // A may-be-empty column may also be left out of the file (#154).
+    assert!(email.contains("เว้นว่างหรือไม่ใส่คอลัมน์ก็ได้"), "{email}");
+    assert!(help.contains("คอลัมน์ที่เว้นว่างได้จะไม่ใส่ในไฟล์ก็ได้"), "{help}");
     let tags = column(&help, "กลุ่ม");
     assert!(tags.contains("ชมรมดนตรี;ทุนเรียนดี"), "the separator: {tags}");
     let programme = column(&help, "หลักสูตร");
     assert!(programme.contains("MSC, MSC-Intl") && programme.contains("ตัวอย่าง:"));
-    assert!(column(&help, "เกรดเฉลี่ย").contains("เว้นว่างได้"));
+    assert!(column(&help, "เกรดเฉลี่ย").contains("ไม่ใส่คอลัมน์ก็ได้"));
+    // A required attribute is still required.
+    assert!(column(&help, "ชั้นปี").contains("ต้องมีค่า"));
     assert!(
         help.contains("href=\"/admin/roster/template.csv\" download"),
         "{help}"

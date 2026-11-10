@@ -36,6 +36,11 @@ fn student(p: &Problem) -> String {
     format!("{} {}", p.student, p.name).trim().to_string()
 }
 
+/// Whether any problem echoes its cell's value (#154).
+fn has_values<'a>(mut problems: impl Iterator<Item = &'a Problem>) -> bool {
+    problems.any(|p| !p.value.is_empty())
+}
+
 /// Whether any problem is a warning (reports stored before #71 have none).
 fn has_warnings(problems: &[Problem]) -> bool {
     problems.iter().any(|p| !p.severity.is_blocking())
@@ -149,6 +154,16 @@ fn reason(v: &View<'_>, p: &Problem) -> String {
         Some(fits) => format!("{text}: {fits}"),
         None => text,
     };
+    // A header close to an expected one names it (#154).
+    let text = if p.reason == "unexpected_header" {
+        let names = super::header_hint::names(&v.s.catalog, &v.s.config.roster);
+        match super::header_hint::near(&p.column, &names, &[]) {
+            Some(n) => format!("{text} ({} {n})", v.t("kernel.roster.header_near")),
+            None => text,
+        }
+    } else {
+        text
+    };
     if p.count < 2 {
         return text;
     }
@@ -223,7 +238,16 @@ pub(super) fn table(v: &View<'_>, problems: &[Problem]) -> Markup {
                                 span class="code id" { (p.student) } " " (p.name)
                             }
                         }
-                        td data-label=(v.t("kernel.roster.report_column")) { (column(p)) }
+                        td data-label=(v.t("kernel.roster.report_column")) {
+                            (column(p))
+                            // The value at fault, as the file holds it (#154).
+                            @if !p.value.is_empty() {
+                                span class="bad-value" {
+                                    (v.t("kernel.roster.report_value")) " "
+                                    code { (p.value) }
+                                }
+                            }
+                        }
                         td data-label=(v.t("kernel.roster.report_reason")) {
                             (reason(v, p))
                             (fix(v, p))
@@ -286,6 +310,7 @@ pub(super) async fn report(
     let sheets = has_sheets_in(&problems) || skipped.iter().any(|s| !s.sheet.is_empty());
     let levels = problems.iter().any(|p| !p.severity.is_blocking());
     let students = has_students(problems.iter().copied());
+    let values = has_values(problems.iter().copied());
     let mut head = vec![
         v.t("kernel.roster.report_row"),
         v.t("kernel.roster.report_column"),
@@ -301,6 +326,10 @@ pub(super) async fn report(
     }
     if sheets {
         head.insert(0, v.t("kernel.roster.report_sheet"));
+    }
+    // Last of all (#154), for the same reason.
+    if values {
+        head.push(v.t("kernel.roster.report_value_column"));
     }
     let head: Vec<&str> = head.iter().map(String::as_str).collect();
     let mut lines = vec![super::csv::line(&head)];
@@ -319,6 +348,9 @@ pub(super) async fn report(
         }
         if sheets {
             fields.insert(0, &p.sheet);
+        }
+        if values {
+            fields.push(&p.value);
         }
         lines.push(super::csv::line(&fields));
     }

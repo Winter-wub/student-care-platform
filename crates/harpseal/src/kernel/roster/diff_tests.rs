@@ -32,6 +32,7 @@ fn existing(id: &str, f: StudentFields, overrides: &[&str], tags: &[&str]) -> Ex
 
 fn record(row: usize, code: &str, f: StudentFields, tags: &[&str]) -> Record {
     Record {
+        keep: Vec::new(),
         row,
         code: code.into(),
         fields: f,
@@ -205,4 +206,26 @@ fn the_stored_list_reads_back_and_skips_a_broken_line() {
     bytes.extend_from_slice(b"{broken\n");
     assert_eq!(decode(&bytes), vec![c]);
     assert_eq!(key("abc"), "roster-diff/abc.jsonl");
+}
+
+#[test]
+fn a_column_left_out_keeps_the_stored_value() {
+    // #154: the file has no email, Tags or year: nothing changes.
+    use crate::kernel::roster::validate::resolve;
+    let e = existing("s1", fields("นก ทะเล", 3, "active"), &[], &["ชมรม"]);
+    let mut f = fields("นก ทะเล", 3, "active");
+    f.email = None;
+    f.attributes.clear();
+    let mut r = record(2, "68000001", f, &[]);
+    r.keep = ["email", "tags", "attributes.year"]
+        .map(String::from)
+        .to_vec();
+    let kept = resolve(Some(&e), &r);
+    assert_eq!(change_of(Some(&e), &kept), None);
+    // Without the keep list the same record clears them.
+    r.keep.clear();
+    let c = change_of(Some(&e), &resolve(Some(&e), &r)).unwrap();
+    assert_eq!(c.fields.len(), 3, "{c:?}");
+    // A new Student keeps the record's empty values.
+    assert!(resolve(None, &r).fields.email.is_none());
 }

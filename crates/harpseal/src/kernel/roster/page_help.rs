@@ -30,6 +30,7 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
         holds: v.t(key),
         required,
         example,
+        may_omit: !required,
     };
     let mut rows = vec![
         col(
@@ -95,6 +96,7 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
             holds,
             required: !a.optional,
             example: example(a),
+            may_omit: a.optional,
         });
     }
     rows

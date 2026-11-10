@@ -31,6 +31,8 @@ pub(super) fn preview(v: &View<'_>, imp: &Import, wrong: bool, head: Option<&Hea
             div class="warn" id=(ALARM_ID) role=[v.alert().filter(|_| allowed)] { (alarm(v, imp)) }
         }
         (figures(v, imp, head))
+        // Columns the file leaves out keep their stored values (#154).
+        (super::skipped::absent_card(v, &imp.counts.absent))
         (super::page_changes::leaving(v, imp, head))
         (super::skipped::card(v, &imp.counts.skipped))
         (problems::warnings_card(v, imp))
