@@ -133,6 +133,29 @@ pub(super) const DEFAULTS: &[E] = th_en![
     ("kernel.admin.texts.area", "หน้าที่แสดง", "Shown on"),
     ("kernel.admin.texts.all_areas", "ทุกหน้า", "Every page"),
     ("kernel.admin.texts.find", "ค้นหา", "Search"),
+    // {n} (#142: the result count, announced as Staff type)
+    (
+        "kernel.admin.texts.count_all",
+        "ข้อความทั้งหมด {n} รายการ",
+        "{n} texts in all"
+    ),
+    // {n}
+    (
+        "kernel.admin.texts.count_found",
+        "พบ {n} ข้อความ",
+        "{n} texts found"
+    ),
+    // {n} (#142: saved edits their default no longer accepts)
+    (
+        "kernel.admin.texts.to_fix",
+        "ต้องแก้ไข {n} ข้อความ",
+        "{n} to fix"
+    ),
+    (
+        "kernel.admin.texts.to_fix_help",
+        "ข้อความที่แก้ไว้ใช้กับค่าตั้งต้นตอนนี้ไม่ได้ กรุณาเปิดข้อความนี้ แก้ไขแล้วบันทึกอีกครั้ง",
+        "This edit no longer fits the current default. Open the text, fix it and save again."
+    ),
     (
         "kernel.admin.texts.intro",
         "ข้อความที่นักศึกษาและเจ้าหน้าที่เห็น จัดตามหน้าที่แสดง กดที่ข้อความเพื่อแก้ไข",

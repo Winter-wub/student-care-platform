@@ -155,3 +155,111 @@ async fn the_edit_page_title_follows_an_edit() {
     let page = admin.get(path).await.body;
     assert!(page.contains("<h1>ยินดีต้อนรับ ฉบับแก้ไข</h1>"), "{page}");
 }
+
+/// The `data-area` of every group shown open (#142).
+fn open_areas(body: &str) -> Vec<&str> {
+    body.split("<details class=\"text-group\" data-area=\"")
+        .skip(1)
+        .filter(|s| {
+            s.split_once('>')
+                .is_some_and(|(tag, _)| tag.ends_with(" open"))
+        })
+        .filter_map(|s| s.split('"').next())
+        .collect()
+}
+
+/// The result count's text, from the live region or its HTMX update.
+fn count(body: &str) -> &str {
+    body.split_once("id=\"texts-count\"")
+        .and_then(|(_, rest)| rest.split_once('>'))
+        .and_then(|(_, rest)| rest.split_once('<'))
+        .map_or("", |(text, _)| text)
+}
+
+/// Groups load collapsed; a search opens the groups that match and says
+/// how many texts it found, once per update (#142).
+#[tokio::test]
+async fn groups_load_collapsed_and_a_search_opens_the_matches() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    let all = admin.get("/admin/texts").await.body;
+    assert!(areas(&all).len() > 3, "{all}");
+    assert!(open_areas(&all).is_empty(), "{all}");
+    assert!(count(&all).starts_with("ข้อความทั้งหมด "), "{all}");
+    assert!(
+        all.contains("aria-describedby=\"texts-count\""),
+        "the search names its count"
+    );
+    let problems = harpseal_testing::a11y::problems(&all);
+    assert!(problems.is_empty(), "{problems:?}");
+
+    // By a Thai value, an English value, or a key, in any case.
+    for q in [
+        "ยินดีต้อนรับสู่ช่องทางบริการ",
+        "WELCOME TO STUDENT SERVICES",
+        "Kernel.Flow.Welcome",
+    ] {
+        let r = admin
+            .get(&format!("/admin/texts?q={}", urlencode(q)))
+            .await
+            .body;
+        assert!(r.contains("/admin/texts/kernel.flow.welcome\""), "{q}: {r}");
+        assert!(open_areas(&r).contains(&"kernel.chat"), "{q}: {r}");
+        assert_eq!(open_areas(&r), areas(&r), "{q}: every match is open");
+        assert!(count(&r).starts_with("พบ "), "{q}: {r}");
+    }
+
+    // HTMX: the list, then the count out of band into the live region
+    // the page already has, so it is announced once.
+    let r = htmx_get(&admin, "/admin/texts?q=kernel.flow.welcome&area=")
+        .await
+        .body;
+    assert!(r.starts_with("<div id=\"texts-results\">"), "{r}");
+    assert!(
+        r.contains("<span id=\"texts-count\" hx-swap-oob=\"innerHTML\">"),
+        "{r}"
+    );
+    assert!(
+        !r.contains("aria-live") && !r.contains("role=\"status\""),
+        "{r}"
+    );
+    let problems = harpseal_testing::a11y::problems(&r);
+    assert!(problems.is_empty(), "{problems:?}");
+
+    // Filtered by page: that page's group is open.
+    let r = admin.get("/admin/texts?area=kernel.app").await.body;
+    assert_eq!(open_areas(&r), ["kernel.app"], "{r}");
+}
+
+/// A saved edit the current default no longer accepts (a placeholder it
+/// dropped) opens its group and says what to do (#142).
+#[tokio::test]
+async fn a_group_with_an_edit_to_fix_is_open() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin_support::run(
+        &h,
+        "INSERT INTO setting (key, locale, value, updated_at) \
+         VALUES ('kernel.inbound.file_too_large', 'th', 'ไฟล์ใหญ่เกินไป', 0)",
+    )
+    .await;
+    let page = admin.get("/admin/texts").await.body;
+    let open = open_areas(&page);
+    assert_eq!(open.len(), 1, "{page}");
+    let group = page
+        .split(&format!("data-area=\"{}\"", open[0]))
+        .nth(1)
+        .and_then(|g| g.split("</details>").next())
+        .unwrap();
+    assert!(
+        group.contains("/admin/texts/kernel.inbound.file_too_large\""),
+        "{group}"
+    );
+    assert!(
+        group.contains("<span class=\"chip err\">ต้องแก้ไข 1 ข้อความ</span>"),
+        "{group}"
+    );
+    assert!(group.contains("class=\"field-error\""), "{group}");
+    let problems = harpseal_testing::a11y::problems(&page);
+    assert!(problems.is_empty(), "{problems:?}");
+}
