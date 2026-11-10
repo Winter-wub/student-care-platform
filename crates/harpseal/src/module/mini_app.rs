@@ -1,8 +1,10 @@
 //! The Mini App part of [`ModuleRegistrar`]: Mini App buttons a Module
-//! sends, and its own Mini App pages linked from the home (#72). Kept
-//! apart from `module.rs` so each file stays small.
+//! sends, and its own Mini App pages linked from the home (#72); and the
+//! Mini App URL of a page for a Job or a page to put in an email (#163).
+//! Kept apart from `module.rs` so each file stays small.
 
-use super::ModuleRegistrar;
+use super::{JobContext, ModuleRegistrar, PageState};
+use crate::{ChannelKind, Deployment};
 
 /// A link on the Mini App home (#72), as registered.
 #[derive(Debug, Clone, Copy)]
@@ -46,5 +48,75 @@ impl ModuleRegistrar {
             order,
         });
         self
+    }
+}
+
+impl Deployment {
+    /// The URL that opens Mini App page `path` on the Channel of `kind`
+    /// (#163): the very URL a [`crate::Button::mini_app`] to `path` opens
+    /// there, built by the Channel's [`crate::MiniApp::launch_url`] (on
+    /// LINE the LIFF or LINE MINI App URL, `https://liff.line.me/<id>/app/fees`;
+    /// on Telegram the Web App URL followed by `path`). `path` is a Mini
+    /// App page, `/app` or below (e.g. `/app/fees`): anything else is a
+    /// programming error (a `debug_assert!`), as only `/app` pages sign the
+    /// Student in.
+    ///
+    /// For a Job or a page that writes an email or a web page: a button in
+    /// a chat message needs no URL. `None` when the Channel does not take
+    /// traffic here ([`Deployment::channel`]) or has no Mini App
+    /// configured.
+    ///
+    /// A LINE URL opens the page in LINE from anywhere (the app on a
+    /// phone, LINE Login in a browser), so it works from an email. A
+    /// Telegram Web App URL works only inside Telegram: opened in a
+    /// browser it shows the Mini App's "open it from a button in the chat"
+    /// page.
+    pub fn mini_app_url(&self, kind: &str, path: &str) -> Option<String> {
+        debug_assert!(app_path(path), "not a Mini App page: {path}");
+        let app = self.channel(kind)?.mini_app()?;
+        Some(app.launch_url(path))
+    }
+
+    /// [`Deployment::mini_app_url`] on every Channel that takes traffic
+    /// and has a Mini App, in registration order: for an email to a
+    /// Student who may use either chat app.
+    pub fn mini_app_urls(&self, path: &str) -> Vec<(ChannelKind, String)> {
+        debug_assert!(app_path(path), "not a Mini App page: {path}");
+        self.channels()
+            .filter_map(|c| Some((c.kind(), c.mini_app()?.launch_url(path))))
+            .collect()
+    }
+}
+
+/// `/app`, or a path below it (`/app/…`, `/app?…`).
+fn app_path(path: &str) -> bool {
+    path.strip_prefix("/app")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '?']))
+}
+
+impl JobContext {
+    /// [`Deployment::mini_app_url`]: the URL that opens Mini App page
+    /// `path` on the Channel of `kind`, e.g. for a reminder sent by email
+    /// (#163).
+    pub fn mini_app_url(&self, kind: &str, path: &str) -> Option<String> {
+        self.deployment.mini_app_url(kind, path)
+    }
+
+    /// [`Deployment::mini_app_urls`]: the URL of Mini App page `path` on
+    /// every Channel that has one.
+    pub fn mini_app_urls(&self, path: &str) -> Vec<(ChannelKind, String)> {
+        self.deployment.mini_app_urls(path)
+    }
+}
+
+impl PageState {
+    /// [`Deployment::mini_app_url`], from a page handler (#163).
+    pub fn mini_app_url(&self, kind: &str, path: &str) -> Option<String> {
+        self.deployment.mini_app_url(kind, path)
+    }
+
+    /// [`Deployment::mini_app_urls`], from a page handler.
+    pub fn mini_app_urls(&self, path: &str) -> Vec<(ChannelKind, String)> {
+        self.deployment.mini_app_urls(path)
     }
 }

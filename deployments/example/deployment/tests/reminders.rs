@@ -24,6 +24,13 @@ async fn the_monday_job_reminds_the_tagged_students_once() {
     let mali = h.email().to("mali@seal-bay.invalid");
     assert_eq!(mali.len(), 1, "Mali has no Link: email");
     assert_eq!(mali[0].subject, "เตือนชำระค่าธรรมเนียม");
+    // No LINE Link: how to link first, no URL (#163, `reminders_email.rs`).
+    assert!(
+        mali[0].text.contains("ผูกบัญชีด้วยรหัสนักศึกษา"),
+        "{}",
+        mali[0].text
+    );
+    assert!(!mali[0].text.contains("https://"), "{}", mali[0].text);
     let rows = app
         .count("SELECT count(*) FROM outbound_message WHERE module = 'reminders'")
         .await;

@@ -23,6 +23,13 @@ pub enum SettingKind {
     /// separated by single `-` or spaces (runs of spaces stored as one),
     /// a digit at both ends, up to 64 characters.
     AccountNumber,
+    /// A switch, on or off (#163), shown as a checkbox on
+    /// `/admin/settings`. Stored as `1` or `0`, as a 0/1
+    /// [`SettingKind::Number`] switch is, so a Module can turn such a
+    /// setting into a `Boolean` with no migration. The check takes `1`,
+    /// `0`, `true` and `false` and stores `1` or `0`; a default must be
+    /// `1` or `0`.
+    Boolean,
 }
 
 /// Longest [`SettingKind::AccountNumber`], in characters.
@@ -55,6 +62,13 @@ impl SettingKind {
     /// The value as stored (trimmed; LF line breaks), or the catalog key
     /// of why it is refused.
     pub fn check(self, raw: &str) -> core::result::Result<String, &'static str> {
+        if self == SettingKind::Boolean {
+            return match raw.trim() {
+                "1" | "true" => Ok("1".into()),
+                "0" | "false" => Ok("0".into()),
+                _ => Err("kernel.admin.module_settings.err_boolean"),
+            };
+        }
         let v = match self {
             SettingKind::MultilineText => raw.replace("\r\n", "\n").trim().to_string(),
             // What Students see and copy: one space between groups.
@@ -95,6 +109,7 @@ impl SettingKind {
             SettingKind::Url => Err("kernel.admin.module_settings.err_url"),
             SettingKind::AccountNumber if account(&v) => Ok(v),
             SettingKind::AccountNumber => Err("kernel.admin.module_settings.err_account"),
+            SettingKind::Boolean => Err("kernel.admin.module_settings.err_boolean"),
         }
     }
 
@@ -107,6 +122,7 @@ impl SettingKind {
             SettingKind::Date => "kernel.admin.module_settings.kind_date",
             SettingKind::Url => "kernel.admin.module_settings.kind_url",
             SettingKind::AccountNumber => "kernel.admin.module_settings.kind_account",
+            SettingKind::Boolean => "kernel.admin.module_settings.kind_boolean",
         }
     }
 }
@@ -207,6 +223,20 @@ mod tests {
             "https://host:0",
         ] {
             assert!(Url.check(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn boolean_is_stored_as_one_or_zero() {
+        for (raw, stored) in [("1", "1"), (" true ", "1"), ("0", "0"), ("false", "0")] {
+            assert_eq!(Boolean.check(raw), Ok(stored.into()), "{raw}");
+        }
+        for bad in ["", "2", "yes", "on", "TRUE", "1\u{200B}"] {
+            assert_eq!(
+                Boolean.check(bad),
+                Err("kernel.admin.module_settings.err_boolean"),
+                "{bad}"
+            );
         }
     }
 

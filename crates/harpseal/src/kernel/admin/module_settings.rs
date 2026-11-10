@@ -126,7 +126,7 @@ fn card(
         .is_some_and(|(s, _, _)| spec.kind.check(s).as_deref() != Ok(s.as_str()));
     html! {
         section class="card" id=(id) {
-            h3 { (v.t(spec.label_key)) " "
+            h3 { span id=(format!("{id}-name")) { (v.t(spec.label_key)) } " "
                 @if stored.is_some() {
                     span class="chip override" { (v.t("kernel.admin.module_settings.saved_value")) }
                 } @else if current.is_none() {
@@ -149,8 +149,12 @@ fn card(
                     input type="hidden" name="key" value=(key);
                     input type="hidden" name="version" value=(settings::version(stored.as_ref().map(|(v, _, _)| v.as_str())));
                     div class="field" {
-                        label for=(format!("{id}-value")) { (v.t("kernel.admin.module_settings.value")) }
-                        (input(spec.kind, &format!("{id}-value"), shown, err.is_some() || broken))
+                        @if spec.kind == SettingKind::Boolean {
+                            (switch(v, &id, shown, err.is_some() || broken))
+                        } @else {
+                            label for=(format!("{id}-value")) { (v.t("kernel.admin.module_settings.value")) }
+                            (input(spec.kind, &format!("{id}-value"), shown, err.is_some() || broken))
+                        }
                         @if let Some((_, _, why)) = err {
                             p class="field-error" { (v.t(why)) }
                         }
@@ -162,6 +166,9 @@ fn card(
                     None => { p class="setting-value muted" { (v.t("kernel.admin.module_settings.unset_text")) } }
                     Some(current) if spec.kind == SettingKind::MultilineText => {
                         pre class="setting-value" { (current) }
+                    }
+                    Some(current) if spec.kind == SettingKind::Boolean => {
+                        p class="setting-value" { strong { (v.t(on_off(current))) } }
                     }
                     Some(current) => { p class="setting-value" { strong { (current) } } }
                 }
@@ -180,6 +187,31 @@ fn permission_label(v: &View<'_>, id: &str) -> String {
         .iter()
         .find(|p| p.id == id)
         .map_or_else(|| id.to_string(), |p| p.label().into_owned())
+}
+
+/// A [`SettingKind::Boolean`] setting (#163): one checkbox shown as a
+/// switch, named by the setting's label then "เปิดใช้" (`card` is the
+/// card's id; the label is its `-name`). Unticked, the browser sends no
+/// `value`; [`submit`] reads that as off.
+fn switch(v: &View<'_>, card: &str, value: &str, invalid: bool) -> Markup {
+    let id = format!("{card}-value");
+    let names = format!("{card}-name {card}-switch");
+    html! {
+        label class="check" for=(id) {
+            input id=(id) name="value" type="checkbox" role="switch" value="1"
+                aria-labelledby=(names) checked[value == "1"]
+                aria-invalid=[invalid.then_some("true")];
+            span id=(format!("{card}-switch")) { (v.t("kernel.admin.module_settings.switch")) }
+        }
+    }
+}
+
+/// The catalog key of how a stored switch reads: on for `1`, else off.
+fn on_off(value: &str) -> &'static str {
+    match value {
+        "1" => "kernel.admin.module_settings.on",
+        _ => "kernel.admin.module_settings.off",
+    }
 }
 
 fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {
@@ -263,7 +295,12 @@ pub(super) async fn submit(
     if settings::version(expected) != f.version {
         return v.redirect(&back, false, "kernel.admin.conflict");
     }
-    let value = match spec.kind.check(&f.value) {
+    // An unticked switch posts no `value` (#163): off.
+    let raw = match spec.kind {
+        SettingKind::Boolean if f.value.is_empty() => "0",
+        _ => f.value.as_str(),
+    };
+    let value = match spec.kind.check(raw) {
         Ok(value) => value,
         Err(why) => {
             let raw = f.value.replace("\r\n", "\n");

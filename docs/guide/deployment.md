@@ -123,6 +123,32 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
 - Test it at the seam: `Browser::open_mini_app(&fake, external_id, path)`
   signs in on the Fake Channel. See `deployments/example` (`my_info.rs`)
   and `crates/harpseal-testing/tests/app_module*.rs` for LINE and Telegram.
+- **A link to the page from outside the chat** (an email, a web page):
+  `cx.mini_app_url(kind, path)` in a Job, `state.mini_app_url(kind, path)`
+  in a page handler or `deployment.mini_app_url(kind, path)` give the URL
+  a Mini App button to `path` opens on that Channel (the Channel's
+  `MiniApp::launch_url`), `None` when the Channel takes no traffic or has
+  no Mini App; `mini_app_urls(path)` gives `(ChannelKind, url)` for every
+  Channel that has one. A chat message needs no URL: send
+  `Button::mini_app(label, path)`. A LINE URL
+  (`https://liff.line.me/<LIFF id>/app/fees`) opens the page in LINE from
+  anywhere, so it works in an email; a Telegram Web App URL works only
+  inside Telegram (in a browser the page asks the Student to open it from
+  the chat), so an email should link to LINE. `path` is a page under
+  `/app` (a debug build asserts it).
+- **Only to Students who linked LINE.** A notify email goes to Students
+  the chat does not reach: no live Link, or every live Link unreachable
+  (they blocked the account). The LIFF URL opens the page only for a
+  Student with a LINE Link; anyone else lands on "not linked" in a chat
+  they never joined. So put the URL only in the email of Students with a
+  live LINE Link, and tell those with no live Link on any Channel how to
+  add the Official Account and link first (a Student linked only on
+  Telegram gets neither). The example's fee reminder does this, one
+  Notice per group under one key with the call's budget split between
+  them; a Student whose group changes between an unconfirmed email and
+  its retry is refused by Resend (409), never emailed twice
+  (`reminders/notice.rs`). It treats a broken stored switch
+  (`Error::SettingNotSet`) as "no link" rather than failing the send.
 
 #### Jobs
 

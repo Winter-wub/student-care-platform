@@ -72,6 +72,19 @@ pub(super) const TEXTS: &[E] = th_en![
         "Account number"
     ),
     (
+        "kernel.admin.module_settings.kind_boolean",
+        "เปิดหรือปิด",
+        "On or off"
+    ),
+    ("kernel.admin.module_settings.switch", "เปิดใช้", "On"),
+    ("kernel.admin.module_settings.on", "เปิดอยู่", "On"),
+    ("kernel.admin.module_settings.off", "ปิดอยู่", "Off"),
+    (
+        "kernel.admin.module_settings.err_boolean",
+        "ต้องเป็นเปิดหรือปิด",
+        "Must be on or off"
+    ),
+    (
         "kernel.admin.module_settings.err_invisible",
         "มีอักขระที่มองไม่เห็นหรือสลับทิศทางข้อความ ลบออกแล้วพิมพ์ใหม่",
         "Contains invisible or text-direction characters; remove them and type it again"

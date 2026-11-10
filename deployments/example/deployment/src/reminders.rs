@@ -1,6 +1,9 @@
 //! A customer Module that reminds chosen Students (#73): every Monday at
 //! 09:00 the Students tagged `fee_due` get a fee reminder, by chat when
-//! linked, by email otherwise ([`harpseal::JobContext::notify`]); Staff
+//! linked, by email otherwise ([`harpseal::JobContext::notify`]), the
+//! email linking to the fees page in LINE for a Student with a LINE Link
+//! and saying how to link first for anyone else (#163,
+//! `reminders/notice.rs`); Staff
 //! can also send it now to a pasted list from `/admin/reminders`
 //! ([`harpseal::PageState::notify`]), through a review step that shows
 //! who gets it, by which channel, and the message (`reminders/review.rs`,
@@ -28,9 +31,9 @@ use axum::routing::{get, post};
 use harpseal::audience::{Audience, MAX_STUDENTS, parse_student_ids};
 use harpseal::modules::announcements::{NewAnnouncement, create_draft};
 use harpseal::{
-    Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, Locale, MAX_NOTIFY, Message,
-    Module, ModuleRegistrar, Notice, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx,
-    Result, Statement, Timestamp, Value, ui,
+    Actor, AppState, CurrentStaff, Error, Job, JobContext, JobSpec, MAX_NOTIFY, Module,
+    ModuleRegistrar, NotifyDefer, NotifyOutcome, NotifyTo, Permission, RequestCtx, Result,
+    SettingKind, Statement, Timestamp, Value, ui,
 };
 use maud::html;
 
@@ -57,28 +60,16 @@ pub const PERMISSION: Permission =
 const DAY_MS: i64 = 86_400_000;
 
 mod form;
+mod notice;
 mod review;
 mod schedule;
 mod texts;
+pub use notice::{EMAIL_LINK, Extra, fees_url, notice};
+use notice::{FEES_PAGE, NOTICE_TH};
 use texts::TEXTS;
-
-/// The Thai reminder: the email subject and the text.
-const NOTICE_TH: (&str, &str) = (
-    "เตือนชำระค่าธรรมเนียม",
-    "มหาวิทยาลัยซีลเบย์: กรุณาชำระค่าธรรมเนียมการศึกษาภายในวันศุกร์นี้",
-);
 
 /// The Module.
 pub struct Reminders;
-
-/// The reminder, in Thai and English, under `key`.
-pub fn notice(key: &str) -> Notice {
-    let (subject, th) = NOTICE_TH;
-    let en = "Seal Bay University: please pay your tuition fee by this Friday.";
-    Notice::new("reminders", key)
-        .locale(Locale::th(), vec![Message::text(th)], subject, th)
-        .locale(Locale::en(), vec![Message::text(en)], "Fee reminder", en)
-}
 
 impl Module for Reminders {
     fn name(&self) -> &'static str {
@@ -88,6 +79,15 @@ impl Module for Reminders {
     fn register(&self, r: &mut ModuleRegistrar) {
         r.permission(PERMISSION)
             .messages(TEXTS)
+            .messages(notice::TEXTS)
+            .setting(
+                EMAIL_LINK,
+                SettingKind::Boolean,
+                "1",
+                PERMISSION.id,
+                "reminders.email_link_label",
+                "reminders.email_link_help",
+            )
             .job(JobSpec::scheduled(WEEKLY, SCHEDULE), weekly)
             .job(JobSpec::new(SEND), send)
             .back_office_page(
@@ -159,7 +159,14 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
                 .collect()
         })
         .unwrap_or_default();
-    let r = cx.notify(&notice(key), &to).await?;
+    let url = fees_url(&cx.settings(), cx.mini_app_url(FEES_PAGE.0, FEES_PAGE.1)).await?;
+    // One notify per group (`notice::sends`). One that fails fails the
+    // run; the retry finds the groups sent before it done under the key.
+    let mut reports = Vec::new();
+    for (n, group) in notice::sends(&cx.services, url.as_deref(), key, &to).await? {
+        reports.push(cx.notify(&n, &group).await?);
+    }
+    let r = notice::merge(&to, reports);
     let note = format!(
         "chat {}, email {}, skipped {}, deferred {}, failed {}",
         r.sent, r.emailed, r.skipped, r.deferred, r.failed
@@ -287,9 +294,15 @@ async fn send_now(
     let to: Vec<NotifyTo> = plan.ids.iter().map(NotifyTo::code).collect();
     let title = s.catalog.t(&staff.locale, "reminders.title");
     let t = |k: &str| s.catalog.t(&staff.locale, k);
-    let body = match s.notify(&notice(&format!("page:{key}")), &to).await {
-        Ok(r) => html! {
-            h1 { (title) }
+    let url = match fees_url(&s.settings(), s.mini_app_url(FEES_PAGE.0, FEES_PAGE.1)).await {
+        Ok(url) => url,
+        Err(e) => return ui::service_error(&s, &staff, &e),
+    };
+    let (r, err) = notice::remind(&s, url.as_deref(), &format!("page:{key}"), &to).await;
+    let body = html! {
+        h1 { (title) }
+        @if let Some(e) = &err { section class="card" { p role="alert" { (e.to_string()) } } }
+        @if err.is_none() || !r.students.is_empty() {
             section class="card" {
                 p { (t("reminders.result")
                     .replace("{sent}", &r.sent.to_string())
@@ -303,8 +316,7 @@ async fn send_now(
                     }
                 }
             }
-        },
-        Err(e) => html! { h1 { (title) } section class="card" { p { (e.to_string()) } } },
+        }
     };
     Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
 }
