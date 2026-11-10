@@ -209,6 +209,64 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Account id on the channel"
     ),
     ("kernel.students.link_button", "ผูกบัญชี", "Link"),
+    // The Manual Link picker (#143)
+    (
+        "kernel.students.pick_title",
+        "บัญชีแชทที่ยังไม่ได้เชื่อม (ล่าสุดอยู่บน)",
+        "Chat accounts not linked yet (newest first)"
+    ),
+    (
+        "kernel.students.pick_hint",
+        "ขอให้นักศึกษาส่งข้อความอะไรก็ได้มาที่บอทตอนนี้ แล้วเลือกบัญชีบนสุด",
+        "Ask the Student to send any message to the bot now, then pick the top account."
+    ),
+    (
+        "kernel.students.pick_none",
+        "ยังไม่มีบัญชีที่ทักบอทแล้วยังไม่ได้เชื่อม ขอให้นักศึกษาทักบอทก่อน แล้วโหลดหน้านี้ใหม่",
+        "No unlinked account has written to the bot yet. Ask the Student to write to it, then reload this page."
+    ),
+    (
+        "kernel.students.pick_capped",
+        "แสดงเฉพาะ 20 บัญชีล่าสุด ถ้าไม่พบ ให้พิมพ์รหัสบัญชีเองด้านล่าง",
+        "Only the 20 newest accounts are shown. If it is not here, type the account id below."
+    ),
+    ("kernel.students.pick_last", "ทักล่าสุด", "Last active"),
+    ("kernel.students.pick_first", "ทักครั้งแรก", "First wrote"),
+    (
+        "kernel.students.pick_stage_new",
+        "ยังไม่เริ่มเชื่อมบัญชี",
+        "Has not started linking"
+    ),
+    (
+        "kernel.students.pick_stage_consent",
+        "ยังไม่ยอมรับประกาศความเป็นส่วนตัว",
+        "Has not accepted the privacy notice"
+    ),
+    (
+        "kernel.students.pick_stage_student_id",
+        "รอกรอกรหัสนักศึกษา",
+        "Waiting for the student ID"
+    ),
+    (
+        "kernel.students.pick_stage_otp",
+        "รอรหัสยืนยันจากอีเมล",
+        "Waiting for the emailed code"
+    ),
+    (
+        "kernel.students.pick_blocked",
+        "บล็อกบอทอยู่",
+        "Has blocked the bot"
+    ),
+    (
+        "kernel.students.pick_typed",
+        "พิมพ์รหัสบัญชีเอง",
+        "Type the account id instead"
+    ),
+    (
+        "kernel.students.pick_both",
+        "ผูกไม่ได้: เลือกบัญชีจากรายการ หรือพิมพ์รหัสบัญชีเอง อย่างใดอย่างหนึ่ง",
+        "Cannot link: pick an account from the list or type an id, not both"
+    ),
     ("kernel.students.revoke", "ยกเลิกการเชื่อม", "Revoke"),
     (
         "kernel.students.confirm_revoke",

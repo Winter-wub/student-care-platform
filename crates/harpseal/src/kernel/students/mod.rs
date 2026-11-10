@@ -25,6 +25,7 @@ pub(crate) mod email;
 mod form;
 mod list;
 mod missing;
+mod pick;
 mod read;
 mod service;
 mod tags;

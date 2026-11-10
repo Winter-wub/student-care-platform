@@ -11,7 +11,7 @@ use maud::{Markup, html};
 
 use super::read::{self, LinkRow, StudentRow};
 use super::view::{View, channel_label};
-use super::{attribute_field, service};
+use super::{attribute_field, pick, service};
 use crate::kernel::{LINK_MANAGE, LINK_REVOKE};
 use crate::{Actor, AppState, CurrentStaff, RequestCtx, Result};
 
@@ -43,6 +43,12 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
     let tags = read::tags(s, &row.id).await?;
     let consents = read::consents(s, &row.id).await?;
     let events = read::security_events(s, &row.id).await?;
+    let picker: Pick = if v.staff.can(LINK_MANAGE) && row.status == "active" {
+        let offered = v.s.deployment.staff_channel_kinds();
+        Some(pick::recent_unlinked(s, &offered).await?)
+    } else {
+        None
+    };
     let can_edit = v.staff.can("kernel.student.edit");
     let base = format!("/admin/students/{}", row.id);
     let no_value = v.t("kernel.students.no_value");
@@ -81,7 +87,7 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
                         a class="btn" href=(format!("{base}/edit")) { (v.t("kernel.students.edit")) }
                     }
                 }
-                (links_card(v, row, &links))
+                (links_card(v, row, &links, &picker))
             }
             div {
                 (tags_card(v, &base, &tags, can_edit))
@@ -112,10 +118,13 @@ async fn body(v: &View<'_>, row: &StudentRow) -> Result<Markup> {
     })
 }
 
-fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
+/// The Manual Link picker's accounts (#143), read only for Staff who may
+/// Manual Link an active Student.
+type Pick = Option<(Vec<pick::Recent>, bool)>;
+
+fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow], picker: &Pick) -> Markup {
     // Staff unlink and Manual Link are separate Permissions (#80).
     let can_revoke = v.staff.can(LINK_REVOKE);
-    let can_link = v.staff.can(LINK_MANAGE);
     // A dev-only or unregistered Channel (#131, #133) gets a row only when
     // it holds a Link: existing Links always show, with their revoke button.
     let offered = v.s.deployment.staff_channel_kinds();
@@ -163,23 +172,12 @@ fn links_card(v: &View<'_>, row: &StudentRow, links: &[LinkRow]) -> Markup {
                     }
                 }
             }
-            @if can_link && row.status == "active" {
+            @if let Some((recent, more)) = picker {
                 form method="post" action=(format!("{base}/links")) class="manual-link" {
                     (v.staff.csrf_field())
                     h3 { (v.t("kernel.students.manual_link")) }
                     p class="muted" { (v.t("kernel.students.manual_link_help")) }
-                    div class="row2" {
-                        div class="field" {
-                            label for="ml-channel" { (v.t("kernel.students.channel")) }
-                            select id="ml-channel" name="channel" {
-                                @for kind in &offered { option value=(kind.as_str()) { (channel_label(kind.as_str())) } }
-                            }
-                        }
-                        div class="field" {
-                            label for="ml-external" { (v.t("kernel.students.external_id")) }
-                            input id="ml-external" name="external_id" type="text" required autocomplete="off";
-                        }
-                    }
+                    (pick::fields(v, recent, *more, &offered))
                     button type="submit" { (v.t("kernel.students.link_button")) }
                 }
             }
