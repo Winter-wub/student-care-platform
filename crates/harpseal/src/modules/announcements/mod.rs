@@ -40,6 +40,13 @@
 //!   Card's image, and the Mini App shows each in place. Up to 3 PDFs
 //!   (#113) of 10 MB each the same way: the Mini App lists them with
 //!   their names and sizes, and the first is a URL button on the Card.
+//! - **Saved Audiences** (#144, Module migration `0004_saved_audiences`):
+//!   Staff name the editor's Audience ("บันทึกกลุ่มผู้รับนี้") and pick it
+//!   again later; it keeps the rules (the choice and the filters), never a
+//!   list, so the reach is counted again on the editor and the review
+//!   step. A value `[roster]` no longer has is shown and refused, never
+//!   dropped. Rename and delete at `/admin/announcements/audiences`; every
+//!   write is audited and needs `announcements.send`.
 //! - **Pages** under `/admin/announcements`; Permissions
 //!   `announcements.view`, `announcements.send`, `announcements.retract`.
 //! - **Confirmation in proportion to reach** (#120): the Audience is an
@@ -91,6 +98,9 @@ mod page_more;
 mod page_notice;
 mod page_pick;
 mod page_review;
+mod page_saved;
+mod page_saved_list;
+mod saved;
 mod service;
 mod stats;
 mod status;
@@ -99,6 +109,7 @@ mod student;
 mod sweep;
 mod texts;
 mod texts_review;
+mod texts_saved;
 mod view;
 
 use axum::routing::{get, post};
@@ -181,10 +192,15 @@ impl Module for Announcements {
             "0003_files",
             include_str!("../../../migrations/announcements/0003_files.sql"),
         )
+        .migration(
+            "0004_saved_audiences",
+            include_str!("../../../migrations/announcements/0004_saved_audiences.sql"),
+        )
         .messages(texts::CHAT)
         .messages(texts::PAGES)
         .messages(texts::FORM)
         .messages(texts_review::REVIEW)
+        .messages(texts_saved::SAVED)
         .messages(page_editor::EDITOR)
         .messages(form_images::TEXTS)
         .messages(form_pdfs::TEXTS)
@@ -251,6 +267,31 @@ fn pages(r: &mut ModuleRegistrar) {
         send,
         "/announcements/pick",
         get(page_pick::results).post(page_pick::add),
+    )
+    .back_office(
+        send,
+        "/announcements/audiences",
+        get(page_saved_list::page).post(page_saved::save),
+    )
+    .back_office(
+        send,
+        "/announcements/audiences/picker",
+        get(page_saved::picker),
+    )
+    .back_office(
+        send,
+        "/announcements/audiences/use",
+        post(page_saved::use_saved),
+    )
+    .back_office(
+        send,
+        "/announcements/audiences/{id}/rename",
+        post(page_saved_list::rename),
+    )
+    .back_office(
+        send,
+        "/announcements/audiences/{id}/delete",
+        get(page_saved_list::delete_page).post(page_saved_list::delete),
     )
     .back_office(view, "/announcements/{id}", get(page_detail::page))
     .back_office_upload(

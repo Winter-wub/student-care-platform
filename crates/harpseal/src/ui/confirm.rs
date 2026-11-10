@@ -49,6 +49,31 @@ pub fn blocked_button(label: &str, reason: &str, id: &str) -> Markup {
     }
 }
 
+/// A confirm step for an action that cannot be undone (#144, e.g. a
+/// delete): `what` happens, then a form posting `confirm=yes` (plus
+/// `csrf`, the Staff member's CSRF field) to `action` with the danger
+/// button `label`, and the way `back` (`(label, href)`) that does nothing.
+/// The handler acts only on `confirm=yes`.
+pub fn confirm_step(
+    csrf: Markup,
+    action: &str,
+    what: &str,
+    label: &str,
+    back: (&str, &str),
+) -> Markup {
+    html! {
+        form method="post" action=(action) class="card confirm-step" {
+            (csrf)
+            input type="hidden" name="confirm" value="yes";
+            p { (what) }
+            div class="actions" {
+                button type="submit" class="danger" { (label) }
+                a class="btn secondary" href=(back.1) { (back.0) }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

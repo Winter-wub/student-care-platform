@@ -273,6 +273,30 @@ the server gates.
 A confirm posted without the review step is sent to it. The code API
 (`announcements::create_draft` / `confirm`) takes an `Audience` value, so
 `Audience::everyone()` there stays an explicit choice.
+Saved Audiences (#144, Module migration `0004_saved_audiences`, native and
+Workers alike): under the count, "บันทึกกลุ่มผู้รับนี้" saves the Audience part
+under a name (unique, up to 60 characters, at most 100 saved), checked as a
+draft's Audience is (a choice made, values `[roster]` has, at most 2,000
+IDs). It keeps the rules (the choice, attributes, Tags, hand-picked IDs,
+"count unreachable accounts too"), never a list of Students, so the reach is
+counted again on the editor and on the review step. "เลือกจากกลุ่มผู้รับที่บันทึกไว้"
+at the top of the Audience part fills it from a saved one;
+`/admin/announcements/audiences` lists them with a link that starts a new
+announcement from one (`/admin/announcements/new?audience=<id>`, which says
+which one filled the form, or that it is gone), rename and delete after a
+confirm step (announcements that used it keep their own copy). Saving and
+picking on the editor need HTMX (JavaScript): without it the save box stays
+hidden and the picker does not load; the list page's link still works. Enter
+in the name box saves the Audience, not the announcement. A row whose stored
+rules do not read (broken JSON, or a version this build does not know) says
+"อ่านกลุ่มนี้ไม่ได้ ลบแล้วบันทึกใหม่", is never read as everyone, and can only
+be deleted. A saved value that
+`[roster]` no longer has (an enum value or a whole attribute removed) is shown
+with a warning, still ticked, and refused until unticked: it never drops out
+silently, which could widen the Audience. Every page needs
+`announcements.send`; saves, renames and deletes are audited
+(`announcement.audience_save`, `_rename`, `_delete`; the audit row counts the
+hand-picked IDs, never lists them).
 The body (up to 2,000 characters, as before) takes a small format (#108):
 `**bold**`, `*italic*`, lines starting `- ` (bullets) or a number from 1
 to 99 and `. ` (numbered, shown with the number typed; `2567. …` is a
