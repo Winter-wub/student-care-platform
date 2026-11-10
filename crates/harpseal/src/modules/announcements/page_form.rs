@@ -155,11 +155,7 @@ pub(super) async fn edit_post(
     }
     if row.status == "sent" {
         // Only texts and expiry change once sent.
-        f.attrs = row.audience.attributes.clone();
-        f.tags = row.audience.tags.join(", ");
-        f.students = row.audience.students.join("\n");
-        f.unreachable = row.audience.include_unreachable;
-        f.scope = super::form::scope_of(&row.audience).into();
+        f.set_audience(&row.audience);
         f.when = "now".into();
     }
     let now = d.services().now_ms();
@@ -368,6 +364,7 @@ fn form_page(
                 input type="hidden" name="require_ack" value="1";
             }
             (page_editor::preview(v, f, form.images))
+            (page_editor::said("", false))
             (page_detail::preview(v, &f.title_th, &f.body_th, f.require_ack))
             div class="actions" {
                 @if row.is_none() {

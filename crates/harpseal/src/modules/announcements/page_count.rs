@@ -2,6 +2,11 @@
 //! fragment): Students, Links per Channel, the metered Push estimate and,
 //! for a hand-picked list, the ids that were not found or have no live
 //! Link (listed, never sent to).
+//!
+//! The box itself is not a live region (#156): it is replaced on every
+//! change. One short line ("กลุ่มผู้รับนี้มีนักศึกษา 12 คน", or what is
+//! missing) goes to the persistent `#count-said` region instead, and only
+//! when it differs from the line before (`count_was`, carried by the box).
 
 use axum::Form;
 use axum::extract::State;
@@ -25,6 +30,8 @@ const PATH: &str = "/admin/announcements/audience";
 const TRIGGER: &str = "change from:closest form, students-changed from:body";
 /// Ids named in one list of the preview; the rest are counted.
 const LISTED: usize = 100;
+/// `count_was` of the box before its first answer: say nothing then.
+const FIRST: &str = "-";
 
 pub(super) async fn fragment(
     State(s): State<AppState>,
@@ -33,19 +40,54 @@ pub(super) async fn fragment(
 ) -> Response {
     let v = View::new(&s, &staff);
     let f = Fields::from_pairs(&pairs);
-    // #120: no count of everyone until everyone is chosen.
-    if let Some(key) = f.scope_problem() {
-        let shown = boxed(html! { p class="muted" { (v.t(key)) } });
-        return (StatusCode::OK, Html(shown.into_string())).into_response();
-    }
-    let a = f.audience();
-    let (counts, used) = reach(&s.deployment, &a).await;
-    let picked = match (&counts, a.students.is_empty()) {
-        (Some(_), false) => audience::hand_picked(&s.deployment, &a).await.ok(),
-        _ => None,
+    let was = pairs
+        .iter()
+        .find(|(k, _)| k == "count_was")
+        .map_or(FIRST, |(_, x)| x.as_str());
+    // #120: no count of everyone until everyone is chosen. #156: a range
+    // that cannot be used says why, as the draft would.
+    let range_problem = || {
+        let errors = f.audience_errors(&s.config.roster);
+        errors
+            .into_iter()
+            .map(|(_, k)| k)
+            .find(|k| k.starts_with("announcements.form.range_"))
     };
-    let shown = count_box(&v, &a, counts.as_ref(), picked.as_ref(), &used);
-    (StatusCode::OK, Html(shown.into_string())).into_response()
+    let (shown, line) = if let Some(key) = f.scope_problem().or_else(range_problem) {
+        let line = v.t(key);
+        (boxed(html! { p class="muted" { (line) } }, &line), line)
+    } else {
+        let a = f.audience();
+        let (counts, used) = reach(&s.deployment, &a).await;
+        let picked = match (&counts, a.students.is_empty()) {
+            (Some(_), false) => audience::hand_picked(&s.deployment, &a).await.ok(),
+            _ => None,
+        };
+        count_box(&v, &a, counts.as_ref(), picked.as_ref(), &used)
+    };
+    let said = (was != FIRST && was != line).then(|| said(&line, true));
+    let out = html! { (shown) @if let Some(s) = said { (s) } };
+    (StatusCode::OK, Html(out.into_string())).into_response()
+}
+
+/// The live region of the count's short line (`#count-said`, read
+/// aloud, not shown); `oob` when an answer updates it out of band.
+fn said(line: &str, oob: bool) -> Markup {
+    html! {
+        div id="count-said" class="visually-hidden" role="status" aria-live="polite"
+            hx-swap-oob=[oob.then_some("true")] { (line) }
+    }
+}
+
+/// The empty `#count-said`, once per page, outside the fieldset (which a
+/// saved Audience swaps whole).
+pub(super) fn said_region() -> Markup {
+    said("", false)
+}
+
+/// `count_was` as the box's `hx-vals`.
+fn vals(line: &str) -> String {
+    serde_json::json!({ "count_was": line }).to_string()
 }
 
 /// What `a` reaches, as the count box and the review step (#120) both
@@ -75,39 +117,47 @@ pub(super) fn metered(d: &Deployment, kind: &str) -> bool {
         || d.config().quotas.contains_key(kind)
 }
 
-/// The count box around `inner`, counting again on every form change.
-fn boxed(inner: Markup) -> Markup {
+/// The count box around `inner`, counting again on every form change;
+/// `line` is what its live line said.
+fn boxed(inner: Markup, line: &str) -> Markup {
+    shell(inner, line, TRIGGER)
+}
+
+fn shell(inner: Markup, line: &str, trigger: &str) -> Markup {
     html! {
         div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" { (inner) }
+            hx-trigger=(trigger) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
+            hx-vals=(vals(line)) hx-target="this" hx-swap="outerHTML" { (inner) }
     }
 }
 
 /// Count, per Channel, and "จะใช้ push ประมาณ x ครั้ง": one metered unit per
 /// recipient on a metered Channel (one Card is one Push request).
 /// `used`: this month's usage per Channel (#26), shown beside the estimate.
+/// With the box, its short live line.
 fn count_box(
     v: &View<'_>,
     a: &Audience,
     counts: Option<&Counts>,
     picked: Option<&HandPicked>,
     used: &[(String, MonthSummary)],
-) -> Markup {
+) -> (Markup, String) {
     let Some(c) = counts else {
         let why = if a.students.len() > MAX_STUDENTS {
             "announcements.form.students_too_many"
         } else {
             "announcements.form.audience_invalid"
         };
-        return html! {
-            div id="audience-count" class="card count" hx-post=(PATH)
-                hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
-                hx-target="this" hx-swap="outerHTML" {
-                p class="muted field-error" { (v.t(why)) }
-            }
-        };
+        let line = v.t(why);
+        return (
+            boxed(html! { p class="muted field-error" { (line) } }, &line),
+            line,
+        );
     };
+    let line = fill(
+        &v.t("announcements.form.count_said"),
+        &[("n", &crate::ui::number(c.students))],
+    );
     let d = v.s.deployment.as_ref();
     let metered = |kind: &str| metered(d, kind);
     let units: usize = c
@@ -116,10 +166,7 @@ fn count_box(
         .filter(|(k, _)| metered(k))
         .map(|(_, (active, _))| *active)
         .sum();
-    html! {
-        div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(TRIGGER) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" {
+    let inner = html! {
             p { strong { (v.t("announcements.form.students")) " " (crate::ui::number(c.students)) } }
             @if let Some(p) = picked { (hand_picked(v, a, c, p)) }
             ul class="list" {
@@ -139,8 +186,8 @@ fn count_box(
                 }
             }
             p class="estimate" { (v.t("announcements.form.estimate")) " " (crate::ui::number(units)) " " (v.t("announcements.form.times")) }
-        }
-    }
+    };
+    (boxed(inner, &line), line)
 }
 
 /// The hand-picked list: how many ids, and which of them will not be sent.
@@ -190,11 +237,6 @@ pub(super) fn month_used(v: &View<'_>, m: &MonthSummary) -> String {
 
 /// The count box before its first HTMX load.
 pub(super) fn placeholder(v: &View<'_>) -> Markup {
-    html! {
-        div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(format!("load, {TRIGGER}")) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" {
-            p class="muted" { (v.t("announcements.form.counting")) }
-        }
-    }
+    let inner = html! { p class="muted" { (v.t("announcements.form.counting")) } };
+    shell(inner, FIRST, &format!("load, {TRIGGER}"))
 }

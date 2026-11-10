@@ -5,6 +5,11 @@
 //! /admin/announcements/preview` (an HTMX fragment). Without script the
 //! toolbar stays hidden, the help line shows the syntax and the preview
 //! is the one rendered with the page.
+//!
+//! The preview box is not a live region (#156): it is replaced as Staff
+//! type. One short line goes to `#preview-said` only when what the
+//! preview shows changes (empty, the text, too long), so a screen reader
+//! hears one line per change, not the whole preview every 400 ms.
 
 use axum::Form;
 use axum::extract::State;
@@ -277,27 +282,60 @@ pub(super) fn script() -> Markup {
 /// shows after the save), refreshed on every change of the form.
 pub(super) fn preview(v: &View<'_>, f: &Fields, images: &[Stored]) -> Markup {
     let label = v.t("announcements.images.slot");
-    shell(html! {
-        p class="muted" { (v.t("announcements.editor.preview")) }
-        // Nothing typed yet (#127): say what will appear, not an empty card.
-        @if f.body_th.trim().is_empty() && f.body_en.trim().is_empty() {
-            p class="preview-placeholder" { (v.t("announcements.editor.preview_empty")) }
-        } @else {
-            div class="mini-preview" lang="th" { (files::body_html(&f.body_th, images, true, &label)) }
-        }
-        @if !f.body_en.trim().is_empty() {
-            div class="mini-preview" lang="en" { (files::body_html(&f.body_en, images, true, &label)) }
-        }
-    })
+    shell(
+        state_of(f),
+        html! {
+            p class="muted" { (v.t("announcements.editor.preview")) }
+            // Nothing typed yet (#127): say what will appear, not an empty card.
+            @if f.body_th.trim().is_empty() && f.body_en.trim().is_empty() {
+                p class="preview-placeholder" { (v.t("announcements.editor.preview_empty")) }
+            } @else {
+                div class="mini-preview" lang="th" { (files::body_html(&f.body_th, images, true, &label)) }
+            }
+            @if !f.body_en.trim().is_empty() {
+                div class="mini-preview" lang="en" { (files::body_html(&f.body_en, images, true, &label)) }
+            }
+        },
+    )
 }
 
-/// The preview box around `inner`, refreshed on every change of the form.
-fn shell(inner: Markup) -> Markup {
+/// The preview box around `inner`, refreshed on every change of the form;
+/// `state` (`empty`, `shown` or `long`) goes back as `preview_was`.
+fn shell(state: &str, inner: Markup) -> Markup {
+    let vals = serde_json::json!({ "preview_was": state }).to_string();
     html! {
         div id="body-preview" class="card preview" hx-post=(PATH)
             hx-trigger="input changed delay:400ms from:closest form" hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
-            hx-target="this" hx-swap="outerHTML" aria-live="polite" { (inner) }
+            hx-vals=(vals) hx-target="this" hx-swap="outerHTML" { (inner) }
     }
+}
+
+/// The live region of the preview's short line, once per page after the
+/// preview; `oob` when an answer updates it.
+pub(super) fn said(line: &str, oob: bool) -> Markup {
+    html! {
+        div id="preview-said" class="visually-hidden" role="status" aria-live="polite"
+            hx-swap-oob=[oob.then_some("true")] { (line) }
+    }
+}
+
+/// What the preview of `f` shows: `empty` or `shown` (`long` is decided
+/// before parsing).
+fn state_of(f: &Fields) -> &'static str {
+    if f.body_th.trim().is_empty() && f.body_en.trim().is_empty() {
+        "empty"
+    } else {
+        "shown"
+    }
+}
+
+/// The short line for a preview `state`.
+fn line(v: &View<'_>, state: &str) -> String {
+    v.t(match state {
+        "long" => "announcements.editor.too_long",
+        "empty" => "announcements.editor.preview_cleared",
+        _ => "announcements.editor.preview_said",
+    })
 }
 
 /// `POST /admin/announcements/preview`: [`preview`] of the posted form,
@@ -311,16 +349,29 @@ pub(super) async fn fragment(
 ) -> Response {
     let f = Fields::from_pairs(&pairs);
     let v = View::new(&s, &staff);
+    let was = pairs
+        .iter()
+        .find(|(k, _)| k == "preview_was")
+        .map(|(_, x)| x.clone());
+    // One short line, only when what the preview shows changed.
+    let tell = |state: &str, shown: Markup| {
+        let changed = was.as_deref().is_some_and(|w| w != state);
+        let out = html! { (shown) @if changed { (said(&line(&v, state), true)) } };
+        (StatusCode::OK, Html(out.into_string())).into_response()
+    };
     // The form's own limit, checked before anything is parsed. A 200 with
     // a line, not a 413: HTMX swaps no error status, so Staff would see
     // the old preview and nothing else.
     let long = |b: &str| b.chars().count() > MAX_BODY;
     if long(&f.body_th) || long(&f.body_en) {
-        let line = shell(html! {
-            // `#body-preview` is the polite region that announces it (#129).
-            p class="field-error" { (v.t("announcements.editor.too_long")) }
-        });
-        return (StatusCode::OK, Html(line.into_string())).into_response();
+        let shown = shell(
+            "long",
+            html! {
+                // `#preview-said` announces it once (#156).
+                p class="field-error" { (v.t("announcements.editor.too_long")) }
+            },
+        );
+        return tell("long", shown);
     }
     // The edit form names its announcement: the preview shows its images.
     let id = pairs.iter().find(|(k, _)| k == "announcement_id");
@@ -328,5 +379,5 @@ pub(super) async fn fragment(
         Some((_, id)) => files::list(&s.services, id).await.unwrap_or_default(),
         None => Vec::new(),
     };
-    (StatusCode::OK, Html(preview(&v, &f, &images).into_string())).into_response()
+    tell(state_of(&f), preview(&v, &f, &images))
 }

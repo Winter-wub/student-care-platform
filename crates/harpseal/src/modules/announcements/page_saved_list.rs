@@ -71,7 +71,10 @@ fn item(v: &View<'_>, one: &Saved) -> Markup {
             }
         };
     };
-    let gone = saved::stale(a, &v.s.config.roster);
+    let mut gone = saved::stale(a, &v.s.config.roster);
+    for (key, r) in saved::stale_ranges(a, &v.s.config.roster) {
+        gone.push((key.clone(), super::form_attrs::range_text(v, r)));
+    }
     html! {
         li {
             p { strong class="name" { (one.name) } }

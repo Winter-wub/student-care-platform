@@ -53,7 +53,7 @@ impl NewAnnouncement {
 
     fn fields(&self, offset: i32) -> Fields {
         let (title_en, body_en) = self.en.clone().unwrap_or_default();
-        Fields {
+        let mut f = Fields {
             title_th: self.title_th.clone(),
             body_th: self.body_th.clone(),
             title_en,
@@ -73,16 +73,14 @@ impl NewAnnouncement {
                 .send_at
                 .map(|t| input_datetime(t, offset))
                 .unwrap_or_default(),
-            attrs: self.audience.attributes.clone(),
-            tags: self.audience.tags.join(","),
-            students: self.audience.students.join("\n"),
-            unreachable: self.audience.include_unreachable,
-            // An `Audience` from code is explicit, everyone included.
-            scope: super::form::scope_of(&self.audience).into(),
             notify: false,
             version: None,
             submit: String::new(),
-        }
+            ..Fields::default()
+        };
+        // An `Audience` from code is explicit, everyone included.
+        f.set_audience(&self.audience);
+        f
     }
 }
 
