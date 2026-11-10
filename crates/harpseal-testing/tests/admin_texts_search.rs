@@ -28,8 +28,11 @@ async fn texts_are_grouped_by_page_and_never_named_by_key() {
     let (admin, _) = signed_in(&h, &app, "Administrator").await;
     let page = admin.get("/admin/texts").await.body;
     let main = main_part(&page);
-    assert!(main.contains("<h2>แชทกับนักศึกษา "), "{main}");
-    assert!(main.contains("<h2>มินิแอป "), "{main}");
+    assert!(
+        main.contains("<span class=\"group-name\">แชทกับนักศึกษา "),
+        "{main}"
+    );
+    assert!(main.contains("<span class=\"group-name\">มินิแอป "), "{main}");
     assert!(main.contains("<option value=\"kernel.chat\">แชทกับนักศึกษา</option>"));
     // The Locale columns are named, and the welcome links by its text.
     assert!(
@@ -176,6 +179,25 @@ fn count(body: &str) -> &str {
         .map_or("", |(text, _)| text)
 }
 
+/// The count says `prefix` and the number of texts listed: one edit link
+/// (`href="/admin/texts/…"`) per text, counted inside the list only.
+fn assert_count(body: &str, prefix: &str) {
+    let text = count(body);
+    assert!(text.starts_with(prefix), "{prefix}: {text}");
+    let said: usize = text
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap_or_else(|_| panic!("no number in {text:?}"));
+    let list = body
+        .split_once("<div id=\"texts-results\">")
+        .map_or("", |(_, l)| l);
+    let list = list.split("<details class=\"tech\">").next().unwrap_or("");
+    let listed = list.matches("href=\"/admin/texts/").count();
+    assert_eq!(said, listed, "{text}");
+}
+
 /// Groups load collapsed; a search opens the groups that match and says
 /// how many texts it found, once per update (#142).
 #[tokio::test]
@@ -185,7 +207,8 @@ async fn groups_load_collapsed_and_a_search_opens_the_matches() {
     let all = admin.get("/admin/texts").await.body;
     assert!(areas(&all).len() > 3, "{all}");
     assert!(open_areas(&all).is_empty(), "{all}");
-    assert!(count(&all).starts_with("ข้อความทั้งหมด "), "{all}");
+    assert_count(&all, "ข้อความทั้งหมด ");
+    assert!(!all.contains("hx-swap-oob"), "out of band only over HTMX");
     assert!(
         all.contains("aria-describedby=\"texts-count\""),
         "the search names its count"
@@ -206,7 +229,7 @@ async fn groups_load_collapsed_and_a_search_opens_the_matches() {
         assert!(r.contains("/admin/texts/kernel.flow.welcome\""), "{q}: {r}");
         assert!(open_areas(&r).contains(&"kernel.chat"), "{q}: {r}");
         assert_eq!(open_areas(&r), areas(&r), "{q}: every match is open");
-        assert!(count(&r).starts_with("พบ "), "{q}: {r}");
+        assert_count(&r, "พบ ");
     }
 
     // HTMX: the list, then the count out of band into the live region
@@ -223,6 +246,7 @@ async fn groups_load_collapsed_and_a_search_opens_the_matches() {
         !r.contains("aria-live") && !r.contains("role=\"status\""),
         "{r}"
     );
+    assert_count(&r, "พบ ");
     let problems = harpseal_testing::a11y::problems(&r);
     assert!(problems.is_empty(), "{problems:?}");
 
@@ -261,5 +285,39 @@ async fn a_group_with_an_edit_to_fix_is_open() {
     );
     assert!(group.contains("class=\"field-error\""), "{group}");
     let problems = harpseal_testing::a11y::problems(&page);
+    assert!(problems.is_empty(), "{problems:?}");
+}
+
+/// Clearing the search over HTMX (`q=&area=`, as the form sends it)
+/// closes every group again but the one with an edit to fix, and the
+/// count goes back to the whole list (#142).
+#[tokio::test]
+async fn clearing_the_search_closes_the_groups_but_a_to_fix_one() {
+    let (h, app) = boot().await;
+    let (admin, _) = signed_in(&h, &app, "Administrator").await;
+    admin_support::run(
+        &h,
+        "INSERT INTO setting (key, locale, value, updated_at) \
+         VALUES ('kernel.inbound.file_too_large', 'th', 'ไฟล์ใหญ่เกินไป', 0)",
+    )
+    .await;
+    let found = htmx_get(&admin, "/admin/texts?q=welcome&area=").await.body;
+    assert_count(&found, "พบ ");
+    let cleared = htmx_get(&admin, "/admin/texts?q=&area=").await.body;
+    assert!(
+        cleared.starts_with("<div id=\"texts-results\">"),
+        "{cleared}"
+    );
+    let open = open_areas(&cleared);
+    assert_eq!(open.len(), 1, "{cleared}");
+    let to_fix = cleared
+        .split(&format!("data-area=\"{}\"", open[0]))
+        .nth(1)
+        .and_then(|g| g.split("</details>").next())
+        .unwrap();
+    assert!(to_fix.contains("ต้องแก้ไข 1 ข้อความ"), "{to_fix}");
+    assert!(areas(&cleared).len() > 3, "{cleared}");
+    assert_count(&cleared, "ข้อความทั้งหมด ");
+    let problems = harpseal_testing::a11y::problems(&cleared);
     assert!(problems.is_empty(), "{problems:?}");
 }

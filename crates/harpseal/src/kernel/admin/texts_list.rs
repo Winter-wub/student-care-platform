@@ -39,8 +39,9 @@ pub(super) struct Search {
 /// One text in the list: its key, where it shows, one row per Locale.
 type Listed = (String, Area, Vec<TextRow>);
 
-/// One text of a group: its key and one row per Locale.
-type Row = (String, Vec<TextRow>);
+/// One text of a group: its key and one row per Locale, each with
+/// whether it needs fixing ([`to_fix`], checked once).
+type Row = (String, Vec<(TextRow, bool)>);
 
 fn preview(t: &str) -> String {
     let mut p: String = t.chars().take(PREVIEW_CHARS).collect();
@@ -166,6 +167,13 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>, filtered: bo
     rows.sort_by(|a, b| (&a.1.name, &a.1.id, &a.0).cmp(&(&b.1.name, &b.1.id, &b.0)));
     let mut groups: Vec<(Area, Vec<Row>)> = Vec::new();
     for (key, a, per) in rows {
+        let per: Vec<(TextRow, bool)> = per
+            .into_iter()
+            .map(|r| {
+                let fix = to_fix(&r);
+                (r, fix)
+            })
+            .collect();
         match groups.last_mut() {
             Some((last, list)) if last.id == a.id => list.push((key, per)),
             _ => groups.push((a, vec![(key, per)])),
@@ -178,14 +186,16 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>, filtered: bo
                 (crate::ui::no_match(&v.t("kernel.empty.filtered"), (&v.t("kernel.empty.clear_filters"), "/admin/texts")))
             }
             @for (a, list) in &groups {
-                @let fix = list.iter().filter(|(_, per)| per.iter().any(to_fix)).count();
+                @let fix = list.iter().filter(|(_, per)| per.iter().any(|(_, f)| *f)).count();
                 details class="text-group" data-area=(a.id) open[filtered || fix > 0] {
                     summary {
                         svg class="icon fold" viewBox="0 0 20 20" aria-hidden="true" focusable="false" {
                             path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="2"
                                 stroke-linecap="round" stroke-linejoin="round" fill="none" {}
                         }
-                        h2 { (a.name) " " span class="muted" { "(" (crate::ui::number(list.len())) ")" } }
+                        // Not a heading: inside a summary (a button) it
+                        // is flattened into the button's name anyway.
+                        span class="group-name" { (a.name) " " span class="muted" { "(" (crate::ui::number(list.len())) ")" } }
                         @if fix > 0 {
                             span class="chip err" { (counted(v, "kernel.admin.texts.to_fix", fix)) }
                         }
@@ -196,7 +206,7 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>, filtered: bo
                             tbody {
                                 @for (key, per) in list {
                                     tr {
-                                        @for (i, r) in per.iter().enumerate() {
+                                        @for (i, (r, fix)) in per.iter().enumerate() {
                                             td data-label=(name(&r.locale)) {
                                                 @if i == 0 {
                                                     a href=(format!("/admin/texts/{}", enc(key))) { (preview(r.effective())) }
@@ -204,7 +214,7 @@ fn results(v: &View<'_>, locales: &[String], mut rows: Vec<Listed>, filtered: bo
                                                     span { (preview(r.effective())) }
                                                 }
                                                 " " (source_chip(v, r))
-                                                @if to_fix(r) {
+                                                @if *fix {
                                                     p class="field-error" { (v.t("kernel.admin.texts.to_fix_help")) }
                                                 }
                                             }
