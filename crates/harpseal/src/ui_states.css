@@ -101,5 +101,18 @@ form.inline :is(button, .btn) { white-space: nowrap; }
    cannot move them. */
 .mini .muted { font-size: .875rem; }
 .mini input[type="checkbox"], .mini input[type="radio"] { width: 20px; height: 20px; }
-/* The Texts page's groups: each a section under its own heading. */
-.text-group { margin-top: var(--space-lg); }
+/* #142 Texts page: each page's texts behind a disclosure, closed on load
+   and opened by a search, a page filter or an edit to fix. The summary is
+   the group's 48 px row: a chevron that turns when open, the group's name
+   drawn at the title step (not a heading: a summary is a button, and a
+   heading inside it is flattened into the button's name), the to-fix chip. */
+.text-group { margin: 0 0 var(--space-sm); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+.text-group > summary { list-style: none; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-xs) var(--gutter); }
+.text-group > summary::-webkit-details-marker { display: none; }
+.text-group > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; border-radius: var(--radius); }
+.text-group > summary .group-name { font-size: var(--step-title); font-weight: 700; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.text-group > summary .fold { flex: none; width: 20px; height: 20px; color: var(--muted); transition: rotate .15s ease-out; }
+.text-group[open] > summary .fold { rotate: 90deg; }
+.text-group-body { padding: 0 var(--gutter) var(--gutter); border-top: 1px solid var(--line); }
+.text-group-body table.rows { margin: var(--space-md) 0 0; }
+@media (prefers-reduced-motion: reduce) { .text-group > summary .fold { transition: none; } }
