@@ -36,7 +36,10 @@ pub(super) async fn page(
             div class="head-row" {
                 h1 { (title) }
                 @if staff.can("announcements.send") {
-                    a class="btn" href="/admin/announcements/new" { (v.t("announcements.page.new")) }
+                    div class="actions" {
+                        a class="btn" href="/admin/announcements/new" { (v.t("announcements.page.new")) }
+                        a class="btn secondary" href=(super::page_saved::LIST) { (v.t("announcements.saved.title")) }
+                    }
                 }
             }
             (results)

@@ -56,7 +56,19 @@ pub(super) async fn new_page(
         fields.scope = "students".into();
         fields.students = codes.join("\n");
     }
-    let form = Form::new(None, &fields);
+    // #144: `?audience=<saved id>` starts from a saved Audience.
+    let id = q
+        .iter()
+        .find(|(k, _)| k == "audience")
+        .map_or("", |(_, x)| x.trim());
+    let said = match super::page_saved::fill_from(&v, &s.services, id, &mut fields).await {
+        Ok(said) => said.unwrap_or_default(),
+        Err(e) => return v.error(&e),
+    };
+    let form = Form {
+        note: (!said.0.is_empty()).then(|| super::page_saved::note(&said.0, said.1)),
+        ..Form::new(None, &fields)
+    };
     form_page(&v, StatusCode::OK, &form, &[], None)
 }
 
@@ -226,6 +238,8 @@ struct Form<'a> {
     f: &'a Fields,
     images: &'a [Stored],
     reselect: Chosen,
+    /// Which saved Audience filled the form (#144), above its fields.
+    note: Option<Markup>,
 }
 
 impl<'a> Form<'a> {
@@ -235,6 +249,7 @@ impl<'a> Form<'a> {
             f,
             images: &[],
             reselect: Chosen::default(),
+            note: None,
         }
     }
 }
@@ -292,7 +307,11 @@ fn form_page(
             }
             // #140: who and when stay in view, under the Thai text.
             @if !sent {
-                (page_audience::fieldset(v, f, errors))
+                @if let Some(note) = &form.note {
+                    (page_audience::fieldset_with_note(v, f, errors, note.clone()))
+                } @else {
+                    (page_audience::fieldset(v, f, errors))
+                }
                 fieldset aria-describedby=[d("send_at")] {
                     legend { (v.t("announcements.form.when")) }
                     (err("send_at"))

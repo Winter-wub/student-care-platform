@@ -108,11 +108,14 @@ async fn a_backup_restores_images_and_their_objects() {
 
 #[tokio::test]
 async fn a_backup_from_before_0003_files_restores() {
-    // A Deployment still at Announcements migration 0002.
+    // A Deployment still at Announcements migration 0002 (so before
+    // 0004_saved_audiences, #144, too).
     let old = Harness::new();
     let d_old = deployment(&old);
     d_old.migrate().await.unwrap();
     for sql in [
+        "DROP TABLE saved_audience",
+        "DELETE FROM migration WHERE module = 'announcements' AND name = '0004_saved_audiences'",
         "DROP TABLE announcement_file",
         "DELETE FROM migration WHERE module = 'announcements' AND name = '0003_files'",
     ] {
@@ -132,7 +135,7 @@ async fn a_backup_from_before_0003_files_restores() {
         "SELECT name FROM migration WHERE module = 'announcements' ORDER BY name DESC",
     )
     .await;
-    assert_eq!(applied, "0003_files");
+    assert_eq!(applied, "0004_saved_audiences");
     let n = fresh
         .db()
         .query(Statement::new("SELECT count(*) FROM announcement_file"))

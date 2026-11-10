@@ -46,3 +46,16 @@ p.muted, .muted p { max-width: 60ch; }
 /* An upload problem's fix, on its own line under the problem (#140). */
 .fix { display: block; margin-top: var(--space-xs); color: var(--muted); font-size: .875rem; }
 .fix strong { color: var(--ink); font-weight: 600; }
+
+/* Saved Audiences (#144): a select or a name box with its button on one
+   row that wraps on a phone; the list page stacks each one.
+   The picker sits above the choice, the save box below the count. */
+.saved-row { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); align-items: center; }
+.saved-row > input, .saved-row > select { flex: 1 1 14rem; width: auto; min-width: 0; }
+.saved-save { margin-top: var(--gutter); }
+.saved-save .flash, .saved-save .field-error { margin: var(--space-sm) 0 0; }
+.saved-list > li { display: block; padding-left: var(--gutter); padding-right: var(--gutter); }
+.saved-list > li > p { margin: 0 0 var(--space-xs); }
+.saved-edit { margin-top: var(--space-sm); }
+.saved-edit > summary { font-weight: 600; color: var(--brand-text); }
+.saved-edit form { margin-top: var(--space-md); }

@@ -231,26 +231,8 @@ impl Fields {
         } else {
             None
         };
-        if let Some(key) = self.scope_problem() {
-            errors.push(("audience", key));
-        }
+        errors.extend(self.audience_errors(roster));
         let audience = self.audience();
-        for (key, values) in &audience.attributes {
-            let Some(spec) = roster.attributes.get(key) else {
-                errors.push(("audience", "announcements.form.bad_audience"));
-                continue;
-            };
-            let off_list =
-                spec.kind == AttributeType::Enum && values.iter().any(|v| !spec.values.contains(v));
-            if off_list {
-                errors.push(("audience", "announcements.form.bad_audience"));
-            }
-        }
-        if audience.students.len() > MAX_STUDENTS {
-            errors.push(("audience", "announcements.form.students_too_many"));
-        } else if audience.check(roster).is_err() {
-            errors.push(("audience", "announcements.form.bad_audience"));
-        }
         if !errors.is_empty() {
             return Err(unique(errors));
         }
@@ -271,6 +253,38 @@ impl Fields {
             notify: self.notify,
             files: Default::default(),
         })
+    }
+
+    /// The Audience's problems as (`audience`, catalog key): the choice
+    /// ([`Fields::scope_problem`]), an attribute or value `[roster]` does
+    /// not have, too many hand-picked ids. A saved Audience (#144) is
+    /// checked the same way before it is saved.
+    pub(crate) fn audience_errors(
+        &self,
+        roster: &RosterConfig,
+    ) -> Vec<(&'static str, &'static str)> {
+        let mut errors = Vec::new();
+        if let Some(key) = self.scope_problem() {
+            errors.push(("audience", key));
+        }
+        let audience = self.audience();
+        for (key, values) in &audience.attributes {
+            let Some(spec) = roster.attributes.get(key) else {
+                errors.push(("audience", "announcements.form.bad_audience"));
+                continue;
+            };
+            let off_list =
+                spec.kind == AttributeType::Enum && values.iter().any(|v| !spec.values.contains(v));
+            if off_list {
+                errors.push(("audience", "announcements.form.bad_audience"));
+            }
+        }
+        if audience.students.len() > MAX_STUDENTS {
+            errors.push(("audience", "announcements.form.students_too_many"));
+        } else if audience.check(roster).is_err() {
+            errors.push(("audience", "announcements.form.bad_audience"));
+        }
+        unique(errors)
     }
 }
 

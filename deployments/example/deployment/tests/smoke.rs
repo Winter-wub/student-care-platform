@@ -34,9 +34,9 @@ async fn example_boots_runs_migrations_and_serves_notice() {
     assert!(r.body.contains("Seal Bay University"));
     let applied = app.query("SELECT count(*) FROM migration").await;
     // Eighteen Kernel migrations (#143: the picker's indexes), the
-    // Announcements Module's three and the Fees Module's three (#127: the
-    // uploader of each import).
-    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(24));
+    // Announcements Module's four (#144: saved Audiences) and the Fees
+    // Module's three (#127: the uploader of each import).
+    assert_eq!(applied.rows[0][0], harpseal::Value::Integer(25));
 }
 
 #[test]

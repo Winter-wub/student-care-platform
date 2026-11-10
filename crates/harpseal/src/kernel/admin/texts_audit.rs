@@ -109,6 +109,27 @@ pub(super) const AUDIT: &[E] = th_en![
         "แจ้งนักศึกษาว่าประกาศถูกแก้ไข",
         "Sent an edit notice"
     ),
+    // Saved Audiences (#144).
+    (
+        "kernel.admin.audit.action.announcement_audience_save",
+        "บันทึกกลุ่มผู้รับ",
+        "Saved an Audience"
+    ),
+    (
+        "kernel.admin.audit.action.announcement_audience_rename",
+        "เปลี่ยนชื่อกลุ่มผู้รับที่บันทึกไว้",
+        "Renamed a saved Audience"
+    ),
+    (
+        "kernel.admin.audit.action.announcement_audience_delete",
+        "ลบกลุ่มผู้รับที่บันทึกไว้",
+        "Deleted a saved Audience"
+    ),
+    (
+        "kernel.admin.audit.kind.saved_audience",
+        "กลุ่มผู้รับที่บันทึกไว้",
+        "Saved Audience"
+    ),
     (
         "kernel.admin.audit.action.audit_view",
         "ดูบันทึกการใช้งาน",
