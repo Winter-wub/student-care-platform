@@ -160,6 +160,8 @@ async fn send(cx: JobContext, job: Job) -> Result<()> {
         })
         .unwrap_or_default();
     let url = fees_url(&cx.settings(), cx.mini_app_url(FEES_PAGE.0, FEES_PAGE.1)).await?;
+    // One notify per group (`notice::sends`). One that fails fails the
+    // run; the retry finds the groups sent before it done under the key.
     let mut reports = Vec::new();
     for (n, group) in notice::sends(&cx.services, url.as_deref(), key, &to).await? {
         reports.push(cx.notify(&n, &group).await?);
@@ -296,9 +298,11 @@ async fn send_now(
         Ok(url) => url,
         Err(e) => return ui::service_error(&s, &staff, &e),
     };
-    let body = match notice::remind(&s, url.as_deref(), &format!("page:{key}"), &to).await {
-        Ok(r) => html! {
-            h1 { (title) }
+    let (r, err) = notice::remind(&s, url.as_deref(), &format!("page:{key}"), &to).await;
+    let body = html! {
+        h1 { (title) }
+        @if let Some(e) = &err { section class="card" { p role="alert" { (e.to_string()) } } }
+        @if err.is_none() || !r.students.is_empty() {
             section class="card" {
                 p { (t("reminders.result")
                     .replace("{sent}", &r.sent.to_string())
@@ -312,8 +316,7 @@ async fn send_now(
                     }
                 }
             }
-        },
-        Err(e) => html! { h1 { (title) } section class="card" { p { (e.to_string()) } } },
+        }
     };
     Html(ui::back_office(&s, &staff, &title, body).into_string()).into_response()
 }

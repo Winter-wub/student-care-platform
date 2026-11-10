@@ -13,9 +13,11 @@ use reminders_support::*;
 const FEES: &str = "https://liff.line.me/1234567890-AbCdEfGh/app/fees";
 const MALI: &str = "mali@seal-bay.invalid";
 const PIM: &str = "pim@seal-bay.invalid";
+const DAO: &str = "dao@seal-bay.invalid";
 
 /// The reminders setup, plus: Mali has a LINE Link she blocked
-/// (unreachable), and Pim (tagged, an address, no Link).
+/// (unreachable), Pim (tagged, an address, no Link) and Dao (tagged, an
+/// address, a Telegram Link only, blocked).
 async fn boot_blocked(h: &Harness) -> TestApp {
     let app = boot(h).await;
     for sql in [
@@ -28,6 +30,15 @@ async fn boot_blocked(h: &Harness) -> TestApp {
          updated_at) VALUES ('s5', '68010005', 'Pim Auk', 'pim@seal-bay.invalid', 'th', 1, 1)",
         "INSERT INTO student_tag (student_id, tag_id, source, added_at) \
          VALUES ('s5', 't1', 'roster', 1)",
+        "INSERT INTO student (id, student_code, display_name, email, locale, created_at, \
+         updated_at) VALUES ('s6', '68010006', 'Dao Nok', 'dao@seal-bay.invalid', 'th', 1, 1)",
+        "INSERT INTO student_tag (student_id, tag_id, source, added_at) \
+         VALUES ('s6', 't1', 'roster', 1)",
+        "INSERT INTO channel_account (id, channel, external_id, first_seen_at, flow_state, \
+         updated_at) VALUES ('a-s6', 'telegram', '7000006', 1, 'linked', 1)",
+        "INSERT INTO link (id, student_id, channel_account_id, channel, status, method, \
+         linked_at, updated_at) VALUES ('l-s6', 's6', 'a-s6', 'telegram', 'unreachable', \
+         'email_otp', 1, 1)",
     ] {
         run(h, sql).await;
     }
@@ -70,10 +81,15 @@ async fn a_blocked_line_link_gets_the_fees_page_and_no_link_gets_how_to_link() {
     assert_eq!(pim.len(), 1);
     assert!(pim[0].text.contains("ผูกบัญชีด้วยรหัสนักศึกษา"), "{}", pim[0].text);
     assert!(!pim[0].text.contains("https://"), "{}", pim[0].text);
-    // One chunk, both groups in its report.
+    // Dao is linked, on Telegram only: the plain text, neither the LINE
+    // URL nor "link first".
+    let dao = h.email().to(DAO);
+    assert_eq!(dao.len(), 1);
+    assert!(dao[0].text.ends_with("ภายในวันศุกร์นี้"), "{}", dao[0].text);
+    // One chunk, every group in its report.
     let note = app
         .count(
-            "SELECT count(*) FROM job WHERE kind = 'reminders.send' AND progress LIKE '%email 2,%'",
+            "SELECT count(*) FROM job WHERE kind = 'reminders.send' AND progress LIKE '%email 3,%'",
         )
         .await;
     assert_eq!(note, 1);

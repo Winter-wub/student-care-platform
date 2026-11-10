@@ -141,10 +141,13 @@ async fn page(State(s): State<AppState>, me: AppStudent) -> Response {
   (they blocked the account). The LIFF URL opens the page only for a
   Student with a LINE Link; anyone else lands on "not linked" in a chat
   they never joined. So put the URL only in the email of Students with a
-  live LINE Link, and tell the others how to add the Official Account and
-  link first. The example's fee reminder does both, as two Notices under
-  one key with the call's budget split between them
-  (`reminders/notice.rs`), and treats a broken stored switch
+  live LINE Link, and tell those with no live Link on any Channel how to
+  add the Official Account and link first (a Student linked only on
+  Telegram gets neither). The example's fee reminder does this, one
+  Notice per group under one key with the call's budget split between
+  them; a Student whose group changes between an unconfirmed email and
+  its retry is refused by Resend (409), never emailed twice
+  (`reminders/notice.rs`). It treats a broken stored switch
   (`Error::SettingNotSet`) as "no link" rather than failing the send.
 
 #### Jobs
