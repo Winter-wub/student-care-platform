@@ -4,7 +4,9 @@
 //! /admin/texts/consent` sets the Consent notice version, through its
 //! review step (`consent_review.rs`, #135). The version is a setting, not
 //! a text: its card and route need `kernel.setting.edit`, and Staff holding
-//! only that see the list page with the card alone.
+//! only that see the list page with the card alone. A privacy notice text
+//! (`kernel.consent.*`, `kernel.notice.*`, #170) needs `kernel.setting.edit`
+//! to save or reset; without it its page is read-only, with a note.
 
 use axum::Form;
 use axum::extract::{Path, State};
@@ -152,11 +154,15 @@ async fn render(
         .unwrap_or_default();
     let in_use = settings::row(&v.s.catalog, &v.s.config, &stored, key, &title_locale);
     let title = preview_short(in_use.effective());
+    let locked = missing(v.staff, key).is_some();
     let body = html! {
         p { a class="back" href="/admin/texts" { "← " (l("kernel.admin.texts.back")) } }
         h1 { (title) }
         p class="muted" { (l("kernel.admin.texts.shown_on")) " "
             a href=(format!("/admin/texts?area={}", enc(&shown.id))) { (shown.name) } }
+        @if locked {
+            p class="note" role="note" data-notice-locked { (l("kernel.admin.texts.notice_locked")) }
+        }
         @for loc in &locales {
             @let r = settings::row(&v.s.catalog, &v.s.config, &stored, key, loc);
             @let names = settings::placeholders(&r.base);
@@ -175,7 +181,7 @@ async fn render(
                     input type="hidden" name="version" value=(settings::version(r.setting.as_deref()));
                     div class="field" {
                         label for=(format!("text-{loc}")) { (l("kernel.admin.texts.value")) }
-                        textarea id=(format!("text-{loc}")) name="value"
+                        textarea id=(format!("text-{loc}")) name="value" readonly[locked]
                             aria-invalid=[err.map(|_| "true")] {
                             (err.map_or(r.effective(), |(_, value, _)| value))
                         }
@@ -184,14 +190,14 @@ async fn render(
                                 @for n in &why.names { code { "{" (n) "}" } " " } }
                         }
                     }
-                    div class="actions" {
+                    @if !locked { div class="actions" {
                         button type="submit" name="op" value="save" { (l("kernel.admin.save")) }
                         @if r.setting.is_some() {
                             button class="secondary" type="submit" name="op" value="reset" {
                                 (l("kernel.admin.texts.reset"))
                             }
                         }
-                    }
+                    } }
                 }
             }
         }
@@ -202,6 +208,15 @@ async fn render(
         }))
     };
     v.page(status, &title, body)
+}
+
+/// The Permission `staff` lacks to save or reset `key`, if any
+/// ([`super::texts_api::permissions_for`]).
+fn missing(staff: &CurrentStaff, key: &str) -> Option<&'static str> {
+    super::texts_api::permissions_for(key)
+        .iter()
+        .copied()
+        .find(|p| !staff.can(p))
 }
 
 /// A text short enough for a page title.
@@ -236,6 +251,9 @@ pub(super) async fn submit(
 ) -> Response {
     let v = View::new(&s, &staff);
     let back = format!("/admin/texts/{}", enc(&key));
+    if let Some(p) = missing(&staff, &key) {
+        return crate::auth::forbidden(&s, &staff, p);
+    }
     let actor = Actor::staff(&staff);
     if f.op == "reset" {
         return reset(&s, &v, &key, &f, &actor, &ctx).await;
@@ -262,6 +280,9 @@ pub(super) async fn submit(
             let value = f.value.replace("\r\n", "\n");
             let rejected = Some((f.locale.as_str(), value.as_str(), why));
             render(&v, &key, rejected, StatusCode::UNPROCESSABLE_ENTITY).await
+        }
+        Err(crate::Error::Forbidden { permission }) => {
+            crate::auth::forbidden(&s, &staff, &permission)
         }
         Err(e) => v.error(&e),
     }

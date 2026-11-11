@@ -255,6 +255,12 @@ pub(super) const DEFAULTS: &[E] = th_en![
         "After a change, every linked Student is asked to accept the notice again with their next message. A version a Student already accepted will not ask them again."
     ),
     ("kernel.admin.texts.consent_new", "ฉบับใหม่", "New version"),
+    // A privacy notice text shown to Staff without kernel.setting.edit (#170).
+    (
+        "kernel.admin.texts.notice_locked",
+        "ข้อความนี้เป็นส่วนหนึ่งของประกาศความเป็นส่วนตัวที่นักศึกษายอมรับไว้ คุณจึงดูได้อย่างเดียว ผู้ที่แก้ได้คือเจ้าหน้าที่ที่มีสิทธิ์ \"แก้ไขเวอร์ชันประกาศความเป็นส่วนตัว แบรนด์และรูปเมนู และแพ็กเกจ LINE\" ถ้าเปลี่ยนเนื้อความ ส่วนใหญ่ต้องออกประกาศฉบับใหม่ให้นักศึกษายอมรับอีกครั้งด้วย",
+        "This text is part of the privacy notice Students accepted, so you can only read it. Staff holding \"Edit the privacy notice version, branding and the LINE package\" can change it. A change of wording usually needs a new notice version too, so Students accept it again."
+    ),
     // Deprecated (#135): the card's button opens the review step now
     // (`kernel.admin.consent.review`). Kept so a `[texts]` override of it
     // still builds.

@@ -50,3 +50,14 @@ fn page_only(key: &str) -> bool {
         .any(|p| key.starts_with(p))
         && !key.contains("email_")
 }
+
+/// Prefixes of the privacy notice texts (#170): the notice, its title, the
+/// Consent card and the full notice page. Students accepted that wording,
+/// so saving one needs `kernel.setting.edit` (which also sets the notice
+/// version) on top of `kernel.texts.edit`.
+const PRIVACY_NOTICE: [&str; 2] = ["kernel.consent.", "kernel.notice."];
+
+/// Whether `key` is a privacy notice text ([`PRIVACY_NOTICE`]).
+pub(super) fn privacy_notice(key: &str) -> bool {
+    PRIVACY_NOTICE.iter().any(|p| key.starts_with(p))
+}
