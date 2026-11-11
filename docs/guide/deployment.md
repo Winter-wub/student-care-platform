@@ -321,7 +321,7 @@ add no logic of their own:
 | `harpseal::roster::confirm(d, id, actor, ctx)` → `Confirmed` | `kernel.roster.import` | `roster.import` |
 | `harpseal::modules::announcements::create_draft(d, &NewAnnouncement, actor, ctx)` | `announcements.send` | `announcement.create` |
 | `harpseal::modules::announcements::confirm(d, id, version, actor, ctx)` | `announcements.send` | `announcement.send` / `.schedule` |
-| `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.texts.edit` (`harpseal::texts::TEXTS_PERMISSION`; `kernel.setting.edit` before #165) | `setting.update` |
+| `harpseal::texts::set_override(d, key, locale, value, actor, ctx)` | `kernel.texts.edit` (`harpseal::texts::TEXTS_PERMISSION`; `kernel.setting.edit` before #165), plus `kernel.setting.edit` (`NOTICE_PERMISSION`) for a privacy notice text, `kernel.consent.*` or `kernel.notice.*` (#170; `harpseal::texts::permissions_for(key)`) | `setting.update` |
 | `harpseal::branding::set_menu_images(d, locked, unlocked, actor, ctx)` / `reset_menu_images(d, actor, ctx)` → `MenuImagesSaved` | `kernel.setting.edit` | `branding.menu_images` / `.reset` |
 | `harpseal::branding::set_name(d, name, actor, ctx)` / `set_primary_color(d, color, actor, ctx)` → changed? | `kernel.setting.edit` | `branding.update` (`.reset` once nothing is saved) |
 | `harpseal::branding::set_name_as_system(d, name, ctx)` / `set_primary_color_as_system(d, color, ctx)` | none: seed and CLI code | `branding.update` (actor `system`) |

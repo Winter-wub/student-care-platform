@@ -3,6 +3,8 @@
 //! two cannot drift. The public function checks the acting Staff member's
 //! `kernel.texts.edit` ([`TEXTS_PERMISSION`]; the page's guard does it for
 //! the page) and audits the write as `setting.update` by that Staff member.
+//! A privacy notice text needs `kernel.setting.edit` too
+//! ([`NOTICE_PERMISSION`], #170), checked in [`write`] for both.
 
 use super::settings::{self, Refused};
 use crate::audit::{Actor, RequestCtx};
@@ -18,6 +20,23 @@ pub const TEXTS_PERMISSION: &str = crate::kernel::TEXTS_EDIT;
 /// (migration 0019, and `[roles]` on `migrate`).
 #[deprecated(note = "set_override needs TEXTS_PERMISSION since #165")]
 pub const SETTING_PERMISSION: &str = crate::kernel::SETTING_EDIT;
+
+/// The Permission a privacy notice text (`kernel.consent.*`,
+/// `kernel.notice.*`) needs on top of [`TEXTS_PERMISSION`] (#170):
+/// Students accepted that wording, and a change of it usually goes with a
+/// new notice version, which this Permission sets.
+pub const NOTICE_PERMISSION: &str = crate::kernel::SETTING_EDIT;
+
+/// Every Permission [`set_override`] and the Texts page need to save `key`:
+/// [`TEXTS_PERMISSION`], plus [`NOTICE_PERMISSION`] for a privacy notice
+/// text (#170).
+pub fn permissions_for(key: &str) -> &'static [&'static str] {
+    if super::texts_editable::privacy_notice(key) {
+        &[TEXTS_PERMISSION, NOTICE_PERMISSION]
+    } else {
+        &[TEXTS_PERMISSION]
+    }
+}
 
 /// What [`write`] did.
 #[derive(Debug)]
@@ -37,6 +56,8 @@ pub(super) enum Written {
 /// Stores `value` (CRLF made LF) as the text of `key` in `locale`.
 /// `version`, when given, is the form's compare-and-set token
 /// ([`settings::version`] of the value it was rendered from).
+/// A privacy notice text is [`crate::Error::Forbidden`] (naming
+/// [`NOTICE_PERMISSION`]) unless `actor` holds it (#170).
 /// A save of a Menu label also records the next Menu revision and
 /// enqueues its re-link, in the same batch ([`crate::kernel::menu`]).
 #[allow(clippy::too_many_arguments)]
@@ -57,6 +78,9 @@ pub(super) async fn write(
             .any(|l| l == locale)
     {
         return Ok(Written::NotEditable);
+    }
+    if super::texts_editable::privacy_notice(key) {
+        crate::auth::roles::require(s, actor, NOTICE_PERMISSION).await?;
     }
     let stored = settings::settings(s).await?;
     let current = stored.get(&(key.to_string(), locale.to_string()));
@@ -95,7 +119,9 @@ pub(super) async fn write(
 /// on the next message): the same path as the Texts page. Refused like on
 /// the page: the key must be one the Texts page edits, the Locale one it
 /// offers, and `value` must keep the `{name}` placeholders of the text it
-/// replaces, be non-empty and at most 5 000 characters. Returns `false`,
+/// replaces, be non-empty and at most 5 000 characters. A privacy notice
+/// text also needs [`NOTICE_PERMISSION`] (see [`permissions_for`]); without
+/// it the error is [`Error::Forbidden`]. Returns `false`,
 /// writing nothing, when the stored override already is `value` or the row
 /// changed meanwhile.
 pub async fn set_override(

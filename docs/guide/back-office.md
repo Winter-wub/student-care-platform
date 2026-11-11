@@ -464,6 +464,15 @@ lists `kernel.texts.edit` alone edits texts and no other setting. A Role whose
 `kernel.texts.edit` by this rule. To take texts away from a settings Role,
 untick it on the Roles page. `harpseal::texts::SETTING_PERMISSION` is
 deprecated: check `harpseal::texts::TEXTS_PERMISSION` before `set_override`.
+The privacy notice texts (keys starting `kernel.consent.` or `kernel.notice.`:
+the notice, its title, the Consent card and the full notice page) also need
+`kernel.setting.edit` to save or reset, on the page and through
+`set_override` (#170): Students accepted that wording, and a change of it
+usually goes with a new notice version. Staff holding only `kernel.texts.edit`
+still find them in search and the to-fix chips, but their page is read-only,
+with a note naming who can change them; a save is refused with 403.
+`harpseal::texts::permissions_for(key)` lists what a key needs. Audit is
+unchanged (`setting.update`).
 `/admin/backups` (`kernel.backup.manage`) lists the nightly backups, downloads
 one as a `.tar`, starts one now, and downloads all data as an Excel workbook
 without secret columns; see [Backups](backups.md).
