@@ -74,6 +74,7 @@ fn texts_nav(r: &mut ModuleRegistrar) {
             title_key: "kernel.admin.texts.title",
             order: 80,
             group: crate::NavGroup::Admin,
+            icon: crate::NavIcon::Message,
         });
     }
 }
@@ -100,6 +101,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             40,
             get(security::page),
         )
+        .nav_icon("/security", crate::NavIcon::Shield)
         .back_office_page_in(
             crate::NavGroup::Admin,
             AUDIT,
@@ -108,6 +110,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             50,
             get(audit::page),
         )
+        .nav_icon("/audit", crate::NavIcon::History)
         .back_office(AUDIT, "/audit/{id}", get(audit_detail::page))
         .back_office_page_in(
             crate::NavGroup::Admin,
@@ -117,6 +120,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             60,
             get(staff_pages::list),
         )
+        .nav_icon("/staff", crate::NavIcon::Person)
         .back_office(
             STAFF,
             "/staff/new",
@@ -139,6 +143,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             70,
             get(roles_pages::list).post(roles_pages::create),
         )
+        .nav_icon("/roles", crate::NavIcon::Key)
         .back_office(
             STAFF,
             "/roles/{id}",

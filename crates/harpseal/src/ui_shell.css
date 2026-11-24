@@ -40,14 +40,35 @@ main:focus { outline: none; }
 .nav { padding: 4px 8px 12px; }
 .nav ul { list-style: none; margin: 0; padding: 0; }
 .nav a {
-  display: flex; align-items: center; min-height: var(--tap); padding: 0 12px;
+  display: flex; align-items: center; gap: 12px; min-height: var(--tap); padding: 0 12px;
   border-radius: var(--radius-control); color: var(--ink); text-decoration: none;
 }
+/* Icons (#nav icons): 20 px line drawings in Slate Note beside Ledger Ink
+   names, so the words still lead; the current page's icon takes its ink. */
+.nav .icon { flex: none; width: 20px; height: 20px; color: var(--muted); }
+.nav a:hover .icon { color: var(--ink); }
+.nav a[aria-current="page"] .icon { color: inherit; }
+.nav-label { min-width: 0; }
 .nav a:hover { background: var(--bg); }
 .nav a:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
 .nav a[aria-current="page"] { background: var(--brand); color: var(--brand-ink); font-weight: 700; }
 .nav a[aria-current="page"]:hover { background: var(--brand); }
-.nav-group { margin: 16px 12px 4px; color: var(--muted); font-size: .875rem; font-weight: 600; }
+/* A group is a <details>: its name is a 48 px row with a chevron that
+   turns to point at the closed group. */
+.nav-sec { margin-top: var(--space-sm); }
+.nav-group {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: var(--tap); padding: 0 12px; border-radius: var(--radius-control);
+  color: var(--muted); font-size: .875rem; font-weight: 600; cursor: pointer; list-style: none;
+}
+.nav-group::-webkit-details-marker { display: none; }
+.nav-group:hover { background: var(--bg); color: var(--ink); }
+.nav-group:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+.nav .nav-group .icon { width: 16px; height: 16px; color: inherit; transition: rotate .15s ease-out; }
+.nav-sec:not([open]) > .nav-group .icon { rotate: -90deg; }
+/* "ย่อเมนู": a quiet row at the top of the side column, from 640 px and
+   only with JS (the script shows it). */
+.nav .nav-rail-toggle { display: none; }
 
 @media (min-width: 640px) {
   .office-shell { display: grid; grid-template-columns: 15rem minmax(0, 1fr); align-items: start; }
@@ -57,6 +78,39 @@ main:focus { outline: none; }
     border-bottom: 0; border-right: 1px solid var(--line); min-height: calc(100vh - 64px);
   }
   .nav { padding: 8px 8px 24px; }
+  .nav .nav-rail-toggle:not([hidden]) {
+    display: flex; justify-content: flex-start; gap: 12px; width: 100%; min-height: var(--tap);
+    margin: 0 0 4px; padding: 0 12px; border-radius: var(--radius-control);
+    color: var(--muted); font-size: .875rem; font-weight: 600; text-decoration: none;
+  }
+  .nav .nav-rail-toggle:hover { background: var(--bg); color: var(--ink); }
+  .nav .nav-rail-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .nav .nav-rail-toggle .icon { color: inherit; transition: rotate .15s ease-out; }
+
+  /* The icon rail: a 72 px column of icons. Each name stays in its link
+     (transparent, never `visibility: hidden`, so it still names the link)
+     and shows as a Ledger Ink label beside the icon on hover and focus.
+     The column scrolls with the page (no inner scroll box to clip the
+     labels), every group is open (no headings to open them), and a Rule
+     Line parts the groups. */
+  .nav-rail .office-shell:not(.no-nav) { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  .nav-rail .menu { position: static; max-height: none; overflow: visible; }
+  .nav-rail .nav { padding: 8px 12px 24px; }
+  .nav-rail .nav a, .nav-rail .nav .nav-rail-toggle { position: relative; justify-content: center; padding: 0; }
+  .nav-rail .nav .nav-rail-toggle .icon { rotate: 180deg; }
+  .nav-rail .nav-label {
+    position: absolute; left: calc(100% + 8px); top: 50%; translate: 0 -50%; z-index: 5;
+    width: max-content; max-width: 16rem; padding: 6px 10px; border-radius: 6px;
+    background: var(--ink); color: var(--card); font-size: .875rem; font-weight: 600;
+    pointer-events: none; opacity: 0;
+  }
+  .nav-rail .nav :is(a, .nav-rail-toggle):is(:hover, :focus-visible) .nav-label { opacity: 1; }
+  .nav-rail .nav-group { display: none; }
+  .nav-rail .nav-sec { margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--line); }
+  .nav-rail .nav-sec::details-content { content-visibility: visible; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav .icon { transition: none !important; }
 }
 /* Where the browser lets CSS show a closed <details>, the side column is
    always open from 640 px and the button goes; elsewhere it stays. */

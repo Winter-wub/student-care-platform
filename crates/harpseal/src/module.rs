@@ -236,6 +236,7 @@ pub(crate) struct NavSpec {
     pub(crate) title_key: &'static str,
     pub(crate) order: u16,
     pub(crate) group: NavGroup,
+    pub(crate) icon: crate::NavIcon,
 }
 
 impl ModuleRegistrar {

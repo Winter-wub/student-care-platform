@@ -7,9 +7,16 @@
 //! side column: where the browser can style `::details-content`, the
 //! column is always open and the button hidden; elsewhere the button
 //! stays and still works.
+//!
+//! Every entry starts with its [`NavIcon`]. Each group is a `<details>`
+//! that folds; from 640 px a "ย่อเมนู" toggle folds the side column to a
+//! rail of icons, each name shown beside its icon on hover and focus.
+//! [`NAV_JS`] remembers both in `localStorage` and shows the toggle, so
+//! without JS the column stays as it was.
 
-use maud::{Markup, html};
+use maud::{Markup, PreEscaped, html};
 
+use super::icons::{self, NavIcon};
 use crate::auth::NavLink;
 use crate::{CurrentStaff, NavGroup};
 
@@ -43,6 +50,21 @@ pub(crate) struct NavTexts {
     pub(crate) home: String,
     pub(crate) daily: String,
     pub(crate) admin: String,
+    pub(crate) rail: String,
+}
+
+/// One entry: its icon, then its name. The name stays in the link's
+/// text when the column is an icon rail (drawn as a label on hover and
+/// focus), so a screen reader always reads it.
+fn entry(href: &str, label: &str, icon: NavIcon, is_here: bool) -> Markup {
+    html! {
+        li {
+            a href=(href) aria-current=[is_here.then_some("page")] {
+                (icon.svg())
+                span class="nav-label" { (label) }
+            }
+        }
+    }
 }
 
 /// The grouped navigation of `staff` on the page at `staff.path`.
@@ -53,15 +75,23 @@ pub(crate) fn nav(staff: &CurrentStaff, t: &NavTexts) -> Markup {
     let label = here.map_or(if on_home { t.home.as_str() } else { "" }, |l| {
         l.label.as_str()
     });
-    let group = |g: NavGroup, id: &str, name: &str| {
+    // A group is a <details>: open by default and always open while it
+    // holds the current page (the script keeps a closed one closed).
+    let group = |g: NavGroup, key: &str, name: &str| {
         let items: Vec<&NavLink> = links.iter().filter(|l| l.group == g).collect();
+        let id = format!("nav-{key}");
         html! {
             @if !items.is_empty() {
-                p class="nav-group" id=(id) { (name) }
-                ul aria-labelledby=(id) {
-                    @for l in items {
-                        @let is_here = here.is_some_and(|h| h.href == l.href);
-                        li { a href=(l.href) aria-current=[is_here.then_some("page")] { (l.label) } }
+                details class="nav-sec" data-sec=(key) open {
+                    summary class="nav-group" id=(id) {
+                        span class="nav-label" { (name) }
+                        (icons::chevron())
+                    }
+                    ul aria-labelledby=(id) {
+                        @for l in items {
+                            @let is_here = here.is_some_and(|h| h.href == l.href);
+                            (entry(&l.href, &l.label, l.icon, is_here))
+                        }
                     }
                 }
             }
@@ -77,16 +107,41 @@ pub(crate) fn nav(staff: &CurrentStaff, t: &NavTexts) -> Markup {
                 span class="menu-word" { (t.menu) }
                 @if !label.is_empty() { span class="menu-here" { (label) } }
             }
-            nav class="nav" aria-label=(t.menu) {
-                ul {
-                    li { a href=(HOME) aria-current=[on_home.then_some("page")] { (t.home) } }
+            nav class="nav" id="nav" aria-label=(t.menu) {
+                // Drawn by the script (no JS, no rail): from 640 px only.
+                button type="button" class="link nav-rail-toggle" aria-pressed="false"
+                    aria-controls="nav" hidden {
+                    (icons::panel())
+                    span class="nav-label" { (t.rail) }
                 }
-                (group(NavGroup::Daily, "nav-daily", &t.daily))
-                (group(NavGroup::Admin, "nav-admin", &t.admin))
+                ul {
+                    (entry(HOME, &t.home, NavIcon::Home, on_home))
+                }
+                (group(NavGroup::Daily, "daily", &t.daily))
+                (group(NavGroup::Admin, "admin", &t.admin))
             }
         }
+        script { (PreEscaped(NAV_JS)) }
     }
 }
+
+/// Remembers the side column (an icon rail or not) and each closed group
+/// in `localStorage` (`harpseal.nav`), and applies them as the page is
+/// read, before `<main>`, so nothing jumps. Without storage (private
+/// mode) the toggles still work for the page. The rail is a class on
+/// `<html>`, so CSS draws it only from 640 px.
+pub(crate) const NAV_JS: &str = r#"(function(){
+var K='harpseal.nav',d=document.documentElement,S={};
+try{S=JSON.parse(localStorage.getItem(K))||{};}catch(e){}
+function save(){try{localStorage.setItem(K,JSON.stringify(S));}catch(e){}}
+var b=document.querySelector('.nav-rail-toggle');
+function rail(on){d.classList.toggle('nav-rail',on);b.setAttribute('aria-pressed',on?'true':'false');}
+if(b){b.hidden=false;rail(!!S.rail);
+b.addEventListener('click',function(){S.rail=!d.classList.contains('nav-rail');rail(S.rail);save();});}
+document.querySelectorAll('.nav-sec').forEach(function(x){var k='sec:'+x.getAttribute('data-sec');
+if(S[k]===0&&!x.querySelector('[aria-current]'))x.open=false;
+x.addEventListener('toggle',function(){if(d.classList.contains('nav-rail'))return;S[k]=x.open?1:0;save();});});
+})();"#;
 
 #[cfg(test)]
 mod tests {
@@ -97,6 +152,7 @@ mod tests {
             label: href.into(),
             href: href.into(),
             group: NavGroup::Daily,
+            icon: NavIcon::Page,
         }
     }
 

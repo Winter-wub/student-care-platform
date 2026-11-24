@@ -62,6 +62,18 @@ button.htmx-request::after {
 }
 .actions { gap: var(--space-md); margin-top: var(--space-sm); align-items: center; }
 .actions form { margin: 0; }
+/* Whatever follows an action row (a table, a list, a card) keeps a
+   gutter (16) from its buttons; a heading keeps its own 24 above. */
+:where(.office main) .actions + :not(h1, h2, h3, [hidden]) { margin-top: var(--gutter); }
+/* A row holding a stacked form (a rename form beside its delete button)
+   lines its buttons up along the bottom, not the middle of the form. */
+.actions:has(> form > :is(input:not([type="hidden"]), select, textarea)) { align-items: flex-end; }
+/* A stacked form (ชื่อ, the field, then its button) keeps 12 between the
+   field and the button; a row (`form.inline`, `.actions`) spaces with
+   its gap instead. */
+:where(.office main) :not(.actions, .inline, .md-toolbar, .head-row, .pager, .chips, .saved-row, .list > li)
+  > :is(input:not([type="hidden"], [type="checkbox"], [type="radio"]), select, textarea)
+  + :is(button, .btn) { margin-top: var(--space-md); }
 .head-row { margin-bottom: var(--space-md); }
 .head-row h1 { margin-bottom: 0; }
 
@@ -78,6 +90,9 @@ form.inline { flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--s
 form.inline label { margin: 0; white-space: nowrap; }
 form.inline input:not([type="checkbox"], [type="radio"]) { flex: 1 1 10rem; width: auto; min-width: 0; }
 form.inline :is(button, .btn) { white-space: nowrap; }
+/* An inline form with a field in an action row (a rename beside its
+   delete) takes the room the row has, up to a readable 40rem. */
+.actions > form.inline:has(> input:not([type="hidden"], [type="checkbox"], [type="radio"])) { flex: 1 1 20rem; max-width: 40rem; }
 .list .name, a.name { overflow-wrap: break-word; }
 /* A stacked row (phones): the caption floats in its own 8rem column,
    beside every part of the value however many there are, and the value
