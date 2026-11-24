@@ -105,6 +105,7 @@ pub use message::{
     MenuKey, Message,
 };
 pub use migrate::{MigrationReport, migrate};
+pub use module::NumberRange;
 pub use module::UploadColumn;
 pub use module::{
     ActionContext, ActionHandler, AppState, CONFIRMED_KEEP_MS, JobContext, JobHandler, KeptUpload,

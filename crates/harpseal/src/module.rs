@@ -20,6 +20,7 @@ mod kept;
 mod mini_app;
 mod notify;
 mod setting_kind;
+mod setting_range;
 pub(crate) mod settings;
 mod status;
 mod upload;
@@ -32,6 +33,7 @@ pub use notify::{
     NotifyReport, NotifySkip, NotifyTo,
 };
 pub(crate) use setting_kind::MAX_ACCOUNT_CHARS;
+pub use setting_range::NumberRange;
 pub use settings::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind, SettingValue, Settings};
 pub(crate) use settings::{SettingSpec, absorb as absorb_settings, check as check_settings};
 pub(crate) use status::StatusSpec;

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use super::ModuleRegistrar;
 use super::setting_kind::number;
 pub use super::setting_kind::{MAX_LINE_CHARS, MAX_MULTILINE_CHARS, SettingKind};
+use super::setting_range::NumberRange;
 
 mod build;
 use crate::port_types::{Statement, Value};
@@ -29,6 +30,22 @@ pub(crate) struct SettingSpec {
     pub(crate) permission: &'static str,
     pub(crate) label_key: &'static str,
     pub(crate) help_key: &'static str,
+    /// The numbers a `Number` setting takes (#172); `None`: any `i64`.
+    pub(crate) range: Option<NumberRange>,
+}
+
+impl SettingSpec {
+    /// The value as stored, or the catalog key of why it is refused: the
+    /// kind's check, then the declared range. Every save and read goes
+    /// through it.
+    pub(crate) fn check(&self, raw: &str) -> core::result::Result<String, &'static str> {
+        let v = self.kind.check(raw)?;
+        if let Some(range) = &self.range {
+            let n = number(&v).ok_or("kernel.admin.module_settings.err_number")?;
+            range.check(n)?;
+        }
+        Ok(v)
+    }
 }
 
 impl ModuleRegistrar {
@@ -76,6 +93,34 @@ impl ModuleRegistrar {
         self.declare(key, kind, None, permission, label_key, help_key)
     }
 
+    /// A [`SettingKind::Number`] setting that takes only the numbers in
+    /// `range` (#172), e.g. `NumberRange::new(1, 30)` for days or
+    /// `NumberRange::new(0, 23)` for an hour. `/admin/settings` and
+    /// [`Settings::save`] refuse any other number (the page names the
+    /// range in the error and keeps the value typed), the input carries
+    /// `min`, `max` and `step`, and the help line names the range. A saved
+    /// value outside it (a restored row, a range narrowed since) reads as
+    /// [`Error::SettingNotSet`] and is flagged on the page, as any value
+    /// that no longer passes its check. Everything else is as for
+    /// [`ModuleRegistrar::setting`]; `build()` also refuses an empty
+    /// range, a step below 1 and a default outside the range.
+    pub fn number_setting(
+        &mut self,
+        key: &'static str,
+        default: &'static str,
+        range: NumberRange,
+        permission: &'static str,
+        label_key: &'static str,
+        help_key: &'static str,
+    ) -> &mut Self {
+        let kind = SettingKind::Number;
+        self.declare(key, kind, Some(default), permission, label_key, help_key);
+        if let Some(spec) = self.settings.last_mut() {
+            spec.range = Some(range);
+        }
+        self
+    }
+
     fn declare(
         &mut self,
         key: &'static str,
@@ -93,6 +138,7 @@ impl ModuleRegistrar {
             permission,
             label_key,
             help_key,
+            range: None,
         });
         self
     }
@@ -208,7 +254,7 @@ impl Settings {
                 Some(d) => d.to_string(),
                 None => return Err(Error::SettingNotSet(key.to_string())),
             },
-            Some((v, _, _)) => match spec.kind.check(&v) {
+            Some((v, _, _)) => match spec.check(&v) {
                 Ok(ok) if ok == v => v,
                 _ => return Err(Error::SettingNotSet(key.to_string())),
             },
@@ -273,7 +319,6 @@ impl Settings {
     ) -> Result<()> {
         let key = spec.key;
         let value = spec
-            .kind
             .check(value)
             .map_err(|why| Error::Invalid(format!("setting `{key}`: {why}")))?;
         let stored = self.stored(key).await?.map(|(v, _, _)| v);

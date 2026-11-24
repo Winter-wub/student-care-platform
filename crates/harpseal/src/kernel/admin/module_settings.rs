@@ -124,7 +124,7 @@ fn card(
     // check): Students get "not set" until it is saved again.
     let broken = stored
         .as_ref()
-        .is_some_and(|(s, _, _)| spec.kind.check(s).as_deref() != Ok(s.as_str()));
+        .is_some_and(|(s, _, _)| spec.check(s).as_deref() != Ok(s.as_str()));
     html! {
         section class="card" id=(id) {
             h3 { span id=(format!("{id}-name")) { (v.t(spec.label_key)) } " "
@@ -140,7 +140,7 @@ fn card(
                 div class="flash err" role="status" { (v.t("kernel.admin.module_settings.broken")) }
             }
             p class="muted" { (v.t(spec.help_key)) }
-            p class="muted" { (v.t(spec.kind.label_key())) }
+            p class="muted" id=(format!("{id}-kind")) { (kind_line(v, spec)) }
             @if let Some((_, at, _)) = &stored {
                 p class="muted" { (v.t("kernel.admin.module_settings.updated")) " " (v.time(*at)) }
             }
@@ -154,10 +154,10 @@ fn card(
                             (switch(v, &id, shown, err.is_some() || broken))
                         } @else {
                             label for=(format!("{id}-value")) { (v.t("kernel.admin.module_settings.value")) }
-                            (input(spec.kind, &format!("{id}-value"), shown, err.is_some() || broken))
+                            (input(spec, &format!("{id}-value"), shown, err.is_some() || broken))
                         }
                         @if let Some((_, _, why)) = err {
-                            p class="field-error" { (v.t(why)) }
+                            p class="field-error" id=(format!("{id}-error")) { (ranged(v, spec, why)) }
                         }
                     }
                     button type="submit" { (v.t("kernel.admin.save")) }
@@ -215,10 +215,44 @@ fn on_off(value: &str) -> &'static str {
     }
 }
 
-fn input(kind: SettingKind, id: &str, value: &str, invalid: bool) -> Markup {
+/// What the setting takes: its kind, and for a Number with a range
+/// (#172) the range, e.g. "จำนวนเต็ม ตั้งแต่ 1 ถึง 30".
+fn kind_line(v: &View<'_>, spec: &SettingSpec) -> String {
+    match &spec.range {
+        Some(r) if r.step.is_some() => {
+            ranged(v, spec, "kernel.admin.module_settings.kind_number_step")
+        }
+        Some(_) => ranged(v, spec, "kernel.admin.module_settings.kind_number_range"),
+        None => v.t(spec.kind.label_key()),
+    }
+}
+
+/// The text of catalog key `key`, its `{min}`, `{max}` and `{step}`
+/// filled from the setting's range (texts without them are unchanged).
+fn ranged(v: &View<'_>, spec: &SettingSpec, key: &str) -> String {
+    let text = v.t(key);
+    match &spec.range {
+        Some(r) => {
+            let args = r.args();
+            let args: Vec<(&str, &str)> = args.iter().map(|(k, a)| (*k, a.as_str())).collect();
+            crate::kernel::text::fill(&text, &args)
+        }
+        None => text,
+    }
+}
+
+fn input(spec: &SettingSpec, id: &str, value: &str, invalid: bool) -> Markup {
     let bad = invalid.then_some("true");
     let max = crate::module::MAX_LINE_CHARS.to_string();
-    match kind {
+    let help = format!("{}-kind", id.trim_end_matches("-value"));
+    if let (SettingKind::Number, Some(r)) = (spec.kind, &spec.range) {
+        return html! {
+            input id=(id) name="value" type="number" required value=(value)
+                min=(r.min) max=(r.max) step=(r.step.unwrap_or(1))
+                aria-describedby=(help) aria-invalid=[bad];
+        };
+    }
+    match spec.kind {
         SettingKind::MultilineText => html! {
             textarea id=(id) name="value" required rows="5"
                 maxlength=(crate::module::MAX_MULTILINE_CHARS) aria-invalid=[bad] { (value) }
@@ -301,7 +335,7 @@ pub(super) async fn submit(
         SettingKind::Boolean if f.value.is_empty() => "0",
         _ => f.value.as_str(),
     };
-    let value = match spec.kind.check(raw) {
+    let value = match spec.check(raw) {
         Ok(value) => value,
         Err(why) => {
             let raw = f.value.replace("\r\n", "\n");
