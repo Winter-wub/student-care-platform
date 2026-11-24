@@ -15,11 +15,15 @@
 //! [`serve`] (or [`serve_until`]) runs the Router with `axum::serve`, handling webhooks on a
 //! [`NativeBackground`] after the 200; [`spawn_ticker`] calls
 //! [`Deployment::tick`] once a minute.
+//!
+//! [`dev_fixed_otp`] reads `HARPSEAL_DEV_FIXED_OTP` (a fixed Student OTP
+//! for a local demo) and refuses it outside dev mode.
 
 #![warn(missing_docs)]
 #![forbid(unsafe_code)]
 
 mod background;
+mod dev_otp;
 mod email;
 mod files;
 mod http;
@@ -33,6 +37,7 @@ use std::time::Duration;
 use harpseal::{Clock, Deployment, Error, Random, Result, Services, Timestamp};
 
 pub use background::{BACKGROUND_LIMIT, NativeBackground};
+pub use dev_otp::{DEV_FIXED_OTP_VAR, DEV_FIXED_OTP_WARNING, dev_fixed_otp};
 pub use email::Smtp;
 pub use files::LocalFiles;
 pub use http::ReqwestHttp;

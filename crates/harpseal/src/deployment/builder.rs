@@ -55,7 +55,9 @@ impl DeploymentBuilder {
     /// link flow, sends), and the back office offers them (their empty
     /// Link rows, Manual Link and usage). Off by default: they are then
     /// refused, whatever their secret. Turn it on only for a local demo or
-    /// tests, never in production.
+    /// tests, never in production. A
+    /// [`crate::VerificationMethod::dev_only`] method (a fixed dev OTP) is
+    /// refused unless it is on.
     pub fn dev(mut self, on: bool) -> Self {
         self.dev = on;
         self
@@ -90,6 +92,10 @@ impl DeploymentBuilder {
         let verification = self
             .verification
             .ok_or(BuildError::Missing(Part::Verification))?;
+        // A fixed dev OTP (or any dev-only method) never outside dev mode.
+        if verification.dev_only() && !self.dev {
+            return Err(BuildError::DevOnlyVerification(verification.id()));
+        }
         if self.channels.is_empty() {
             return Err(BuildError::Missing(Part::Channel));
         }

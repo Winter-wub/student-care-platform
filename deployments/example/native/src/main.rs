@@ -11,6 +11,10 @@
 //! run a tick on demand (see [`dev`]). It refuses to start on a
 //! non-loopback address or with a `FAKE_SECRET` shorter than 16 characters
 //! or equal to `change-me`. Never set it in production.
+//!
+//! In dev mode only, `HARPSEAL_DEV_FIXED_OTP=<digits>` makes every Student
+//! OTP that code (still hashed, emailed, expiring and attempt-counted), so
+//! a demo needs no inbox; set without dev mode, the binary refuses to start.
 
 #![forbid(unsafe_code)]
 
@@ -19,8 +23,10 @@ mod dev;
 use std::sync::Arc;
 use std::time::Duration;
 
-use example_deployment::{Secrets, deployment_with_fake_in};
-use harpseal_runtime_native::{NativeSettings, serve, services, spawn_ticker};
+use example_deployment::{Secrets, deployment_with_fake_otp};
+use harpseal_runtime_native::{
+    DEV_FIXED_OTP_WARNING, NativeSettings, dev_fixed_otp, serve, services, spawn_ticker,
+};
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -40,13 +46,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let secrets = Secrets::from_lookup(env).with_menu_image_files(env, |p| std::fs::read(p))?;
     let secret = secrets.fake_secret.clone();
     let dev_mode = std::env::var("HARPSEAL_DEV_ROUTES").is_ok_and(|v| v == "1");
+    // HARPSEAL_DEV_FIXED_OTP: refused (not ignored) outside dev mode.
+    let fixed_otp = dev_fixed_otp(env, dev_mode)?;
     let mut services = services(&settings)?;
     let captured = dev::CapturingEmail::default();
     if dev_mode {
         dev::check_safe(&settings.addr, &secret)?;
         services.email = Arc::new(captured.clone());
     }
-    let (d, fake) = deployment_with_fake_in(services, secrets, dev_mode)?;
+    let (d, fake) = deployment_with_fake_otp(services, secrets, dev_mode, fixed_otp.as_deref())?;
+    if fixed_otp.is_some() {
+        eprintln!("{DEV_FIXED_OTP_WARNING}");
+    }
     let d = Arc::new(d);
     let report = d.migrate().await?;
     println!(
