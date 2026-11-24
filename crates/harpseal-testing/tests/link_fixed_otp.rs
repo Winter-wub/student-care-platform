@@ -115,8 +115,7 @@ async fn build_refuses_a_fixed_code_outside_dev_mode() {
         .verification(fixed_otp())
         .module(Hello)
         .build()
-        .err()
-        .expect("refused");
+        .expect_err("refused");
     assert_eq!(err, BuildError::DevOnlyVerification("email_otp"));
     assert!(err.to_string().contains("not in dev mode"), "{err}");
     // The plain method builds either way.
