@@ -168,8 +168,19 @@ impl ModuleRegistrar {
             title_key,
             order: nav_order,
             group,
+            icon: crate::Icon::Page,
         });
         self.back_office(permission, path, route)
+    }
+
+    /// Draws `icon` before the navigation entry of `path` (as given to
+    /// [`ModuleRegistrar::back_office_page_in`]); an entry with none gets
+    /// [`crate::Icon::Page`]. Call it after registering the page.
+    pub fn nav_icon(&mut self, path: &'static str, icon: crate::Icon) -> &mut Self {
+        for n in self.nav.iter_mut().filter(|n| n.path == path) {
+            n.icon = icon;
+        }
+        self
     }
 
     /// A status card on the term status home (`/admin`), shown only to

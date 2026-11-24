@@ -97,6 +97,7 @@ impl Module for Reminders {
                 60,
                 get(page).post(send_now),
             )
+            .nav_icon(PATH, harpseal::Icon::Bell)
             .back_office(PERMISSION.id, ANNOUNCE_PATH, post(announce))
             .student_picker(PERMISSION.id, PICK);
     }

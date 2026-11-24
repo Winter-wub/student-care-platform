@@ -10,6 +10,9 @@ pub(super) const DEFAULTS: &[E] = &[
     E::new("kernel.backoffice.group_daily", "en", "Daily work"),
     E::new("kernel.backoffice.group_admin", "th", "ผู้ดูแลระบบ"),
     E::new("kernel.backoffice.group_admin", "en", "Administration"),
+    // The side column's toggle (a pressed button: the column is an icon rail).
+    E::new("kernel.backoffice.rail", "th", "ย่อเมนู"),
+    E::new("kernel.backoffice.rail", "en", "Collapse menu"),
     E::new("kernel.backoffice.technical", "th", "ข้อมูลทางเทคนิค"),
     E::new("kernel.backoffice.technical", "en", "Technical details"),
     // Locale names (#125): `kernel.locale.<tag>`; a Deployment with another

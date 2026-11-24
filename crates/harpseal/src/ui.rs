@@ -20,6 +20,10 @@
 //! 14:30`, Buddhist year, the Deployment's `utc_offset`) and [`number`]
 //! (`15,000`); ISO stays in the technical disclosure (#125).
 //!
+//! Row actions (move, hide, edit, delete) go in [`row_actions`] as tools
+//! ([`tool_post`], [`tool_link`], [`tool_pair`], [`tool_off`]) with an
+//! [`Icon`], so every table's actions look the same.
+//!
 //! A form field of student codes takes a [`StudentPicker`] (#146): search,
 //! chips, paste many, unknown codes flagged; a textarea without JS.
 
@@ -33,16 +37,19 @@ pub(crate) mod brand;
 mod busy;
 mod confirm;
 mod flash;
+mod icons;
 mod onboard;
 mod onboard_texts;
 mod picker;
 mod picker_route;
 mod picker_texts;
+mod row_actions;
 mod shell;
 mod thai;
 
 pub use confirm::{blocked_button, confirm_step, typed_count_ok};
 pub use flash::redirect_with_flash;
+pub use icons::Icon;
 pub(crate) use onboard::{HelpColumn, upload_panel};
 pub use onboard::{
     MAX_PREFILL, MAX_PREFILL_QUERY, announce_href, empty_state, next_step, no_match, upload_help,
@@ -50,6 +57,7 @@ pub use onboard::{
 pub(crate) use onboard_texts::TEXTS as ONBOARD_TEXTS;
 pub use picker::{PickerRoute, StudentPicker};
 pub(crate) use picker_texts::TEXTS as PICKER_TEXTS;
+pub use row_actions::{ToolLook, row_actions, tool_link, tool_off, tool_pair, tool_post};
 
 pub use thai::{
     local_date, local_datetime, number, thai_date, thai_datetime, thai_day, thai_month,
@@ -76,7 +84,7 @@ pub const CSS: &str = concat!(
 );
 /// Bump the query string when the CSS changes (it is cached for a day).
 pub const CSS_PATH: &str = "/static/app.css";
-const CSS_HREF: &str = "/static/app.css?v=27";
+const CSS_HREF: &str = "/static/app.css?v=29";
 /// Pinned HTMX build on cdnjs.
 pub const HTMX_URL: &str = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js";
 /// SRI hash of [`HTMX_URL`] (`openssl dgst -sha384 -binary | base64`).
@@ -223,6 +231,7 @@ pub fn back_office(s: &PageState, staff: &CurrentStaff, title: &str, body: Marku
         home: t("kernel.backoffice.home"),
         daily: t("kernel.backoffice.group_daily"),
         admin: t("kernel.backoffice.group_admin"),
+        rail: t("kernel.backoffice.rail"),
     };
     let inner = html! {
         (shell::skip_link(&t("kernel.backoffice.skip")))

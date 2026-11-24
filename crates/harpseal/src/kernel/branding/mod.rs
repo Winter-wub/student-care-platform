@@ -102,6 +102,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             85,
             get(page::show),
         )
+        .nav_icon(PATH, crate::Icon::Palette)
         .back_office_upload(EDIT, spec(SAVE_PATH), post(page::submit))
         .back_office_upload(EDIT, spec(MENU_PATH), post(menu_page::submit))
         .back_office(EDIT, "/branding/menu/{slot}", get(menu_page::image))

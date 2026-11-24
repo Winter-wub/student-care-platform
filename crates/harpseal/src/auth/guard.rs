@@ -27,6 +27,7 @@ pub(crate) struct NavItem {
     pub(crate) title_key: &'static str,
     pub(crate) order: u16,
     pub(crate) group: crate::NavGroup,
+    pub(crate) icon: crate::Icon,
 }
 
 /// One navigation link the Staff member may open (#123).
@@ -35,6 +36,7 @@ pub(crate) struct NavLink {
     pub(crate) label: String,
     pub(crate) href: String,
     pub(crate) group: crate::NavGroup,
+    pub(crate) icon: crate::Icon,
 }
 
 /// What every back-office request needs: the page state and the
@@ -223,8 +225,13 @@ async fn admit(cx: &AdminCx, gate: Gate, req: Request) -> Result<Admitted> {
     for n in cx.nav.iter().filter(|n| held(n.permission)) {
         if !nav.iter().any(|l| l.href == n.path) {
             let label = state.catalog.t(&live.locale, n.title_key);
-            let (href, group) = (n.path.clone(), n.group);
-            nav.push(NavLink { label, href, group });
+            let (href, group, icon) = (n.path.clone(), n.group, n.icon);
+            nav.push(NavLink {
+                label,
+                href,
+                group,
+                icon,
+            });
         }
     }
     let nav: Arc<[NavLink]> = nav.into();

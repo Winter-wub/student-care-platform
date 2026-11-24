@@ -126,6 +126,7 @@ impl Module for Fees {
             include_str!("../migrations/fees/0003_fees_import_staff.sql"),
         )
         .back_office_page(IMPORT, "/fees", "fees.title", 60, get(pages::page))
+        .nav_icon("/fees", harpseal::Icon::Wallet)
         .messages(status::TEXTS)
         .status_card(IMPORT, "fees.home.title", status::ORDER, status::card)
         .sheet_upload(IMPORT, pages::UPLOAD, post(upload))

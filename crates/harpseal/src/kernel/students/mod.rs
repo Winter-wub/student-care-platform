@@ -204,6 +204,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             10,
             get(list::page),
         )
+        .nav_icon("/students", crate::Icon::People)
         .back_office(VIEW, "/students/{id}", get(detail::page))
         // Bulk actions (#145): each action checks its own Permission.
         .back_office(VIEW, "/students/bulk", post(page_bulk::submit))

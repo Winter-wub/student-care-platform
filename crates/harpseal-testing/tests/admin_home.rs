@@ -7,7 +7,7 @@
 use axum::routing::get;
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
-    AppState, CardState, CatalogEntry, CurrentStaff, DeploymentConfig, Error, Module,
+    AppState, CardState, CatalogEntry, CurrentStaff, DeploymentConfig, Error, Icon, Module,
     ModuleRegistrar, NavGroup, Permission, Statement, StatusCard,
 };
 use harpseal_testing::{Browser, Harness, START_MS, TestApp};
@@ -60,6 +60,7 @@ impl Module for Pages {
                 15,
                 get(|| async { "classes" }),
             )
+            .nav_icon("/classes", Icon::Calendar)
             .back_office_page_in(
                 NavGroup::Admin,
                 "pages.tool",
@@ -187,6 +188,42 @@ async fn the_current_page_is_marked_and_the_skip_link_leads_to_main() {
     assert!(roles.contains("<main id=\"main\" tabindex=\"-1\">"));
     // Collapsible without JS: a <details> holds the navigation.
     assert!(roles.contains("<details class=\"menu\"><summary>"));
+}
+
+/// The `<a>` of the nav entry `href`, up to its end.
+fn entry<'a>(body: &'a str, href: &str) -> &'a str {
+    let nav = body.split("<nav class=\"nav\"").nth(1).unwrap();
+    let a = nav.split(&format!("<a href=\"{href}\"")).nth(1).unwrap();
+    a.split("</a>").next().unwrap()
+}
+
+#[tokio::test]
+async fn every_entry_has_an_icon_and_the_column_and_groups_fold() {
+    let (_h, app, _) = boot(false).await;
+    let admin = as_who(&app, "admin").await.get("/admin/roles").await.body;
+    // An icon before every name, hidden from readers; the name stays text.
+    let roles = entry(&admin, "/admin/roles");
+    assert!(roles.contains("<svg class=\"icon\""), "{roles}");
+    assert!(roles.contains("aria-hidden=\"true\""));
+    assert!(roles.contains("<span class=\"nav-label\">บทบาทและสิทธิ์</span>"));
+    // A Module picks its icon; one that does not gets the page icon.
+    let classes = entry(&admin, "/admin/classes");
+    let tool = entry(&admin, "/admin/tool");
+    assert!(classes.contains("M8 3v4M16 3v4"), "the calendar: {classes}");
+    assert!(tool.contains("M14 3v6h6"), "the page: {tool}");
+    assert_ne!(
+        entry(&admin, "/admin/staff"),
+        entry(&admin, "/admin/students")
+    );
+    // Groups fold (open by default) and the side column has its toggle,
+    // a pressed button the script shows; both remembered in localStorage.
+    assert!(admin.contains("<details class=\"nav-sec\" data-sec=\"daily\" open><summary class=\"nav-group\" id=\"nav-daily\">"));
+    assert!(admin.contains("<ul aria-labelledby=\"nav-admin\">"));
+    assert!(admin.contains(
+        "<button type=\"button\" class=\"link nav-rail-toggle\" aria-pressed=\"false\" aria-controls=\"nav\" hidden>"
+    ));
+    assert!(admin.contains("<span class=\"nav-label\">ย่อเมนู</span>"));
+    assert!(admin.contains("localStorage.getItem(K)"));
 }
 
 #[tokio::test]

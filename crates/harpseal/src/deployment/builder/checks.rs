@@ -132,6 +132,7 @@ pub(super) fn nav_items(nav: Vec<(&'static str, NavSpec)>) -> Vec<crate::auth::N
             title_key: n.title_key,
             order: n.order,
             group: n.group,
+            icon: n.icon,
         })
         .collect();
     items.sort_by_key(|n| (n.group, n.order));
