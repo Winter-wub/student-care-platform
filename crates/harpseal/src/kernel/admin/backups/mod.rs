@@ -77,7 +77,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             90,
             get(page::page),
         )
-        .nav_icon(PATH, crate::NavIcon::Archive)
+        .nav_icon(PATH, crate::Icon::Archive)
         .back_office(MANAGE, "/backups/now", post(page::now))
         .back_office(DOWNLOAD, "/backups/export.xlsx", get(export::all))
         .back_office(DOWNLOAD, "/backups/export/{table}", get(export::one))

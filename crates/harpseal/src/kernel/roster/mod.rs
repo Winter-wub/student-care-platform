@@ -120,7 +120,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             20,
             get(page_list::page),
         )
-        .nav_icon("/roster", crate::NavIcon::Upload)
+        .nav_icon("/roster", crate::Icon::Upload)
         .back_office(VIEW, "/roster/template.csv", get(page_list::template))
         .back_office_upload(IMPORT, upload, post(page_list::upload))
         .back_office(VIEW, "/roster/{id}", get(page_import::page))

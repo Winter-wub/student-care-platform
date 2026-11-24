@@ -64,7 +64,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             85,
             get(page::page),
         )
-        .nav_icon(PATH, crate::NavIcon::Gauge)
+        .nav_icon(PATH, crate::Icon::Gauge)
         .back_office(
             package_page::EDIT,
             package_page::PATH,

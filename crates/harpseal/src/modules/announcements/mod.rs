@@ -259,7 +259,7 @@ fn pages(r: &mut ModuleRegistrar) {
         NAV_ORDER,
         get(page_list::page),
     )
-    .nav_icon("/announcements", crate::NavIcon::Megaphone)
+    .nav_icon("/announcements", crate::Icon::Megaphone)
     .back_office_upload(
         send,
         upload("/announcements/new"),

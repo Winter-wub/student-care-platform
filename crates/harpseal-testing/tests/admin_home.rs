@@ -7,8 +7,8 @@
 use axum::routing::get;
 use harpseal::modules::announcements::Announcements;
 use harpseal::{
-    AppState, CardState, CatalogEntry, CurrentStaff, DeploymentConfig, Error, Module,
-    ModuleRegistrar, NavGroup, NavIcon, Permission, Statement, StatusCard,
+    AppState, CardState, CatalogEntry, CurrentStaff, DeploymentConfig, Error, Icon, Module,
+    ModuleRegistrar, NavGroup, Permission, Statement, StatusCard,
 };
 use harpseal_testing::{Browser, Harness, START_MS, TestApp};
 
@@ -60,7 +60,7 @@ impl Module for Pages {
                 15,
                 get(|| async { "classes" }),
             )
-            .nav_icon("/classes", NavIcon::Calendar)
+            .nav_icon("/classes", Icon::Calendar)
             .back_office_page_in(
                 NavGroup::Admin,
                 "pages.tool",

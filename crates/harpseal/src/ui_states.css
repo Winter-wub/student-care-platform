@@ -192,3 +192,59 @@ table.rows td.pick label.check { justify-content: center; min-width: var(--tap);
 .bulk-skip:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bulk-skip:focus { display: inline-flex; align-items: center; min-height: var(--tap); margin-bottom: var(--space-sm); }
+
+/* Row actions (`ui::row_actions`): one right-aligned row of tools, 8
+   apart, never wrapping where the table is a table. A tool is a 48 px
+   Paper button with a Field Edge border (3.5:1) and a 20 px icon; a
+   labelled tool adds its name. Move up / down are one joined pair; the
+   delete is icon-only in Refused Ink, set apart by a Rule Line; an
+   icon-only tool's name shows as a Ledger Ink label above it on hover
+   and focus (and is its aria-label). */
+.row-actions { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--space-sm); }
+.row-actions .tool-form { display: inline-flex; margin: 0; }
+.tool {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--tap); min-width: var(--tap); padding: 0 14px 0 12px; margin: 0;
+  background: var(--card); color: var(--ink); border: 1px solid var(--field-edge);
+  border-radius: var(--radius-control); font: inherit; font-weight: 600; white-space: nowrap;
+  text-decoration: none; cursor: pointer;
+}
+.tool .icon { flex: none; width: 20px; height: 20px; }
+.tool.icon-only { width: var(--tap); padding: 0; }
+.row-actions .tool:not(:disabled):is(:hover, :active) { background: var(--bg); border-color: var(--ink); color: var(--ink); }
+.row-actions .tool:not(:disabled):active { background: var(--chip-bg); }
+.row-actions .tool.tool-danger { color: var(--err-ink); border-color: var(--err-edge); }
+.row-actions .tool.tool-danger:not(:disabled):is(:hover, :active) { background: var(--err-bg); border-color: var(--err-ink); color: var(--err-ink); }
+.row-actions .tool:disabled { background: var(--card); border-color: var(--line); color: var(--line); cursor: default; }
+.row-actions .tool:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; z-index: 2; }
+.row-danger { margin-left: var(--space-xs); padding-left: var(--space-md); border-left: 1px solid var(--line); }
+/* The pair: two tools sharing one border, the inner corners square. */
+.tool-pair { display: inline-flex; }
+.tool-pair > * + * { margin-left: -1px; }
+.tool-pair > :first-child, .tool-pair > :first-child .tool { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tool-pair > :last-child, .tool-pair > :last-child .tool { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.tool-pair .tool:is(:hover, :focus-visible) { z-index: 1; }
+/* The name of an icon-only tool (`data-tip`), above it on hover and
+   keyboard focus. `::before`: the busy ring owns `::after`. */
+.tool[data-tip]::before {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; translate: -50% 0;
+  z-index: 3; padding: 4px 8px; border-radius: 6px; background: var(--ink); color: var(--card);
+  font-size: .8125rem; font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0;
+}
+.tool[data-tip]:is(:hover, :focus-visible)::before { opacity: 1; }
+/* The column of row actions takes only the room its tools need. */
+table.rows th.row-actions-head { text-align: right; }
+@container (min-width: 860px) {
+  table.rows td:has(> .row-actions) { width: 1%; white-space: nowrap; }
+}
+/* Stacked rows (phones): the tools take the card's whole width, under the
+   row's other facts, and wrap if they must. */
+@container (max-width: 859.98px) {
+  table.rows td:has(> .row-actions) { padding-left: 0; padding-top: var(--space-sm); }
+  table.rows td:has(> .row-actions)::before { display: none; }
+  .row-actions { flex-wrap: wrap; justify-content: flex-start; row-gap: var(--space-sm); }
+  /* The delete keeps to the far end, on the row or the line below. */
+  .row-actions .row-danger { margin-left: auto; padding-left: 0; border-left: 0; }
+  table.rows th.row-actions-head { text-align: left; }
+}
+.head-row .row-actions { margin: 0; }

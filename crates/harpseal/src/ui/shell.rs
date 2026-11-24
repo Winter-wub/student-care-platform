@@ -8,7 +8,7 @@
 //! column is always open and the button hidden; elsewhere the button
 //! stays and still works.
 //!
-//! Every entry starts with its [`NavIcon`]. Each group is a `<details>`
+//! Every entry starts with its [`Icon`]. Each group is a `<details>`
 //! that folds; from 640 px a "ย่อเมนู" toggle folds the side column to a
 //! rail of icons, each name shown beside its icon on hover and focus.
 //! [`NAV_JS`] remembers both in `localStorage` and shows the toggle, so
@@ -16,7 +16,7 @@
 
 use maud::{Markup, PreEscaped, html};
 
-use super::icons::{self, NavIcon};
+use super::icons::{self, Icon};
 use crate::auth::NavLink;
 use crate::{CurrentStaff, NavGroup};
 
@@ -56,7 +56,7 @@ pub(crate) struct NavTexts {
 /// One entry: its icon, then its name. The name stays in the link's
 /// text when the column is an icon rail (drawn as a label on hover and
 /// focus), so a screen reader always reads it.
-fn entry(href: &str, label: &str, icon: NavIcon, is_here: bool) -> Markup {
+fn entry(href: &str, label: &str, icon: Icon, is_here: bool) -> Markup {
     html! {
         li {
             a href=(href) aria-current=[is_here.then_some("page")] {
@@ -115,7 +115,7 @@ pub(crate) fn nav(staff: &CurrentStaff, t: &NavTexts) -> Markup {
                     span class="nav-label" { (t.rail) }
                 }
                 ul {
-                    (entry(HOME, &t.home, NavIcon::Home, on_home))
+                    (entry(HOME, &t.home, Icon::Home, on_home))
                 }
                 (group(NavGroup::Daily, "daily", &t.daily))
                 (group(NavGroup::Admin, "admin", &t.admin))
@@ -152,7 +152,7 @@ mod tests {
             label: href.into(),
             href: href.into(),
             group: NavGroup::Daily,
-            icon: NavIcon::Page,
+            icon: Icon::Page,
         }
     }
 

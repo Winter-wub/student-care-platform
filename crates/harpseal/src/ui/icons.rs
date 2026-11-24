@@ -1,19 +1,22 @@
-//! The navigation icons: one small set drawn for the back office, inline
+//! The back-office icons: one small set drawn for the navigation and the
+//! row actions (`ui::row_actions`), inline
 //! SVG on a 24 px grid, 1.75 px round strokes in `currentColor`, no fill.
 //! Nothing is fetched at run time and each icon is a few path commands,
-//! so the whole set adds about 2 KB to the Worker.
+//! so the whole set adds about 3 KB to the Worker.
 //!
 //! A Module picks an icon for its page with
 //! [`crate::ModuleRegistrar::nav_icon`]; a page with none gets
-//! [`NavIcon::Page`]. Icons are named by what they show, not by a page,
+//! [`Icon::Page`]. Icons are named by what they show, not by a page,
 //! so a Module can reuse them.
 
 use maud::{Markup, PreEscaped, html};
 
-/// An icon before a navigation entry.
+/// An icon of the back office: before a navigation entry
+/// ([`crate::ModuleRegistrar::nav_icon`]) or on a row action
+/// ([`crate::ui::tool_post`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum NavIcon {
+pub enum Icon {
     /// A sheet with a folded corner: any page (the default).
     #[default]
     Page,
@@ -57,9 +60,21 @@ pub enum NavIcon {
     Archive,
     /// A calendar: dates, terms, schedules.
     Calendar,
+    /// An arrow up: move up, earlier.
+    ArrowUp,
+    /// An arrow down: move down, later.
+    ArrowDown,
+    /// An open eye: show, make visible.
+    Eye,
+    /// A struck-out eye: hide.
+    EyeOff,
+    /// A pencil: edit.
+    Pencil,
+    /// A bin: delete.
+    Trash,
 }
 
-impl NavIcon {
+impl Icon {
     /// The inner SVG of the icon (paths and circles), trusted constants.
     fn body(self) -> &'static str {
         match self {
@@ -119,15 +134,29 @@ impl NavIcon {
             Self::Archive => {
                 r#"<path d="M3.5 4.5h17v4h-17z"/><path d="M5 8.5v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5v-10M10 12.5h4"/>"#
             }
+            Self::ArrowUp => r#"<path d="M12 19V5M6 11l6-6 6 6"/>"#,
+            Self::ArrowDown => r#"<path d="M12 5v14M6 13l6 6 6-6"/>"#,
+            Self::Eye => {
+                r#"<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>"#
+            }
+            Self::EyeOff => {
+                r#"<path d="M10.6 5.6A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6A16.5 16.5 0 0 0 2.5 12S6 18.5 12 18.5a9.3 9.3 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17"/>"#
+            }
+            Self::Pencil => {
+                r#"<path d="M15.5 4.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><path d="m13.5 6.5 3 3"/>"#
+            }
+            Self::Trash => {
+                r#"<path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5l1-13M10 11v6M14 11v6"/>"#
+            }
             Self::Calendar => {
                 r#"<path d="M5.5 5h13A2 2 0 0 1 20.5 7v11.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M8 3v4M16 3v4M3.5 10h17"/>"#
             }
         }
     }
 
-    /// The icon as an inline `<svg>`, hidden from assistive technology
-    /// (the entry's text names it).
-    pub(crate) fn svg(self) -> Markup {
+    /// The icon as an inline 20 px `<svg>`, hidden from assistive
+    /// technology: the control's own text or `aria-label` names it.
+    pub fn svg(self) -> Markup {
         svg(self.body())
     }
 }
@@ -155,32 +184,38 @@ pub(crate) fn panel() -> Markup {
 
 #[cfg(test)]
 mod tests {
-    use super::NavIcon;
+    use super::Icon;
 
     #[test]
     fn every_icon_is_a_small_stroked_svg_hidden_from_readers() {
         let all = [
-            NavIcon::Page,
-            NavIcon::Home,
-            NavIcon::People,
-            NavIcon::Person,
-            NavIcon::Upload,
-            NavIcon::Megaphone,
-            NavIcon::Question,
-            NavIcon::Wallet,
-            NavIcon::List,
-            NavIcon::Bell,
-            NavIcon::Clipboard,
-            NavIcon::Building,
-            NavIcon::Shield,
-            NavIcon::History,
-            NavIcon::Key,
-            NavIcon::Message,
-            NavIcon::Gauge,
-            NavIcon::Palette,
-            NavIcon::Sliders,
-            NavIcon::Archive,
-            NavIcon::Calendar,
+            Icon::Page,
+            Icon::Home,
+            Icon::People,
+            Icon::Person,
+            Icon::Upload,
+            Icon::Megaphone,
+            Icon::Question,
+            Icon::Wallet,
+            Icon::List,
+            Icon::Bell,
+            Icon::Clipboard,
+            Icon::Building,
+            Icon::Shield,
+            Icon::History,
+            Icon::Key,
+            Icon::Message,
+            Icon::Gauge,
+            Icon::Palette,
+            Icon::Sliders,
+            Icon::Archive,
+            Icon::Calendar,
+            Icon::ArrowUp,
+            Icon::ArrowDown,
+            Icon::Eye,
+            Icon::EyeOff,
+            Icon::Pencil,
+            Icon::Trash,
         ];
         let mut total = 0;
         for i in all {
@@ -190,6 +225,6 @@ mod tests {
             assert!(!svg.contains("fill=\"#"), "{i:?}: no fixed colour");
             total += i.body().len();
         }
-        assert!(total < 3_000, "the set stays small: {total} bytes");
+        assert!(total < 4_000, "the set stays small: {total} bytes");
     }
 }

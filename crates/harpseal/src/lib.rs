@@ -122,7 +122,7 @@ pub use ports::{Clock, Db, EmailSender, FileStore, HttpClient, Random, Services}
 pub use render::RenderCx;
 pub use report::ErrorReport;
 pub use resend::{IDEMPOTENCY_HEADER, RESEND_ENDPOINT, ResendEmail};
-pub use ui::NavIcon;
+pub use ui::Icon;
 pub use verification::{
     Challenge, EmailOtp, StudentClaim, Verdict, VerificationMethod, VerifyContext,
 };

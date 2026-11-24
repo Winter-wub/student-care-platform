@@ -27,7 +27,7 @@ pub(crate) struct NavItem {
     pub(crate) title_key: &'static str,
     pub(crate) order: u16,
     pub(crate) group: crate::NavGroup,
-    pub(crate) icon: crate::NavIcon,
+    pub(crate) icon: crate::Icon,
 }
 
 /// One navigation link the Staff member may open (#123).
@@ -36,7 +36,7 @@ pub(crate) struct NavLink {
     pub(crate) label: String,
     pub(crate) href: String,
     pub(crate) group: crate::NavGroup,
-    pub(crate) icon: crate::NavIcon,
+    pub(crate) icon: crate::Icon,
 }
 
 /// What every back-office request needs: the page state and the
