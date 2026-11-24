@@ -60,6 +60,16 @@ pub(super) const TEXTS: &[E] = th_en![
         "จำนวนเต็ม",
         "Whole number"
     ),
+    (
+        "kernel.admin.module_settings.kind_number_range",
+        "จำนวนเต็ม ตั้งแต่ {min} ถึง {max}",
+        "Whole number from {min} to {max}"
+    ),
+    (
+        "kernel.admin.module_settings.kind_number_step",
+        "จำนวนเต็ม ตั้งแต่ {min} ถึง {max} เพิ่มทีละ {step}",
+        "Whole number from {min} to {max}, in steps of {step}"
+    ),
     ("kernel.admin.module_settings.kind_date", "วันที่", "Date"),
     (
         "kernel.admin.module_settings.kind_url",
@@ -118,6 +128,16 @@ pub(super) const TEXTS: &[E] = th_en![
         "kernel.admin.module_settings.err_number",
         "ต้องเป็นจำนวนเต็ม ไม่มีจุลภาคหรือทศนิยม",
         "Must be a whole number, without separators or decimals"
+    ),
+    (
+        "kernel.admin.module_settings.err_range",
+        "ต้องเป็นจำนวนเต็มตั้งแต่ {min} ถึง {max}",
+        "Must be a whole number from {min} to {max}"
+    ),
+    (
+        "kernel.admin.module_settings.err_step",
+        "ต้องเป็นจำนวนเต็มตั้งแต่ {min} ถึง {max} เพิ่มทีละ {step} จาก {min}",
+        "Must be a whole number from {min} to {max}, in steps of {step} from {min}"
     ),
     (
         "kernel.admin.module_settings.err_date",

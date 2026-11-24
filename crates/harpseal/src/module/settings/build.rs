@@ -82,10 +82,15 @@ fn invalid(spec: &SettingSpec, others: &[SettingSpec]) -> Option<String> {
     if others.iter().any(|o| o.key == k) {
         return Some("declared twice".into());
     }
+    if let Some(why) = spec.range.as_ref().and_then(|r| r.invalid()) {
+        return Some(why);
+    }
     let default = spec.default?;
-    match spec.kind.check(default) {
+    match spec.check(default) {
         Ok(v) if v == default => None,
         Ok(_) => Some("the default must be stored as is (trimmed, LF line breaks)".into()),
-        Err(why) => Some(format!("the default is refused by its kind ({why})")),
+        Err(why) => Some(format!(
+            "the default is refused by its kind or range ({why})"
+        )),
     }
 }

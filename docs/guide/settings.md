@@ -67,6 +67,38 @@ Existing Settings with a default behave as before. `setting(..)` is
 unchanged; a separate method keeps every current Module compiling and the
 call self-describing (an `Option` default would break each caller).
 
+## A Number with a range
+
+A Number a Module only reads within limits (days before a due date, an
+hour of the day) declares them (#172), so `/admin/settings` refuses
+anything else instead of saving a value the Module then ignores:
+
+```rust
+r.number_setting(
+    "fees.reminder_days",          // key, as for `setting`
+    "5",                           // default, inside the range
+    NumberRange::new(1, 30),       // 1 to 30, both included
+    "fees.reminders.manage",
+    "fees.reminder_days_label",
+    "fees.reminder_days_help",
+);
+// `NumberRange::new(0, 60).step(15)` takes 0, 15, 30, 45 and 60 only.
+```
+
+- A save outside the range is refused with "ต้องเป็นจำนวนเต็มตั้งแต่ 1
+  ถึง 30" (off the step: "… เพิ่มทีละ 15 จาก 0"), the typed value kept in
+  the form (422); nothing is stored or audited. `Settings::save` refuses
+  it too (`Error::Invalid`).
+- The input carries `min`, `max` and `step`, and the line under the help
+  text reads "จำนวนเต็ม ตั้งแต่ 1 ถึง 30" instead of "จำนวนเต็ม".
+- A saved value outside the range (a restored row, a range narrowed
+  since) reads as `Error::SettingNotSet` and is flagged on the page, as
+  any value failing its check.
+- `build()` also refuses `min` above `max`, a step below 1, and a
+  default outside the range or off its step.
+- A Number declared with `setting(..)` has no range and takes any `i64`,
+  as before.
+
 ## Kinds
 
 Each kind is checked on the server on every save:

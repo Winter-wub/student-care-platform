@@ -1,7 +1,9 @@
 //! `build()` refuses a wrongly declared Module setting (#75): its key,
 //! its default, its Permission or its texts.
 
-use harpseal::{BuildError, CatalogEntry, Module, ModuleRegistrar, Permission, SettingKind};
+use harpseal::{
+    BuildError, CatalogEntry, Module, ModuleRegistrar, NumberRange, Permission, SettingKind,
+};
 use harpseal_testing::Harness;
 
 /// Declares settings on a registrar.
@@ -24,7 +26,7 @@ impl Module for Bad {
 #[test]
 fn build_refuses_a_wrong_declaration() {
     use SettingKind::*;
-    let cases: [(Declare, &str); 8] = [
+    let cases: [(Declare, &str); 12] = [
         (
             |r| {
                 r.messages(&[CatalogEntry::new("bad.n", "th", "ข้อความ")]);
@@ -74,6 +76,36 @@ fn build_refuses_a_wrong_declaration() {
                 r.setting("bad.n", Text, "y", "bad.edit", "bad.label", "bad.label");
             },
             "twice",
+        ),
+        // A Number range (#172): not empty, a step of 1 or more, the
+        // default inside it.
+        (
+            |r| {
+                let range = NumberRange::new(30, 1);
+                r.number_setting("bad.n", "5", range, "bad.edit", "bad.label", "bad.label");
+            },
+            "empty",
+        ),
+        (
+            |r| {
+                let range = NumberRange::new(1, 30).step(0);
+                r.number_setting("bad.n", "5", range, "bad.edit", "bad.label", "bad.label");
+            },
+            "step",
+        ),
+        (
+            |r| {
+                let range = NumberRange::new(1, 30);
+                r.number_setting("bad.n", "45", range, "bad.edit", "bad.label", "bad.label");
+            },
+            "err_range",
+        ),
+        (
+            |r| {
+                let range = NumberRange::new(0, 60).step(15);
+                r.number_setting("bad.n", "20", range, "bad.edit", "bad.label", "bad.label");
+            },
+            "err_step",
         ),
     ];
     for (declare, why) in cases {
