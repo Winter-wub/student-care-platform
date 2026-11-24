@@ -1,5 +1,6 @@
 //! Administrators' writes on Staff accounts (the `/admin/staff` pages,
-//! #27): disable / enable, Roles, temporary password, clear lockout.
+//! #27): display name, disable / enable, Roles, temporary password, clear
+//! lockout.
 //!
 //! Each is one `Db::batch` gated on its own audit row
 //! ([`crate::audit::entry_if`]): the row is written only if the Staff
@@ -350,6 +351,55 @@ pub(crate) async fn reset_password(
         (Outcome::Done, Some(password))
     } else {
         (Outcome::Stale, None)
+    })
+}
+
+/// Sets the display name of `staff_id` (checked by
+/// [`staff::check_display_name`]; the email never changes here). Allowed on
+/// one's own account. Nothing is written when the name is unchanged.
+/// Audited as `staff.rename` with the name before and after.
+pub(crate) async fn set_display_name(
+    s: &Services,
+    actor: &Actor,
+    staff_id: &str,
+    name: &str,
+    version: i64,
+    ctx: &RequestCtx,
+) -> Result<Outcome> {
+    let name = staff::check_display_name(name)?;
+    let Some(cur) = get(s, staff_id).await? else {
+        return Ok(Outcome::Stale);
+    };
+    // `before` is the name at `version`: the compare-and-set below fails
+    // if the account changed after this read.
+    if cur.updated_at != version {
+        return Ok(Outcome::Stale);
+    }
+    if cur.display_name == name {
+        return Ok(Outcome::Done);
+    }
+    let (row, gate) = audit::entry_if(
+        s,
+        actor,
+        "staff.rename",
+        Some(&Target::new("staff", staff_id)),
+        Some(json!({ "display_name": cur.display_name })),
+        Some(json!({ "display_name": name })),
+        ctx,
+        unchanged(staff_id, version),
+    )?;
+    let stmts = vec![
+        row,
+        gated(
+            "UPDATE staff SET display_name = ?, updated_at = max(?, updated_at + 1) WHERE id = ?",
+            vec![name.into(), s.now_ms().into(), staff_id.into()],
+            &gate,
+        ),
+    ];
+    Ok(if run(s, stmts).await? {
+        Outcome::Done
+    } else {
+        Outcome::Stale
     })
 }
 

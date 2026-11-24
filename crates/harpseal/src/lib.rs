@@ -65,8 +65,9 @@ pub mod fixtures;
 
 pub use audit::{Actor, PeerIp, RequestCtx, Target};
 pub use auth::{
-    ADMINISTRATOR_ROLE, CurrentStaff, MIN_PASSWORD_CHARS, NewStaff, check_password_rules,
-    create_staff, ensure_role, role_permissions, set_roles, set_temporary_password, staff_count,
+    ADMINISTRATOR_ROLE, CurrentStaff, MAX_DISPLAY_NAME_CHARS, MIN_PASSWORD_CHARS, NewStaff,
+    check_display_name, check_password_rules, create_staff, ensure_role, rename_staff,
+    role_permissions, set_roles, set_temporary_password, staff_count,
 };
 pub use channel::{
     Channel, DeleteMessage, EditMessage, MenuArea, MenuArt, MenuImageProblem, MenuImages,

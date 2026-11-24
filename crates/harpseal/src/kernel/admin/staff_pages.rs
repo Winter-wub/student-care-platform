@@ -139,7 +139,7 @@ async fn render(v: &View<'_>, f: &Fields, error: Option<&str>, status: StatusCod
             }
             div class="field" {
                 label for="staff-name" { (l("kernel.admin.staff.name")) }
-                input id="staff-name" name="display_name" value=(f.display_name) required maxlength="200";
+                input id="staff-name" name="display_name" value=(f.display_name) required maxlength=(crate::auth::MAX_DISPLAY_NAME_CHARS);
             }
             div class="field" {
                 label for="staff-locale" { (l("kernel.admin.staff.locale")) }
@@ -179,7 +179,7 @@ pub(super) async fn create(
             _ => {}
         }
     }
-    let invalid = if f.display_name.is_empty() || f.display_name.chars().any(char::is_control) {
+    let invalid = if crate::auth::check_display_name(&f.display_name).is_err() {
         Some("kernel.admin.staff.err_name")
     } else if !f.email.contains('@') || f.email.chars().any(char::is_whitespace) {
         Some("kernel.admin.staff.err_email")

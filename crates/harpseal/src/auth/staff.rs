@@ -23,6 +23,22 @@ pub fn check_password_rules(password: &str) -> Result<()> {
     Ok(())
 }
 
+/// Longest display name accepted, in characters.
+pub const MAX_DISPLAY_NAME_CHARS: usize = 100;
+
+/// A display name as stored: trimmed, 1 to [`MAX_DISPLAY_NAME_CHARS`]
+/// characters, no control characters.
+pub fn check_display_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    let n = name.chars().count();
+    if n == 0 || n > MAX_DISPLAY_NAME_CHARS || name.chars().any(char::is_control) {
+        return Err(Error::Invalid(format!(
+            "display name must be 1 to {MAX_DISPLAY_NAME_CHARS} characters without control characters"
+        )));
+    }
+    Ok(name.to_string())
+}
+
 /// A Staff account to create with [`create_staff`].
 #[derive(Clone)]
 #[non_exhaustive]
@@ -93,6 +109,7 @@ pub async fn create_staff(
     if !email.contains('@') || email.len() > 254 {
         return Err(Error::Invalid("email is not valid".into()));
     }
+    let display_name = check_display_name(&s.display_name)?;
     check_password_rules(&s.password)?;
     roles::check_exist(services, &s.roles).await?;
     let id = services.new_id()?;
@@ -104,7 +121,7 @@ pub async fn create_staff(
         )
         .bind(id.clone())
         .bind(email.clone())
-        .bind(s.display_name.trim())
+        .bind(display_name.as_str())
         .bind(hash_password(services, &s.password)?)
         .bind(s.locale.0.clone())
         .bind(s.must_change_password)
@@ -114,7 +131,7 @@ pub async fn create_staff(
     stmts.extend(s.roles.iter().map(|r| roles::grant(&id, r)));
     let after = json!({
         "email": email,
-        "display_name": s.display_name.trim(),
+        "display_name": display_name,
         "roles": s.roles,
         "must_change_password": s.must_change_password,
     });
@@ -133,6 +150,43 @@ pub async fn create_staff(
         e => e,
     })?;
     Ok(id)
+}
+
+/// Sets the display name of the Staff member signed in as `email` (the
+/// email itself never changes here). Validated by [`check_display_name`];
+/// audited as `staff.rename` with the name before and after, nothing
+/// written when it is already that name. `Error::Invalid` when no Staff
+/// member has `email`, `Error::Conflict` when the account changed while
+/// this ran.
+pub async fn rename_staff(
+    services: &Services,
+    actor: &Actor,
+    email: &str,
+    display_name: &str,
+    ctx: &RequestCtx,
+) -> Result<()> {
+    let name = check_display_name(display_name)?;
+    let rows = services
+        .db
+        .query(
+            Statement::new("SELECT id, updated_at FROM staff WHERE email = ?")
+                .bind(normalise_email(email)),
+        )
+        .await?;
+    let id = session::text(&rows, "id");
+    if id.is_empty() {
+        return Err(Error::Invalid("no Staff member has this email".into()));
+    }
+    let version = rows
+        .get(0, "updated_at")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    match super::staff_admin::set_display_name(services, actor, &id, &name, version, ctx).await? {
+        super::staff_admin::Outcome::Done => Ok(()),
+        _ => Err(Error::Conflict(
+            "the account changed meanwhile; try again".into(),
+        )),
+    }
 }
 
 /// Replaces `staff_id`'s Roles with `role_names`. Audited as `staff.roles`

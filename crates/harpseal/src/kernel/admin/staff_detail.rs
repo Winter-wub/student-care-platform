@@ -1,5 +1,5 @@
 //! `/admin/staff/{id}` (`kernel.staff.manage`): one account with its
-//! Roles (checkboxes), disable / enable, set a temporary password (shown
+//! display name (the email is shown, never edited), Roles (checkboxes), disable / enable, set a temporary password (shown
 //! once) and clear the lockout. Every form carries the account's
 //! `updated_at` as `version`; a stale form is refused (flash), never
 //! written.
@@ -12,14 +12,15 @@ use maud::html;
 
 use super::staff_pages::{chips, role_boxes, shown_once};
 use super::view::View;
-use crate::auth::roles;
 use crate::auth::staff_admin::{self, Outcome};
+use crate::auth::{MAX_DISPLAY_NAME_CHARS, roles};
 use crate::{Actor, AppState, CurrentStaff, Error, RequestCtx};
 
-/// A posted form: `version`, `role` (repeated), `active`.
+/// A posted form: `version`, `display_name`, `role` (repeated), `active`.
 #[derive(Debug, Default)]
 pub(super) struct Posted {
     version: i64,
+    display_name: String,
     roles: Vec<String>,
     /// `None` when the field is missing or not `0` / `1`.
     active: Option<bool>,
@@ -30,6 +31,7 @@ fn posted(pairs: Vec<(String, String)>) -> Posted {
     for (k, v) in pairs {
         match k.as_str() {
             "version" => p.version = v.parse().unwrap_or(-1),
+            "display_name" => p.display_name = v,
             "role" => p.roles.push(v),
             "active" => {
                 p.active = match v.as_str() {
@@ -72,14 +74,31 @@ pub(super) async fn page(
         h1 { (row.display_name) " " (chips(&v, &row)) }
         p class="code" { (row.email) }
         div class="cols" {
-            section class="card" {
-                h2 { (l("kernel.admin.staff.roles")) }
-                form method="post" action=(form("roles")) {
-                    (staff.csrf_field())
-                    input type="hidden" name="version" value=(version);
-                    (role_boxes(&v, &all, &row.roles))
-                    p class="muted" { (l("kernel.admin.staff.roles_help")) }
-                    button type="submit" { (l("kernel.admin.save")) }
+            div {
+                section class="card" {
+                    h2 { (l("kernel.admin.staff.account")) }
+                    form method="post" action=(form("name")) {
+                        (staff.csrf_field())
+                        input type="hidden" name="version" value=(version);
+                        div class="field" {
+                            label for="staff-name" { (l("kernel.admin.staff.name")) }
+                            input id="staff-name" name="display_name" value=(row.display_name)
+                                required maxlength=(MAX_DISPLAY_NAME_CHARS) autocomplete="off"
+                                aria-describedby="staff-name-help";
+                            p id="staff-name-help" class="muted" { (l("kernel.admin.staff.name_help")) }
+                        }
+                        button type="submit" { (l("kernel.admin.save")) }
+                    }
+                }
+                section class="card" {
+                    h2 { (l("kernel.admin.staff.roles")) }
+                    form method="post" action=(form("roles")) {
+                        (staff.csrf_field())
+                        input type="hidden" name="version" value=(version);
+                        (role_boxes(&v, &all, &row.roles))
+                        p class="muted" { (l("kernel.admin.staff.roles_help")) }
+                        button type="submit" { (l("kernel.admin.save")) }
+                    }
                 }
             }
             div {
@@ -131,6 +150,26 @@ fn refused(v: &View<'_>, back: &str, o: Outcome) -> Response {
         Outcome::OwnAccount => "kernel.admin.staff.own_refused",
     };
     v.redirect(back, o == Outcome::Done, key)
+}
+
+pub(super) async fn set_name(
+    State(s): State<AppState>,
+    staff: CurrentStaff,
+    ctx: RequestCtx,
+    Path(id): Path<String>,
+    Form(pairs): Form<Vec<(String, String)>>,
+) -> Response {
+    let v = View::new(&s, &staff);
+    let p = posted(pairs);
+    let back = format!("/admin/staff/{id}");
+    let actor = Actor::staff(&staff);
+    let r =
+        staff_admin::set_display_name(&s.services, &actor, &id, &p.display_name, p.version, &ctx);
+    match r.await {
+        Ok(o) => refused(&v, &back, o),
+        Err(Error::Invalid(_)) => v.redirect(&back, false, "kernel.admin.staff.err_name"),
+        Err(e) => v.error(&e),
+    }
 }
 
 pub(super) async fn set_roles(

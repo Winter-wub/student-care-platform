@@ -149,3 +149,75 @@ async fn an_administrator_role_from_the_toml_wins_with_a_warning() {
         "held ones are not listed: {text}"
     );
 }
+
+#[tokio::test]
+async fn staff_rename_sets_the_display_name_and_is_audited() {
+    let h = Harness::new();
+    let d = h.builder().build().unwrap();
+    let mut out = Vec::new();
+    let create = args("staff create --email pim@sealbay.example --password-stdin");
+    run(&d, &create, &mut &b"a long enough password\n"[..], &mut out)
+        .await
+        .unwrap();
+    let mut rename: Vec<String> = args("staff rename --email Pim@SealBay.example --name");
+    rename.push("  Pim Officer  ".into());
+    let mut out = Vec::new();
+    run(&d, &rename, &mut &b""[..], &mut out).await.unwrap();
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "renamed staff pim@sealbay.example to Pim Officer\n"
+    );
+    let app = h.boot(d).await;
+    assert_eq!(
+        app.count(
+            "SELECT count(*) FROM staff WHERE display_name = 'Pim Officer' \
+             AND email = 'pim@sealbay.example'"
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        app.count(
+            "SELECT count(*) FROM audit_log WHERE action = 'staff.rename' \
+             AND actor_kind = 'system' AND before = '{\"display_name\":\"pim\"}' \
+             AND after = '{\"display_name\":\"Pim Officer\"}'"
+        )
+        .await,
+        1
+    );
+}
+
+#[tokio::test]
+async fn staff_rename_refuses_unknown_emails_and_bad_names() {
+    let h = Harness::new();
+    let d = h.builder().build().unwrap();
+    let mut out = Vec::new();
+    let create = args("staff create --email pim@sealbay.example --password-stdin");
+    run(&d, &create, &mut &b"a long enough password\n"[..], &mut out)
+        .await
+        .unwrap();
+    let r = harpseal_cli::rename_staff(&d, "nobody@sealbay.example", "Nobody").await;
+    assert!(matches!(r, Err(CliError::Refused(_))), "{r:?}");
+    let long = "x".repeat(101);
+    for bad in ["  ", "Pim\u{1b}[31m", long.as_str()] {
+        let r = harpseal_cli::rename_staff(&d, "pim@sealbay.example", bad).await;
+        assert!(matches!(r, Err(CliError::Refused(_))), "{bad:?}: {r:?}");
+    }
+    for bad in [
+        "staff rename --email pim@sealbay.example",
+        "staff rename --name Pim",
+        "staff rename --email pim@sealbay.example --name",
+        "staff rename --email pim@sealbay.example --name Pim --role Officer",
+    ] {
+        assert!(
+            matches!(parse(&args(bad)), Err(CliError::Usage(_))),
+            "{bad}"
+        );
+    }
+    let app = h.boot(d).await;
+    assert_eq!(
+        app.count("SELECT count(*) FROM audit_log WHERE action = 'staff.rename'")
+            .await,
+        0
+    );
+}

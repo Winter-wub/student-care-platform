@@ -30,7 +30,7 @@ Vocabulary is in [`GLOSSARY.md`](https://github.com/Winter-wub/student-care-plat
 | [`harpseal-channel-fake`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-channel-fake) | Fake Channel: in-memory, records what the Student saw; for tests, demos and `just e2e`. | native + wasm32 |
 | [`harpseal-runtime-native`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-native) | Native runtime: SQLite, local or S3-compatible files, SMTP or Resend, `axum::serve`, a per-minute ticker. | native |
 | [`harpseal-runtime-cloudflare`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-runtime-cloudflare) | Workers runtime: D1, R2, Resend over `fetch`, Cron, the `fetch` / `scheduled` entry points. | wasm32 |
-| [`harpseal-cli`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`, `backup`, `restore`. | native |
+| [`harpseal-cli`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-cli) | The `harpseal` command line as a library each Deployment's binary calls: `migrate`, `staff create`, `staff rename`, `backup`, `restore`. | native |
 | [`harpseal-testing`](https://github.com/Winter-wub/student-care-platform/tree/main/crates/harpseal-testing) | Test harness (dev-dependency): fake Services, the Fake Channel and the Router in-process, a cookie-keeping `Browser`, the Channel contract suite. | native |
 
 The example, never published:

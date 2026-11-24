@@ -7,6 +7,7 @@
 //! harpseal staff create --admin --email admin@sealbay.example [--name "Ada"]
 //!                       [--password PW | --password-stdin] [--force]
 //! harpseal staff create --email officer@sealbay.example --role Officer [--role ..]
+//! harpseal staff rename --email officer@sealbay.example --name "Pim Officer"
 //! harpseal backup ./backups/2026-11-07
 //! harpseal restore ./backups/2026-11-07 [--force] [--drop-sessions]
 //! ```
@@ -20,6 +21,10 @@
 //! it is and a warning lists the declared Permissions it lacks. `--admin`
 //! is refused once any Staff exists unless `--force` is given. Passwords on the command line end up in shell
 //! history: prefer `--password-stdin` or the generated one.
+//!
+//! `staff rename` sets the display name of the Staff member signed in as
+//! `--email` (trimmed, 1 to 100 characters, no control characters); the
+//! email never changes. Audited as `staff.rename` by the system actor.
 //!
 //! `backup DIR` writes every table and every FileStore object a row
 //! points at to a new (or empty) directory, through the Deployment's ports
@@ -49,6 +54,7 @@ pub const USAGE: &str = "usage:
   harpseal migrate
   harpseal staff create --email EMAIL [--admin] [--role ROLE]... [--name NAME]
                         [--password PW | --password-stdin] [--force]
+  harpseal staff rename --email EMAIL --name NAME
   harpseal backup DIR
   harpseal restore DIR [--force] [--drop-sessions]";
 
@@ -60,6 +66,13 @@ pub enum Command {
     Migrate,
     /// `staff create ..`.
     CreateStaff(StaffArgs),
+    /// `staff rename --email EMAIL --name NAME`.
+    RenameStaff {
+        /// `--email`: whose display name.
+        email: String,
+        /// `--name`: the new display name.
+        name: String,
+    },
     /// `backup DIR`.
     Backup(PathBuf),
     /// `restore DIR [--force] [--drop-sessions]`.
@@ -166,6 +179,7 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         [] | ["help" | "-h" | "--help", ..] => Ok(Command::Help),
         ["migrate"] => Ok(Command::Migrate),
         ["staff", "create", rest @ ..] => parse_staff(rest).map(Command::CreateStaff),
+        ["staff", "rename", rest @ ..] => parse_rename(rest),
         ["backup", dir] if !dir.starts_with('-') => Ok(Command::Backup(dir.into())),
         ["restore", rest @ ..] => parse_restore(rest),
         _ => Err(CliError::Usage(format!(
@@ -194,6 +208,27 @@ fn parse_restore(rest: &[&str]) -> Result<Command, CliError> {
         force,
         drop_sessions,
     })
+}
+
+fn parse_rename(rest: &[&str]) -> Result<Command, CliError> {
+    let (mut email, mut name) = (None, None);
+    let mut it = rest.iter();
+    while let Some(flag) = it.next() {
+        let slot = match *flag {
+            "--email" => &mut email,
+            "--name" => &mut name,
+            other => return Err(CliError::Usage(format!("unknown option `{other}`"))),
+        };
+        let v = it
+            .next()
+            .ok_or_else(|| CliError::Usage(format!("{flag} needs a value")))?;
+        *slot = Some(v.to_string());
+    }
+    match (email, name) {
+        (Some(email), Some(name)) => Ok(Command::RenameStaff { email, name }),
+        (None, _) => Err(CliError::Usage("--email is required".into())),
+        (_, None) => Err(CliError::Usage("--name is required".into())),
+    }
 }
 
 fn parse_staff(rest: &[&str]) -> Result<StaffArgs, CliError> {
@@ -319,6 +354,20 @@ pub async fn create_staff(
     })
 }
 
+/// `staff rename`: sets the display name of the Staff member with `email`
+/// (migrates first). Refused when no Staff member has that email or the
+/// name breaks the rules.
+pub async fn rename_staff(d: &Deployment, email: &str, name: &str) -> Result<(), CliError> {
+    d.migrate().await?;
+    let ctx = RequestCtx::default();
+    harpseal::rename_staff(d.services(), &Actor::System, email, name, &ctx)
+        .await
+        .map_err(|e| match e {
+            harpseal::Error::Invalid(m) => CliError::Refused(m),
+            e => CliError::Core(e),
+        })
+}
+
 /// 24 random hex digits in groups of six.
 fn temporary_password(d: &Deployment) -> Result<String, CliError> {
     let hex = d.services().random_hex(12)?;
@@ -344,6 +393,11 @@ pub async fn run(
             force,
             drop_sessions,
         } => restore(d, &dir, force, drop_sessions, out).await,
+        Command::RenameStaff { email, name } => {
+            rename_staff(d, &email, &name).await?;
+            let email = email.trim().to_lowercase();
+            writeln!(out, "renamed staff {email} to {}", name.trim()).map_err(io)
+        }
         Command::CreateStaff(a) => {
             let password = match &a.password {
                 PasswordSource::Given(p) => Some(p.clone()),
