@@ -64,6 +64,7 @@ pub(crate) const STAFF: &[E] = th_en![
         "A Staff member holds every Permission of the Roles ticked."
     ),
     ("kernel.admin.staff.access", "การเข้าใช้", "Access"),
+    ("kernel.admin.staff.account", "ข้อมูลบัญชี", "Account"),
     (
         "kernel.admin.staff.failed_logins",
         "ใส่รหัสผ่านผิดติดกัน:",
@@ -117,8 +118,13 @@ pub(crate) const STAFF: &[E] = th_en![
     ),
     (
         "kernel.admin.staff.err_name",
-        "กรุณากรอกชื่อที่แสดง",
-        "Please enter a display name"
+        "ชื่อที่แสดงต้องมี 1 ถึง 100 ตัวอักษร และห้ามมีอักขระควบคุม",
+        "A display name is 1 to 100 characters, without control characters"
+    ),
+    (
+        "kernel.admin.staff.name_help",
+        "ชื่อนี้แสดงในหลังบ้านและในบันทึกการใช้งาน ยาวได้ไม่เกิน 100 ตัวอักษร ส่วนอีเมลใช้เข้าสู่ระบบและแก้ที่หน้านี้ไม่ได้",
+        "Shown in the back office and the audit log; up to 100 characters. The sign-in email cannot be changed here."
     ),
     (
         "kernel.admin.staff.err_email",

@@ -5,7 +5,7 @@
 //! |---|---|
 //! | `GET /admin/security` (filters: kind, Student, dates; HTMX fragment) | `kernel.security.view` |
 //! | `GET /admin/audit`, `GET /admin/audit/{id}` | `kernel.audit.view` |
-//! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{roles,status,password,unlock}` | `kernel.staff.manage` |
+//! | `GET /admin/staff`, `GET/POST /admin/staff/new`, `GET /admin/staff/{id}`, `POST …/{name,roles,status,password,unlock}` | `kernel.staff.manage` |
 //! | `GET/POST /admin/roles`, `GET/POST /admin/roles/{id}`, `POST …/delete` | `kernel.staff.manage` |
 //! | `GET /admin/texts` (with its search; mounted by `Deployment::router`) | `kernel.texts.edit`; `kernel.setting.edit` alone sees only the privacy notice version (#165) |
 //! | `GET/POST /admin/texts/{key}` | `kernel.texts.edit` (#165) |
@@ -127,6 +127,7 @@ pub(crate) fn register(r: &mut ModuleRegistrar) {
             get(staff_pages::new_form).post(staff_pages::create),
         )
         .back_office(STAFF, "/staff/{id}", get(staff_detail::page))
+        .back_office(STAFF, "/staff/{id}/name", post(staff_detail::set_name))
         .back_office(STAFF, "/staff/{id}/roles", post(staff_detail::set_roles))
         .back_office(STAFF, "/staff/{id}/status", post(staff_detail::set_status))
         .back_office(

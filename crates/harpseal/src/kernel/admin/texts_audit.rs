@@ -296,6 +296,11 @@ pub(super) const AUDIT: &[E] = th_en![
         "Added a Staff member"
     ),
     (
+        "kernel.admin.audit.action.staff_rename",
+        "แก้ชื่อที่แสดงของเจ้าหน้าที่",
+        "Changed a Staff member's display name"
+    ),
+    (
         "kernel.admin.audit.action.staff_roles",
         "เปลี่ยนบทบาทของเจ้าหน้าที่",
         "Changed a Staff member's Roles"
