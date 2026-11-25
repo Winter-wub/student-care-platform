@@ -127,13 +127,34 @@ captured in memory instead of sent, and three routes answer only with header
 | `GET /dev/email?to=<address>` | JSON: the last email to that address (the OTP is in the subject) |
 | `POST /dev/tick` | runs `Deployment::tick` now instead of waiting for the minute timer |
 
-The OTP is not weakened: same length, expiry and attempt limit. Dev mode
+The OTP is not weakened: same length, expiry and attempt limit, unless
+`HARPSEAL_DEV_FIXED_OTP` is set (below). Dev mode
 refuses to start unless `HARPSEAL_ADDR` is a loopback address (`127.x`,
 `::1`, `localhost`) and `FAKE_SECRET` has at least 16 characters and is not
 the `change-me` placeholder; the error names the rule. Captured emails are
 kept in memory (the last 50) and only "captured email to <address>" is
 logged, never the subject (it holds the OTP). `just run` starts the example
 in dev mode with dummy Mini App ids.
+
+#### Fixed Student OTP (`HARPSEAL_DEV_FIXED_OTP`)
+
+For a demo where nobody can read the captured email, set
+`HARPSEAL_DEV_FIXED_OTP=123456` (exactly `[otp] digits` digits) next to
+`HARPSEAL_DEV_ROUTES=1`: every Student OTP is then that code. Only the code
+is fixed: it is still hashed with a fresh salt, emailed (captured), expires
+after `ttl_minutes`, and wrong answers still count toward the attempt limit
+and the lock. The binary prints one `warning: dev mode: HARPSEAL_DEV_FIXED_OTP
+is set ...` line at startup.
+
+It cannot reach production:
+
+- the native binary refuses to start when the variable is set without dev
+  mode (`harpseal_runtime_native::dev_fixed_otp`), rather than ignoring it;
+- `Deployment::builder().build()` refuses an `EmailOtp::with_dev_fixed_code`
+  unless the Deployment is built with `.dev(true)`
+  (`BuildError::DevOnlyVerification`);
+- the Cloudflare runtime and Workers never read it: only
+  `harpseal-runtime-native` knows the variable.
 
 ## Hosting your own Deployment
 

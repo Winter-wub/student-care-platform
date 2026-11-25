@@ -121,6 +121,13 @@ pub trait VerificationMethod: Send + Sync {
     /// challenge, so a method judges the answer and the expiry, not the
     /// row's state (a concurrent Inbound may change it meanwhile).
     async fn check(&self, cx: &VerifyContext, challenge_id: &str, answer: &str) -> Result<Verdict>;
+    /// True when the method is for a local demo only (e.g. an
+    /// [`EmailOtp::with_dev_fixed_code`]): the builder then refuses it
+    /// unless the Deployment is built in dev mode
+    /// ([`crate::DeploymentBuilder::dev`]). Default false.
+    fn dev_only(&self) -> bool {
+        false
+    }
 }
 
 /// Email OTP: a code sent to the roster email, compared when it comes back.
@@ -132,19 +139,52 @@ pub trait VerificationMethod: Send + Sync {
 /// `sha256$<salt>$<hex SHA-256 of salt ":" challenge id ":" code>` with a
 /// fresh 16-byte salt per challenge. Texts: `kernel.otp.email_subject`
 /// and `kernel.otp.email_body` (`{code}`, `{minutes}`, `{name}`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct EmailOtp {
     settings: OtpConfig,
+    fixed: Option<String>,
+}
+
+impl core::fmt::Debug for EmailOtp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        // Never the fixed code itself.
+        f.debug_struct("EmailOtp")
+            .field("settings", &self.settings)
+            .field("fixed_code", &self.fixed.is_some())
+            .finish()
+    }
 }
 
 impl EmailOtp {
     /// Email OTP with the given parameters (usually `config.otp`).
     pub fn new(settings: OtpConfig) -> Self {
-        Self { settings }
+        Self {
+            settings,
+            fixed: None,
+        }
     }
     /// The parameters in use.
     pub fn settings(&self) -> &OtpConfig {
         &self.settings
+    }
+    /// For a local demo only: every challenge gets `code` instead of a
+    /// random one. Everything else is unchanged: the code is still hashed
+    /// with a fresh salt, emailed, expires after `ttl_minutes`, and wrong
+    /// answers still count toward the attempt limit and the lock.
+    ///
+    /// The method then reports [`VerificationMethod::dev_only`], so
+    /// `build()` refuses it unless the Deployment is built with
+    /// [`crate::DeploymentBuilder::dev`] on. Refuses a `code` that is not
+    /// exactly `digits` ASCII digits (`[otp] digits`, 4 to 9).
+    pub fn with_dev_fixed_code(mut self, code: &str) -> Result<Self> {
+        let digits = usize::from(self.settings.digits.clamp(4, 9));
+        if code.len() != digits || !code.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(Error::Invalid(format!(
+                "a fixed dev OTP must be exactly {digits} digits"
+            )));
+        }
+        self.fixed = Some(code.to_owned());
+        Ok(self)
     }
 }
 
@@ -212,10 +252,17 @@ impl VerificationMethod for EmailOtp {
         "email_otp"
     }
 
+    fn dev_only(&self) -> bool {
+        self.fixed.is_some()
+    }
+
     async fn start(&self, cx: &VerifyContext, claim: &StudentClaim) -> Result<Challenge> {
         let s = cx.services();
         let id = s.new_id()?;
-        let code = code(s, self.settings.digits)?;
+        let code = match &self.fixed {
+            Some(fixed) => fixed.clone(),
+            None => code(s, self.settings.digits)?,
+        };
         let salt = s.random_hex(16)?;
         let hash = format!("sha256${salt}${}", digest(&salt, &id, &code));
         let now = s.now_ms();

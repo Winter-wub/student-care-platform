@@ -13,7 +13,8 @@
 //! Every route needs header `x-dev-secret: <FAKE_SECRET>` (compared in
 //! constant time) and answers 404 without it, so the routes look absent.
 //! The OTP itself is unchanged: same length, expiry and attempt limit; dev
-//! mode only changes where the email goes. Never enable it in production:
+//! mode only changes where the email goes (unless `HARPSEAL_DEV_FIXED_OTP`
+//! fixes the code, see `main.rs`). Never enable it in production:
 //! [`check_safe`] refuses to start it on a non-loopback address or with a
 //! weak `FAKE_SECRET`.
 

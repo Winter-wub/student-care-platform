@@ -270,6 +270,10 @@ pub enum BuildError {
     /// A configuration value is invalid (e.g. `[branding] primary_color`
     /// set in code to something that is not a CSS hex colour).
     InvalidConfig(String),
+    /// The Verification Method is [`crate::VerificationMethod::dev_only`]
+    /// (e.g. an `EmailOtp` with a fixed dev code) but the Deployment is not
+    /// built in dev mode ([`crate::DeploymentBuilder::dev`]).
+    DevOnlyVerification(&'static str),
     /// Two Modules share a `name()`, or a Module is named `kernel`.
     DuplicateModule(String),
     /// Two routes would match the same requests: the same path, or paths
@@ -367,6 +371,11 @@ impl core::fmt::Display for BuildError {
                 write!(f, "Locale `{locale}` has no Menu key of its own: {reason}")
             }
             BuildError::InvalidConfig(m) => write!(f, "invalid configuration: {m}"),
+            BuildError::DevOnlyVerification(id) => write!(
+                f,
+                "verification method `{id}` is for a local demo only (a fixed dev OTP) \
+                 and the deployment is not in dev mode: refused"
+            ),
             BuildError::DuplicateModule(m) => write!(f, "module name `{m}` is used twice"),
             BuildError::DuplicateRoute {
                 module,

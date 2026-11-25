@@ -184,6 +184,8 @@ pub enum StartError {
     Build(BuildError),
     /// `HARPSEAL_PUBLIC_URL` is set but not an https origin.
     PublicUrl(harpseal::Error),
+    /// `HARPSEAL_DEV_FIXED_OTP` is not a code of `[otp] digits` digits.
+    DevFixedOtp(harpseal::Error),
 }
 
 impl std::fmt::Display for StartError {
@@ -194,6 +196,7 @@ impl std::fmt::Display for StartError {
             StartError::MenuImages(m) => write!(f, "LINE rich menu images: {m}"),
             StartError::Build(e) => write!(f, "{e}"),
             StartError::PublicUrl(e) => write!(f, "HARPSEAL_PUBLIC_URL: {e}"),
+            StartError::DevFixedOtp(e) => write!(f, "HARPSEAL_DEV_FIXED_OTP: {e}"),
         }
     }
 }
@@ -284,13 +287,30 @@ pub fn deployment_with_fake_in(
     secrets: Secrets,
     dev: bool,
 ) -> Result<(Deployment, FakeChannel), StartError> {
+    deployment_with_fake_otp(services, secrets, dev, None)
+}
+
+/// [`deployment_with_fake_in`] where every Student OTP is `fixed_otp` when
+/// it is given (the native binary's `HARPSEAL_DEV_FIXED_OTP`, read by
+/// `harpseal_runtime_native::dev_fixed_otp`). The Core refuses a fixed
+/// OTP unless `dev` is set ([`BuildError::DevOnlyVerification`]); the
+/// Worker never passes one.
+pub fn deployment_with_fake_otp(
+    services: Services,
+    secrets: Secrets,
+    dev: bool,
+    fixed_otp: Option<&str>,
+) -> Result<(Deployment, FakeChannel), StartError> {
     let fake = FakeChannel::new(secrets.fake_secret.clone()).map_err(StartError::FakeSecret)?;
     check_menu_images(&secrets)?;
-    let d = builder(services, secrets)?
-        .dev(dev)
-        .channel(fake.clone())
-        .build()
-        .map_err(StartError::Build)?;
+    let mut b = builder(services, secrets)?.dev(dev).channel(fake.clone());
+    if let Some(code) = fixed_otp {
+        let otp = EmailOtp::new(config().otp)
+            .with_dev_fixed_code(code)
+            .map_err(StartError::DevFixedOtp)?;
+        b = b.verification(otp);
+    }
+    let d = b.build().map_err(StartError::Build)?;
     Ok((d, fake))
 }
 
