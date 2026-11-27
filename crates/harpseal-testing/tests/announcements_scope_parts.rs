@@ -98,9 +98,12 @@ async fn the_count_follows_a_change_of_choice() {
     let page = b.get("/admin/announcements/new").await;
     let at = page.body.find(r#"id="audience-count""#).unwrap();
     let tag = &page.body[at..at + page.body[at..].find('>').unwrap()];
-    // Counted again on any change of the form, the choice included, and
-    // not a live region itself.
-    assert!(tag.contains("change from:closest form"), "{tag}");
+    // Counted again on any change of the form, the choice included (all
+    // but the picker's search box, #177), and not a live region itself.
+    assert!(
+        tag.contains("change[target.id!=") && tag.contains("] from:closest form"),
+        "{tag}"
+    );
     assert!(!tag.contains("aria-live"), "{tag}");
     // The same filters left filled in, three choices, three answers.
     let filled = "attr.year=3&students=code-s1";

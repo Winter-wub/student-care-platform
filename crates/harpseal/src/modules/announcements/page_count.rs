@@ -25,9 +25,19 @@ use crate::{AppState, CurrentStaff, Deployment};
 type Posted = Form<Vec<(String, String)>>;
 
 const PATH: &str = "/admin/announcements/audience";
-/// Count again after a form change or after the picker added a Student
-/// (its response carries `HX-Trigger: students-changed`).
-const TRIGGER: &str = "change from:closest form, students-changed from:body";
+/// Count again after a form change, while ids are typed in or removed
+/// from the hand-picked field (300 ms after the last key), and after the
+/// picker added a Student (its response carries `HX-Trigger-After-Swap:
+/// students-changed`, so the count reads the new field, not the old one).
+///
+/// The picker's search box is in the form too: its `change` (when "เพิ่ม"
+/// takes the focus) is not a change of the Audience. A count still in
+/// flight is replaced by a newer one (`hx-sync="this:replace"`): the box
+/// swaps itself, and htmx drops a request queued on the element it swaps
+/// out, so the count after the picker's swap would be lost.
+const TRIGGER: &str = "change[target.id!='pick-q'] from:closest form, \
+    input[target.id=='students'] delay:300ms from:closest form, \
+    students-changed from:body";
 /// Ids named in one list of the preview; the rest are counted.
 const LISTED: usize = 100;
 /// `count_was` of the box before its first answer: say nothing then.
@@ -126,7 +136,7 @@ fn boxed(inner: Markup, line: &str) -> Markup {
 fn shell(inner: Markup, line: &str, trigger: &str) -> Markup {
     html! {
         div id="audience-count" class="card count" hx-post=(PATH)
-            hx-trigger=(trigger) hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
+            hx-trigger=(trigger) hx-sync="this:replace" hx-include="closest form" hx-params=(super::form_images::NOT_FILES)
             hx-vals=(vals(line)) hx-target="this" hx-swap="outerHTML" { (inner) }
     }
 }

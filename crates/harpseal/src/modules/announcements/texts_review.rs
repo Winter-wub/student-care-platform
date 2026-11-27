@@ -74,6 +74,11 @@ pub(crate) const REVIEW: &[E] = th_en![
         "เลือกรายคน {n} รหัส",
         "{n} hand-picked student ids"
     ),
+    (
+        "announcements.review.picked_more",
+        "และอีก {n} คน",
+        "and {n} more"
+    ),
     ("announcements.review.count", "จำนวน", "Recipients"),
     ("announcements.review.people", "{n} คน", "{n} Students"),
     ("announcements.review.channels", "ช่องทาง", "Channels"),

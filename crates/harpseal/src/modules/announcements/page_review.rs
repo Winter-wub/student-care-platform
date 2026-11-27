@@ -10,6 +10,9 @@
 //! the confirm refuses it ([`nobody`]). A schedule still ahead is
 //! confirmable with a caution note: its recipients resolve when it goes
 //! out ([`goes_now`]).
+//!
+//! A hand-picked list (#177) is shown whole up to [`LISTED`] ids, each with the
+//! Student's name for Staff who may see Students, then "และอีก N คน".
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -31,6 +34,8 @@ use crate::{AppState, CurrentStaff, Deployment, Result};
 /// one saying the review step was seen.
 pub(super) const REACH: &str = "reach";
 pub(super) const REVIEWED: &str = "reviewed";
+/// Hand-picked ids named on the review step; the rest are counted.
+pub(super) const LISTED: usize = 100;
 
 pub(super) fn path(id: &str) -> String {
     format!("/admin/announcements/{id}/review")
@@ -74,6 +79,35 @@ pub(super) async fn hold(
         // The schedule is gone either way: say it is a draft now.
         Err(_) => v.redirect(&detail, false, "announcements.review.held_failed"),
     }
+}
+
+/// The first [`LISTED`] ids of `ids` in list order, each with its
+/// Student's name when `names` and the id is on the roster.
+pub(super) async fn picked(
+    d: &Deployment,
+    ids: &[String],
+    names: bool,
+) -> Result<Vec<(String, Option<String>)>> {
+    let shown = &ids[..ids.len().min(LISTED)];
+    let mut found = std::collections::HashMap::new();
+    if names && !shown.is_empty() {
+        let stmt = crate::port_types::Statement::new(
+            "SELECT student_code, display_name FROM student WHERE student_code IN \
+             (SELECT value FROM json_each(?))",
+        )
+        .bind(serde_json::to_string(shown).unwrap_or_else(|_| "[]".into()));
+        let rows = d.services().db.query(stmt).await?;
+        for i in 0..rows.len() {
+            let t = |c: &str| rows.get(i, c).and_then(|v| v.as_text()).map(str::to_string);
+            if let (Some(code), Some(name)) = (t("student_code"), t("display_name")) {
+                found.insert(code, name);
+            }
+        }
+    }
+    Ok(shown
+        .iter()
+        .map(|id| (id.clone(), found.get(id).cloned()))
+        .collect())
 }
 
 /// `None` when `row` does not go to everyone. Otherwise whether `posted`
@@ -179,6 +213,11 @@ pub(super) async fn page(
     // Nobody to reach blocks only a send that goes now (#135).
     let empty = nobody(&counts);
     let blocked = empty.filter(|_| goes_now(&row, svc.now_ms()));
+    let names = staff.can("kernel.student.view");
+    let listed = match picked(&s.deployment, &row.audience.students, names).await {
+        Ok(l) => l,
+        Err(e) => return v.error(&e),
+    };
     let extra = crate::kernel::usage::line_extra(svc, &s.config)
         .await
         .unwrap_or(None);
@@ -189,7 +228,7 @@ pub(super) async fn page(
         @if held { p class="note" role="status" { (v.t("announcements.review.held")) } }
         p class="muted" { (v.t("announcements.review.lead")) }
         div class="cols review" {
-            div class="card" { (summary(&v, &row, &counts, &used, extra)) }
+            div class="card" { (summary(&v, &row, &counts, &used, extra, &listed)) }
             (super::page_detail::preview(&v, &title, &body, row.require_ack))
         }
         @if empty.is_some() && blocked.is_none() {
@@ -229,6 +268,7 @@ fn summary(
     c: &Counts,
     used: &[(String, MonthSummary)],
     extra: Option<bool>,
+    listed: &[(String, Option<String>)],
 ) -> Markup {
     let n = |k: &str, n: usize| fill(&v.t(k), &[("n", &n.to_string())]);
     let a = &row.audience;
@@ -258,6 +298,7 @@ fn summary(
                         @if !a.students.is_empty() { " · " }
                     }
                     @if !a.students.is_empty() { (n("announcements.review.picked", a.students.len())) }
+                    @if !listed.is_empty() { (picked_list(v, listed, a.students.len())) }
                     // #156: which groups, ranges in words.
                     @if a.has_groups() {
                         div class="muted" data-rules { (super::page_list::audience_summary(v, a)) }
@@ -286,6 +327,24 @@ fn summary(
             }
             dt { (v.t("announcements.review.when")) }
             dd { (when) }
+        }
+    }
+}
+
+/// The hand-picked ids shown (`listed`, of `total`): "รหัส ชื่อ" each,
+/// then "และอีก N คน" for the rest.
+fn picked_list(v: &View<'_>, listed: &[(String, Option<String>)], total: usize) -> Markup {
+    let rest = total.saturating_sub(listed.len());
+    html! {
+        ul id="review-picked" class="list" {
+            @for (id, name) in listed {
+                li { span class="id" { (id) } @if let Some(name) = name { " " (name) } }
+            }
+        }
+        @if rest > 0 {
+            p class="muted" data-picked-more {
+                (fill(&v.t("announcements.review.picked_more"), &[("n", &crate::ui::number(rest))]))
+            }
         }
     }
 }

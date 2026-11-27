@@ -118,7 +118,11 @@ pub(super) async fn add(
     ))
     .join("\n");
     let mut resp = Html(field(&v, &f).into_string()).into_response();
-    resp.headers_mut()
-        .insert("HX-Trigger", HeaderValue::from_static("students-changed"));
+    // After the swap (#177): with `HX-Trigger` the
+    // count ran before the new field was on the page and counted the old.
+    resp.headers_mut().insert(
+        "HX-Trigger-After-Swap",
+        HeaderValue::from_static("students-changed"),
+    );
     resp
 }
