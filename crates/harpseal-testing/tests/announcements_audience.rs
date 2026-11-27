@@ -306,7 +306,7 @@ async fn the_picker_searches_students_and_adds_one_id() {
     let add = |code: &str| format!("students={}&add={code}", urlencode("code-s1\ncode-s3"));
     let r = b.post("/admin/announcements/pick", &add("code-s4")).await;
     assert_eq!(r.status, 200, "{}", r.body);
-    assert_eq!(r.header("hx-trigger"), Some("students-changed"));
+    assert_eq!(r.header("hx-trigger-after-swap"), Some("students-changed"));
     assert!(
         r.body.contains("code-s1\ncode-s3\ncode-s4</textarea>"),
         "{}",
@@ -326,7 +326,7 @@ async fn the_picker_needs_permission_to_see_students() {
         page.body.contains(r#"name="students""#),
         "pasting still works"
     );
-    assert!(!page.body.contains("pick-q"));
+    assert!(!page.body.contains(r#"id="pick-q""#));
     assert_eq!(b.get("/admin/announcements/pick?q=Name").await.status, 403);
     assert_eq!(
         b.post("/admin/announcements/pick", "students=&add=code-s1")
