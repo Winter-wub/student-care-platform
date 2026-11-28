@@ -185,3 +185,79 @@ pub(crate) const PAGES: &[E] = th_en![
         "Announcement withdrawn."
     ),
 ];
+
+/// Asking for a new acknowledgement of an edit (`0005_reack`): the edit
+/// form's box, the notice Card, the detail page and the history page.
+pub(crate) const REACK: &[E] = th_en![
+    (
+        "announcements.form.reack",
+        "ขอให้รับทราบใหม่",
+        "Ask for a new acknowledgement"
+    ),
+    (
+        "announcements.form.reack_help",
+        "ทุกคนต้องกดรับทราบฉบับแก้ไขอีกครั้ง ยอดรับทราบจะนับใหม่ตามฉบับล่าสุด ส่วนรายชื่อผู้รับทราบฉบับเดิมเก็บไว้ให้ดูย้อนหลัง ถ้าเลือกแจ้งผู้รับด้วย ทุกคนบน LINE จะได้ข้อความพร้อมปุ่มรับทราบ แม้ข้อความไม่ได้เปลี่ยน",
+        "Everyone acknowledges the edited version again. The counts start over for the latest version; who acknowledged the earlier one is kept in the history. With the notice ticked too, everyone on LINE gets a message with the acknowledge button, even if no text changed."
+    ),
+    (
+        "announcements.form.reack_closed",
+        "ข่าวนี้หมดอายุแล้ว (หรือจะหมดอายุเมื่อบันทึก) นักศึกษากดรับทราบไม่ได้ จึงขอให้รับทราบใหม่ไม่ได้ ขยายวันหมดอายุก่อน",
+        "This announcement has expired (or would on saving): Students cannot acknowledge it, so a new acknowledgement cannot be asked for. Extend its expiry first."
+    ),
+    (
+        "announcements.form.reack_no_ack",
+        "ข่าวนี้ไม่ได้ขอให้กดรับทราบ",
+        "This announcement does not ask for an acknowledgement."
+    ),
+    (
+        "announcements.notice.title_reack",
+        "ข่าวนี้มีการแก้ไข กรุณากดรับทราบฉบับล่าสุดอีกครั้ง",
+        "This announcement was edited. Please acknowledge the latest version again."
+    ),
+    (
+        "announcements.acks.title",
+        "ประวัติการรับทราบ",
+        "Acknowledgement history"
+    ),
+    (
+        "announcements.acks.help",
+        "ทุกครั้งที่ขอให้รับทราบใหม่ ระบบเก็บฉบับเดิมไว้ที่นี่ พร้อมข้อความและรายชื่อผู้รับทราบ ยอดในหน้าข่าวนับเฉพาะฉบับล่าสุด",
+        "Each time a new acknowledgement is asked for, the earlier version is kept here with its texts and who acknowledged it. The announcement page counts the latest version only."
+    ),
+    // {n}
+    ("announcements.acks.version", "ฉบับที่ {n}", "Version {n}"),
+    ("announcements.acks.current", "ฉบับล่าสุด", "Latest"),
+    (
+        "announcements.acks.none",
+        "ยังไม่เคยขอให้รับทราบใหม่",
+        "No new acknowledgement has been asked for yet."
+    ),
+    (
+        "announcements.acks.closed_at",
+        "ขอให้รับทราบใหม่เมื่อ",
+        "New acknowledgement asked for"
+    ),
+    ("announcements.acks.closed_by", "โดย", "By"),
+    (
+        "announcements.acks.texts",
+        "ข้อความฉบับนี้",
+        "This version's texts"
+    ),
+    ("announcements.acks.who", "รายชื่อผู้รับทราบ", "Who acknowledged"),
+    ("announcements.acks.code", "รหัสนักศึกษา", "Student id"),
+    (
+        "announcements.acks.acked_at",
+        "รับทราบเมื่อ",
+        "Acknowledged at"
+    ),
+    (
+        "announcements.page.ack_version",
+        "ฉบับที่ขอรับทราบ",
+        "Acknowledged version"
+    ),
+    (
+        "announcements.page.ack_history",
+        "ดูประวัติการรับทราบฉบับก่อน",
+        "See earlier versions' acknowledgements"
+    ),
+];

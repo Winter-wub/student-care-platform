@@ -102,9 +102,10 @@ pub enum AckOutcome {
 /// Records Student `student`'s acknowledgement of announcement `id`:
 /// `acked_at = now` on every delivery row of that Student (every Channel,
 /// every round) still without one, in one conditional statement, so it is
-/// idempotent and two taps racing record it once. It is once per Student:
-/// after an acknowledgement (any round), a later tap is
-/// [`AckOutcome::Already`]. Retracted and expired announcements refuse
+/// idempotent and two taps racing record it once. It is once per Student
+/// per acknowledgement version: after an acknowledgement (any round), a
+/// later tap is [`AckOutcome::Already`], until Staff ask for a new one
+/// (`0005_reack`), which clears every `acked_at`. Retracted and expired announcements refuse
 /// it ([`AckOutcome::Retracted`], [`AckOutcome::Expired`]; #77: before,
 /// an expired one still took it). For the chat Action and the Mini App's
 /// ack endpoint.

@@ -65,6 +65,16 @@ pub(crate) const DEFAULTS: &[E] = th_en![
     ("kernel.roster.header", "หัวคอลัมน์", "Header"),
     ("kernel.roster.holds", "ข้อมูล", "Holds"),
     ("kernel.roster.optional", "เว้นว่างได้", "May be empty"),
+    (
+        "kernel.roster.optional_when",
+        "เว้นว่างได้เมื่อ {condition}",
+        "may be empty when {condition}"
+    ),
+    (
+        "kernel.roster.required_when",
+        "ต้องมีค่าเมื่อ {condition}",
+        "required when {condition}"
+    ),
     ("kernel.roster.required", "ต้องมีค่า", "Required"),
     ("kernel.roster.when", "เมื่อ", "When"),
     ("kernel.roster.who", "โดย", "By"),
@@ -329,6 +339,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "kernel.roster.reason_required",
         "ต้องมีค่า",
         "A value is required"
+    ),
+    (
+        "kernel.roster.reason_required_here",
+        "ต้องมีค่าสำหรับนักศึกษาแถวนี้ ตามค่าในคอลัมน์อื่นของแถว (ดูคำอธิบายคอลัมน์)",
+        "A value is required for this row's Student, given another column of the row (see the column help)"
     ),
     (
         "kernel.roster.reason_bad_code",

@@ -111,6 +111,41 @@ value itself, so a label equal to an unlabelled value's text clashes), or, in
 the default Locale, equal another value. Configs without these keys behave as
 before, and any other key is refused.
 
+An attribute can be required for some Students only, by the value of an
+`enum` attribute: a year level every current Student has but a graduate no
+longer does, a cohort only a graduate has.
+
+```toml
+# Required, but may be empty for a graduate.
+[roster.attributes.year]
+column = "ชั้นปี"
+type = "integer"
+optional_when = { status = ["graduated"] }
+
+# May be empty, but a graduate needs one.
+[roster.attributes.cohort]
+column = "รุ่น"
+type = "integer"
+optional = true
+required_when = { status = ["graduated"] }
+```
+
+The import checks each row: a blank cell that the row's `status` makes
+required is a **blocking** problem (`required_here`); a row whose `status` is
+refused or unreadable, or whose sheet leaves the `status` column out, is not
+checked for it (its own problem is reported). An `optional_when` column must
+be in the file (it is required for most rows); a `required_when` column may be
+left out, like any optional one. A blank cell stores no value, so a Student who
+graduates and is listed with an empty year loses the stored year. The edit form
+checks the rule when the field or the one it depends on changes, and says when
+the field may be empty; the import page's column list says it too. The
+Deployment does not build if the condition names more than one attribute, an
+attribute that is not an `enum`, the attribute itself or one with a condition
+of its own, no value or a value that attribute lacks; nor with `optional_when`
+on `optional = true`, `required_when` without it, or both keys at once. The
+Audience filters and the Mini App read the values as stored: the condition
+changes no one's reach.
+
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page

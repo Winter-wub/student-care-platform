@@ -40,6 +40,9 @@ pub(crate) struct Fields {
     pub(crate) scope: String,
     /// "Notify recipients of the edit" (a sent announcement only; #77).
     pub(crate) notify: bool,
+    /// "Ask for a new acknowledgement" (a sent announcement that asks for
+    /// one only).
+    pub(crate) reack: bool,
     pub(crate) version: Option<i64>,
     /// The submit button pressed: `draft` or `confirm`.
     pub(crate) submit: String,
@@ -83,6 +86,7 @@ impl Fields {
                 "unreachable" => f.unreachable = true,
                 "scope" => f.scope.clone_from(v),
                 "notify" => f.notify = true,
+                "reack" => f.reack = true,
                 "version" => f.version = v.parse().ok(),
                 "do" => f.submit.clone_from(v),
                 other => {
@@ -285,6 +289,7 @@ impl Fields {
             expires_at,
             send_at,
             notify: self.notify,
+            reack: self.reack,
             files: Default::default(),
         })
     }

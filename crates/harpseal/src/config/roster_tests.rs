@@ -10,6 +10,8 @@ fn spec(kind: AttributeType, values: &[&str], optional: bool) -> AttributeSpec {
         max: None,
         value_labels: BTreeMap::new(),
         optional,
+        optional_when: BTreeMap::new(),
+        required_when: BTreeMap::new(),
         shown_in_list: false,
         student_visible: false,
         order: 0,

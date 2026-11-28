@@ -20,7 +20,9 @@
 //! Link is still `active` and the account has not blocked the bot, and
 //! only Students whose text (their Locale's, or the Thai it falls back to)
 //! changed. A Student who already acknowledged gets it too; the
-//! acknowledgement stands. Each notice is one keyed Push to one account
+//! acknowledgement stands, unless the same save asked for a new one
+//! (`"reack": true` in the payload): then every recipient counts as
+//! changed and the Card says to acknowledge again, with "รับทราบ". Each notice is one keyed Push to one account
 //! (`announcements:<id>:notice:v<v>:<delivery id>`, the Kernel's keyed
 //! send: a retry is de-duplicated by LINE and metered exactly, ADR-0010);
 //! the row's `notice_version` is then raised to `v` (never lowered), so a
@@ -185,7 +187,8 @@ pub(crate) async fn notice(cx: JobContext, job: Job) -> Result<()> {
         );
     }
     let extra = p.get("locales").cloned().unwrap_or(Json::Null);
-    stmts.extend(fan_out(&cx, &id, version, &extra).await?);
+    let reack = p.get("reack").and_then(Json::as_bool).unwrap_or(false);
+    stmts.extend(fan_out(&cx, &id, version, &extra, reack).await?);
     s.db.batch(stmts).await?;
     Ok(())
 }
@@ -198,6 +201,7 @@ async fn fan_out(
     id: &str,
     version: i64,
     locales: &Json,
+    reack: bool,
 ) -> Result<Vec<Statement>> {
     let s = &cx.services;
     let sql = format!(
@@ -226,7 +230,7 @@ async fn fan_out(
         let minute = i64::try_from(paced / PER_MINUTE).unwrap_or(0);
         paced += 1;
         let payload = json!({
-            "id": id, "version": version, "channel": channel, "locales": locales,
+            "id": id, "version": version, "channel": channel, "locales": locales, "reack": reack,
             "offset": n * size, "size": size, "key": key, "hop": 0,
         });
         let at = Timestamp(now + minute * 60_000);
@@ -239,18 +243,39 @@ async fn fan_out(
     Ok(stmts)
 }
 
-/// The notice Card in `locale`: what happened, the title, the button.
-fn card(cx: &JobContext, locale: &Locale, id: &str, texts: &store::Texts) -> Card {
+/// The notice Card in `locale`: what happened, the title, the button;
+/// with `reack` (Staff asked for a new acknowledgement), "please
+/// acknowledge again" and "รับทราบ" first.
+fn card(
+    cx: &JobContext,
+    locale: &Locale,
+    id: &str,
+    texts: &store::Texts,
+    reack: bool,
+) -> Result<Card> {
     let catalog = &cx.catalog;
-    Card {
-        image: None,
-        title: catalog.t(locale, "announcements.notice.title"),
-        body: texts.pick(locale).0.to_string(),
-        buttons: vec![Button::mini_app(
-            catalog.t(locale, "announcements.card.open"),
-            super::chat::detail_path(id),
-        )],
+    let mut buttons = Vec::new();
+    if reack {
+        buttons.push(Button::action(
+            catalog.t(locale, "announcements.card.ack"),
+            super::chat::ack_action(id)?,
+        ));
     }
+    buttons.push(Button::mini_app(
+        catalog.t(locale, "announcements.card.open"),
+        super::chat::detail_path(id),
+    ));
+    let title = if reack {
+        "announcements.notice.title_reack"
+    } else {
+        "announcements.notice.title"
+    };
+    Ok(Card {
+        image: None,
+        title: catalog.t(locale, title),
+        body: texts.pick(locale).0.to_string(),
+        buttons,
+    })
 }
 
 /// `announcements.notice.chunk`: one keyed Push per recipient of the
@@ -282,6 +307,7 @@ pub(crate) async fn notice_chunk(cx: JobContext, job: Job) -> Result<()> {
     let rows = s.db.query(st).await?;
     let texts = store::texts(s, &id).await?;
     let locales = changed(&p);
+    let reack = p.get("reack").and_then(Json::as_bool).unwrap_or(false);
     for i in 0..rows.len() {
         let own = store::text(&rows, i, "locale");
         if !wants_edit(&texts, &locales, &own) {
@@ -295,7 +321,7 @@ pub(crate) async fn notice_chunk(cx: JobContext, job: Job) -> Result<()> {
         let delivery = store::text(&rows, i, "id");
         let to = ChannelAccountId::new(kind, store::text(&rows, i, "external_id"));
         let locale = texts.locale_for(&Locale::new(own));
-        let msgs = [Message::Card(card(&cx, &locale, &id, &texts))];
+        let msgs = [Message::Card(card(&cx, &locale, &id, &texts, reack)?)];
         let key = format!("{}:{delivery}", notice_key(&id, version));
         let sent = cx
             .deployment

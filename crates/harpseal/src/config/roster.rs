@@ -46,6 +46,7 @@ use serde_json::{Number, Value as Json};
 use crate::message::Locale;
 
 mod check;
+mod condition;
 mod date;
 mod rules;
 pub(crate) use date::is_date;
@@ -191,6 +192,21 @@ pub struct AttributeSpec {
     /// changed, so a Student stored without it can still be edited.
     #[serde(default)]
     pub optional: bool,
+    /// A required attribute that may be empty for some Students (a year
+    /// level an alumnus no longer has): `optional_when = { status =
+    /// ["graduated"] }` lets the value be empty while the Student's
+    /// `status` (an `enum` attribute) is one of those values. One entry.
+    /// Refused with `optional = true` and with [`AttributeSpec::required_when`].
+    /// See [`AttributeSpec::required_for`].
+    #[serde(default)]
+    pub optional_when: BTreeMap<String, Vec<String>>,
+    /// An optional attribute that must have a value for some Students (an
+    /// alumnus's cohort): `required_when = { status = ["graduated"] }`
+    /// makes it required while the Student's `status` (an `enum`
+    /// attribute) is one of those values. One entry. Needs `optional =
+    /// true`. See [`AttributeSpec::required_for`].
+    #[serde(default)]
+    pub required_when: BTreeMap<String, Vec<String>>,
     /// Shown on the Students list (cards and table). Default `false`.
     #[serde(default)]
     pub shown_in_list: bool,
@@ -271,11 +287,14 @@ impl AttributeSpec {
     }
 
     /// Parses a raw cell or form value (trimmed): `Ok(None)` for an empty
-    /// optional value, `Ok(Some(json))` for the value to store.
+    /// value that may be empty (optional, or for some Students:
+    /// [`AttributeSpec::may_be_empty`]), `Ok(Some(json))` for the value to
+    /// store. Whether an empty value fits *this* Student is
+    /// [`AttributeSpec::required_for`].
     pub fn parse(&self, raw: &str) -> Result<Option<Json>, AttrError> {
         let raw = raw.trim();
         if raw.is_empty() {
-            return if self.optional {
+            return if self.may_be_empty() {
                 Ok(None)
             } else {
                 Err(AttrError::Required)
@@ -286,7 +305,7 @@ impl AttributeSpec {
             AttributeType::Integer | AttributeType::Number => match self.number(raw)? {
                 Some(v) if self.in_range(&v) => v,
                 Some(_) => return Err(AttrError::OutOfRange),
-                None if self.optional => return Ok(None),
+                None if self.may_be_empty() => return Ok(None),
                 None => return Err(AttrError::Required),
             },
             AttributeType::Date if is_date(raw) => Json::String(raw.into()),

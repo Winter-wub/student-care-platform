@@ -165,6 +165,19 @@ pub(super) async fn edit_post(
     // (Students could not open it otherwise) and a changed text (else it
     // would only cost Pushes); a box ticked in vain is an error, not a
     // silent drop.
+    // `0005_reack`: a new acknowledgement needs one asked for, and an
+    // announcement Students can still acknowledge.
+    if let Ok(dr) = &draft
+        && row.status == "sent"
+        && f.reack
+    {
+        let closes = !notice::open(&row, now) || dr.expires_at.is_some_and(|e| e <= now);
+        if !row.require_ack {
+            draft = Err(vec![("reack", "announcements.form.reack_no_ack")]);
+        } else if closes {
+            draft = Err(vec![("reack", "announcements.form.reack_closed")]);
+        }
+    }
     if let Ok(dr) = &draft
         && row.status == "sent"
         && f.notify
@@ -174,6 +187,8 @@ pub(super) async fn edit_post(
             Ok(_) if closes => {
                 draft = Err(vec![("notify", "announcements.form.notify_closed")]);
             }
+            // With a new acknowledgement asked for, everyone is notified.
+            Ok(_) if dr.reack => {}
             Ok(old) if changed_locales(&old, dr).is_empty() => {
                 draft = Err(vec![("notify", "announcements.form.notify_unchanged")]);
             }
@@ -298,8 +313,14 @@ fn form_page(
             // Not offered once expired: Students could not open it.
             @if sent && row.is_some_and(|r| notice::open(r, v.s.services.now_ms())) {
                 (page_notice::field(v, f, cost, err("notify")))
+                @if row.is_some_and(|r| r.require_ack) {
+                    (page_notice::reack_field(v, f, err("reack")))
+                } @else {
+                    (err("reack"))
+                }
             } @else {
                 (err("notify"))
+                (err("reack"))
             }
             // #140: who and when stay in view, under the Thai text.
             @if !sent {

@@ -76,7 +76,11 @@ pub(crate) async fn create(
 /// whose text changed and that does not expire with this save also starts
 /// the edit notice ([`super::notice`]): `notice_report` reset to the new
 /// version (stopping an older run) and Job `announcements.notice` for the
-/// changed Locales. Audit `announcement.update`.
+/// changed Locales. With [`Draft::reack`], a sent one that asks for an
+/// acknowledgement and stays open closes its acknowledgement version
+/// ([`reack_rows`]) and its notice, when wanted, goes to every recipient
+/// with "รับทราบ" on the Card, text changed or not. Audit
+/// `announcement.update`.
 pub(crate) async fn update(
     d: &Deployment,
     id: &str,
@@ -138,15 +142,26 @@ pub(crate) async fn update(
     // still open after this save (the page refuses the box otherwise).
     let open_after = draft.expires_at.is_none_or(|e| e > now);
     let open_now = super::notice::open(&row, now);
-    let notify = draft.notify && !locales.is_empty() && open_now && open_after;
+    let reack = draft.reack && row.status == "sent" && row.require_ack && open_now && open_after;
+    // Asked to acknowledge again: every recipient's text counts as changed.
+    let notice_locales: Vec<String> = if reack {
+        draft.texts.iter().map(|(l, _, _)| l.clone()).collect()
+    } else {
+        locales.clone()
+    };
+    let notify = draft.notify && !notice_locales.is_empty() && open_now && open_after;
     if notify {
         jobs.push(JobReq {
             key: notice_key(id, next),
             kind: NOTICE,
-            payload: json!({ "id": id, "version": next, "locales": locales }),
+            payload: json!({ "id": id, "version": next, "locales": notice_locales, "reack": reack }),
             run_at: None,
         });
     }
+    let closed_by = match actor {
+        Actor::Staff(id) => Some(id.clone()),
+        _ => None,
+    };
     let existing = files::list(s, id).await?;
     let sent = row.status == "sent";
     let staged = files::stage(s, id, images, &existing, sent).await?;
@@ -154,6 +169,10 @@ pub(crate) async fn update(
     let audience = serde_json::to_string(&draft.audience).unwrap_or_else(|_| "{}".into());
     let changes = |gate: &str| {
         let mut v = Vec::new();
+        // Before the texts are replaced: the closing version keeps them.
+        if reack {
+            v.extend(reack_rows(id, now, closed_by.as_deref(), gate));
+        }
         if full {
             v.push(
                 Statement::new(format!(
@@ -393,4 +412,49 @@ pub(crate) async fn retract(
         vec![job],
     )
     .await
+}
+
+/// Closes announcement `id`'s acknowledgement version, gated on `gate`:
+/// the version's texts and counts into `announcement_ack_round`, each
+/// Student's acknowledgement into `announcement_ack_history`, then every
+/// `acked_at` cleared and `ack_round` raised. Runs before the save
+/// replaces the texts, in its batch, so a tap racing the save is either in
+/// the history or counts for the new version.
+fn reack_rows(id: &str, now: i64, by: Option<&str>, gate: &str) -> Vec<Statement> {
+    vec![
+        Statement::new(format!(
+            "INSERT INTO announcement_ack_round (announcement_id, ack_round, closed_at, \
+             closed_by, texts, students, acked) SELECT a.id, a.ack_round, {now}, ?, \
+             (SELECT json_group_array(json_object('locale', t.locale, 'title', t.title, \
+              'body', t.body)) FROM announcement_text t WHERE t.announcement_id = a.id), \
+             (SELECT count(DISTINCT d.student_id) FROM announcement_delivery d \
+              WHERE d.announcement_id = a.id), \
+             (SELECT count(DISTINCT d.student_id) FROM announcement_delivery d \
+              WHERE d.announcement_id = a.id AND d.acked_at IS NOT NULL) \
+             FROM announcement a WHERE a.id = ? AND {GATED}"
+        ))
+        .bind(by.map(str::to_string))
+        .bind(id)
+        .bind(gate),
+        Statement::new(format!(
+            "INSERT INTO announcement_ack_history (announcement_id, ack_round, student_id, \
+             acked_at) SELECT d.announcement_id, a.ack_round, d.student_id, min(d.acked_at) \
+             FROM announcement_delivery d JOIN announcement a ON a.id = d.announcement_id \
+             WHERE d.announcement_id = ? AND d.acked_at IS NOT NULL AND {GATED} \
+             GROUP BY d.student_id"
+        ))
+        .bind(id)
+        .bind(gate),
+        Statement::new(format!(
+            "UPDATE announcement_delivery SET acked_at = NULL WHERE announcement_id = ? \
+             AND acked_at IS NOT NULL AND {GATED}"
+        ))
+        .bind(id)
+        .bind(gate),
+        Statement::new(format!(
+            "UPDATE announcement SET ack_round = ack_round + 1 WHERE id = ? AND {GATED}"
+        ))
+        .bind(id)
+        .bind(gate),
+    ]
 }

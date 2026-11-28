@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::roster::file::parse;
 use crate::kernel::roster::test_config;
+use serde_json::json;
 
 const HEAD: &str = "รหัสนักศึกษา,ชื่อ-สกุล,อีเมล,ภาษา,กลุ่ม,หลักสูตร,ชั้นปี,เกรดเฉลี่ย\n";
 
@@ -191,4 +192,78 @@ fn a_bad_cell_echoes_its_value() {
     assert_eq!(p.value, "6801OO05");
     let p = got.iter().find(|p| p.reason == "missing_email").unwrap();
     assert!(p.value.is_empty(), "an empty cell echoes nothing");
+}
+
+/// `optional_when` / `required_when`: a year only current Students need,
+/// a cohort only graduates need.
+fn check_conditional(body: &str) -> Result<Valid, Vec<Problem>> {
+    let c = crate::DeploymentConfig::from_toml(CONDITIONAL).unwrap();
+    let rows = parse(body.as_bytes(), "r.csv", &c.roster).unwrap();
+    validate(&rows, &c)
+}
+
+const CONDITIONAL: &str = r#"
+name = "Seal Bay University (conditional)"
+default_locale = "th"
+[student]
+id_pattern = '########'
+[roster]
+student_code = "รหัส"
+display_name = "ชื่อ"
+email = "อีเมล"
+[roster.attributes.status]
+column = "สถานะ"
+type = "enum"
+values = ["current", "graduated"]
+value_labels = { graduated = { th = "ศิษย์เก่า" } }
+[roster.attributes.year]
+column = "ชั้นปี"
+type = "integer"
+optional_when = { status = ["graduated"] }
+[roster.attributes.cohort]
+column = "รุ่น"
+type = "integer"
+optional = true
+required_when = { status = ["graduated"] }
+"#;
+
+#[test]
+fn a_conditional_attribute_is_required_by_the_rows_other_value() {
+    let head = "รหัส,ชื่อ,อีเมล,สถานะ,ชั้นปี,รุ่น\n";
+    let v = check_conditional(&format!(
+        "{head}68010001,นก,,current,3,\n68010002,ปลา,,ศิษย์เก่า,,2\n"
+    ))
+    .unwrap();
+    assert_eq!(v.records[0].fields.attributes["year"], 3);
+    let g = &v.records[1].fields.attributes;
+    assert_eq!(
+        (g["status"].as_str(), &g["cohort"]),
+        (Some("graduated"), &json!(2))
+    );
+    assert!(
+        !g.contains_key("year"),
+        "a graduate's blank year is stored as none"
+    );
+    let problems: Vec<(usize, String, String)> = check_conditional(&format!(
+        "{head}68010001,นก,,current,,\n68010002,ปลา,,graduated,,\n68010003,หอย,,bad,,\n"
+    ))
+    .unwrap_err()
+    .into_iter()
+    .filter(|p| p.severity.is_blocking())
+    .map(|p| (p.row, p.column, p.reason))
+    .collect();
+    assert_eq!(
+        problems,
+        vec![
+            (2, "ชั้นปี".into(), "required_here".into()),
+            (3, "รุ่น".into(), "required_here".into()),
+            // A refused status decides nothing: only its own problem.
+            (4, "สถานะ".into(), "not_in_list".into()),
+        ]
+    );
+    // The year column is required; the cohort column may be left out.
+    let c = crate::DeploymentConfig::from_toml(CONDITIONAL).unwrap();
+    let required = crate::kernel::roster::file::required_headers(&c.roster);
+    assert!(required.iter().any(|h| h == "ชั้นปี"));
+    assert!(!required.iter().any(|h| h == "รุ่น"));
 }

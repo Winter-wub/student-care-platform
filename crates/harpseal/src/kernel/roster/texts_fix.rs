@@ -104,6 +104,11 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "Fill in this cell and upload again"
     ),
     (
+        "kernel.roster.fix_required_here",
+        "ใส่ค่าในช่องนี้ หรือแก้คอลัมน์ที่กำหนดว่าต้องมีค่า แล้วอัปโหลดใหม่",
+        "Fill in this cell, or correct the column that makes it required, and upload again"
+    ),
+    (
         "kernel.roster.fix_bad_code",
         "แก้รหัสในช่องนี้ให้เป็นแบบเดียวกับรหัสนักศึกษาของสถาบัน ไม่มีช่องว่างหรือตัวอักษรเกิน",
         "Correct the id to the institution's student id format, without spaces or extra characters"

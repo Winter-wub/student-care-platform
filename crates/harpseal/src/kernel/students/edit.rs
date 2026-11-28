@@ -176,7 +176,7 @@ fn render(
                 html! {
                     select id=(name) name=(name) aria-invalid=[err.then_some("true")]
                         aria-describedby=[err.then(|| format!("{name}-error"))] {
-                        @if spec.optional || cur.is_empty() { option value="" { "-" } }
+                        @if spec.may_be_empty() || cur.is_empty() { option value="" { "-" } }
                         // A stored value no longer listed stays as it is.
                         @if !cur.is_empty() && !spec.values.contains(&cur) {
                             option value=(cur) selected { (cur) }
@@ -193,6 +193,11 @@ fn render(
                 @if let Some(range) = spec.range_text() { " " span class="muted" { (range) } }
             },
             _ => text_input(&name, "text"),
+        };
+        // `optional_when` / `required_when`: when the field may be empty.
+        let control = match condition_hint(v, spec) {
+            Some(hint) => html! { (control) p class="muted" { (hint) } },
+            None => control,
         };
         fields.push(Field {
             input: name,
@@ -249,4 +254,20 @@ fn render(
         }
     };
     v.page(status, &title, body)
+}
+
+/// "เว้นว่างได้เมื่อ …" / "ต้องกรอกเมื่อ …" for an attribute required only
+/// for some Students.
+fn condition_hint(v: &View<'_>, spec: &crate::config::AttributeSpec) -> Option<String> {
+    let roster = &v.s.config.roster;
+    let text = spec.condition_text(roster, &v.staff.locale, &v.s.config.default_locale)?;
+    let key = if spec.optional_when.is_empty() {
+        "kernel.students.required_when"
+    } else {
+        "kernel.students.optional_when"
+    };
+    Some(crate::kernel::text::fill(
+        &v.t(key),
+        &[("condition", &text)],
+    ))
 }

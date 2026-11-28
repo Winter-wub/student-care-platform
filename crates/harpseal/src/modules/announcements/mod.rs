@@ -29,6 +29,17 @@
 //!   whose text changed on Channels that cannot edit (LINE), linking to the
 //!   updated announcement; Students who already acknowledged get it too
 //!   and their acknowledgement stands. Each edit notifies again.
+//! - **Acknowledge again** (Module migration `0005_reack`): an edit of a
+//!   sent announcement that asks for an acknowledgement may also tick
+//!   "ขอให้รับทราบใหม่". The save keeps the closing version (its texts, its
+//!   counts, who acknowledged and when) in `announcement_ack_round` and
+//!   `announcement_ack_history`, clears every acknowledgement and raises
+//!   `announcement.ack_round`: everyone acknowledges the edited version
+//!   again, and the counts read the latest version. With the notice ticked
+//!   too, every recipient on a Channel that cannot edit is notified (text
+//!   changed or not) and the notice Card carries "รับทราบ". The earlier
+//!   versions are listed at `/admin/announcements/<id>/acks`
+//!   (`announcements.view`).
 //! - **Expiry**: past `expires_at` an announcement leaves the Menu and the
 //!   Mini App list, and a Student opening or acknowledging it (chat Action,
 //!   Mini App deep link) is told it is no longer available (#77). Staff
@@ -90,6 +101,7 @@ mod maint;
 mod maint_chunk;
 mod notice;
 mod outcome;
+mod page_acks;
 mod page_actions;
 mod page_audience;
 mod page_count;
@@ -204,7 +216,12 @@ impl Module for Announcements {
             "0004_saved_audiences",
             include_str!("../../../migrations/announcements/0004_saved_audiences.sql"),
         )
+        .migration(
+            "0005_reack",
+            include_str!("../../../migrations/announcements/0005_reack.sql"),
+        )
         .messages(texts::CHAT)
+        .messages(texts::REACK)
         .messages(texts::PAGES)
         .messages(texts_form::FORM)
         .messages(texts_review::REVIEW)
@@ -304,6 +321,7 @@ fn pages(r: &mut ModuleRegistrar) {
         get(page_saved_list::delete_page).post(page_saved_list::delete),
     )
     .back_office(view, "/announcements/{id}", get(page_detail::page))
+    .back_office(view, "/announcements/{id}/acks", get(page_acks::page))
     .back_office_upload(
         send,
         upload("/announcements/{id}/edit"),

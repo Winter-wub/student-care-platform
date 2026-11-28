@@ -6,6 +6,7 @@ use maud::Markup;
 
 use super::view::{BASE, View};
 use crate::config::{AttributeSpec, AttributeType, RosterConfig};
+use crate::kernel::text::fill;
 use crate::ui::HelpColumn;
 
 /// An example cell of attribute `a`: its first allowed value, the bottom
@@ -91,6 +92,15 @@ pub(super) fn columns(v: &View<'_>, roster: &RosterConfig) -> Vec<HelpColumn> {
         }
         if let Some(range) = a.range_text() {
             holds = format!("{holds} ({range})");
+        }
+        // Required only for some Students: say when it may be empty.
+        if let Some(c) = a.condition_text(roster, &v.staff.locale, default) {
+            let key = if a.optional_when.is_empty() {
+                "kernel.roster.required_when"
+            } else {
+                "kernel.roster.optional_when"
+            };
+            holds = format!("{holds} ({})", fill(&v.t(key), &[("condition", &c)]));
         }
         // An empty optional attribute that `[roster] blocking` refuses is
         // required too, header and value (#154).

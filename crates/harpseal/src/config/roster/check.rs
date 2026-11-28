@@ -1,7 +1,7 @@
 //! `[roster]` checks at build time: what `DeploymentConfig::from_toml`
 //! (and a config changed in code) refuses.
 
-use super::{AttributeType, RosterConfig, WARNING_CLASSES, rules};
+use super::{AttributeType, RosterConfig, WARNING_CLASSES, condition, rules};
 use std::collections::BTreeSet;
 
 use crate::message::Locale;
@@ -27,7 +27,8 @@ impl RosterConfig {
     /// `modes` (or one that is not `full` / `upsert`, or repeated) and a
     /// `default_mode` outside `modes`, a `blocking` entry that is not a
     /// warning class (or is repeated), and an attribute whose `min` / `max`
-    /// / `value_labels` break the rules of [`rules::check`] (#81).
+    /// / `value_labels` break the rules of [`rules::check`] (#81), and an
+    /// `optional_when` / `required_when` that [`condition::check`] refuses.
     /// Fills a `default_mode` the TOML left out first
     /// ([`RosterConfig::resolve_default_mode`]).
     pub(crate) fn check(
@@ -94,6 +95,9 @@ impl RosterConfig {
                 return bad(format!("attribute `{key}`: empty or repeated enum value"));
             }
             if let Err(m) = rules::check(a, default_locale, known) {
+                return bad(format!("attribute `{key}`: {m}"));
+            }
+            if let Err(m) = condition::check(key, a, &self.attributes) {
                 return bad(format!("attribute `{key}`: {m}"));
             }
             columns.push(&a.column);

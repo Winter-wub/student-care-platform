@@ -207,9 +207,16 @@ pub(crate) fn validate_in(
             }
         }
         let mut attributes = Map::new();
+        // Attributes whose value is not known from this row: left out of
+        // the sheet, unreadable or refused. A condition on one is not
+        // checked (its own problem is reported instead).
+        let mut unknown: BTreeSet<&str> = BTreeSet::new();
+        // Blank cells that may be empty only for some Students.
+        let mut blank_conditional = Vec::new();
         for (key, spec) in roster.attributes_in_order() {
             if !has(&spec.column) {
                 keep.push(Kept::Attribute(key.to_string()));
+                unknown.insert(key);
                 continue;
             }
             // An enum cell may name the value by its label (#81).
@@ -218,12 +225,28 @@ pub(crate) fn validate_in(
                 Ok(Some(v)) => {
                     attributes.insert(key.to_string(), v);
                 }
-                Ok(None) if row.unreadable().any(|(h, _, _)| h == spec.column) => {}
+                Ok(None) if row.unreadable().any(|(h, _, _)| h == spec.column) => {
+                    unknown.insert(key);
+                }
+                Ok(None) if spec.condition().is_some() => blank_conditional.push(spec),
                 // A blank optional cell is fine (#134); a Deployment that
                 // lists `empty_attribute` in `[roster] blocking` refuses it.
                 Ok(None) if roster.blocks("empty_attribute") => blanks.add(sheet, &spec.column, n),
                 Ok(None) => {}
-                Err(e) => sink.bad(row, &spec.column, attr_reason(e)),
+                Err(e) => {
+                    unknown.insert(key);
+                    sink.bad(row, &spec.column, attr_reason(e));
+                }
+            }
+        }
+        // `optional_when` / `required_when`: a blank cell the row's other
+        // value makes required.
+        for spec in blank_conditional {
+            let decided = spec.condition().is_some_and(|(k, _)| !unknown.contains(k));
+            if decided && spec.required_for(&attributes) {
+                sink.bad(row, &spec.column, "required_here");
+            } else if roster.blocks("empty_attribute") {
+                blanks.add(sheet, &spec.column, n);
             }
         }
         unreadable(row, &mut sink.list, before);
