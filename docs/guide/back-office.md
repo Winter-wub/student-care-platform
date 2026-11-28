@@ -16,7 +16,9 @@ disclosure. See [deployment.md](deployment.md) for a Module's group and card.
 `/admin/students` lists the roster (50 per page, HTMX search by name or code)
 and opens a Student: fields, attributes, Links per Channel, Tags, Consent and
 recent Security Events. A Student with **missing data** (no email, an email that
-is not a valid address, or a `[roster.attributes]` attribute with no value) has a
+is not a valid address, or a `[roster.attributes]` attribute with no value; an
+attribute with `optional_when` / `required_when` counts only for the Students the
+condition applies to, so a current Student without an alumni cohort is complete) has a
 "ข้อมูลไม่ครบ" badge naming what is missing, and the checkbox "only Students with
 missing data" (`?missing=1`, kept across pages and search) lists just them. The
 roster import warns about the same things (below). The filter reads the Student
