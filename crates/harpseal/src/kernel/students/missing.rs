@@ -3,6 +3,14 @@
 //! import warns about these and imports the row anyway, so Staff find
 //! them again here: a badge on the Students list and a filter.
 //!
+//! An attribute with a condition (`optional_when`, `required_when`, Core
+//! #180) is missing only for the Students it applies to: an alumnus's
+//! cohort is missing for an alumnus, not for a current Student, and a year
+//! level is not missing for an alumnus. The badge and the filter both
+//! follow [`AttributeSpec::required_for`](crate::config::AttributeSpec::required_for).
+//! An attribute without a condition is missing whenever it has no value,
+//! `optional` or not.
+//!
 //! The filter is one `WHERE` on the page's query. "No email" and "no
 //! value" are plain SQL; "not valid" is the roster's address check
 //! (`validate::is_email`), which SQL cannot express, so the filter first
@@ -46,8 +54,9 @@ pub(crate) fn of(
         Some(e) if !is_email(e) => out.push(Missing::InvalidEmail),
         Some(_) => {}
     }
-    for (key, _) in roster.attributes_in_order() {
-        if no_value(attributes.get(key)) {
+    for (key, spec) in roster.attributes_in_order() {
+        let applies = spec.condition().is_none() || spec.required_for(attributes);
+        if applies && no_value(attributes.get(key)) {
             out.push(Missing::Attribute(key.to_string()));
         }
     }
@@ -84,7 +93,9 @@ async fn invalid_email_ids(s: &Services) -> Result<String> {
 }
 
 /// The `WHERE` condition for Students with missing data and its bound
-/// values (in order): one for the invalid ids, then one per attribute.
+/// values (in order): one for the invalid ids, then one per attribute (two
+/// more for an attribute with a condition: the other attribute's path and
+/// the values it lists).
 pub(super) async fn condition(s: &Services, roster: &RosterConfig) -> Result<(String, Vec<Value>)> {
     let mut sql = vec![
         "email IS NULL".to_string(),
@@ -92,9 +103,26 @@ pub(super) async fn condition(s: &Services, roster: &RosterConfig) -> Result<(St
         "id IN (SELECT value FROM json_each(?))".into(),
     ];
     let mut binds = vec![Value::from(invalid_email_ids(s).await?)];
-    for (key, _) in roster.attributes_in_order() {
+    for (key, spec) in roster.attributes_in_order() {
         // Keys are `[a-z][a-z0-9_]*` (`RosterConfig::check`), quoted anyway.
-        sql.push("COALESCE(trim(json_extract(attributes, ?)), '') = ''".into());
+        let empty = "COALESCE(trim(json_extract(attributes, ?)), '') = ''";
+        let Some((other, values)) = spec.condition() else {
+            sql.push(empty.into());
+            binds.push(Value::from(format!("$.\"{key}\"")));
+            continue;
+        };
+        // The condition matches when the other attribute holds one of the
+        // values (an empty one matches none), as `required_for` reads it.
+        let matched =
+            "COALESCE(json_extract(attributes, ?) IN (SELECT value FROM json_each(?)), 0)";
+        let applies = if spec.required_when.is_empty() {
+            format!("NOT {matched}")
+        } else {
+            matched.to_string()
+        };
+        sql.push(format!("({applies} AND {empty})"));
+        binds.push(Value::from(format!("$.\"{other}\"")));
+        binds.push(Value::from(Json::from(values.to_vec()).to_string()));
         binds.push(Value::from(format!("$.\"{key}\"")));
     }
     Ok((format!("({})", sql.join(" OR ")), binds))
