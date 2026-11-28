@@ -113,7 +113,7 @@ pub(super) async fn reconsent(t: &mut Turn<'_>, link: LinkRow, input: Input) -> 
             match parked.and_then(|p| ActionId::new(p).ok()) {
                 Some(action) => linked::act(t, &link, action).await,
                 None => {
-                    t.menu_choices();
+                    t.menu_choices().await?;
                     Ok(())
                 }
             }

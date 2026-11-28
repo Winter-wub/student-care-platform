@@ -4,6 +4,7 @@ mod background;
 mod builder;
 pub(crate) mod day;
 pub(crate) mod inbound;
+mod menu;
 mod routes;
 pub(crate) use routes::ADMIN;
 mod send;
@@ -24,7 +25,7 @@ pub use tick::TickReport;
 use crate::config::DeploymentConfig;
 use crate::delivery::{ChannelAccountId, PlatformMessageId};
 use crate::manifest::{Catalog, Job, JobSpec, MenuEntrySpec, Migration, Permission};
-use crate::message::{ActionId, Locale, Menu, MenuEntry, Message};
+use crate::message::{ActionId, Locale, Message};
 use crate::migrate::MigrationReport;
 use crate::{
     ActionHandler, Channel, Error, JobContext, JobHandler, Result, Services, VerificationMethod,
@@ -199,62 +200,6 @@ impl Deployment {
     pub(crate) fn channel_or_err(&self, kind: &str) -> Result<&dyn Channel> {
         self.channel(kind)
             .ok_or_else(|| Error::Invalid(format!("no channel {kind}")))
-    }
-
-    /// The unlocked Menu in `locale`: the Modules' entries by `order`,
-    /// then the Kernel's "unlink" entry (`kernel.link.unlink`) when
-    /// `[student] self_unlink` is on. Its key is that of the effective
-    /// Locale ([`Catalog::effective`], [`MenuKey::for_locale`]): a Student
-    /// in `TH` or `en-US` with no texts of their own reads the default
-    /// Locale, and gets its Menu and key. `build()` checked that every
-    /// catalog Locale has a key of its own.
-    ///
-    /// [`MenuKey::for_locale`]: crate::MenuKey::for_locale
-    pub fn menu_for(&self, locale: &Locale) -> Menu {
-        self.menu_with(locale, |key| self.catalog.t(locale, key))
-    }
-
-    /// The unlocked Menu in `locale` with labels from `t`, a label key to
-    /// its text (the chat flow passes texts with `setting` overrides);
-    /// keyed as in [`Deployment::menu_for`], whatever the labels.
-    pub fn menu_with(&self, locale: &Locale, t: impl Fn(&str) -> String) -> Menu {
-        let mut entries: Vec<MenuEntry> = self
-            .registry
-            .menu
-            .iter()
-            .map(|e| MenuEntry {
-                label: t(e.label_key),
-                action: e.action.clone(),
-            })
-            .collect();
-        if self.config.student.self_unlink
-            && let Ok(action) = ActionId::new(kernel::flow::actions::UNLINK)
-        {
-            entries.push(MenuEntry {
-                label: t("kernel.menu.unlink"),
-                action,
-            });
-        }
-        let menu = Menu::new(entries);
-        let key = crate::MenuKey::for_locale(&self.catalog.effective(locale));
-        // Unreachable: the effective Locale is a catalog Locale, and
-        // `build()` refused any without a key (`BuildError::MenuKey`).
-        debug_assert!(key.is_ok(), "{locale:?}: {key:?}");
-        match key {
-            Ok(key) => menu.with_key(key),
-            Err(_) => menu,
-        }
-    }
-
-    /// The catalog keys of the unlocked Menu's labels: the Modules'
-    /// entries, then `kernel.menu.unlink` when `[student] self_unlink` is
-    /// on. A back-office save of one of them re-links the Menu (#66).
-    pub(crate) fn menu_label_keys(&self) -> Vec<&'static str> {
-        let mut keys: Vec<&'static str> = self.registry.menu.iter().map(|e| e.label_key).collect();
-        if self.config.student.self_unlink {
-            keys.push("kernel.menu.unlink");
-        }
-        keys
     }
 
     /// The Module and handler registered for `action`: the exact id

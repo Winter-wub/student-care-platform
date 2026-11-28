@@ -287,6 +287,8 @@ pub struct Menu {
     revision: u32,
     /// The Deployment's revision salt, if any.
     salt: Option<String>,
+    /// The Menu variant this Menu is for, if any (#182).
+    variant: Option<String>,
 }
 
 impl Menu {
@@ -297,6 +299,7 @@ impl Menu {
             key: None,
             revision: 0,
             salt: None,
+            variant: None,
         }
     }
     /// A Menu under `key`.
@@ -337,6 +340,17 @@ impl Menu {
     /// The revision salt, if any.
     pub fn salt(&self) -> Option<&str> {
         self.salt.as_deref()
+    }
+    /// The same Menu as the one of Menu variant `key` (`[[menu.variants]]`,
+    /// #182): an adapter that draws Menus on an image draws it on the
+    /// variant's own image, if it has one.
+    pub fn with_variant(mut self, key: impl Into<String>) -> Self {
+        self.variant = Some(key.into());
+        self
+    }
+    /// The Menu variant's key; `None` for the whole Menu.
+    pub fn variant(&self) -> Option<&str> {
+        self.variant.as_deref()
     }
 }
 

@@ -76,8 +76,9 @@ pub use channel::{
 };
 pub use config::{
     AnnouncementsConfig, AttrError, AttributeSpec, AttributeType, BackupConfig, BrandingConfig,
-    ConsentConfig, DeploymentConfig, InboundConfig, LocaleColumn, MiniAppConfig, OtpConfig,
-    PublicUrl, QuotaConfig, RetentionConfig, RosterConfig, StaffConfig, StudentConfig, TagsColumn,
+    ConsentConfig, DeploymentConfig, InboundConfig, LocaleColumn, MenuConfig, MenuVariant,
+    MiniAppConfig, OtpConfig, PublicUrl, QuotaConfig, RetentionConfig, RosterConfig, StaffConfig,
+    StudentConfig, TagsColumn,
 };
 pub use delivery::{
     BatchReceipt, Capabilities, Capability, ChannelAccountId, ChannelKind, Delivery, Inbound,

@@ -87,6 +87,10 @@ pub struct LineConfig {
     pub locked_menu_image: Vec<u8>,
     /// PNG for the unlocked Menu's rich menu.
     pub unlocked_menu_image: Vec<u8>,
+    /// PNG for the rich menu of each Menu variant (#182), by variant key
+    /// ([`harpseal::Menu::variant`]); a variant without one is drawn on
+    /// [`LineConfig::unlocked_menu_image`].
+    pub variant_menu_images: std::collections::BTreeMap<String, Vec<u8>>,
     /// Generation of the rich menus this Deployment creates (0 counts as
     /// 1). Bump it when a Menu change must win: superseded rich menus are
     /// only those with a lower generation ([`richmenu`]).
@@ -118,11 +122,27 @@ impl LineConfig {
         self
     }
 
+    /// The rich menu image of Menu variant `key` (`[[menu.variants]]`,
+    /// #182): same rules as [`LineConfig::with_menu_images`], drawn for
+    /// the variant's entries only.
+    pub fn with_variant_menu_image(mut self, key: impl Into<String>, image: Vec<u8>) -> Self {
+        self.variant_menu_images.insert(key.into(), image);
+        self
+    }
+
+    /// The image an unlocked `menu` is drawn on: its variant's, else the
+    /// unlocked Menu's.
+    pub fn menu_image(&self, menu: &Menu) -> &[u8] {
+        menu.variant()
+            .and_then(|k| self.variant_menu_images.get(k))
+            .unwrap_or(&self.unlocked_menu_image)
+    }
+
     /// Whether the rich menu images can be uploaded, for a Deployment to
     /// call at startup so a missing or wrong image refuses to start instead
     /// of failing the first `set_menu` (an Inbound recorded as failed).
     ///
-    /// Checks the unlocked image, and the locked one when
+    /// Checks the unlocked image and each variant's, and the locked one when
     /// [`LineConfig::locked_menu`] has entries (see [`richmenu::png_size`]:
     /// a PNG of 2500 x 843 or 2500 x 1686 px, at most 1 MB). With an empty
     /// `access_token` (no real LINE credentials: demos, tests, the Fake
@@ -144,6 +164,9 @@ impl LineConfig {
         };
         if !self.locked_menu.entries.is_empty() {
             check("locked", &self.locked_menu_image)?;
+        }
+        for (key, image) in &self.variant_menu_images {
+            check(&format!("variant `{key}`"), image)?;
         }
         check("unlocked", &self.unlocked_menu_image)
     }
@@ -193,6 +216,14 @@ impl core::fmt::Debug for LineConfig {
             .field("locked_menu", &self.locked_menu)
             .field("locked_menu_image", &self.locked_menu_image.len())
             .field("unlocked_menu_image", &self.unlocked_menu_image.len())
+            .field(
+                "variant_menu_images",
+                &self
+                    .variant_menu_images
+                    .iter()
+                    .map(|(k, v)| (k, v.len()))
+                    .collect::<Vec<_>>(),
+            )
             .field("menu_generation", &self.menu_generation)
             .finish()
     }

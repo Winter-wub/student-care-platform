@@ -191,7 +191,11 @@ the locked Menu's (`locked_menu_image`, shown before it, with
 `LineConfig::with_locked_menu`: the spec asks for one "เริ่มใช้งาน" entry whose
 Action is `kernel.link.start`). Without the locked Menu `set_menu(None)` only
 unlinks the account's rich menu. `LineConfig::with_menu_images(locked,
-unlocked)` sets both.
+unlocked)` sets both. A Menu variant (`[[menu.variants]]`, #182) has fewer
+entries, so it needs a picture of its own:
+`LineConfig::with_variant_menu_image(key, png)`; a variant without one is drawn
+on the unlocked image. `/admin/branding` replaces the locked and unlocked
+images only; a variant keeps its configured one.
 
 An image is a PNG, 2500 x 843 px (one row of cells) or 2500 x 1686 px (more),
 at most 1 MB. The adapter splits the image into the Core's grid, the same

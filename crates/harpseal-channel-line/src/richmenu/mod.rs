@@ -236,10 +236,10 @@ impl LineChannel {
         let user = path_id(&to.external_id)?;
         let locked = MenuKey::locked();
         let (menu, image, key) = match menu {
-            Some(m) => (m, &self.cfg.unlocked_menu_image, m.key()),
+            Some(m) => (m, self.cfg.menu_image(m), m.key()),
             None => (
                 &self.cfg.locked_menu,
-                &self.cfg.locked_menu_image,
+                self.cfg.locked_menu_image.as_slice(),
                 Some(&locked),
             ),
         };

@@ -69,7 +69,7 @@ impl LineChannel {
             }
             return got;
         };
-        let image = &self.cfg.unlocked_menu_image;
+        let image = self.cfg.menu_image(menu);
         let (name, obj) = match rich_menu(Some((key, generation)), menu, image) {
             Ok(n) => n,
             Err(e) => return MenuRelinked::stopped(0, e),

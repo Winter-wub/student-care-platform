@@ -388,6 +388,6 @@ async fn link(t: &mut Turn<'_>, student: &StudentRow, challenge: &str) -> Result
         body,
         buttons: Vec::new(),
     }));
-    t.menu_choices();
+    t.menu_choices().await?;
     Ok(())
 }

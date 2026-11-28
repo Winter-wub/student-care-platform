@@ -122,6 +122,7 @@ pub async fn update(
         ctx,
         same,
     )?;
+    let now = s.now_ms();
     let update = gated_stmt(
         "UPDATE student SET display_name = ?, email = ?, locale = ?, attributes = ?, \
          manual_overrides = ?, updated_at = ? WHERE id = ?",
@@ -132,11 +133,29 @@ pub async fn update(
             crate::Value::from(fields.locale.0.clone()),
             crate::Value::from(Json::Object(fields.attributes.clone()).to_string()),
             crate::Value::from(json!(overrides).to_string()),
-            crate::Value::from(s.now_ms()),
+            crate::Value::from(now),
             crate::Value::from(student_id),
         ],
     );
-    let done = s.db.batch(vec![audit, update]).await?;
+    let mut stmts = vec![audit, update];
+    // A Menu variant's attribute changed: re-link the Student's Menu (#182).
+    let watched = d.config().menu.attributes();
+    if changed.iter().any(|f| {
+        f.strip_prefix("attributes.")
+            .is_some_and(|k| watched.contains(k))
+    }) {
+        let audited =
+            Statement::new("EXISTS (SELECT 1 FROM audit_log WHERE id = ?)").bind(gate.as_str());
+        let tag = format!("edit:{gate}");
+        stmts.extend(crate::kernel::menu::enqueue_variants(
+            d,
+            &tag,
+            now,
+            0,
+            Some(&audited),
+        )?);
+    }
+    let done = s.db.batch(stmts).await?;
     if affected(&done, 1) != 1 {
         return Err(changed_elsewhere());
     }

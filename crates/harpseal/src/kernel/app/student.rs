@@ -76,6 +76,10 @@ pub struct AppStudent {
     /// in `[roster.attributes]` with `student_visible = true` (default
     /// `false`). A read-only copy: changing it changes nothing stored.
     pub attributes: Map<String, Json>,
+    /// The key of the Student's Menu variant (`[[menu.variants]]`, #182),
+    /// chosen from all their attributes: a page the variant leaves off the
+    /// Mini App home can refuse them.
+    pub menu_variant: Option<String>,
     /// The Channel kind of the account that opened the page.
     pub channel: String,
     csrf: String,
@@ -172,6 +176,11 @@ impl AppStudent {
             }
             return Err(Box::new(view::not_linked(s, &texts, Some(&v.csrf))));
         };
+        let menu_variant = s
+            .config
+            .menu
+            .variant_for(&st.attributes)
+            .map(|v| v.key.clone());
         let visible = &s.config.roster.attributes;
         let attributes = st
             .attributes
@@ -184,6 +193,7 @@ impl AppStudent {
             display_name: st.name,
             locale: v.locale,
             attributes,
+            menu_variant,
             channel: v.channel,
             csrf: v.csrf,
             texts,

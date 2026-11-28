@@ -113,7 +113,8 @@ pub async fn manual_link(
         texts.tf("kernel.link.manual_notice", &[("name", &student.name)]),
     )];
     let menu = if student.consented {
-        Some(crate::kernel::menu::unlocked(d, &texts, &student.locale).await?)
+        let variant = crate::kernel::menu::variant::of_student(d, student_id).await?;
+        Some(crate::kernel::menu::unlocked(d, &texts, &student.locale, variant).await?)
     } else {
         // Same titles as the chat flow's re-consent Card.
         let title = if student.any_consent {

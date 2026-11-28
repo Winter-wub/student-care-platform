@@ -61,6 +61,7 @@ impl LineChannel {
             locked_menu,
             locked_menu_image: image(MenuSlot::Locked, &c.locked_menu_image),
             unlocked_menu_image: image(MenuSlot::Unlocked, &c.unlocked_menu_image),
+            variant_menu_images: c.variant_menu_images.clone(),
             menu_generation: c.menu_generation,
         }
     }
