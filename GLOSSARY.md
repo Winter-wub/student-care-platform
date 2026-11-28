@@ -113,6 +113,10 @@ _Avoid_: quick reply, inline keyboard
 The persistent set of entry points a Student sees in the chat. Set per Channel Account; locked until the Student has a Link. Identified by a key: the Locale it serves, or `locked`. Each back-office save of one of its labels, or of its image, makes a new revision, which every linked Student is moved to before the previous one is retired.
 _Avoid_: rich menu, command list
 
+**Menu variant** (เมนูเฉพาะกลุ่ม):
+A smaller Menu, and a smaller Mini App home, for the Students whose roster attributes match a condition (e.g. graduates see the announcements only). The first matching variant is the Student's; without one they get the whole Menu. Its Menu has a key of its own and is never revised.
+_Avoid_: role menu, audience menu
+
 **Action** (การกระทำจากปุ่ม):
 What pressing a button means, stored on the server and referenced by a short id. Idempotent, and may expire.
 _Avoid_: postback, callback

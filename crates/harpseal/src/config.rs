@@ -8,11 +8,13 @@ use serde::Deserialize;
 mod announcements;
 mod backup;
 mod locales;
+mod menu;
 mod mini_app;
 mod offset;
 mod public_url;
 mod roster;
 
+pub use menu::{MenuConfig, MenuVariant};
 pub use public_url::PublicUrl;
 pub use roster::{AttrError, AttributeSpec, AttributeType, LocaleColumn, RosterConfig, TagsColumn};
 pub use {announcements::AnnouncementsConfig, backup::BackupConfig, mini_app::MiniAppConfig};
@@ -54,6 +56,9 @@ pub struct DeploymentConfig {
     /// How the chat flow reads a student id and whether Students may unlink.
     #[serde(default)]
     pub student: StudentConfig,
+    /// Smaller Menus for some Students ([`MenuConfig`], #182).
+    #[serde(default)]
+    pub menu: MenuConfig,
     /// The privacy notice version the Consent Card asks for.
     #[serde(default)]
     pub consent: ConsentConfig,
@@ -312,6 +317,7 @@ impl DeploymentConfig {
         }
         c.branding.check()?;
         c.roster.check(&c.default_locale, &c.known_locales())?;
+        c.menu.check(&c.roster)?;
         c.backup.check()?;
         c.announcements.check()?;
         c.mini_app.check()?;

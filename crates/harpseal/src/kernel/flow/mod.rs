@@ -264,15 +264,20 @@ impl Turn<'_> {
         };
     }
 
-    /// Unlocks (`Some` Menu in `locale`, at its newest Menu revision) or
-    /// locks (`None`) the Menu.
+    /// Unlocks (`Some` Menu in `locale`, at its newest Menu revision, or
+    /// the Menu of the linked Student's Menu variant, #182) or locks
+    /// (`None`) the Menu.
     pub(super) async fn set_menu(&self, unlocked: Option<&Locale>) -> Result<()> {
         let channel = self
             .d
             .channel(self.from.channel.as_str())
             .ok_or_else(|| crate::Error::Invalid(format!("no channel {}", self.from.channel)))?;
         let menu = match unlocked {
-            Some(l) => Some(crate::kernel::menu::unlocked(self.d, &self.texts, l).await?),
+            Some(l) => {
+                let variant =
+                    crate::kernel::menu::variant::of_account(self.d, &self.acct.id).await?;
+                Some(crate::kernel::menu::unlocked(self.d, &self.texts, l, variant).await?)
+            }
             None => None,
         };
         // Drawn on the Menu images saved on `/admin/branding` (#114).
@@ -282,12 +287,14 @@ impl Turn<'_> {
     }
 
     /// Adds Choices listing the Menu once (`kernel.menu.pick`), or the bare
-    /// text when the Menu is empty.
-    pub(super) fn menu_choices(&mut self) {
+    /// text when the Menu is empty: the linked Student's Menu variant's,
+    /// if any (#182).
+    pub(super) async fn menu_choices(&mut self) -> Result<()> {
         let text = self.t("kernel.menu.pick");
+        let variant = crate::kernel::menu::variant::of_account(self.d, &self.acct.id).await?;
         let options: Vec<Button> = self
             .d
-            .menu_with(self.texts.locale(), |k| self.texts.t(k))
+            .menu_in(self.texts.locale(), variant, |k| self.texts.t(k))
             .entries
             .into_iter()
             .map(|e| Button::action(e.label, e.action))
@@ -297,6 +304,7 @@ impl Turn<'_> {
         } else {
             Message::Choices(Choices { text, options })
         });
+        Ok(())
     }
 
     /// Queues a Push of the Text `key` to every account in `to` (kind,

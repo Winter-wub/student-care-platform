@@ -146,6 +146,34 @@ on `optional = true`, `required_when` without it, or both keys at once. The
 Audience filters and the Mini App read the values as stored: the condition
 changes no one's reach.
 
+The same kind of condition gives some Students a smaller Menu and Mini App
+home, a **Menu variant** (#182):
+
+```toml
+# Graduates see the announcements only.
+[[menu.variants]]
+key = "grad"                        # 1 to 8 of a-z and 0-9
+when = { status = ["graduated"] }   # one `enum` attribute, as above
+entries = ["announcements.latest"]  # the Menu entries kept (Action ids)
+app_links = []                      # the Mini App home links kept (paths)
+```
+
+The first variant whose `when` matches is the Student's; nobody matching gets
+the whole Menu. Entries stay in Menu order, and the unlink entry stays when
+`[student] self_unlink` is on; anything not listed is left out of the Menu,
+the chat's Menu Choices and the Mini App home. A left-out page is still
+reachable by its URL: the Module's handler reads `AppStudent::menu_variant`
+and refuses it, as a Module's chat Action reads the Student's attributes. The
+Menu is set at Link, re-consent and "welcome back", like the whole one. A
+roster import, or a Staff edit of an attribute a `when` names, queues the Job
+`kernel.menu.variants`, which re-links in bulk the Menus of the Students it
+wrote; a Menu label save re-links the variants' accounts too. A variant's
+Menu has its own key, `<locale key><variant key>` (`thgrad`), and no
+revisions: an older version left by a label save stays on the platform until
+the next Menu generation. The Deployment does not build when a `when` is
+written wrong (as for `required_when`), a key repeats or makes an invalid
+Menu key, an entry is no Menu entry's Action or a link no Mini App home link.
+
 `/admin/roster` imports the roster (`kernel.roster.view` to see imports,
 `kernel.roster.import` to upload). Upload a `.csv` (UTF-8, `,` or `;`; a
 `.txt` is refused) or `.xlsx` whose headers match `[roster]` exactly (the page

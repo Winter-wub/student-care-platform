@@ -61,7 +61,7 @@ pub(super) async fn handle(t: &mut Turn<'_>, link: LinkRow, input: Input) -> Res
                 t.say("kernel.flow.welcome_back");
                 t.set_menu(Some(&link.locale)).await?;
             }
-            t.menu_choices();
+            t.menu_choices().await?;
             Ok(())
         }
         Input::Action(a) => act(t, &link, a).await,
@@ -87,7 +87,7 @@ pub(super) async fn act(t: &mut Turn<'_>, link: &LinkRow, action: ActionId) -> R
         }
         actions::UNLINK_CONFIRM if self_unlink => unlink(t, link).await,
         actions::UNLINK_KEEP | actions::CONSENT_ACCEPT => {
-            t.menu_choices();
+            t.menu_choices().await?;
             Ok(())
         }
         _ => match t.d.module_action(&action) {
@@ -265,7 +265,7 @@ async fn fallback(t: &mut Turn<'_>) -> Result<()> {
         "linked"
     };
     t.say("kernel.inbound.fallback");
-    t.menu_choices();
+    t.menu_choices().await?;
     t.save(state).await?;
     Ok(())
 }

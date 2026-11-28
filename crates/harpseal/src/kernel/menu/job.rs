@@ -315,17 +315,22 @@ async fn claim(cx: &JobContext, locale: &Locale, revision: i64, job: &str) -> Re
 }
 
 /// Up to `chunk` accounts of `ch` with an active Link and an unlocked
-/// Menu (`flow_state = 'linked'`), after `after`, by id.
+/// Menu (`flow_state = 'linked'`), after `after`, by id. Accounts of a
+/// Menu variant are left out (#182): they are not on this Menu, and the
+/// save's Job [`super::variant_job::KIND`] re-links them.
 async fn accounts(cx: &JobContext, ch: &dyn Channel, after: &str, chunk: usize) -> Result<Rows> {
-    let st = Statement::new(
+    let variants = &cx.deployment.config().menu.variants;
+    let (whole, binds) = super::variant::group_sql(variants, 0, "s.attributes");
+    let mut st = Statement::new(format!(
         "SELECT ca.id, ca.external_id, s.locale FROM link l \
          JOIN channel_account ca ON ca.id = l.channel_account_id \
          JOIN student s ON s.id = l.student_id \
          WHERE l.status = 'active' AND l.channel = ? AND ca.flow_state = 'linked' \
-         AND ca.id > ? ORDER BY ca.id LIMIT ?",
-    )
+         AND ca.id > ? AND {whole} ORDER BY ca.id LIMIT ?"
+    ))
     .bind(ch.kind().as_str())
-    .bind(after)
-    .bind(i64::try_from(chunk).unwrap_or(i64::MAX));
+    .bind(after);
+    st.params.extend(binds);
+    let st = st.bind(i64::try_from(chunk).unwrap_or(i64::MAX));
     cx.services.db.query(st).await
 }

@@ -23,6 +23,8 @@
 //! re-links everyone and retires every older revision.
 
 mod job;
+pub(crate) mod variant;
+mod variant_job;
 
 use std::collections::HashMap;
 
@@ -41,7 +43,10 @@ pub(crate) const RELINK: &str = "kernel.menu.relink";
 /// Registers the Job on the Kernel.
 pub(crate) fn register(r: &mut ModuleRegistrar) {
     r.job(JobSpec::new(RELINK), job::run);
+    r.job(JobSpec::new(variant_job::KIND), variant_job::run);
 }
+
+pub(crate) use variant_job::enqueue_if as enqueue_variants;
 
 /// Length of the revision salt, in bytes (8 hex digits).
 const SALT_BYTES: usize = 4;
@@ -71,12 +76,13 @@ pub(crate) fn forget_runs(s: &Services) -> Vec<Statement> {
         Statement::new(
             "UPDATE job SET state = 'failed', last_error = ?, finished_at = ?, \
              lock_token = NULL, locked_until = NULL \
-             WHERE kind IN (?, ?) AND state IN ('queued', 'running')",
+             WHERE kind IN (?, ?, ?) AND state IN ('queued', 'running')",
         )
         .bind("cancelled by the restore of a backup")
         .bind(s.now_ms())
         .bind(RELINK)
-        .bind(crate::kernel::branding::RELOCK),
+        .bind(crate::kernel::branding::RELOCK)
+        .bind(variant_job::KIND),
     ]
 }
 
@@ -113,14 +119,25 @@ pub(crate) fn revised(menu: Menu, revision: u32, salt: Option<&str>) -> Menu {
     }
 }
 
-/// The unlocked Menu a linked Student in `locale` gets now: the effective
-/// Locale's entries with `texts` (and their `setting` overrides), at its
-/// newest revision, with the Deployment's salt.
-pub(crate) async fn unlocked(d: &Deployment, texts: &Texts, locale: &Locale) -> Result<Menu> {
+/// The unlocked Menu a linked Student in `locale` of Menu variant
+/// `variant` gets now: the effective Locale's entries with `texts` (and
+/// their `setting` overrides). The whole Menu (`None`) is at its newest
+/// revision, with the Deployment's salt; a variant's Menu is never
+/// revised (a label save makes a new version of it, and the old one is
+/// left alone: [`variant_job`]).
+pub(crate) async fn unlocked(
+    d: &Deployment,
+    texts: &Texts,
+    locale: &Locale,
+    variant: Option<&crate::MenuVariant>,
+) -> Result<Menu> {
     let locale = d.catalog().effective(locale);
     let texts = texts.in_locale(&locale);
+    let menu = d.menu_in(&locale, variant, |k| texts.t(k));
+    if variant.is_some() {
+        return Ok(menu);
+    }
     let (revision, salt) = revision(d.services(), &locale).await?;
-    let menu = d.menu_with(&locale, |k| texts.t(k));
     Ok(revised(menu, revision, salt.as_deref()))
 }
 
@@ -167,6 +184,11 @@ pub(crate) fn on_save(
             stmts.push(salt_once(&new_salt(d.services())?, gate));
         }
         stmts.extend(next_revision(d, &l, &was, &is, gate)?);
+    }
+    if !stmts.is_empty() {
+        // The variants' Menus have the new labels too (#182).
+        let audited = Statement::new("EXISTS (SELECT 1 FROM audit_log WHERE id = ?)").bind(gate);
+        stmts.extend(enqueue_variants(d, gate, 0, 1, Some(&audited))?);
     }
     Ok(stmts)
 }

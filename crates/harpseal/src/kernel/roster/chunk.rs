@@ -111,12 +111,21 @@ pub(super) fn complete(
     imp: &Import,
     gate: Option<&Gate>,
 ) -> Result<Vec<Statement>> {
+    let mut full = Vec::new();
     if imp.mode == "full" {
         let payload = json!({ "import_id": imp.id, "chunk": imp.total_rows, "left": 0 });
         let key = left_key(&imp.id, 0);
-        return Ok(vec![
-            cx.jobs.insert_unique(&key, JOB_KIND, &payload, None)?.1,
-        ]);
+        full.push(cx.jobs.insert_unique(&key, JOB_KIND, &payload, None)?.1);
+    }
+    // The Menus of the Students the import wrote, per Menu variant (#182).
+    let started = imp.started_at.unwrap_or(0);
+    let tag = format!("roster:{}", imp.id);
+    let gated = gate.map(|g| g.bind(Statement::new(Gate::SQL)));
+    let mut out =
+        crate::kernel::menu::enqueue_variants(&cx.deployment, &tag, started, 0, gated.as_ref())?;
+    if imp.mode == "full" {
+        out.extend(full);
+        return Ok(out);
     }
     let cond = match gate {
         Some(_) => format!("AND {}", Gate::SQL),
@@ -128,10 +137,11 @@ pub(super) fn complete(
     ))
     .bind(cx.services.now_ms())
     .bind(imp.id.as_str());
-    Ok(vec![match gate {
+    out.push(match gate {
         Some(g) => g.bind(done),
         None => done,
-    }])
+    });
+    Ok(out)
 }
 
 /// The batch gate: true only in the run whose compare-and-set went

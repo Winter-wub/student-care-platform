@@ -114,9 +114,9 @@ impl LineChannel {
         let (menu, image) = if key.as_str() == MenuKey::LOCKED {
             let locked = self.cfg.locked_menu.clone().with_revision(menu.revision());
             let locked = locked.with_salt(menu.salt().unwrap_or_default());
-            (locked, &self.cfg.locked_menu_image)
+            (locked, self.cfg.locked_menu_image.as_slice())
         } else {
-            (menu.clone(), &self.cfg.unlocked_menu_image)
+            (menu.clone(), self.cfg.menu_image(menu))
         };
         if menu.entries.is_empty() {
             return Ok(MenuRetire::Done);

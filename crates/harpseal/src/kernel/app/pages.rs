@@ -180,10 +180,13 @@ pub(crate) async fn home(State(s): State<AppState>, headers: HeaderMap, uri: Uri
     } else {
         None
     };
+    // A Menu variant keeps only some links (#182).
+    let variant = s.deployment.menu_variant(&st.attributes);
     let links: Vec<_> = s
         .deployment
         .app_links()
         .iter()
+        .filter(|l| variant.is_none_or(|v| v.keeps_app_link(l.path)))
         .map(|l| (t.t(l.label_key), l.path))
         .collect();
     let h = Home {
