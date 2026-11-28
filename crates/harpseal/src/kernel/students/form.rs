@@ -42,7 +42,9 @@ pub(super) fn rendered(roster: &RosterConfig, f: &StudentFields) -> FormMap {
 /// enum value no longer listed) never count as edits. Every edited field
 /// is checked (core fields, then the schema attributes; attributes outside
 /// the schema are kept), and every problem is reported, not just the
-/// first.
+/// first. An attribute required only for some Students (`optional_when`,
+/// `required_when`) is checked when it or the attribute it depends on
+/// changed.
 pub(super) fn parse_edit(
     roster: &RosterConfig,
     current: &StudentFields,
@@ -93,6 +95,23 @@ pub(super) fn parse_edit(
             }
         }
     }
+    // `optional_when` / `required_when`: checked when the field or the
+    // one it depends on changed, against the values after the edit.
+    for (key, spec) in &roster.attributes {
+        let Some((other, _)) = spec.condition() else {
+            continue;
+        };
+        let input = attr_input(key);
+        let touched = edited(&input) || edited(&attr_input(other));
+        let failed = errors.contains_key(&input) || errors.contains_key(&attr_input(other));
+        if touched
+            && !failed
+            && !out.attributes.contains_key(key)
+            && spec.required_for(&out.attributes)
+        {
+            errors.insert(input, "kernel.students.err_required_here");
+        }
+    }
     if errors.is_empty() {
         Ok(out)
     } else {
@@ -130,5 +149,48 @@ mod tests {
         assert!(is_locale("th") && is_locale("en-GB"));
         assert!(!is_locale("t") && !is_locale("1x") && !is_locale("th_TH"));
         assert_eq!(urlencode("นก a"), "%E0%B8%99%E0%B8%81%20a");
+    }
+
+    #[test]
+    fn a_conditional_attribute_is_checked_when_it_or_its_condition_changes() {
+        let c = crate::DeploymentConfig::from_toml(
+            "name = \"X\"\ndefault_locale = \"th\"\n\
+             [roster.attributes.status]\ncolumn = \"s\"\ntype = \"enum\"\nvalues = [\"current\", \"graduated\"]\n\
+             [roster.attributes.year]\ncolumn = \"y\"\ntype = \"integer\"\noptional_when = { status = [\"graduated\"] }\n",
+        )
+        .unwrap();
+        let mut current = StudentFields::new("นก", None, Locale::th());
+        current.attributes.insert("status".into(), "current".into());
+        current.attributes.insert("year".into(), 3.into());
+        let mut form = rendered(&c.roster, &current);
+        // Clearing the year of a current Student is refused...
+        form.insert("attr.year".into(), String::new());
+        let errors = parse_edit(&c.roster, &current, &form).unwrap_err();
+        assert_eq!(errors["attr.year"], "kernel.students.err_required_here");
+        // ...and allowed once the Student is a graduate.
+        form.insert("attr.status".into(), "graduated".into());
+        let out = parse_edit(&c.roster, &current, &form).unwrap();
+        assert!(!out.attributes.contains_key("year"));
+        // A graduate without a year who becomes current needs one.
+        let mut graduate = StudentFields::new("ปลา", None, Locale::th());
+        graduate
+            .attributes
+            .insert("status".into(), "graduated".into());
+        let mut form = rendered(&c.roster, &graduate);
+        form.insert("attr.status".into(), "current".into());
+        let errors = parse_edit(&c.roster, &graduate, &form).unwrap_err();
+        assert!(errors.contains_key("attr.year"));
+        // An edit of another field checks nothing else.
+        let mut form = rendered(&c.roster, &graduate);
+        form.insert("display_name".into(), "ปลาทอง".into());
+        let mut legacy = graduate.clone();
+        legacy.attributes.insert("status".into(), "current".into());
+        let form_legacy = {
+            let mut f = rendered(&c.roster, &legacy);
+            f.insert("display_name".into(), "ปลาทอง".into());
+            f
+        };
+        assert!(parse_edit(&c.roster, &legacy, &form_legacy).is_ok());
+        assert!(parse_edit(&c.roster, &graduate, &form).is_ok());
     }
 }

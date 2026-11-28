@@ -138,6 +138,21 @@ pub(crate) const DEFAULTS: &[E] = th_en![
         "This field is required"
     ),
     (
+        "kernel.students.err_required_here",
+        "ต้องกรอกช่องนี้ ตามค่าในช่องอื่นของนักศึกษาคนนี้",
+        "This field is required, given another field of this Student"
+    ),
+    (
+        "kernel.students.optional_when",
+        "เว้นว่างได้เมื่อ {condition}",
+        "May be empty when {condition}"
+    ),
+    (
+        "kernel.students.required_when",
+        "ต้องกรอกเมื่อ {condition}",
+        "Required when {condition}"
+    ),
+    (
         "kernel.students.err_integer",
         "ต้องเป็นจำนวนเต็ม",
         "Must be a whole number"
