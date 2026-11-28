@@ -114,6 +114,10 @@ async fn a_backup_from_before_0003_files_restores() {
     let d_old = deployment(&old);
     d_old.migrate().await.unwrap();
     for sql in [
+        "DROP TABLE announcement_ack_history",
+        "DROP TABLE announcement_ack_round",
+        "ALTER TABLE announcement DROP COLUMN ack_round",
+        "DELETE FROM migration WHERE module = 'announcements' AND name = '0005_reack'",
         "DROP TABLE saved_audience",
         "DELETE FROM migration WHERE module = 'announcements' AND name = '0004_saved_audiences'",
         "DROP TABLE announcement_file",
@@ -135,7 +139,7 @@ async fn a_backup_from_before_0003_files_restores() {
         "SELECT name FROM migration WHERE module = 'announcements' ORDER BY name DESC",
     )
     .await;
-    assert_eq!(applied, "0004_saved_audiences");
+    assert_eq!(applied, "0005_reack");
     let n = fresh
         .db()
         .query(Statement::new("SELECT count(*) FROM announcement_file"))

@@ -2,7 +2,8 @@
 //! costs: the recipients on Channels that cannot edit (at most: only those
 //! whose text changes are sent to), this month's metered Pushes against
 //! the Quota, and a warning when the notice would go over what is left.
-//! The Quota warns, it never blocks: the box stays usable.
+//! The Quota warns, it never blocks: the box stays usable. Beside it,
+//! "ขอให้รับทราบใหม่" ([`reack_field`]).
 
 use maud::{Markup, html};
 
@@ -44,6 +45,21 @@ pub(super) fn field(v: &View<'_>, f: &Fields, cost: Option<&Cost>, err: Markup) 
             }
             p class="muted" { (v.t("announcements.form.notify_help")) }
             @if let Some(c) = cost { (cost_lines(v, c)) }
+        }
+    }
+}
+
+/// "ขอให้รับทราบใหม่" (`0005_reack`), next to the notice box: only for an
+/// announcement that asks for an acknowledgement.
+pub(super) fn reack_field(v: &View<'_>, f: &Fields, err: Markup) -> Markup {
+    html! {
+        div id="reack-field" {
+            (err)
+            label class="check" {
+                input type="checkbox" name="reack" value="1" checked[f.reack];
+                " " (v.t("announcements.form.reack"))
+            }
+            p class="muted" { (v.t("announcements.form.reack_help")) }
         }
     }
 }

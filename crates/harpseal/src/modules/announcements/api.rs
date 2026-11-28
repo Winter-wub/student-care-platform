@@ -82,6 +82,7 @@ impl NewAnnouncement {
                 .map(|t| input_datetime(t, offset))
                 .unwrap_or_default(),
             notify: false,
+            reack: false,
             version: None,
             submit: String::new(),
             ..Fields::default()

@@ -30,7 +30,9 @@ pub struct RoundStats {
 pub struct Stats {
     /// Distinct Students with a delivery row (any round, any Channel).
     pub in_audience: i64,
-    /// Of those, the ones who acknowledged.
+    /// Of those, the ones who acknowledged the latest version (a request
+    /// for a new acknowledgement, `0005_reack`, starts it over; earlier
+    /// versions are on the history page).
     pub acked: i64,
     /// By round, then Channel.
     pub rounds: Vec<RoundStats>,

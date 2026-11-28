@@ -21,6 +21,10 @@ pub(crate) struct Draft {
     /// Editing a sent announcement: notify its recipients on Channels that
     /// cannot edit (LINE) with one Push each (#77). Ignored otherwise.
     pub(crate) notify: bool,
+    /// Editing a sent announcement that asks for an acknowledgement:
+    /// everyone acknowledges the edited version again (`0005_reack`).
+    /// Ignored otherwise.
+    pub(crate) reack: bool,
     /// Images (#109) and PDFs (#113) to add, replace or remove.
     pub(crate) files: super::files::FileEdits,
 }
@@ -36,6 +40,9 @@ impl Draft {
         });
         if self.notify {
             j["notify"] = true.into();
+        }
+        if self.reack {
+            j["reack"] = true.into();
         }
         if !self.files.is_empty() {
             j["images"] = self.files.summary();

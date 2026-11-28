@@ -119,6 +119,14 @@ fn summary(v: &View<'_>, row: &Row, st: &Stats) -> Markup {
                 dt { (v.t("announcements.page.acked")) } dd { strong { (st.acked) " / " (st.in_audience) } }
                 dt { (v.t("announcements.form.require_ack")) }
                 dd { (v.t(if row.require_ack { "announcements.page.yes" } else { "announcements.page.no" })) }
+                // `0005_reack`: which version the counts are of, and the earlier ones.
+                @if row.ack_round > 0 {
+                    dt { (v.t("announcements.page.ack_version")) }
+                    dd {
+                        (super::page_acks::version_name(v, row.ack_round)) " · "
+                        a href=(format!("/admin/announcements/{}/acks", row.id)) { (v.t("announcements.page.ack_history")) }
+                    }
+                }
                 dt { (v.t("announcements.page.send_at")) } dd { (v.time(row.send_at)) }
                 dt { (v.t("announcements.page.sent_at")) } dd { (v.time(row.sent_at)) }
                 dt { (v.t("announcements.form.expires")) } dd { (v.time(row.expires_at)) }

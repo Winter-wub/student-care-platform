@@ -29,11 +29,14 @@ pub(crate) struct Row {
     /// The last edit notice run (#77): `{"version", "at", "sent",
     /// "failed", "total"}`.
     pub(crate) notice_report: Option<Json>,
+    /// The version Students acknowledge now: 0 for the first, +1 each
+    /// time Staff ask for a new acknowledgement (`0005_reack`).
+    pub(crate) ack_round: i64,
 }
 
 pub(crate) const COLUMNS: &str = "a.id, a.status, a.audience, a.send_at, a.expires_at, \
     a.require_ack, a.created_at, a.sent_at, a.retracted_at, a.round, a.snapshot_round, \
-    a.version, a.edit_report, a.notice_report";
+    a.version, a.edit_report, a.notice_report, a.ack_round";
 
 pub(crate) fn text(rows: &Rows, i: usize, c: &str) -> String {
     rows.get(i, c)
@@ -62,6 +65,7 @@ pub(crate) fn row_at(rows: &Rows, i: usize) -> Row {
         version: int(rows, i, "version").unwrap_or(0),
         edit_report: json_col(rows, i, "edit_report"),
         notice_report: json_col(rows, i, "notice_report"),
+        ack_round: int(rows, i, "ack_round").unwrap_or(0),
     }
 }
 
